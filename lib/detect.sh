@@ -381,7 +381,8 @@ preflight_checks() {
         local compose_major="${compose_ver%%.*}"
         local compose_minor="${compose_ver#*.}"
         compose_minor="${compose_minor%%.*}"
-        if [[ "$compose_major" -ge 2 && "$compose_minor" -ge 20 ]] 2>/dev/null; then
+        if [[ "$compose_major" -gt 2 ]] 2>/dev/null || \
+           [[ "$compose_major" -eq 2 && "$compose_minor" -ge 20 ]] 2>/dev/null; then
             echo -e "  ${GREEN}[PASS]${NC} Docker Compose: v${compose_ver}"
         else
             echo -e "  ${YELLOW}[WARN]${NC} Docker Compose: v${compose_ver} (рекомендуется 2.20+)"

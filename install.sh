@@ -6,6 +6,26 @@
 # ============================================================================
 set -euo pipefail
 
+# --- Constants ---
+VERSION="1.0.0"
+INSTALLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INSTALL_DIR="/opt/agmind"
+TEMPLATE_DIR="${INSTALLER_DIR}/templates"
+
+# --- Colors (defined early — used by cleanup trap) ---
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
+CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
+
+# Exclusive lock — prevent parallel install
+LOCK_FILE="/var/lock/agmind-install.lock"
+if [[ "$(uname)" != "Darwin" ]]; then
+    exec 9>"$LOCK_FILE"
+    if ! flock -n 9; then
+        echo -e "${RED}Другой процесс установки уже запущен. Дождитесь завершения.${NC}"
+        exit 1
+    fi
+fi
+
 # Cleanup on failure
 cleanup_on_failure() {
     local exit_code=$?
@@ -17,16 +37,6 @@ cleanup_on_failure() {
     fi
 }
 trap cleanup_on_failure EXIT
-
-# --- Constants ---
-VERSION="1.0.0"
-INSTALLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-INSTALL_DIR="/opt/agmind"
-TEMPLATE_DIR="${INSTALLER_DIR}/templates"
-
-# --- Colors ---
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
-CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 
 # --- Source library modules ---
 source "${INSTALLER_DIR}/lib/detect.sh"
@@ -599,7 +609,9 @@ phase_config() {
     echo -e "${BOLD}[4/11] Генерация конфигурации${NC}"
 
     # Export variables for config.sh
-    export INSTALL_DIR ADMIN_EMAIL ADMIN_PASSWORD COMPANY_NAME
+    # Note: ADMIN_PASSWORD intentionally NOT exported (visible in /proc/environ)
+    # config.sh reads it from global scope (same process via source)
+    export INSTALL_DIR ADMIN_EMAIL COMPANY_NAME
     export LLM_MODEL EMBEDDING_MODEL DOMAIN CERTBOT_EMAIL
     export DEPLOY_PROFILE VECTOR_STORE ETL_ENHANCED
     export TLS_MODE TLS_CERT_PATH TLS_KEY_PATH
@@ -750,7 +762,8 @@ phase_models() {
 # ============================================================================
 phase_workflow() {
     echo -e "${BOLD}[8/11] Импорт workflow${NC}"
-    export INSTALL_DIR ADMIN_EMAIL ADMIN_PASSWORD LLM_MODEL EMBEDDING_MODEL COMPANY_NAME
+    # ADMIN_PASSWORD passed via global scope, not exported to /proc/environ
+    export INSTALL_DIR ADMIN_EMAIL LLM_MODEL EMBEDDING_MODEL COMPANY_NAME
 
     # Read admin token to construct the correct URL path through nginx
     local admin_token
@@ -820,7 +833,7 @@ phase_complete() {
             if [[ -n "$DOMAIN" ]]; then
                 access_url="https://${DOMAIN}"
             else
-                access_url="http://$(curl -s ifconfig.me 2>/dev/null || echo 'YOUR_IP')"
+                access_url="http://$(curl -sf --max-time 10 ifconfig.me 2>/dev/null || echo 'YOUR_IP')"
             fi
             ;;
         lan|vpn)
@@ -835,9 +848,6 @@ phase_complete() {
             ;;
     esac
 
-    local admin_pass
-    admin_pass=$(cat "${INSTALL_DIR}/.admin_password" 2>/dev/null || echo "$ADMIN_PASSWORD")
-
     local admin_token
     admin_token=$(grep '^ADMIN_TOKEN=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "UNKNOWN")
     local dify_url="${access_url}/${admin_token}/"
@@ -851,7 +861,7 @@ phase_complete() {
     printf "║  Профиль:   %-35s║\n" "$DEPLOY_PROFILE"
     printf "║  URL:       %-35s║\n" "$access_url"
     printf "║  Логин:     %-35s║\n" "$ADMIN_EMAIL"
-    printf "║  Пароль:    %-35s║\n" "$admin_pass"
+    printf "║  Пароль:    %-35s║\n" "(см. ${INSTALL_DIR}/.admin_password)"
     echo "║                                                ║"
     printf "║  Модель:    %-35s║\n" "$LLM_MODEL"
     printf "║  Embedding: %-35s║\n" "$EMBEDDING_MODEL"
@@ -873,10 +883,8 @@ phase_complete() {
     if [[ "$MONITORING_MODE" == "local" ]]; then
         local lan_ip_mon
         lan_ip_mon=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
-        local grafana_pass
-        grafana_pass=$(grep '^GRAFANA_ADMIN_PASSWORD=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "admin")
         printf "║  Grafana:   %-35s║\n" "http://${lan_ip_mon}:3001"
-        printf "║  Gr.пароль: %-35s║\n" "$grafana_pass"
+        printf "║  Gr.пароль: %-35s║\n" "(см. GRAFANA_ADMIN_PASSWORD в .env)"
         printf "║  Portainer: %-35s║\n" "https://${lan_ip_mon}:9443"
     fi
     [[ "$ENABLE_UFW" == "true" ]] && echo "║  UFW:       включён                             ║"

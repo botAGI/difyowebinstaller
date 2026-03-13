@@ -11,6 +11,11 @@ generate_random() {
     head -c 256 /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z0-9' | head -c "$length"
 }
 
+# Escape special characters for sed replacement strings (& | \ /)
+escape_sed() {
+    printf '%s' "$1" | sed 's/[&/|\]/\\&/g'
+}
+
 generate_config() {
     local profile="$1"
     local template_dir="$2"
@@ -90,6 +95,16 @@ generate_config() {
     fi
     cp "$template_file" "$env_file"
 
+    # Escape user-input values for safe sed replacement (& | / \ chars)
+    local safe_admin_email safe_company safe_domain safe_certbot_email
+    local safe_monitoring_endpoint safe_webhook_url
+    safe_admin_email=$(escape_sed "${ADMIN_EMAIL:-admin@admin.com}")
+    safe_company=$(escape_sed "${COMPANY_NAME:-AGMind}")
+    safe_domain=$(escape_sed "${DOMAIN:-localhost}")
+    safe_certbot_email=$(escape_sed "${CERTBOT_EMAIL:-}")
+    safe_monitoring_endpoint=$(escape_sed "${MONITORING_ENDPOINT:-}")
+    safe_webhook_url=$(escape_sed "${ALERT_WEBHOOK_URL:-}")
+
     # Replace placeholders in .env
     sed -i.bak \
         -e "s|__SECRET_KEY__|${secret_key}|g" \
@@ -98,24 +113,24 @@ generate_config() {
         -e "s|__SANDBOX_API_KEY__|${sandbox_api_key}|g" \
         -e "s|__PLUGIN_DAEMON_KEY__|${plugin_daemon_key}|g" \
         -e "s|__PLUGIN_INNER_API_KEY__|${plugin_inner_api_key}|g" \
-        -e "s|__ADMIN_EMAIL__|${ADMIN_EMAIL:-admin@admin.com}|g" \
+        -e "s|__ADMIN_EMAIL__|${safe_admin_email}|g" \
         -e "s|__ADMIN_PASSWORD_B64__|${admin_password_b64}|g" \
-        -e "s|__COMPANY_NAME__|${COMPANY_NAME:-AGMind}|g" \
+        -e "s|__COMPANY_NAME__|${safe_company}|g" \
         -e "s|__LLM_MODEL__|${LLM_MODEL:-qwen2.5:14b}|g" \
         -e "s|__EMBEDDING_MODEL__|${EMBEDDING_MODEL:-bge-m3}|g" \
-        -e "s|__DOMAIN__|${DOMAIN:-localhost}|g" \
-        -e "s|__CERTBOT_EMAIL__|${CERTBOT_EMAIL:-}|g" \
+        -e "s|__DOMAIN__|${safe_domain}|g" \
+        -e "s|__CERTBOT_EMAIL__|${safe_certbot_email}|g" \
         -e "s|__ADMIN_TOKEN__|${admin_token}|g" \
         -e "s|__VECTOR_STORE__|${VECTOR_STORE:-weaviate}|g" \
         -e "s|__QDRANT_API_KEY__|${qdrant_api_key}|g" \
         -e "s|__ETL_TYPE__|$([ "${ETL_ENHANCED:-no}" = "yes" ] && echo "unstructured_api" || echo "dify")|g" \
         -e "s|__TLS_MODE__|${TLS_MODE:-none}|g" \
         -e "s|__MONITORING_MODE__|${MONITORING_MODE:-none}|g" \
-        -e "s|__MONITORING_ENDPOINT__|${MONITORING_ENDPOINT:-}|g" \
+        -e "s|__MONITORING_ENDPOINT__|${safe_monitoring_endpoint}|g" \
         -e "s|__MONITORING_TOKEN__|${MONITORING_TOKEN:-}|g" \
         -e "s|__GRAFANA_ADMIN_PASSWORD__|${grafana_admin_password}|g" \
         -e "s|__ALERT_MODE__|${ALERT_MODE:-none}|g" \
-        -e "s|__ALERT_WEBHOOK_URL__|${ALERT_WEBHOOK_URL:-}|g" \
+        -e "s|__ALERT_WEBHOOK_URL__|${safe_webhook_url}|g" \
         -e "s|__ALERT_TELEGRAM_TOKEN__|${ALERT_TELEGRAM_TOKEN:-}|g" \
         -e "s|__ALERT_TELEGRAM_CHAT_ID__|${ALERT_TELEGRAM_CHAT_ID:-}|g" \
         "$env_file"
