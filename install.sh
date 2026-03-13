@@ -1,0 +1,840 @@
+#!/usr/bin/env bash
+# ============================================================================
+# AGMind Installer v1.0
+# Full RAG stack: Dify + Open WebUI + Ollama + Weaviate + PostgreSQL + Redis
+# Usage: curl -sSL https://install.aillmsystems.com | bash
+# ============================================================================
+set -euo pipefail
+
+# --- Constants ---
+VERSION="1.0.0"
+INSTALLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INSTALL_DIR="/opt/agmind"
+TEMPLATE_DIR="${INSTALLER_DIR}/templates"
+
+# --- Colors ---
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
+CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
+
+# --- Source library modules ---
+source "${INSTALLER_DIR}/lib/detect.sh"
+source "${INSTALLER_DIR}/lib/docker.sh"
+source "${INSTALLER_DIR}/lib/config.sh"
+source "${INSTALLER_DIR}/lib/models.sh"
+source "${INSTALLER_DIR}/lib/workflow.sh"
+source "${INSTALLER_DIR}/lib/tunnel.sh"
+source "${INSTALLER_DIR}/lib/backup.sh"
+source "${INSTALLER_DIR}/lib/dokploy.sh"
+source "${INSTALLER_DIR}/lib/health.sh"
+
+# --- Global state ---
+DEPLOY_PROFILE=""
+DOMAIN=""
+CERTBOT_EMAIL=""
+COMPANY_NAME=""
+LOGO_PATH=""
+LLM_MODEL=""
+EMBEDDING_MODEL="bge-m3"
+ADMIN_EMAIL=""
+ADMIN_PASSWORD=""
+BACKUP_TARGET=""
+BACKUP_SCHEDULE=""
+REMOTE_BACKUP_HOST=""
+REMOTE_BACKUP_PORT="22"
+REMOTE_BACKUP_USER=""
+REMOTE_BACKUP_KEY=""
+REMOTE_BACKUP_PATH="/var/backups/agmind-remote"
+DOKPLOY_ENABLED=""
+TUNNEL_VPS_HOST=""
+TUNNEL_VPS_PORT="22"
+TUNNEL_REMOTE_PORT="8080"
+TUNNEL_LOCAL_PORT="80"
+TUNNEL_SSH_REMOTE_PORT="8022"
+VECTOR_STORE="weaviate"
+ETL_ENHANCED="no"
+TLS_MODE="none"
+TLS_CERT_PATH=""
+TLS_KEY_PATH=""
+MONITORING_MODE="none"
+MONITORING_ENDPOINT=""
+MONITORING_TOKEN=""
+ALERT_MODE="none"
+ALERT_WEBHOOK_URL=""
+ALERT_TELEGRAM_TOKEN=""
+ALERT_TELEGRAM_CHAT_ID=""
+NON_INTERACTIVE=false
+
+# ============================================================================
+# BANNER
+# ============================================================================
+show_banner() {
+    echo ""
+    echo -e "${CYAN}${BOLD}"
+    echo "    _    ____ __  __ _           _ "
+    echo "   / \  / ___|  \/  (_)_ __   __| |"
+    echo "  / _ \| |  _| |\/| | | '_ \ / _\` |"
+    echo " / ___ \ |_| | |  | | | | | | (_| |"
+    echo "/_/   \_\____|_|  |_|_|_| |_|\__,_|"
+    echo ""
+    echo -e "${NC}${BOLD}  RAG Stack Installer v${VERSION}${NC}"
+    echo "  Dify + Open WebUI + Ollama"
+    echo ""
+}
+
+# ============================================================================
+# PHASE 1: Diagnostics
+# ============================================================================
+phase_diagnostics() {
+    echo -e "${BOLD}[1/11] Диагностика системы${NC}"
+    echo ""
+    run_diagnostics || {
+        echo ""
+        echo -e "${RED}Система не соответствует минимальным требованиям.${NC}"
+        if [[ "$NON_INTERACTIVE" != "true" ]]; then
+            read -rp "Продолжить всё равно? (yes/no): " FORCE
+            if [[ "$FORCE" != "yes" ]]; then
+                exit 1
+            fi
+        else
+            echo -e "${YELLOW}Non-interactive: продолжаем несмотря на предупреждения${NC}"
+        fi
+    }
+    echo ""
+}
+
+# ============================================================================
+# PHASE 2: Interactive Wizard
+# ============================================================================
+phase_wizard() {
+    echo -e "${BOLD}[2/11] Настройка установки${NC}"
+    echo ""
+
+    # --- Profile ---
+    echo "Выберите режим деплоя:"
+    echo "  1) VPS     — публичный доступ через домен (есть интернет, есть домен)"
+    echo "  2) LAN     — локальная сеть офиса (есть интернет, нет домена)"
+    echo "  3) VPN     — корпоративный VPN (доступ только через VPN)"
+    echo "  4) Offline — замкнутая сеть (без интернета)"
+    echo ""
+    if [[ "$NON_INTERACTIVE" != "true" ]]; then
+        while true; do
+            read -rp "Профиль [1-4]: " choice
+            case "$choice" in
+                1) DEPLOY_PROFILE="vps"; break;;
+                2) DEPLOY_PROFILE="lan"; break;;
+                3) DEPLOY_PROFILE="vpn"; break;;
+                4) DEPLOY_PROFILE="offline"; break;;
+                *) echo "Введите число от 1 до 4";;
+            esac
+        done
+    else
+        DEPLOY_PROFILE="${DEPLOY_PROFILE:-lan}"
+    fi
+    echo ""
+
+    # --- Domain (VPS only) ---
+    if [[ "$DEPLOY_PROFILE" == "vps" ]]; then
+        if [[ "$NON_INTERACTIVE" != "true" ]]; then
+            read -rp "Домен для доступа: " DOMAIN
+            read -rp "Email для сертификата: " CERTBOT_EMAIL
+        fi
+        echo ""
+    fi
+
+    # --- Branding ---
+    if [[ "$NON_INTERACTIVE" != "true" ]]; then
+        read -rp "Название компании [AGMind]: " COMPANY_NAME
+        COMPANY_NAME="${COMPANY_NAME:-AGMind}"
+        read -rp "Путь к логотипу (Enter = дефолтный): " LOGO_PATH
+    else
+        COMPANY_NAME="${COMPANY_NAME:-AGMind}"
+    fi
+    echo ""
+
+    # --- Vector Store ---
+    echo "Выберите векторное хранилище:"
+    echo "  1) Weaviate  — стабильный, проверенный (по умолчанию)"
+    echo "  2) Qdrant    — быстрый, REST/gRPC API"
+    echo ""
+    if [[ "$NON_INTERACTIVE" != "true" ]]; then
+        read -rp "Выбор [1-2, Enter=1]: " choice
+        choice="${choice:-1}"
+    else
+        choice="${VECTOR_STORE_CHOICE:-1}"
+    fi
+    case "$choice" in
+        2) VECTOR_STORE="qdrant";;
+        *) VECTOR_STORE="weaviate";;
+    esac
+    echo ""
+
+    # --- ETL Enhancement (not for offline) ---
+    if [[ "$DEPLOY_PROFILE" != "offline" ]]; then
+        echo "Расширенная обработка документов (Docling + Xinference reranker)?"
+        echo "  1) Нет — стандартный ETL Dify (по умолчанию)"
+        echo "  2) Да — Docling + bce-reranker-base_v1"
+        echo ""
+        if [[ "$NON_INTERACTIVE" != "true" ]]; then
+            read -rp "Выбор [1-2, Enter=1]: " choice
+            choice="${choice:-1}"
+        else
+            choice="${ETL_ENHANCED_CHOICE:-1}"
+        fi
+        case "$choice" in
+            2) ETL_ENHANCED="yes";;
+            *) ETL_ENHANCED="no";;
+        esac
+        echo ""
+    fi
+
+    # --- LLM Model (expanded list) ---
+
+    # Determine recommended model marker (rec_idx = menu item number)
+    local rec_idx=6  # default: qwen2.5:14b (item 6)
+    if [[ "${RECOMMENDED_MODEL:-}" == "gemma3:4b" ]]; then
+        rec_idx=1
+    elif [[ "${RECOMMENDED_MODEL:-}" == "qwen2.5:7b" ]]; then
+        rec_idx=2
+    elif [[ "${RECOMMENDED_MODEL:-}" == "qwen2.5:32b" ]]; then
+        rec_idx=10
+    elif [[ "${RECOMMENDED_MODEL:-}" == "qwen2.5:72b-instruct-q4_K_M" ]]; then
+        rec_idx=13
+    fi
+
+    echo "Выберите LLM модель:"
+    echo ""
+    echo " ── 4-8B [быстро, 8GB+ RAM, 6GB+ VRAM] ──"
+    echo "  1) gemma3:4b            — компактная, Google$([ $rec_idx -eq 1 ] && echo '  [рекомендуется]')"
+    echo "  2) qwen2.5:7b           — быстрая, Alibaba$([ $rec_idx -eq 2 ] && echo '  [рекомендуется]')"
+    echo "  3) qwen3:8b             — нов. поколение, Alibaba"
+    echo "  4) llama3.1:8b          — универсальная, Meta"
+    echo "  5) mistral:7b           — европейская, Mistral"
+    echo ""
+    echo " ── 12-14B [баланс, 16GB+ RAM, 10GB+ VRAM] ──"
+    echo "  6) qwen2.5:14b          — сбалансированная, Alibaba$([ $rec_idx -eq 6 ] && echo '  [рекомендуется]')"
+    echo "  7) phi-4:14b            — Microsoft"
+    echo "  8) mistral-nemo:12b     — компактная, Mistral"
+    echo "  9) gemma3:12b           — средняя, Google"
+    echo ""
+    echo " ── 27-32B [качество, 32GB+ RAM, 16GB+ VRAM] ──"
+    echo "  10) qwen2.5:32b         — качественная, Alibaba$([ $rec_idx -eq 10 ] && echo '  [рекомендуется]')"
+    echo "  11) gemma3:27b          — большая, Google"
+    echo "  12) command-r:35b       — RAG-оптимизированная, Cohere"
+    echo ""
+    echo " ── 60B+ [макс. качество, 64GB+ RAM, 24GB+ VRAM] ──"
+    echo "  13) qwen2.5:72b-instruct-q4_K_M  — топ, квантизация$([ $rec_idx -eq 13 ] && echo '  [рекомендуется]')"
+    echo "  14) llama3.1:70b-instruct-q4_K_M  — Meta, квантизация"
+    echo "  15) qwen3:32b           — нов. поколение, Alibaba"
+    echo ""
+    echo " ── Своя модель ──"
+    echo "  16) Указать вручную (название из Ollama registry)"
+    echo ""
+    if [[ "$NON_INTERACTIVE" != "true" ]]; then
+        while true; do
+            read -rp "Модель [1-16, Enter=6]: " choice
+            choice="${choice:-6}"
+            case "$choice" in
+                1)  LLM_MODEL="gemma3:4b"; break;;
+                2)  LLM_MODEL="qwen2.5:7b"; break;;
+                3)  LLM_MODEL="qwen3:8b"; break;;
+                4)  LLM_MODEL="llama3.1:8b"; break;;
+                5)  LLM_MODEL="mistral:7b"; break;;
+                6)  LLM_MODEL="qwen2.5:14b"; break;;
+                7)  LLM_MODEL="phi-4:14b"; break;;
+                8)  LLM_MODEL="mistral-nemo:12b"; break;;
+                9)  LLM_MODEL="gemma3:12b"; break;;
+                10) LLM_MODEL="qwen2.5:32b"; break;;
+                11) LLM_MODEL="gemma3:27b"; break;;
+                12) LLM_MODEL="command-r:35b"; break;;
+                13) LLM_MODEL="qwen2.5:72b-instruct-q4_K_M"; break;;
+                14) LLM_MODEL="llama3.1:70b-instruct-q4_K_M"; break;;
+                15) LLM_MODEL="qwen3:32b"; break;;
+                16) read -rp "Название модели: " LLM_MODEL; break;;
+                *)  echo "Введите число от 1 до 16";;
+            esac
+        done
+    else
+        LLM_MODEL="${LLM_MODEL:-qwen2.5:14b}"
+    fi
+    echo ""
+
+    if [[ "$NON_INTERACTIVE" != "true" ]]; then
+        read -rp "Embedding модель [bge-m3]: " EMBEDDING_MODEL
+        EMBEDDING_MODEL="${EMBEDDING_MODEL:-bge-m3}"
+    else
+        EMBEDDING_MODEL="${EMBEDDING_MODEL:-bge-m3}"
+    fi
+    echo ""
+
+    # --- Offline model warning ---
+    if [[ "$DEPLOY_PROFILE" == "offline" ]]; then
+        echo -e "${YELLOW}⚠ Профиль Offline: модели не будут скачиваться.${NC}"
+        echo "  Убедитесь, что ${LLM_MODEL} и ${EMBEDDING_MODEL}"
+        echo "  предзагружены в ollama_data volume."
+        echo ""
+    fi
+
+    # --- TLS (for lan/vpn only; vps=letsencrypt auto, offline=none) ---
+    if [[ "$DEPLOY_PROFILE" == "lan" || "$DEPLOY_PROFILE" == "vpn" ]]; then
+        echo "Настройка TLS (HTTPS):"
+        echo "  1) Без TLS (по умолчанию)"
+        echo "  2) Self-signed сертификат"
+        echo "  3) Свой сертификат (указать путь)"
+        echo ""
+        if [[ "$NON_INTERACTIVE" != "true" ]]; then
+            read -rp "TLS [1-3, Enter=1]: " choice
+            choice="${choice:-1}"
+        else
+            choice="${TLS_MODE_CHOICE:-1}"
+        fi
+        case "$choice" in
+            2) TLS_MODE="self-signed";;
+            3)
+                TLS_MODE="custom"
+                if [[ "$NON_INTERACTIVE" != "true" ]]; then
+                    read -rp "Путь к сертификату (.pem): " TLS_CERT_PATH
+                    read -rp "Путь к ключу (.pem): " TLS_KEY_PATH
+                fi
+                ;;
+            *) TLS_MODE="none";;
+        esac
+        echo ""
+    elif [[ "$DEPLOY_PROFILE" == "vps" ]]; then
+        TLS_MODE="letsencrypt"
+    fi
+
+    # --- Admin ---
+    if [[ "$NON_INTERACTIVE" != "true" ]]; then
+        read -rp "Email администратора: " ADMIN_EMAIL
+        read -rsp "Пароль (Enter для авто-генерации): " ADMIN_PASSWORD
+        echo ""
+        if [[ -z "$ADMIN_PASSWORD" ]]; then
+            ADMIN_PASSWORD=$(head -c 256 /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z0-9' | head -c 16)
+            echo -e "  Пароль сгенерирован: ${YELLOW}${ADMIN_PASSWORD}${NC}"
+        fi
+    else
+        ADMIN_EMAIL="${ADMIN_EMAIL:-admin@admin.com}"
+        if [[ -z "$ADMIN_PASSWORD" ]]; then
+            ADMIN_PASSWORD=$(head -c 256 /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z0-9' | head -c 16)
+        fi
+    fi
+    echo ""
+
+    # --- Monitoring ---
+    echo "Мониторинг:"
+    echo "  1) Отключен (по умолчанию)"
+    echo "  2) Локальный (Grafana + Portainer + Prometheus)"
+    if [[ "$DEPLOY_PROFILE" != "offline" ]]; then
+        echo "  3) Внешний (endpoint + token)"
+    fi
+    echo ""
+    if [[ "$NON_INTERACTIVE" != "true" ]]; then
+        read -rp "Мониторинг [1-$([ "$DEPLOY_PROFILE" != "offline" ] && echo "3" || echo "2"), Enter=1]: " choice
+        choice="${choice:-1}"
+    else
+        choice="${MONITORING_CHOICE:-1}"
+    fi
+    case "$choice" in
+        2) MONITORING_MODE="local";;
+        3)
+            if [[ "$DEPLOY_PROFILE" != "offline" ]]; then
+                MONITORING_MODE="external"
+                if [[ "$NON_INTERACTIVE" != "true" ]]; then
+                    read -rp "Endpoint (URL): " MONITORING_ENDPOINT
+                    read -rp "Token: " MONITORING_TOKEN
+                fi
+            fi
+            ;;
+        *) MONITORING_MODE="none";;
+    esac
+    echo ""
+
+    # --- Alerts ---
+    echo "Алерты при сбоях:"
+    echo "  1) Отключены (по умолчанию)"
+    echo "  2) Webhook (URL)"
+    if [[ "$DEPLOY_PROFILE" != "offline" ]]; then
+        echo "  3) Telegram бот"
+    fi
+    echo ""
+    if [[ "$NON_INTERACTIVE" != "true" ]]; then
+        read -rp "Алерты [1-$([ "$DEPLOY_PROFILE" != "offline" ] && echo "3" || echo "2"), Enter=1]: " choice
+        choice="${choice:-1}"
+    else
+        choice="${ALERT_CHOICE:-1}"
+    fi
+    case "$choice" in
+        2)
+            ALERT_MODE="webhook"
+            if [[ "$NON_INTERACTIVE" != "true" ]]; then
+                read -rp "Webhook URL: " ALERT_WEBHOOK_URL
+            fi
+            ;;
+        3)
+            if [[ "$DEPLOY_PROFILE" != "offline" ]]; then
+                ALERT_MODE="telegram"
+                if [[ "$NON_INTERACTIVE" != "true" ]]; then
+                    read -rp "Telegram Bot Token: " ALERT_TELEGRAM_TOKEN
+                    read -rp "Telegram Chat ID: " ALERT_TELEGRAM_CHAT_ID
+                fi
+            fi
+            ;;
+        *) ALERT_MODE="none";;
+    esac
+    echo ""
+
+    # --- Backups ---
+    echo "Настройка бэкапов:"
+    echo "  1) Локально (/var/backups/agmind/)"
+    echo "  2) Удалённо (SCP/rsync)"
+    echo "  3) Оба варианта"
+    echo ""
+    if [[ "$NON_INTERACTIVE" != "true" ]]; then
+        while true; do
+            read -rp "Куда сохранять [1-3, Enter=1]: " choice
+            choice="${choice:-1}"
+            case "$choice" in
+                1) BACKUP_TARGET="local"; break;;
+                2) BACKUP_TARGET="remote"; break;;
+                3) BACKUP_TARGET="both"; break;;
+                *) echo "Введите число от 1 до 3";;
+            esac
+        done
+    else
+        BACKUP_TARGET="${BACKUP_TARGET:-local}"
+    fi
+    echo ""
+
+    echo "Расписание бэкапов:"
+    echo "  1) Ежедневно в 03:00 (по умолчанию)"
+    echo "  2) Каждые 12 часов (03:00 и 15:00)"
+    echo "  3) Своё (cron expression)"
+    echo ""
+    if [[ "$NON_INTERACTIVE" != "true" ]]; then
+        read -rp "Расписание [1-3, Enter=1]: " choice
+        choice="${choice:-1}"
+        case "$choice" in
+            2) BACKUP_SCHEDULE="0 3,15 * * *";;
+            3) read -rp "Cron expression: " BACKUP_SCHEDULE;;
+            *) BACKUP_SCHEDULE="0 3 * * *";;
+        esac
+    else
+        BACKUP_SCHEDULE="${BACKUP_SCHEDULE:-0 3 * * *}"
+    fi
+    echo ""
+
+    # Remote backup details
+    if [[ "$BACKUP_TARGET" != "local" ]]; then
+        if [[ "$NON_INTERACTIVE" != "true" ]]; then
+            read -rp "SSH хост для бэкапов: " REMOTE_BACKUP_HOST
+            read -rp "SSH порт [22]: " REMOTE_BACKUP_PORT
+            REMOTE_BACKUP_PORT="${REMOTE_BACKUP_PORT:-22}"
+            read -rp "SSH пользователь: " REMOTE_BACKUP_USER
+            read -rp "SSH ключ (путь, Enter для генерации): " REMOTE_BACKUP_KEY
+        fi
+        echo ""
+    fi
+
+    # --- Dokploy (not for offline) ---
+    if [[ "$DEPLOY_PROFILE" != "offline" ]]; then
+        echo "Подготовить ноду для Dokploy (центральный мониторинг)?"
+        echo "  1) Да (сгенерировать SSH ключ + инструкция)"
+        echo "  2) Нет (по умолчанию)"
+        echo ""
+        if [[ "$NON_INTERACTIVE" != "true" ]]; then
+            read -rp "Dokploy [1-2, Enter=2]: " choice
+            choice="${choice:-2}"
+        else
+            choice="${DOKPLOY_CHOICE:-2}"
+        fi
+        if [[ "$choice" == "1" ]]; then
+            DOKPLOY_ENABLED="yes"
+        fi
+        echo ""
+    fi
+
+    # --- Reverse SSH (LAN only) ---
+    if [[ "$DEPLOY_PROFILE" == "lan" ]]; then
+        echo "Настроить удалённый доступ для обслуживания?"
+        echo "  1) Да (SSH tunnel к VPS)"
+        echo "  2) Нет (по умолчанию)"
+        echo ""
+        if [[ "$NON_INTERACTIVE" != "true" ]]; then
+            read -rp "Tunnel [1-2, Enter=2]: " choice
+            choice="${choice:-2}"
+        else
+            choice="${TUNNEL_CHOICE:-2}"
+        fi
+        if [[ "$choice" == "1" ]]; then
+            if [[ "$NON_INTERACTIVE" != "true" ]]; then
+                read -rp "VPS хост: " TUNNEL_VPS_HOST
+                read -rp "VPS порт SSH [22]: " TUNNEL_VPS_PORT
+                TUNNEL_VPS_PORT="${TUNNEL_VPS_PORT:-22}"
+                read -rp "Порт на VPS для проброса [8080]: " TUNNEL_REMOTE_PORT
+                TUNNEL_REMOTE_PORT="${TUNNEL_REMOTE_PORT:-8080}"
+            fi
+        fi
+        echo ""
+    fi
+
+    # --- Summary ---
+    echo -e "${CYAN}=== Параметры установки ===${NC}"
+    echo "  Профиль:      ${DEPLOY_PROFILE}"
+    [[ -n "$DOMAIN" ]] && echo "  Домен:        ${DOMAIN}"
+    echo "  Компания:     ${COMPANY_NAME}"
+    echo "  Векторное БД: ${VECTOR_STORE}"
+    [[ "$ETL_ENHANCED" == "yes" ]] && echo "  ETL:          Docling + Xinference"
+    echo "  LLM:          ${LLM_MODEL}"
+    echo "  Embedding:    ${EMBEDDING_MODEL}"
+    echo "  Админ:        ${ADMIN_EMAIL}"
+    [[ "$TLS_MODE" != "none" ]] && echo "  TLS:          ${TLS_MODE}"
+    [[ "$MONITORING_MODE" != "none" ]] && echo "  Мониторинг:   ${MONITORING_MODE}"
+    [[ "$ALERT_MODE" != "none" ]] && echo "  Алерты:       ${ALERT_MODE}"
+    echo "  Бэкап:        ${BACKUP_TARGET} (${BACKUP_SCHEDULE})"
+    [[ -n "$DOKPLOY_ENABLED" ]] && echo "  Dokploy:      да"
+    [[ -n "$TUNNEL_VPS_HOST" ]] && echo "  Tunnel:       ${TUNNEL_VPS_HOST}:${TUNNEL_REMOTE_PORT}"
+    echo ""
+
+    if [[ "$NON_INTERACTIVE" != "true" ]]; then
+        read -rp "Начать установку? (yes/no): " CONFIRM
+        if [[ "$CONFIRM" != "yes" ]]; then
+            echo "Отменено."
+            exit 0
+        fi
+    fi
+    echo ""
+}
+
+# ============================================================================
+# PHASE 3: Install Docker
+# ============================================================================
+phase_docker() {
+    echo -e "${BOLD}[3/11] Docker${NC}"
+    setup_docker
+    echo ""
+}
+
+# ============================================================================
+# PHASE 4: Generate Configuration
+# ============================================================================
+phase_config() {
+    echo -e "${BOLD}[4/11] Генерация конфигурации${NC}"
+
+    # Export variables for config.sh
+    export INSTALL_DIR ADMIN_EMAIL ADMIN_PASSWORD COMPANY_NAME
+    export LLM_MODEL EMBEDDING_MODEL DOMAIN CERTBOT_EMAIL
+    export DEPLOY_PROFILE VECTOR_STORE ETL_ENHANCED
+    export TLS_MODE TLS_CERT_PATH TLS_KEY_PATH
+    export MONITORING_MODE MONITORING_ENDPOINT MONITORING_TOKEN
+    export ALERT_MODE ALERT_WEBHOOK_URL ALERT_TELEGRAM_TOKEN ALERT_TELEGRAM_CHAT_ID
+
+    generate_config "$DEPLOY_PROFILE" "$TEMPLATE_DIR"
+    enable_gpu_compose
+
+    # Copy workflow files
+    cp "${INSTALLER_DIR}/workflows/rag-assistant.json" "${INSTALL_DIR}/workflows/" 2>/dev/null || \
+        cp "${INSTALLER_DIR}/references/rag-assistant-mvp-workflow.json" "${INSTALL_DIR}/workflows/rag-assistant.json"
+    cp "${INSTALLER_DIR}/workflows/import.py" "${INSTALL_DIR}/workflows/"
+
+    # Copy scripts
+    cp "${INSTALLER_DIR}/scripts/backup.sh" "${INSTALL_DIR}/scripts/"
+    cp "${INSTALLER_DIR}/scripts/restore.sh" "${INSTALL_DIR}/scripts/"
+    cp "${INSTALLER_DIR}/scripts/uninstall.sh" "${INSTALL_DIR}/scripts/"
+    cp "${INSTALLER_DIR}/lib/health.sh" "${INSTALL_DIR}/scripts/health.sh"
+    chmod +x "${INSTALL_DIR}/scripts/"*.sh
+
+    # Copy branding
+    if [[ -n "$LOGO_PATH" && -f "$LOGO_PATH" ]]; then
+        cp "$LOGO_PATH" "${INSTALL_DIR}/branding/logo.svg"
+    else
+        cp "${INSTALLER_DIR}/branding/logo.svg" "${INSTALL_DIR}/branding/"
+    fi
+    cp "${INSTALLER_DIR}/branding/theme.json" "${INSTALL_DIR}/branding/"
+
+    # Create squid config for SSRF proxy
+    create_squid_config
+
+    echo ""
+}
+
+create_squid_config() {
+    local squid_dir="${INSTALL_DIR}/docker/volumes/ssrf_proxy"
+    mkdir -p "$squid_dir"
+    cat > "${squid_dir}/squid.conf" << 'SQUIDEOF'
+acl localnet src 0.0.0.0/8
+acl localnet src 10.0.0.0/8
+acl localnet src 100.64.0.0/10
+acl localnet src 169.254.0.0/16
+acl localnet src 172.16.0.0/12
+acl localnet src 192.168.0.0/16
+acl localnet src fc00::/7
+acl localnet src fe80::/10
+
+acl SSL_ports port 443
+acl Safe_ports port 80
+acl Safe_ports port 21
+acl Safe_ports port 443
+acl Safe_ports port 70
+acl Safe_ports port 210
+acl Safe_ports port 1025-65535
+acl Safe_ports port 280
+acl Safe_ports port 488
+acl Safe_ports port 591
+acl Safe_ports port 777
+
+acl CONNECT method CONNECT
+
+http_access deny !Safe_ports
+http_access deny CONNECT !SSL_ports
+http_access allow localhost manager
+http_access deny manager
+http_access allow localhost
+http_access allow localnet
+http_access deny all
+
+http_port 3128
+
+coredump_dir /var/spool/squid
+
+refresh_pattern ^ftp:           1440    20%     10080
+refresh_pattern ^gopher:        1440    0%      1440
+refresh_pattern -i (/cgi-bin/|\?) 0     0%      0
+refresh_pattern .               0       20%     4320
+
+dns_nameservers 8.8.8.8 8.8.4.4
+SQUIDEOF
+}
+
+# ============================================================================
+# PHASE 5: Start Stack
+# ============================================================================
+phase_start() {
+    echo -e "${BOLD}[5/11] Запуск контейнеров${NC}"
+
+    cd "${INSTALL_DIR}/docker"
+
+    # Build compose profiles dynamically
+    local profiles=""
+    [[ "$DEPLOY_PROFILE" == "vps" ]] && profiles="vps"
+    [[ "$VECTOR_STORE" == "qdrant" ]] && profiles="${profiles:+$profiles,}qdrant"
+    [[ "$VECTOR_STORE" == "weaviate" ]] && profiles="${profiles:+$profiles,}weaviate"
+    [[ "$ETL_ENHANCED" == "yes" ]] && profiles="${profiles:+$profiles,}etl"
+    [[ "$MONITORING_MODE" == "local" ]] && profiles="${profiles:+$profiles,}monitoring"
+
+    if [[ "$DEPLOY_PROFILE" == "offline" ]]; then
+        if [[ -n "$profiles" ]]; then
+            COMPOSE_PROFILES="${profiles}" docker compose up -d --pull never
+        else
+            docker compose up -d --pull never
+        fi
+    elif [[ -n "$profiles" ]]; then
+        COMPOSE_PROFILES="${profiles}" docker compose up -d
+    else
+        docker compose up -d
+    fi
+
+    echo ""
+}
+
+# ============================================================================
+# PHASE 6: Wait for healthy
+# ============================================================================
+phase_health() {
+    echo -e "${BOLD}[6/11] Проверка здоровья${NC}"
+    export INSTALL_DIR
+    wait_healthy 300
+    echo ""
+}
+
+# ============================================================================
+# PHASE 7: Download Models
+# ============================================================================
+phase_models() {
+    echo -e "${BOLD}[7/11] Загрузка моделей${NC}"
+    export INSTALL_DIR LLM_MODEL EMBEDDING_MODEL DEPLOY_PROFILE
+    download_models
+    echo ""
+}
+
+# ============================================================================
+# PHASE 8: Import Workflow
+# ============================================================================
+phase_workflow() {
+    echo -e "${BOLD}[8/11] Импорт workflow${NC}"
+    export INSTALL_DIR ADMIN_EMAIL ADMIN_PASSWORD LLM_MODEL EMBEDDING_MODEL COMPANY_NAME
+
+    # Read admin token to construct the correct URL path through nginx
+    local admin_token
+    admin_token=$(grep '^ADMIN_TOKEN=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "")
+
+    # Use the admin token path so import.py can reach /console/api/* through nginx
+    # (nginx blocks direct /console/* access, only allows /__ADMIN_TOKEN__/console/api/*)
+    export DIFY_INTERNAL_URL="http://localhost"
+    export DIFY_CONSOLE_PREFIX="/${admin_token}"
+
+    import_workflow
+
+    # Update .env with the Dify API key for pipeline
+    if [[ -f "${INSTALL_DIR}/.dify_service_api_key" ]]; then
+        local api_key
+        api_key=$(cat "${INSTALL_DIR}/.dify_service_api_key")
+        sed -i.bak "s|^DIFY_API_KEY=.*|DIFY_API_KEY=${api_key}|g" \
+            "${INSTALL_DIR}/docker/.env"
+        rm -f "${INSTALL_DIR}/docker/.env.bak"
+
+        # Restart pipeline and Open WebUI with new API key
+        docker compose -f "${INSTALL_DIR}/docker/docker-compose.yml" restart pipeline open-webui
+    fi
+    echo ""
+}
+
+# ============================================================================
+# PHASE 9: Setup Backups
+# ============================================================================
+phase_backups() {
+    echo -e "${BOLD}[9/11] Настройка бэкапов${NC}"
+    export INSTALL_DIR BACKUP_TARGET BACKUP_SCHEDULE
+    export REMOTE_BACKUP_HOST REMOTE_BACKUP_PORT REMOTE_BACKUP_USER
+    export REMOTE_BACKUP_KEY REMOTE_BACKUP_PATH
+    setup_backups
+    echo ""
+}
+
+# ============================================================================
+# PHASE 10: Dokploy + Tunnel
+# ============================================================================
+phase_connectivity() {
+    echo -e "${BOLD}[10/11] Подключения${NC}"
+
+    # Dokploy
+    export DEPLOY_PROFILE DOKPLOY_ENABLED
+    export TUNNEL_REMOTE_PORT TUNNEL_SSH_REMOTE_PORT TUNNEL_VPS_HOST
+    setup_dokploy
+
+    # Reverse SSH tunnel (LAN only)
+    if [[ "$DEPLOY_PROFILE" == "lan" && -n "$TUNNEL_VPS_HOST" ]]; then
+        export INSTALL_DIR TUNNEL_VPS_HOST TUNNEL_VPS_PORT TUNNEL_REMOTE_PORT TUNNEL_LOCAL_PORT
+        export TUNNEL_SSH_REMOTE_PORT
+        setup_tunnel
+    fi
+    echo ""
+}
+
+# ============================================================================
+# PHASE 11: Final Output
+# ============================================================================
+phase_complete() {
+    # Determine access URL
+    local access_url=""
+    case "$DEPLOY_PROFILE" in
+        vps)
+            if [[ -n "$DOMAIN" ]]; then
+                access_url="https://${DOMAIN}"
+            else
+                access_url="http://$(curl -s ifconfig.me 2>/dev/null || echo 'YOUR_IP')"
+            fi
+            ;;
+        lan|vpn)
+            local lan_ip
+            lan_ip=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "192.168.x.x")
+            access_url="http://${lan_ip}"
+            ;;
+        offline)
+            local lan_ip
+            lan_ip=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "192.168.x.x")
+            access_url="http://${lan_ip}"
+            ;;
+    esac
+
+    local admin_pass
+    admin_pass=$(cat "${INSTALL_DIR}/.admin_password" 2>/dev/null || echo "$ADMIN_PASSWORD")
+
+    local admin_token
+    admin_token=$(grep '^ADMIN_TOKEN=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "UNKNOWN")
+    local dify_url="${access_url}/${admin_token}/"
+
+    echo ""
+    echo -e "${GREEN}"
+    echo "╔════════════════════════════════════════════════╗"
+    echo "║              AGMind установлен!                ║"
+    echo "╠════════════════════════════════════════════════╣"
+    echo "║                                                ║"
+    printf "║  Профиль:   %-35s║\n" "$DEPLOY_PROFILE"
+    printf "║  URL:       %-35s║\n" "$access_url"
+    printf "║  Логин:     %-35s║\n" "$ADMIN_EMAIL"
+    printf "║  Пароль:    %-35s║\n" "$admin_pass"
+    echo "║                                                ║"
+    printf "║  Модель:    %-35s║\n" "$LLM_MODEL"
+    printf "║  Embedding: %-35s║\n" "$EMBEDDING_MODEL"
+    echo "║  KB:        Documents (пустая)                 ║"
+    echo "║                                                ║"
+    printf "║  Бэкап:     %-35s║\n" "$BACKUP_SCHEDULE"
+    echo "║              /var/backups/agmind/              ║"
+    echo "║                                                ║"
+    if [[ -n "$DOKPLOY_ENABLED" ]]; then
+        echo "║  Dokploy:   нода подготовлена                  ║"
+    fi
+    if [[ -n "$TUNNEL_VPS_HOST" ]]; then
+        printf "║  Tunnel:    %-35s║\n" "${TUNNEL_VPS_HOST}:${TUNNEL_REMOTE_PORT} -> local:${TUNNEL_LOCAL_PORT}"
+    fi
+    echo "║                                                ║"
+    printf "║  Вектор:    %-35s║\n" "$VECTOR_STORE"
+    [[ "$ETL_ENHANCED" == "yes" ]] && echo "║  ETL:       Docling + Xinference reranker       ║"
+    [[ "$TLS_MODE" != "none" ]] && printf "║  TLS:       %-35s║\n" "$TLS_MODE"
+    if [[ "$MONITORING_MODE" == "local" ]]; then
+        local lan_ip_mon
+        lan_ip_mon=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
+        local grafana_pass
+        grafana_pass=$(grep '^GRAFANA_ADMIN_PASSWORD=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "admin")
+        printf "║  Grafana:   %-35s║\n" "http://${lan_ip_mon}:3001"
+        printf "║  Gr.пароль: %-35s║\n" "$grafana_pass"
+        printf "║  Portainer: %-35s║\n" "https://${lan_ip_mon}:9443"
+    fi
+    [[ "$ALERT_MODE" != "none" ]] && printf "║  Алерты:    %-35s║\n" "$ALERT_MODE"
+    echo "║                                                ║"
+    echo "║  Dify Console (секретный URL):                 ║"
+    echo "║  ${dify_url}"
+    echo "║                                                ║"
+    echo "║  Логи:      cd /opt/agmind/docker &&           ║"
+    echo "║             docker compose logs -f             ║"
+    echo "║  Бэкап:     /opt/agmind/scripts/backup.sh     ║"
+    echo "║  Статус:    /opt/agmind/scripts/health.sh     ║"
+    echo "║  Удаление:  /opt/agmind/scripts/uninstall.sh  ║"
+    echo "║                                                ║"
+    echo "╚════════════════════════════════════════════════╝"
+    echo -e "${NC}"
+}
+
+# ============================================================================
+# MAIN
+# ============================================================================
+main() {
+    # Parse arguments
+    for arg in "$@"; do
+        case "$arg" in
+            --non-interactive) NON_INTERACTIVE=true;;
+        esac
+    done
+
+    # Check root
+    if [[ "$(id -u)" -ne 0 && "$(uname)" != "Darwin" ]]; then
+        echo -e "${RED}Запустите от root: sudo bash install.sh${NC}"
+        exit 1
+    fi
+
+    show_banner
+
+    phase_diagnostics  # [1/11]
+    phase_wizard       # [2/11]
+    phase_docker       # [3/11]
+    phase_config       # [4/11]
+    phase_start        # [5/11]
+    phase_health       # [6/11]
+    phase_models       # [7/11]
+    phase_workflow     # [8/11]
+    phase_backups      # [9/11]
+    phase_connectivity # [10/11]
+    phase_complete     # [11/11]
+}
+
+main "$@"

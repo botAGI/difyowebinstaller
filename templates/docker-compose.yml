@@ -1,0 +1,487 @@
+x-shared-env: &shared-env
+  # --- Core ---
+  SECRET_KEY: ${SECRET_KEY:-}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  EDITION: SELF_HOSTED
+  DEPLOY_ENV: ${DEPLOY_ENV:-PRODUCTION}
+  CONSOLE_WEB_URL: ${CONSOLE_WEB_URL:-}
+  CONSOLE_API_URL: ${CONSOLE_API_URL:-}
+  SERVICE_API_URL: ${SERVICE_API_URL:-}
+  APP_API_URL: ${APP_API_URL:-}
+  APP_WEB_URL: ${APP_WEB_URL:-}
+  FILES_URL: ${FILES_URL:-}
+  FILES_ACCESS_TIMEOUT: ${FILES_ACCESS_TIMEOUT:-300}
+  MIGRATION_ENABLED: ${MIGRATION_ENABLED:-true}
+  # --- Init admin ---
+  INIT_PASSWORD: ${INIT_PASSWORD:-}
+  # --- Database ---
+  DB_USERNAME: ${DB_USERNAME:-postgres}
+  DB_PASSWORD: ${DB_PASSWORD:-}
+  DB_HOST: ${DB_HOST:-db}
+  DB_PORT: ${DB_PORT:-5432}
+  DB_DATABASE: ${DB_DATABASE:-dify}
+  SQLALCHEMY_POOL_SIZE: ${SQLALCHEMY_POOL_SIZE:-30}
+  SQLALCHEMY_POOL_RECYCLE: ${SQLALCHEMY_POOL_RECYCLE:-3600}
+  SQLALCHEMY_ECHO: ${SQLALCHEMY_ECHO:-false}
+  # --- Redis ---
+  REDIS_HOST: ${REDIS_HOST:-redis}
+  REDIS_PORT: ${REDIS_PORT:-6379}
+  REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+  REDIS_DB: ${REDIS_DB:-0}
+  REDIS_USE_SSL: ${REDIS_USE_SSL:-false}
+  CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-}@${REDIS_HOST:-redis}:${REDIS_PORT:-6379}/1
+  BROKER_USE_SSL: ${BROKER_USE_SSL:-false}
+  # --- Storage ---
+  STORAGE_TYPE: ${STORAGE_TYPE:-local}
+  STORAGE_LOCAL_PATH: /app/api/storage
+  # --- Vector Store ---
+  VECTOR_STORE: ${VECTOR_STORE:-weaviate}
+  WEAVIATE_ENDPOINT: ${WEAVIATE_ENDPOINT:-http://weaviate:8080}
+  WEAVIATE_API_KEY: ${WEAVIATE_API_KEY:-WVF5YThaHlkYwhGUSmCRgsX3tD5ngdN8pkih}
+  QDRANT_HOST: ${QDRANT_HOST:-qdrant}
+  QDRANT_PORT: ${QDRANT_PORT:-6333}
+  QDRANT_API_KEY: ${QDRANT_API_KEY:-}
+  # --- Mail (disabled) ---
+  MAIL_TYPE: ${MAIL_TYPE:-}
+  MAIL_DEFAULT_SEND_FROM: ${MAIL_DEFAULT_SEND_FROM:-}
+  # --- SSRF ---
+  SSRF_PROXY_HTTP_URL: ${SSRF_PROXY_HTTP_URL:-http://ssrf_proxy:3128}
+  SSRF_PROXY_HTTPS_URL: ${SSRF_PROXY_HTTPS_URL:-http://ssrf_proxy:3128}
+  # --- Sandbox ---
+  CODE_EXECUTION_ENDPOINT: ${CODE_EXECUTION_ENDPOINT:-http://sandbox:8194}
+  CODE_EXECUTION_API_KEY: ${SANDBOX_API_KEY:-dify-sandbox}
+  CODE_MAX_NUMBER: ${CODE_MAX_NUMBER:-9223372036854775807}
+  CODE_MIN_NUMBER: ${CODE_MIN_NUMBER:--9223372036854775808}
+  CODE_MAX_DEPTH: ${CODE_MAX_DEPTH:-5}
+  CODE_MAX_PRECISION: ${CODE_MAX_PRECISION:-20}
+  CODE_MAX_STRING_LENGTH: ${CODE_MAX_STRING_LENGTH:-80000}
+  CODE_MAX_STRING_ARRAY_LENGTH: ${CODE_MAX_STRING_ARRAY_LENGTH:-30}
+  CODE_MAX_OBJECT_ARRAY_LENGTH: ${CODE_MAX_OBJECT_ARRAY_LENGTH:-30}
+  CODE_MAX_NUMBER_ARRAY_LENGTH: ${CODE_MAX_NUMBER_ARRAY_LENGTH:-1000}
+  TEMPLATE_TRANSFORM_MAX_LENGTH: ${TEMPLATE_TRANSFORM_MAX_LENGTH:-80000}
+  # --- Indexing ---
+  INDEXING_MAX_SEGMENTATION_TOKENS_LENGTH: ${INDEXING_MAX_SEGMENTATION_TOKENS_LENGTH:-4000}
+  # --- ETL ---
+  ETL_TYPE: ${ETL_TYPE:-dify}
+  UNSTRUCTURED_API_URL: ${UNSTRUCTURED_API_URL:-}
+  # --- Marketplace ---
+  MARKETPLACE_ENABLED: ${MARKETPLACE_ENABLED:-true}
+  CHECK_UPDATE_URL: ${CHECK_UPDATE_URL:-https://updates.dify.ai}
+  # --- Plugin Daemon ---
+  PLUGIN_API_URL: ${PLUGIN_API_URL:-http://plugin_daemon:5002}
+  PLUGIN_API_KEY: ${PLUGIN_DAEMON_KEY:-}
+  INNER_API_KEY_FOR_PLUGIN: ${PLUGIN_INNER_API_KEY:-}
+  # --- Ollama ---
+  OLLAMA_API_BASE: ${OLLAMA_API_BASE:-http://ollama:11434}
+
+services:
+  # ==================== Dify API ====================
+  api:
+    image: langgenius/dify-api:${DIFY_VERSION:-1.13.0}
+    container_name: agmind-api
+    restart: always
+    environment:
+      <<: *shared-env
+      MODE: api
+    volumes:
+      - ./volumes/app/storage:/app/api/storage
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      sandbox:
+        condition: service_started
+    networks:
+      - agmind-network
+      - ssrf-network
+
+  # ==================== Dify Worker ====================
+  worker:
+    image: langgenius/dify-api:${DIFY_VERSION:-1.13.0}
+    container_name: agmind-worker
+    restart: always
+    environment:
+      <<: *shared-env
+      MODE: worker
+    volumes:
+      - ./volumes/app/storage:/app/api/storage
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - agmind-network
+      - ssrf-network
+
+  # ==================== Dify Web (Console UI) ====================
+  web:
+    image: langgenius/dify-web:${DIFY_VERSION:-1.13.0}
+    container_name: agmind-web
+    restart: always
+    environment:
+      CONSOLE_API_URL: ${CONSOLE_API_URL:-}
+      APP_API_URL: ${APP_API_URL:-}
+      SENTRY_DSN: ${WEB_SENTRY_DSN:-}
+      NEXT_TELEMETRY_DISABLED: ${NEXT_TELEMETRY_DISABLED:-1}
+    networks:
+      - agmind-network
+
+  # ==================== Pipeline (OpenAI-compatible proxy to Dify) ====================
+  pipeline:
+    build:
+      context: ./pipeline
+      dockerfile: Dockerfile
+    container_name: agmind-pipeline
+    restart: always
+    expose:
+      - "9099"
+    environment:
+      DIFY_BASE_URL: http://api:5001
+      DIFY_API_KEY: ${DIFY_API_KEY:-}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9099/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      api:
+        condition: service_started
+    networks:
+      - agmind-network
+
+  # ==================== Open WebUI ====================
+  # WARNING: Version pinned for white-label/re-branding compatibility.
+  # Do NOT change to :main or :latest without verifying branding features still work.
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:v0.5.20
+    container_name: agmind-openwebui
+    restart: always
+    environment:
+      - WEBUI_NAME=${COMPANY_NAME:-AGMind}
+      - ENABLE_SIGNUP=${ENABLE_SIGNUP:-false}
+      - ENABLE_LOGIN_FORM=true
+      - DEFAULT_USER_ROLE=user
+      - WEBUI_AUTH=true
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OPENAI_API_BASE_URLS=http://pipeline:9099/v1
+      - OPENAI_API_KEYS=${DIFY_API_KEY:-sk-placeholder}
+      - ENABLE_OLLAMA_API=${ENABLE_OLLAMA_API:-false}
+      - ENABLE_OPENAI_API=true
+    volumes:
+      - openwebui_data:/app/backend/data
+    depends_on:
+      pipeline:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    networks:
+      - agmind-network
+
+  # ==================== Ollama ====================
+  ollama:
+    image: ollama/ollama:${OLLAMA_VERSION:-latest}
+    container_name: agmind-ollama
+    restart: always
+    volumes:
+      - ollama_data:/root/.ollama
+    #__GPU__deploy:
+    #__GPU__  resources:
+    #__GPU__    reservations:
+    #__GPU__      devices:
+    #__GPU__        - driver: nvidia
+    #__GPU__          count: all
+    #__GPU__          capabilities: [gpu]
+    networks:
+      - agmind-network
+
+  # ==================== PostgreSQL ====================
+  db:
+    image: postgres:${POSTGRES_VERSION:-15-alpine}
+    container_name: agmind-db
+    restart: always
+    environment:
+      PGUSER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-}
+      POSTGRES_DB: ${DB_DATABASE:-dify}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    command: >
+      postgres -c 'max_connections=128'
+               -c 'shared_buffers=256MB'
+               -c 'work_mem=16MB'
+               -c 'maintenance_work_mem=128MB'
+               -c 'effective_cache_size=512MB'
+    volumes:
+      - ./volumes/db/data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${DB_USERNAME:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - agmind-network
+
+  # ==================== Redis ====================
+  redis:
+    image: redis:${REDIS_VERSION:-7-alpine}
+    container_name: agmind-redis
+    restart: always
+    command: redis-server --requirepass ${REDIS_PASSWORD:-} --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - ./volumes/redis/data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - agmind-network
+
+  # ==================== Weaviate ====================
+  weaviate:
+    image: semitechnologies/weaviate:${WEAVIATE_VERSION:-1.19.0}
+    container_name: agmind-weaviate
+    restart: always
+    profiles:
+      - weaviate
+    environment:
+      QUERY_DEFAULTS_LIMIT: 25
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "false"
+      AUTHENTICATION_APIKEY_ENABLED: "true"
+      AUTHENTICATION_APIKEY_ALLOWED_KEYS: ${WEAVIATE_API_KEY:-WVF5YThaHlkYwhGUSmCRgsX3tD5ngdN8pkih}
+      AUTHENTICATION_APIKEY_USERS: hello@dify.ai
+      AUTHORIZATION_ADMINLIST_ENABLED: "true"
+      AUTHORIZATION_ADMINLIST_USERS: hello@dify.ai
+      PERSISTENCE_DATA_PATH: /var/lib/weaviate
+      DEFAULT_VECTORIZER_MODULE: none
+      CLUSTER_HOSTNAME: node1
+    volumes:
+      - ./volumes/weaviate:/var/lib/weaviate
+    networks:
+      - agmind-network
+
+  # ==================== Qdrant (alternative vector store) ====================
+  qdrant:
+    image: qdrant/qdrant:${QDRANT_VERSION:-v1.12.1}
+    container_name: agmind-qdrant
+    restart: always
+    profiles:
+      - qdrant
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:-}
+    volumes:
+      - ./volumes/qdrant:/qdrant/storage
+    networks:
+      - agmind-network
+
+  # ==================== Docling (ETL service) ====================
+  docling:
+    image: ds4sd/docling-serve:${DOCLING_VERSION:-latest}
+    container_name: agmind-docling
+    restart: always
+    profiles:
+      - etl
+    expose:
+      - "8765"
+    command: ["--port", "8765", "--host", "0.0.0.0"]
+    networks:
+      - agmind-network
+
+  # ==================== Xinference (Reranker) ====================
+  xinference:
+    image: xprobe/xinference:${XINFERENCE_VERSION:-latest}
+    container_name: agmind-xinference
+    restart: always
+    profiles:
+      - etl
+    expose:
+      - "9997"
+    command: ["--host", "0.0.0.0", "--port", "9997"]
+    volumes:
+      - xinference_data:/root/.xinference
+    #__GPU__deploy:
+    #__GPU__  resources:
+    #__GPU__    reservations:
+    #__GPU__      devices:
+    #__GPU__        - driver: nvidia
+    #__GPU__          count: all
+    #__GPU__          capabilities: [gpu]
+    networks:
+      - agmind-network
+
+  # ==================== Sandbox (Code Execution) ====================
+  sandbox:
+    image: langgenius/dify-sandbox:${SANDBOX_VERSION:-0.2.12}
+    container_name: agmind-sandbox
+    restart: always
+    environment:
+      API_KEY: ${SANDBOX_API_KEY:-dify-sandbox}
+      GIN_MODE: release
+      WORKER_TIMEOUT: ${SANDBOX_WORKER_TIMEOUT:-15}
+      ENABLE_NETWORK: ${SANDBOX_ENABLE_NETWORK:-true}
+      HTTP_PROXY: ${SSRF_PROXY_HTTP_URL:-http://ssrf_proxy:3128}
+      HTTPS_PROXY: ${SSRF_PROXY_HTTPS_URL:-http://ssrf_proxy:3128}
+      SANDBOX_PORT: ${SANDBOX_PORT:-8194}
+    volumes:
+      - ./volumes/sandbox/conf:/conf
+    networks:
+      - ssrf-network
+
+  # ==================== SSRF Proxy ====================
+  ssrf_proxy:
+    image: ubuntu/squid:${SQUID_VERSION:-latest}
+    container_name: agmind-ssrf-proxy
+    restart: always
+    volumes:
+      - ./volumes/ssrf_proxy/squid.conf:/etc/squid/squid.conf
+    networks:
+      - ssrf-network
+      - agmind-network
+
+  # ==================== Plugin Daemon ====================
+  plugin_daemon:
+    image: langgenius/dify-plugin-daemon:${PLUGIN_DAEMON_VERSION:-0.1.0-local}
+    container_name: agmind-plugin-daemon
+    restart: always
+    environment:
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-}
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_DATABASE: ${PLUGIN_DB_DATABASE:-dify_plugin}
+      SERVER_PORT: ${PLUGIN_DAEMON_PORT:-5002}
+      SERVER_KEY: ${PLUGIN_DAEMON_KEY:-}
+      INNER_API_KEY: ${PLUGIN_INNER_API_KEY:-}
+      DIFY_INNER_API_URL: ${PLUGIN_DIFY_INNER_API_URL:-http://api:5001}
+      STORAGE_TYPE: ${PLUGIN_STORAGE_TYPE:-local}
+      STORAGE_LOCAL_PATH: ${PLUGIN_STORAGE_LOCAL_PATH:-/app/storage}
+      PLATFORM: local
+      MAX_PLUGIN_PACKAGE_SIZE: ${MAX_PLUGIN_PACKAGE_SIZE:-52428800}
+      PPROF_ENABLED: ${PLUGIN_PPROF_ENABLED:-false}
+    volumes:
+      - ./volumes/plugin_daemon/storage:/app/storage
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - agmind-network
+
+  # ==================== Nginx ====================
+  nginx:
+    image: nginx:${NGINX_VERSION:-alpine}
+    container_name: agmind-nginx
+    restart: always
+    ports:
+      - "${EXPOSE_NGINX_PORT:-80}:80"
+      - "${EXPOSE_NGINX_SSL_PORT:-443}:443"
+    environment:
+      NGINX_SERVER_NAME: ${NGINX_SERVER_NAME:-_}
+      NGINX_HTTPS_ENABLED: ${NGINX_HTTPS_ENABLED:-false}
+      NGINX_SSL_PORT: ${NGINX_SSL_PORT:-443}
+      NGINX_PORT: ${NGINX_PORT:-80}
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./volumes/certbot/conf:/etc/letsencrypt:ro
+      - ./volumes/certbot/www:/var/www/certbot:ro
+      - ./volumes/certbot/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - api
+      - web
+      - open-webui
+      - pipeline
+    networks:
+      - agmind-network
+
+  # ==================== Prometheus (monitoring profile) ====================
+  prometheus:
+    image: prom/prometheus:${PROMETHEUS_VERSION:-latest}
+    container_name: agmind-prometheus
+    restart: always
+    profiles:
+      - monitoring
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - agmind-network
+
+  # ==================== cAdvisor (monitoring profile) ====================
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:${CADVISOR_VERSION:-latest}
+    container_name: agmind-cadvisor
+    restart: always
+    profiles:
+      - monitoring
+    expose:
+      - "8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - agmind-network
+
+  # ==================== Grafana (monitoring profile) ====================
+  grafana:
+    image: grafana/grafana:${GRAFANA_VERSION:-latest}
+    container_name: agmind-grafana
+    restart: always
+    profiles:
+      - monitoring
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    networks:
+      - agmind-network
+
+  # ==================== Portainer (monitoring profile) ====================
+  portainer:
+    image: portainer/portainer-ce:${PORTAINER_VERSION:-latest}
+    container_name: agmind-portainer
+    restart: always
+    profiles:
+      - monitoring
+    ports:
+      - "${PORTAINER_PORT:-9443}:9443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    networks:
+      - agmind-network
+
+  # ==================== Certbot (VPS profile only) ====================
+  certbot:
+    image: certbot/certbot:${CERTBOT_VERSION:-latest}
+    container_name: agmind-certbot
+    profiles:
+      - vps
+    volumes:
+      - ./volumes/certbot/conf:/etc/letsencrypt
+      - ./volumes/certbot/www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    networks:
+      - agmind-network
+
+networks:
+  agmind-network:
+    driver: bridge
+  ssrf-network:
+    driver: bridge
+    internal: true
+
+volumes:
+  openwebui_data:
+  ollama_data:
+  xinference_data:
+  grafana_data:
+  portainer_data:
+  prometheus_data:
