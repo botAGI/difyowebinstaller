@@ -6,6 +6,18 @@
 # ============================================================================
 set -euo pipefail
 
+# Cleanup on failure
+cleanup_on_failure() {
+    local exit_code=$?
+    if [[ $exit_code -ne 0 ]]; then
+        echo ""
+        echo -e "${RED}Установка прервана (код: ${exit_code}).${NC}"
+        echo -e "${YELLOW}Частично созданные файлы могут остаться в ${INSTALL_DIR}${NC}"
+        echo -e "${YELLOW}Для очистки: rm -rf ${INSTALL_DIR}${NC}"
+    fi
+}
+trap cleanup_on_failure EXIT
+
 # --- Constants ---
 VERSION="1.0.0"
 INSTALLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,6 +38,8 @@ source "${INSTALLER_DIR}/lib/tunnel.sh"
 source "${INSTALLER_DIR}/lib/backup.sh"
 source "${INSTALLER_DIR}/lib/dokploy.sh"
 source "${INSTALLER_DIR}/lib/health.sh"
+source "${INSTALLER_DIR}/lib/security.sh"
+source "${INSTALLER_DIR}/lib/authelia.sh"
 
 # --- Global state ---
 DEPLOY_PROFILE=""
@@ -63,6 +77,11 @@ ALERT_WEBHOOK_URL=""
 ALERT_TELEGRAM_TOKEN=""
 ALERT_TELEGRAM_CHAT_ID=""
 NON_INTERACTIVE=false
+ENABLE_UFW="false"
+ENABLE_FAIL2BAN="false"
+ENABLE_SOPS="false"
+ENABLE_SECRET_ROTATION="false"
+ENABLE_AUTHELIA="false"
 
 # ============================================================================
 # BANNER
@@ -100,6 +119,18 @@ phase_diagnostics() {
         fi
     }
     echo ""
+
+    # Pre-flight checks (Section 6)
+    preflight_checks || {
+        if [[ "$NON_INTERACTIVE" != "true" ]]; then
+            read -rp "Есть критические ошибки. Продолжить? (yes/no): " FORCE
+            if [[ "$FORCE" != "yes" ]]; then
+                exit 1
+            fi
+        else
+            echo -e "${YELLOW}Non-interactive: продолжаем несмотря на ошибки pre-flight${NC}"
+        fi
+    }
 }
 
 # ============================================================================
@@ -310,7 +341,7 @@ phase_wizard() {
         echo ""
         if [[ -z "$ADMIN_PASSWORD" ]]; then
             ADMIN_PASSWORD=$(head -c 256 /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z0-9' | head -c 16)
-            echo -e "  Пароль сгенерирован: ${YELLOW}${ADMIN_PASSWORD}${NC}"
+            echo -e "  Пароль сгенерирован: ${YELLOW}${ADMIN_PASSWORD:0:4}****${NC} (полный пароль в конце установки)"
         fi
     else
         ADMIN_EMAIL="${ADMIN_EMAIL:-admin@admin.com}"
@@ -382,6 +413,53 @@ phase_wizard() {
         *) ALERT_MODE="none";;
     esac
     echo ""
+
+    # --- Security (not for offline) ---
+    if [[ "$DEPLOY_PROFILE" != "offline" ]]; then
+        echo "Безопасность:"
+        if [[ "$DEPLOY_PROFILE" == "vps" ]]; then
+            echo "  UFW файрвол будет настроен автоматически (VPS)"
+            ENABLE_UFW="true"
+        else
+            echo "  1) Настроить UFW файрвол"
+            echo "  2) Пропустить (по умолчанию)"
+            echo ""
+            if [[ "$NON_INTERACTIVE" != "true" ]]; then
+                read -rp "UFW [1-2, Enter=2]: " choice
+                choice="${choice:-2}"
+            else
+                choice="${ENABLE_UFW_CHOICE:-2}"
+            fi
+            [[ "$choice" == "1" ]] && ENABLE_UFW="true" || ENABLE_UFW="false"
+        fi
+
+        echo "  Fail2ban (защита от bruteforce):"
+        echo "  1) Включить"
+        echo "  2) Пропустить (по умолчанию)"
+        echo ""
+        if [[ "$NON_INTERACTIVE" != "true" ]]; then
+            read -rp "Fail2ban [1-2, Enter=2]: " choice
+            choice="${choice:-2}"
+        else
+            choice="${ENABLE_FAIL2BAN_CHOICE:-2}"
+        fi
+        [[ "$choice" == "1" ]] && ENABLE_FAIL2BAN="true" || ENABLE_FAIL2BAN="false"
+        echo ""
+
+        # --- Authelia 2FA ---
+        if [[ "$DEPLOY_PROFILE" == "vps" ]]; then
+            echo ""
+            echo -e "${CYAN}Включить Authelia 2FA? (двухфакторная аутентификация)${NC}"
+            echo "  1) Нет (по умолчанию)"
+            echo "  2) Да"
+            if [[ "$NON_INTERACTIVE" != "true" ]]; then
+                read -rp "Выбор [1]: " auth_choice
+                [[ "$auth_choice" == "2" ]] && ENABLE_AUTHELIA="true"
+            else
+                [[ "${ENABLE_AUTHELIA_CHOICE:-1}" == "2" ]] && ENABLE_AUTHELIA="true"
+            fi
+        fi
+    fi
 
     # --- Backups ---
     echo "Настройка бэкапов:"
@@ -527,9 +605,16 @@ phase_config() {
     export TLS_MODE TLS_CERT_PATH TLS_KEY_PATH
     export MONITORING_MODE MONITORING_ENDPOINT MONITORING_TOKEN
     export ALERT_MODE ALERT_WEBHOOK_URL ALERT_TELEGRAM_TOKEN ALERT_TELEGRAM_CHAT_ID
+    export ENABLE_UFW ENABLE_FAIL2BAN ENABLE_SOPS ENABLE_SECRET_ROTATION ENABLE_AUTHELIA
 
     generate_config "$DEPLOY_PROFILE" "$TEMPLATE_DIR"
     enable_gpu_compose
+
+    # Security hardening
+    setup_security
+
+    # Authelia 2FA
+    [[ "$ENABLE_AUTHELIA" == "true" ]] && configure_authelia "$TEMPLATE_DIR"
 
     # Copy workflow files
     cp "${INSTALLER_DIR}/workflows/rag-assistant.json" "${INSTALL_DIR}/workflows/" 2>/dev/null || \
@@ -540,7 +625,10 @@ phase_config() {
     cp "${INSTALLER_DIR}/scripts/backup.sh" "${INSTALL_DIR}/scripts/"
     cp "${INSTALLER_DIR}/scripts/restore.sh" "${INSTALL_DIR}/scripts/"
     cp "${INSTALLER_DIR}/scripts/uninstall.sh" "${INSTALL_DIR}/scripts/"
+    cp "${INSTALLER_DIR}/scripts/update.sh" "${INSTALL_DIR}/scripts/"
     cp "${INSTALLER_DIR}/lib/health.sh" "${INSTALL_DIR}/scripts/health.sh"
+    cp "${INSTALLER_DIR}/scripts/rotate_secrets.sh" "${INSTALL_DIR}/scripts/"
+    cp "${INSTALLER_DIR}/scripts/multi-instance.sh" "${INSTALL_DIR}/scripts/"
     chmod +x "${INSTALL_DIR}/scripts/"*.sh
 
     # Copy branding
@@ -620,6 +708,7 @@ phase_start() {
     [[ "$VECTOR_STORE" == "weaviate" ]] && profiles="${profiles:+$profiles,}weaviate"
     [[ "$ETL_ENHANCED" == "yes" ]] && profiles="${profiles:+$profiles,}etl"
     [[ "$MONITORING_MODE" == "local" ]] && profiles="${profiles:+$profiles,}monitoring"
+    [[ "$ENABLE_AUTHELIA" == "true" ]] && profiles="${profiles:+$profiles,}authelia"
 
     if [[ "$DEPLOY_PROFILE" == "offline" ]]; then
         if [[ -n "$profiles" ]]; then
@@ -790,6 +879,9 @@ phase_complete() {
         printf "║  Gr.пароль: %-35s║\n" "$grafana_pass"
         printf "║  Portainer: %-35s║\n" "https://${lan_ip_mon}:9443"
     fi
+    [[ "$ENABLE_UFW" == "true" ]] && echo "║  UFW:       включён                             ║"
+    [[ "$ENABLE_FAIL2BAN" == "true" ]] && echo "║  Fail2ban:  включён                             ║"
+    [[ "$ENABLE_AUTHELIA" == "true" ]] && echo "║  Authelia:  2FA включена                         ║"
     [[ "$ALERT_MODE" != "none" ]] && printf "║  Алерты:    %-35s║\n" "$ALERT_MODE"
     echo "║                                                ║"
     echo "║  Dify Console (секретный URL):                 ║"
@@ -799,10 +891,15 @@ phase_complete() {
     echo "║             docker compose logs -f             ║"
     echo "║  Бэкап:     /opt/agmind/scripts/backup.sh     ║"
     echo "║  Статус:    /opt/agmind/scripts/health.sh     ║"
+    echo "║  Обновить:  /opt/agmind/scripts/update.sh     ║"
+    echo "║  Мульти:    /opt/agmind/scripts/multi-instance.sh ║"
     echo "║  Удаление:  /opt/agmind/scripts/uninstall.sh  ║"
     echo "║                                                ║"
     echo "╚════════════════════════════════════════════════╝"
     echo -e "${NC}"
+
+    # Mark as installed
+    date -u +"%Y-%m-%dT%H:%M:%SZ" > "${INSTALL_DIR}/.agmind_installed"
 }
 
 # ============================================================================
@@ -823,6 +920,24 @@ main() {
     fi
 
     show_banner
+
+    # Check if already installed
+    if [[ -f "${INSTALL_DIR}/.agmind_installed" ]]; then
+        echo -e "${YELLOW}AGMind уже установлен в ${INSTALL_DIR}${NC}"
+        echo "  Для обновления: ${INSTALL_DIR}/scripts/update.sh"
+        echo "  Для переустановки: ${INSTALL_DIR}/scripts/uninstall.sh && bash install.sh"
+        if [[ "$NON_INTERACTIVE" != "true" ]]; then
+            read -rp "Переустановить? (yes/no): " REINSTALL
+            if [[ "$REINSTALL" != "yes" ]]; then
+                exit 0
+            fi
+        else
+            echo -e "${RED}Non-interactive: отказ от переустановки. Используйте FORCE_REINSTALL=true.${NC}"
+            if [[ "${FORCE_REINSTALL:-false}" != "true" ]]; then
+                exit 1
+            fi
+        fi
+    fi
 
     phase_diagnostics  # [1/11]
     phase_wizard       # [2/11]

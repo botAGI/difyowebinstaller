@@ -85,13 +85,19 @@ services:
       MODE: api
     volumes:
       - ./volumes/app/storage:/app/api/storage
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5001/health || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 60s
     depends_on:
       db:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
       sandbox:
-        condition: service_started
+        condition: service_healthy
     networks:
       - agmind-network
       - ssrf-network
@@ -106,11 +112,17 @@ services:
       MODE: worker
     volumes:
       - ./volumes/app/storage:/app/api/storage
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.celery inspect ping -d celery@$$HOSTNAME 2>/dev/null || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 15s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 30s
     depends_on:
       db:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
     networks:
       - agmind-network
       - ssrf-network
@@ -125,6 +137,12 @@ services:
       APP_API_URL: ${APP_API_URL:-}
       SENTRY_DSN: ${WEB_SENTRY_DSN:-}
       NEXT_TELEMETRY_DISABLED: ${NEXT_TELEMETRY_DISABLED:-1}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000 || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 15s
     networks:
       - agmind-network
 
@@ -147,7 +165,7 @@ services:
       retries: 5
     depends_on:
       api:
-        condition: service_started
+        condition: service_healthy
     networks:
       - agmind-network
 
@@ -155,7 +173,8 @@ services:
   # WARNING: Version pinned for white-label/re-branding compatibility.
   # Do NOT change to :main or :latest without verifying branding features still work.
   open-webui:
-    image: ghcr.io/open-webui/open-webui:v0.5.20
+    # WARNING: open-webui version pinned for white-label compatibility
+    image: ghcr.io/open-webui/open-webui:${OPENWEBUI_VERSION:-v0.5.20}
     container_name: agmind-openwebui
     restart: always
     environment:
@@ -171,11 +190,17 @@ services:
       - ENABLE_OPENAI_API=true
     volumes:
       - openwebui_data:/app/backend/data
+    healthcheck:
+      test: ["CMD-SHELL", "unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY && curl -sf http://localhost:8080/health || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 30s
     depends_on:
       pipeline:
         condition: service_healthy
       ollama:
-        condition: service_started
+        condition: service_healthy
     networks:
       - agmind-network
 
@@ -186,6 +211,12 @@ services:
     restart: always
     volumes:
       - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 30s
     #__GPU__deploy:
     #__GPU__  resources:
     #__GPU__    reservations:
@@ -227,9 +258,10 @@ services:
     image: redis:${REDIS_VERSION:-7-alpine}
     container_name: agmind-redis
     restart: always
-    command: redis-server --requirepass ${REDIS_PASSWORD:-} --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: redis-server /etc/redis/redis.conf
     volumes:
       - ./volumes/redis/data:/data
+      - ./volumes/redis/redis.conf:/etc/redis/redis.conf:ro
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-}", "ping"]
       interval: 10s
@@ -258,6 +290,12 @@ services:
       CLUSTER_HOSTNAME: node1
     volumes:
       - ./volumes/weaviate:/var/lib/weaviate
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/v1/.well-known/ready || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 15s
     networks:
       - agmind-network
 
@@ -272,6 +310,12 @@ services:
       QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:-}
     volumes:
       - ./volumes/qdrant:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:6333/healthz || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 15s
     networks:
       - agmind-network
 
@@ -285,6 +329,12 @@ services:
     expose:
       - "8765"
     command: ["--port", "8765", "--host", "0.0.0.0"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8765/health || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 30s
     networks:
       - agmind-network
 
@@ -307,6 +357,12 @@ services:
     #__GPU__        - driver: nvidia
     #__GPU__          count: all
     #__GPU__          capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9997/v1/models || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 30s
     networks:
       - agmind-network
 
@@ -325,6 +381,12 @@ services:
       SANDBOX_PORT: ${SANDBOX_PORT:-8194}
     volumes:
       - ./volumes/sandbox/conf:/conf
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8194/health || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 10s
     networks:
       - ssrf-network
 
@@ -335,6 +397,12 @@ services:
     restart: always
     volumes:
       - ./volumes/ssrf_proxy/squid.conf:/etc/squid/squid.conf
+    healthcheck:
+      test: ["CMD-SHELL", "squid -k check 2>/dev/null || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 10s
     networks:
       - ssrf-network
       - agmind-network
@@ -361,6 +429,12 @@ services:
       PPROF_ENABLED: ${PLUGIN_PPROF_ENABLED:-false}
     volumes:
       - ./volumes/plugin_daemon/storage:/app/storage
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5002/health || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 15s
     depends_on:
       db:
         condition: service_healthy
@@ -385,11 +459,21 @@ services:
       - ./volumes/certbot/conf:/etc/letsencrypt:ro
       - ./volumes/certbot/www:/var/www/certbot:ro
       - ./volumes/certbot/ssl:/etc/nginx/ssl:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/ || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 10s
     depends_on:
-      - api
-      - web
-      - open-webui
-      - pipeline
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+      open-webui:
+        condition: service_healthy
+      pipeline:
+        condition: service_healthy
     networks:
       - agmind-network
 
@@ -403,8 +487,51 @@ services:
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 15s
     networks:
       - agmind-network
+
+  # ==================== Loki (monitoring profile) ====================
+  loki:
+    image: grafana/loki:${LOKI_VERSION:-3.0.0}
+    container_name: agmind-loki
+    profiles:
+      - monitoring
+    volumes:
+      - loki_data:/loki
+      - ./monitoring/loki-config.yml:/etc/loki/local-config.yaml:ro
+    command: -config.file=/etc/loki/local-config.yaml
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 15s
+    networks:
+      - agmind-network
+    restart: unless-stopped
+
+  # ==================== Promtail (monitoring profile) ====================
+  promtail:
+    image: grafana/promtail:${PROMTAIL_VERSION:-3.0.0}
+    container_name: agmind-promtail
+    profiles:
+      - monitoring
+    volumes:
+      - ./monitoring/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      loki:
+        condition: service_healthy
+    networks:
+      - agmind-network
+    restart: unless-stopped
 
   # ==================== cAdvisor (monitoring profile) ====================
   cadvisor:
@@ -420,6 +547,12 @@ services:
       - /var/run:/var/run:ro
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 15s
     networks:
       - agmind-network
 
@@ -431,15 +564,22 @@ services:
     profiles:
       - monitoring
     ports:
-      - "${GRAFANA_PORT:-3001}:3000"
+      - "${GRAFANA_BIND_ADDR:-0.0.0.0}:${GRAFANA_PORT:-3001}:3000"
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/health || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 15s
     depends_on:
-      - prometheus
+      prometheus:
+        condition: service_healthy
     networks:
       - agmind-network
 
@@ -451,10 +591,35 @@ services:
     profiles:
       - monitoring
     ports:
-      - "${PORTAINER_PORT:-9443}:9443"
+      - "${PORTAINER_BIND_ADDR:-0.0.0.0}:${PORTAINER_PORT:-9443}:9443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- --no-check-certificate https://localhost:9443/api/status || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 15s
+    networks:
+      - agmind-network
+
+  # ==================== Authelia (authelia profile) ====================
+  authelia:
+    image: authelia/authelia:${AUTHELIA_VERSION:-4.38}
+    container_name: agmind-authelia
+    profiles: ["authelia"]
+    restart: unless-stopped
+    volumes:
+      - ./authelia:/config
+    environment:
+      TZ: UTC
+    healthcheck:
+      test: ["CMD", "authelia", "healthcheck"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 10s
     networks:
       - agmind-network
 
@@ -485,3 +650,5 @@ volumes:
   grafana_data:
   portainer_data:
   prometheus_data:
+  authelia_data:
+  loki_data:

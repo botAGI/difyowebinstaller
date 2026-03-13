@@ -84,6 +84,10 @@ generate_config() {
     fi
 
     local env_file="${INSTALL_DIR}/docker/.env"
+    if [[ -f "$env_file" ]]; then
+        echo -e "${YELLOW}⚠ Существующий .env будет перезаписан с новыми секретами${NC}"
+        cp "$env_file" "${env_file}.backup.$(date +%Y%m%d_%H%M%S)"
+    fi
     cp "$template_file" "$env_file"
 
     # Replace placeholders in .env
@@ -117,6 +121,43 @@ generate_config() {
         "$env_file"
     rm -f "${env_file}.bak"
 
+    # Authelia placeholders
+    local authelia_jwt_secret
+    authelia_jwt_secret=$(generate_random 64)
+    sed -i.bak \
+        -e "s|__AUTHELIA_JWT_SECRET__|${authelia_jwt_secret}|g" \
+        "$env_file"
+    rm -f "${env_file}.bak"
+
+    # Copy and apply versions.env
+    local versions_file="${template_dir}/versions.env"
+    if [[ -f "$versions_file" ]]; then
+        cp "$versions_file" "${INSTALL_DIR}/versions.env"
+        # Source version variables and update .env with pinned versions
+        source "$versions_file"
+        sed -i.bak \
+            -e "s|DIFY_VERSION=.*|DIFY_VERSION=${DIFY_VERSION}|" \
+            -e "s|OLLAMA_VERSION=.*|OLLAMA_VERSION=${OLLAMA_VERSION}|" \
+            -e "s|POSTGRES_VERSION=.*|POSTGRES_VERSION=${POSTGRES_VERSION}|" \
+            -e "s|REDIS_VERSION=.*|REDIS_VERSION=${REDIS_VERSION}|" \
+            -e "s|WEAVIATE_VERSION=.*|WEAVIATE_VERSION=${WEAVIATE_VERSION}|" \
+            -e "s|QDRANT_VERSION=.*|QDRANT_VERSION=${QDRANT_VERSION}|" \
+            -e "s|SANDBOX_VERSION=.*|SANDBOX_VERSION=${SANDBOX_VERSION}|" \
+            -e "s|SQUID_VERSION=.*|SQUID_VERSION=${SQUID_VERSION}|" \
+            -e "s|NGINX_VERSION=.*|NGINX_VERSION=${NGINX_VERSION}|" \
+            -e "s|CERTBOT_VERSION=.*|CERTBOT_VERSION=${CERTBOT_VERSION}|" \
+            -e "s|PLUGIN_DAEMON_VERSION=.*|PLUGIN_DAEMON_VERSION=${PLUGIN_DAEMON_VERSION}|" \
+            -e "s|DOCLING_VERSION=.*|DOCLING_VERSION=${DOCLING_VERSION}|" \
+            -e "s|XINFERENCE_VERSION=.*|XINFERENCE_VERSION=${XINFERENCE_VERSION}|" \
+            -e "s|GRAFANA_VERSION=.*|GRAFANA_VERSION=${GRAFANA_VERSION}|" \
+            -e "s|PORTAINER_VERSION=.*|PORTAINER_VERSION=${PORTAINER_VERSION}|" \
+            -e "s|CADVISOR_VERSION=.*|CADVISOR_VERSION=${CADVISOR_VERSION}|" \
+            -e "s|PROMETHEUS_VERSION=.*|PROMETHEUS_VERSION=${PROMETHEUS_VERSION}|" \
+            -e "s|AUTHELIA_VERSION=.*|AUTHELIA_VERSION=${AUTHELIA_VERSION}|" \
+            "$env_file"
+        rm -f "${env_file}.bak"
+    fi
+
     # Export ADMIN_TOKEN for nginx config generation
     export ADMIN_TOKEN="$admin_token"
     export GRAFANA_ADMIN_PASSWORD="$grafana_admin_password"
@@ -127,10 +168,19 @@ generate_config() {
     # Handle TLS mode
     handle_tls_config "$profile"
 
+    # Handle Authelia 2FA
+    if [[ "${ENABLE_AUTHELIA:-false}" == "true" ]]; then
+        enable_authelia_nginx
+        copy_authelia_files "$template_dir"
+    fi
+
     # Copy monitoring provisioning files if local monitoring
     if [[ "${MONITORING_MODE:-none}" == "local" ]]; then
         copy_monitoring_files "$template_dir"
     fi
+
+    # Generate Redis config (password in file, not command line)
+    generate_redis_config
 
     # Generate sandbox config
     generate_sandbox_config
@@ -189,6 +239,23 @@ generate_nginx_config() {
         -e "s|__TLS_KEY_PATH__|${key_path}|g" \
         "$nginx_conf"
     rm -f "${nginx_conf}.bak"
+}
+
+generate_redis_config() {
+    local redis_conf="${INSTALL_DIR}/docker/volumes/redis/redis.conf"
+    local redis_pass
+    redis_pass=$(grep '^REDIS_PASSWORD=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "")
+    cat > "$redis_conf" << REDISEOF
+# AGMind Redis Configuration
+requirepass ${redis_pass}
+maxmemory 256mb
+maxmemory-policy allkeys-lru
+save 60 1000
+save 300 100
+appendonly yes
+appendfilename "appendonly.aof"
+REDISEOF
+    chmod 600 "$redis_conf"
 }
 
 generate_sandbox_config() {
@@ -278,18 +345,57 @@ SANDBOXEOF
     rm -f "${sandbox_conf}.bak"
 }
 
-# Enable GPU in docker-compose if NVIDIA detected
+# Enable GPU in docker-compose based on detected GPU type
 enable_gpu_compose() {
-    if [[ "${DETECTED_GPU:-none}" == "nvidia" ]]; then
-        echo -e "${YELLOW}Включение GPU поддержки в docker-compose...${NC}"
-        local compose_file="${INSTALL_DIR}/docker/docker-compose.yml"
+    local compose_file="${INSTALL_DIR}/docker/docker-compose.yml"
 
-        # Uncomment GPU section in ollama service
-        sed -i.bak 's|#__GPU__||g' "$compose_file"
-        rm -f "${compose_file}.bak"
+    case "${DETECTED_GPU:-none}" in
+        none)
+            echo -e "${YELLOW}GPU не обнаружен — режим CPU${NC}"
+            # Remove all GPU-marked lines entirely
+            sed -i.bak '/#__GPU__/d' "$compose_file"
+            rm -f "${compose_file}.bak"
+            ;;
+        nvidia)
+            echo -e "${YELLOW}Включение GPU поддержки (NVIDIA)...${NC}"
+            # Strip markers, keep nvidia deploy block as-is
+            sed -i.bak 's|#__GPU__||g' "$compose_file"
+            rm -f "${compose_file}.bak"
+            echo -e "${GREEN}NVIDIA GPU → deploy.resources.reservations.devices${NC}"
+            ;;
+        amd)
+            echo -e "${YELLOW}Включение GPU поддержки (AMD ROCm)...${NC}"
+            # Strip markers first
+            sed -i.bak 's|#__GPU__||g' "$compose_file"
+            rm -f "${compose_file}.bak"
+            # Replace nvidia driver block with AMD ROCm device mounts
+            sed -i.bak '/driver: nvidia/,/capabilities: \[gpu\]/c\      # AMD ROCm GPU\n    devices:\n      - /dev/kfd:/dev/kfd\n      - /dev/dri:/dev/dri\n    group_add:\n      - video\n      - render' "$compose_file"
+            rm -f "${compose_file}.bak"
+            # Add OLLAMA_ROCM env var
+            sed -i.bak '/OLLAMA_API_BASE/a\      OLLAMA_ROCM: "1"' "$compose_file" 2>/dev/null || true
+            rm -f "${compose_file}.bak"
+            echo -e "${GREEN}AMD ROCm GPU → device passthrough${NC}"
+            ;;
+        intel)
+            echo -e "${YELLOW}Включение GPU поддержки (Intel)...${NC}"
+            # Strip markers first
+            sed -i.bak 's|#__GPU__||g' "$compose_file"
+            rm -f "${compose_file}.bak"
+            # Replace nvidia driver block with Intel device mounts
+            sed -i.bak '/driver: nvidia/,/capabilities: \[gpu\]/c\      # Intel GPU\n    devices:\n      - /dev/dri:/dev/dri\n    group_add:\n      - video\n      - render' "$compose_file"
+            rm -f "${compose_file}.bak"
+            echo -e "${GREEN}Intel GPU → /dev/dri passthrough${NC}"
+            ;;
+        apple)
+            echo -e "${YELLOW}Apple Silicon — GPU обрабатывается нативно через Metal${NC}"
+            # Remove GPU blocks — Metal handled natively by Ollama
+            sed -i.bak '/#__GPU__/d' "$compose_file"
+            rm -f "${compose_file}.bak"
+            echo -e "${GREEN}Apple Silicon — Docker GPU passthrough не требуется${NC}"
+            ;;
+    esac
 
-        echo -e "${GREEN}GPU поддержка включена${NC}"
-    fi
+    persist_gpu_profile
 }
 
 handle_tls_config() {
@@ -318,6 +424,11 @@ generate_self_signed_cert() {
     local ssl_dir="$1"
     mkdir -p "$ssl_dir"
 
+    if ! command -v openssl &>/dev/null; then
+        echo -e "${RED}openssl не найден. Установите: apt install openssl${NC}"
+        return 1
+    fi
+
     echo -e "${YELLOW}Генерация self-signed сертификата...${NC}"
     openssl req -x509 -nodes -days 365 \
         -newkey rsa:2048 \
@@ -345,6 +456,39 @@ copy_custom_cert() {
     fi
 }
 
+enable_authelia_nginx() {
+    local nginx_conf="${INSTALL_DIR}/docker/nginx/nginx.conf"
+
+    if [[ ! -f "$nginx_conf" ]]; then
+        echo -e "${RED}nginx.conf не найден: ${nginx_conf}${NC}"
+        return 1
+    fi
+
+    echo -e "${YELLOW}Активация Authelia в nginx...${NC}"
+    # Strip #__AUTHELIA__ markers to enable Authelia location blocks
+    sed -i.bak 's|#__AUTHELIA__||g' "$nginx_conf"
+    rm -f "${nginx_conf}.bak"
+    echo -e "${GREEN}Authelia блоки активированы в nginx.conf${NC}"
+}
+
+copy_authelia_files() {
+    local template_dir="$1"
+    local authelia_dir="${INSTALL_DIR}/docker/authelia"
+    mkdir -p "$authelia_dir"
+
+    echo -e "${YELLOW}Копирование файлов Authelia...${NC}"
+
+    if [[ -f "${template_dir}/authelia/configuration.yml.template" ]]; then
+        cp "${template_dir}/authelia/configuration.yml.template" "${authelia_dir}/configuration.yml"
+    fi
+
+    if [[ -f "${template_dir}/authelia/users_database.yml.template" ]]; then
+        cp "${template_dir}/authelia/users_database.yml.template" "${authelia_dir}/users_database.yml"
+    fi
+
+    echo -e "${GREEN}Файлы Authelia скопированы${NC}"
+}
+
 copy_monitoring_files() {
     local template_dir="$1"
     local installer_root
@@ -358,10 +502,17 @@ copy_monitoring_files() {
         cp "${installer_root}/monitoring/prometheus.yml" "${dest}/prometheus.yml"
     fi
 
+    # Loki + Promtail configs
+    if [[ "${ENABLE_LOKI:-true}" == "true" ]]; then
+        cp "${installer_root}/monitoring/loki-config.yml" "${INSTALL_DIR}/docker/monitoring/" 2>/dev/null || true
+        cp "${installer_root}/monitoring/promtail-config.yml" "${INSTALL_DIR}/docker/monitoring/" 2>/dev/null || true
+    fi
+
     # Copy grafana provisioning
     if [[ -d "${installer_root}/monitoring/grafana" ]]; then
         cp -r "${installer_root}/monitoring/grafana/provisioning/"* "${dest}/grafana/provisioning/"
         cp -r "${installer_root}/monitoring/grafana/dashboards/"* "${dest}/grafana/dashboards/"
+        cp "${installer_root}/monitoring/grafana/dashboards/logs.json" "${INSTALL_DIR}/docker/monitoring/grafana/dashboards/" 2>/dev/null || true
     fi
 
     echo -e "${GREEN}Файлы мониторинга скопированы${NC}"

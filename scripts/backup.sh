@@ -3,6 +3,20 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+# Exclusive lock — prevent parallel backup/update/restore
+LOCK_FILE="/var/lock/agmind-operation.lock"
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+    echo -e "${RED}Другая операция AGMind уже запущена. Дождитесь завершения.${NC}"
+    exit 1
+fi
+
 INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
 COMPOSE_FILE="${INSTALL_DIR}/docker/docker-compose.yml"
 
@@ -21,6 +35,14 @@ echo "=== AGMind Backup: ${DATE} ==="
 # Create backup directory
 mkdir -p "${TARGET_DIR}"
 
+# === Pre-backup checks ===
+echo "Проверка доступности PostgreSQL..."
+if ! docker compose -f "$COMPOSE_FILE" exec -T db pg_isready -U postgres >/dev/null 2>&1; then
+    echo -e "${RED}PostgreSQL недоступен! Бэкап отменён.${NC}"
+    exit 1
+fi
+echo -e "${GREEN}PostgreSQL: OK${NC}"
+
 # 1. PostgreSQL dump
 echo "  PostgreSQL..."
 docker compose -f "$COMPOSE_FILE" exec -T db \
@@ -36,9 +58,27 @@ docker compose -f "$COMPOSE_FILE" exec -T db \
 VECTOR_STORE=$(grep '^VECTOR_STORE=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "weaviate")
 
 if [[ "$VECTOR_STORE" == "qdrant" ]]; then
-    echo "  Qdrant..."
-    tar czf "${TARGET_DIR}/qdrant.tar.gz" \
-        -C "${INSTALL_DIR}/docker/volumes/qdrant" . 2>/dev/null || true
+    echo "  Qdrant snapshot..."
+    # Use Qdrant snapshot API for consistent backup
+    collections=$(curl -sf http://localhost:6333/collections 2>/dev/null | \
+        python3 -c "import json,sys; [print(c['name']) for c in json.load(sys.stdin).get('result',{}).get('collections',[])]" 2>/dev/null || echo "")
+
+    if [[ -n "$collections" ]]; then
+        for coll in $collections; do
+            # Create snapshot via API
+            snap_url="http://localhost:6333/collections/${coll}/snapshots"
+            snap_result=$(curl -sf -X POST "$snap_url" 2>/dev/null || echo "")
+            if [[ -n "$snap_result" ]]; then
+                snap_name=$(echo "$snap_result" | python3 -c "import json,sys; print(json.load(sys.stdin).get('result',{}).get('name',''))" 2>/dev/null || echo "")
+                if [[ -n "$snap_name" ]]; then
+                    # Download snapshot
+                    curl -sf "${snap_url}/${snap_name}" -o "${TARGET_DIR}/qdrant_${coll}_${snap_name}" 2>/dev/null || true
+                fi
+            fi
+        done
+    fi
+    # Fallback: also tar the volume
+    tar czf "${TARGET_DIR}/qdrant.tar.gz" -C "${INSTALL_DIR}/docker/volumes" qdrant/ 2>/dev/null || true
 else
     echo "  Weaviate..."
     docker run --rm \
@@ -73,28 +113,84 @@ cp "${INSTALL_DIR}/docker/.env" "${TARGET_DIR}/env.backup" 2>/dev/null || true
 cp "${INSTALL_DIR}/docker/docker-compose.yml" "${TARGET_DIR}/docker-compose.yml.backup" 2>/dev/null || true
 cp "${INSTALL_DIR}/docker/nginx/nginx.conf" "${TARGET_DIR}/nginx.conf.backup" 2>/dev/null || true
 
+# 6b. Encryption key (CRITICAL — without it, encrypted backups are unrecoverable)
+if [[ -d "${INSTALL_DIR}/.age" ]]; then
+    cp -r "${INSTALL_DIR}/.age" "${TARGET_DIR}/age_keys/" 2>/dev/null || true
+    echo -e "${YELLOW}⚠ ВАЖНО: age ключ включён в бэкап. Храните в безопасном месте!${NC}"
+fi
+
+# 6c. Authelia config (users database with password hashes)
+if [[ -d "${INSTALL_DIR}/docker/authelia" ]]; then
+    echo "  Authelia config..."
+    tar czf "${TARGET_DIR}/authelia.tar.gz" -C "${INSTALL_DIR}/docker/authelia" . 2>/dev/null || true
+fi
+
 # 7. Checksums
 echo "  Checksums..."
 cd "${TARGET_DIR}"
 sha256sum *.gz *.backup 2>/dev/null > sha256sums.txt || true
 cd - >/dev/null
 
+# === Encryption ===
+if [[ "${ENABLE_BACKUP_ENCRYPTION:-false}" == "true" ]]; then
+    echo "Шифрование бэкапа..."
+    age_key="${INSTALL_DIR}/.age/agmind.key"
+    if [[ -f "$age_key" ]] && command -v age &>/dev/null; then
+        pub_key=$(grep 'public key:' "$age_key" | cut -d: -f2- | tr -d ' ')
+        for f in "${TARGET_DIR}"/*.gz "${TARGET_DIR}"/*.backup; do
+            [[ -f "$f" ]] || continue
+            age -r "$pub_key" -o "${f}.age" "$f" 2>/dev/null && rm -f "$f"
+        done
+        echo -e "${GREEN}Бэкап зашифрован${NC}"
+    else
+        echo -e "${YELLOW}age ключ не найден — пропускаем шифрование${NC}"
+    fi
+fi
+
 # 8. Rotation — delete backups older than retention period
 echo "  Ротация (удаление старше ${RETENTION_DAYS} дней)..."
 find "${BACKUP_DIR}" -maxdepth 1 -type d -mtime "+${RETENTION_DAYS}" -not -name "$(basename "$BACKUP_DIR")" -exec rm -rf {} \; 2>/dev/null || true
 
+# Retention by count
+if [[ -n "${BACKUP_RETENTION_COUNT:-}" ]] && [[ "$BACKUP_RETENTION_COUNT" -gt 0 ]] 2>/dev/null; then
+    backup_count=$(find "${BACKUP_DIR}" -maxdepth 1 -type d -name "20*" | wc -l)
+    if [[ "$backup_count" -gt "$BACKUP_RETENTION_COUNT" ]]; then
+        to_delete=$((backup_count - BACKUP_RETENTION_COUNT))
+        find "${BACKUP_DIR}" -maxdepth 1 -type d -name "20*" | sort | head -n "$to_delete" | while read -r old_dir; do
+            rm -rf "$old_dir"
+            echo "  Удалён (по лимиту): $(basename "$old_dir")"
+        done
+    fi
+fi
+
 # 9. Remote backup (if configured)
 if [[ "${REMOTE_BACKUP_ENABLED:-false}" == "true" && -n "${REMOTE_BACKUP_HOST:-}" ]]; then
     echo "  Удалённый бэкап → ${REMOTE_BACKUP_USER}@${REMOTE_BACKUP_HOST}..."
-    ssh_opts=""
+    rsync_cmd=(rsync -azP)
     if [[ -n "${REMOTE_BACKUP_KEY:-}" ]]; then
-        ssh_opts="-e 'ssh -i ${REMOTE_BACKUP_KEY} -p ${REMOTE_BACKUP_PORT:-22}'"
+        rsync_cmd+=(-e "ssh -i ${REMOTE_BACKUP_KEY} -p ${REMOTE_BACKUP_PORT:-22}")
     else
-        ssh_opts="-e 'ssh -p ${REMOTE_BACKUP_PORT:-22}'"
+        rsync_cmd+=(-e "ssh -p ${REMOTE_BACKUP_PORT:-22}")
     fi
-    eval rsync -azP "$ssh_opts" \
+    "${rsync_cmd[@]}" \
         "${TARGET_DIR}/" \
         "${REMOTE_BACKUP_USER}@${REMOTE_BACKUP_HOST}:${REMOTE_BACKUP_PATH:-/var/backups/agmind-remote}/${DATE}/"
+fi
+
+# === S3 Upload ===
+if [[ "${ENABLE_S3_BACKUP:-false}" == "true" ]]; then
+    echo "Загрузка в S3..."
+    if ! command -v rclone &>/dev/null; then
+        echo -e "${YELLOW}rclone не установлен. Установите: https://rclone.org/install/${NC}"
+    else
+        s3_remote="${S3_REMOTE_NAME:-s3}"
+        s3_bucket="${S3_BUCKET:-agmind-backups}"
+        s3_path="${S3_PATH:-$(hostname 2>/dev/null || echo 'default')}"
+        rclone copy "${TARGET_DIR}/" "${s3_remote}:${s3_bucket}/${s3_path}/${DATE}/" \
+            --config "${RCLONE_CONFIG_PATH:-$HOME/.config/rclone/rclone.conf}" \
+            2>/dev/null && echo -e "${GREEN}S3 upload: OK${NC}" \
+            || echo -e "${YELLOW}S3 upload: ошибка${NC}"
+    fi
 fi
 
 # Summary

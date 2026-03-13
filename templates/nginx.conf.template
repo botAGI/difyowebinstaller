@@ -61,6 +61,26 @@ http {
             root /var/www/certbot;
         }
 
+    #__AUTHELIA__# Authelia verify endpoint
+    #__AUTHELIA__location /api/verify {
+    #__AUTHELIA__    internal;
+    #__AUTHELIA__    proxy_pass http://authelia:9091/api/verify;
+    #__AUTHELIA__    proxy_pass_request_body off;
+    #__AUTHELIA__    proxy_set_header Content-Length "";
+    #__AUTHELIA__    proxy_set_header X-Original-URL $scheme://$http_host$request_uri;
+    #__AUTHELIA__    proxy_set_header X-Forwarded-For $remote_addr;
+    #__AUTHELIA__    proxy_set_header X-Forwarded-Proto $scheme;
+    #__AUTHELIA__}
+    #__AUTHELIA__
+    #__AUTHELIA__# Authelia portal
+    #__AUTHELIA__location /authelia {
+    #__AUTHELIA__    proxy_pass http://authelia:9091;
+    #__AUTHELIA__    proxy_set_header Host $host;
+    #__AUTHELIA__    proxy_set_header X-Real-IP $remote_addr;
+    #__AUTHELIA__    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #__AUTHELIA__    proxy_set_header X-Forwarded-Proto $scheme;
+    #__AUTHELIA__}
+
         # =============================================
         # Open WebUI — default frontend (/)
         # =============================================
@@ -86,6 +106,9 @@ http {
 
         # Dify Console Web UI (rewrite token prefix, proxy to web:3000)
         location /__ADMIN_TOKEN__/ {
+    #__AUTHELIA__    auth_request /api/verify;
+    #__AUTHELIA__    auth_request_set $user $upstream_http_remote_user;
+    #__AUTHELIA__    auth_request_set $groups $upstream_http_remote_groups;
             proxy_pass http://dify_web/;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
@@ -208,6 +231,26 @@ http {
     #__TLS__        root /var/www/certbot;
     #__TLS__    }
     #__TLS__
+    #__TLS__    #__AUTHELIA__# Authelia verify endpoint
+    #__TLS__    #__AUTHELIA__location /api/verify {
+    #__TLS__    #__AUTHELIA__    internal;
+    #__TLS__    #__AUTHELIA__    proxy_pass http://authelia:9091/api/verify;
+    #__TLS__    #__AUTHELIA__    proxy_pass_request_body off;
+    #__TLS__    #__AUTHELIA__    proxy_set_header Content-Length "";
+    #__TLS__    #__AUTHELIA__    proxy_set_header X-Original-URL $scheme://$http_host$request_uri;
+    #__TLS__    #__AUTHELIA__    proxy_set_header X-Forwarded-For $remote_addr;
+    #__TLS__    #__AUTHELIA__    proxy_set_header X-Forwarded-Proto $scheme;
+    #__TLS__    #__AUTHELIA__}
+    #__TLS__    #__AUTHELIA__
+    #__TLS__    #__AUTHELIA__# Authelia portal
+    #__TLS__    #__AUTHELIA__location /authelia {
+    #__TLS__    #__AUTHELIA__    proxy_pass http://authelia:9091;
+    #__TLS__    #__AUTHELIA__    proxy_set_header Host $host;
+    #__TLS__    #__AUTHELIA__    proxy_set_header X-Real-IP $remote_addr;
+    #__TLS__    #__AUTHELIA__    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #__TLS__    #__AUTHELIA__    proxy_set_header X-Forwarded-Proto $scheme;
+    #__TLS__    #__AUTHELIA__}
+    #__TLS__
     #__TLS__    # Open WebUI — default frontend
     #__TLS__    location / {
     #__TLS__        proxy_pass http://openwebui;
@@ -225,6 +268,9 @@ http {
     #__TLS__
     #__TLS__    # Dify Console Web UI
     #__TLS__    location /__ADMIN_TOKEN__/ {
+    #__TLS__    #__AUTHELIA__    auth_request /api/verify;
+    #__TLS__    #__AUTHELIA__    auth_request_set $user $upstream_http_remote_user;
+    #__TLS__    #__AUTHELIA__    auth_request_set $groups $upstream_http_remote_groups;
     #__TLS__        proxy_pass http://dify_web/;
     #__TLS__        proxy_http_version 1.1;
     #__TLS__        proxy_set_header Host $host;
