@@ -23,7 +23,62 @@ sudo DEPLOY_PROFILE=lan ADMIN_EMAIL=admin@company.com ADMIN_PASSWORD=secret \
 | `vpn`    | ✅       | ❌    | Опционально   | Корпоративный VPN               |
 | `offline`| ❌       | ❌    | ❌            | Изолированная сеть без интернета |
 
+## GPU поддержка
+
+Инсталлер автоматически определяет GPU и настраивает docker-compose:
+
+| GPU       | Обнаружение           | Метод                          |
+|-----------|-----------------------|--------------------------------|
+| NVIDIA    | `nvidia-smi`          | deploy.resources (CUDA)        |
+| AMD ROCm  | `/dev/kfd`, `rocminfo`| device passthrough             |
+| Intel Arc | `/dev/dri` + `lspci`  | device passthrough             |
+| Apple M   | arm64 + Darwin        | Metal нативно (без Docker GPU) |
+| CPU       | fallback              | OLLAMA_NUM_PARALLEL=2          |
+
+```bash
+# Принудительно указать тип GPU
+FORCE_GPU_TYPE=amd bash install.sh --non-interactive
+
+# Пропустить детекцию GPU
+SKIP_GPU_DETECT=true bash install.sh --non-interactive
+```
+
+## Безопасность
+
+### UFW файрвол
+Автоматически включается для VPS профиля. Для LAN/VPN — опционально.
+```bash
+ENABLE_UFW=true  # Открывает 22, 80, 443 + LAN subnet / VPN interface
+```
+
+### Fail2ban
+Защита от bruteforce на SSH и nginx (401/403/429 ответы).
+```bash
+ENABLE_FAIL2BAN=true
+```
+
+### Authelia 2FA
+Двухфакторная аутентификация перед доступом к приложению.
+```bash
+ENABLE_AUTHELIA=true  # Добавляет Authelia proxy перед nginx
+```
+
+### Шифрование секретов (SOPS + age)
+```bash
+ENABLE_SOPS=true  # Шифрует .env → .env.enc с помощью age ключей
+```
+
+### Ротация секретов
+```bash
+/opt/agmind/scripts/rotate_secrets.sh  # Ручная ротация 6 секретов
+ENABLE_SECRET_ROTATION=true            # Авто-ротация 1-го числа каждого месяца
+```
+
+Ротируются: SECRET_KEY, REDIS_PASSWORD, GRAFANA_ADMIN_PASSWORD, SANDBOX_API_KEY, PLUGIN_DAEMON_KEY, PLUGIN_INNER_API_KEY.
+
 ## Неинтерактивный режим (ENV переменные)
+
+### Основные
 
 | Переменная             | Описание                              | По умолчанию      |
 |------------------------|---------------------------------------|--------------------|
@@ -36,26 +91,47 @@ sudo DEPLOY_PROFILE=lan ADMIN_EMAIL=admin@company.com ADMIN_PASSWORD=secret \
 | `LLM_MODEL`            | Модель LLM                            | qwen2.5:14b        |
 | `EMBEDDING_MODEL`      | Модель эмбеддингов                    | bge-m3             |
 | `VECTOR_STORE`         | Векторное хранилище: weaviate/qdrant  | weaviate           |
-| `VECTOR_STORE_CHOICE`  | Номер в меню (1=weaviate, 2=qdrant)   | 1                  |
 | `ETL_ENHANCED`         | Docling+Xinference: yes/no            | no                 |
-| `ETL_ENHANCED_CHOICE`  | Номер в меню (1=нет, 2=да)            | 1                  |
 | `TLS_MODE`             | TLS: none/self-signed/custom          | none               |
-| `TLS_MODE_CHOICE`      | Номер в меню (1/2/3)                  | 1                  |
-| `TLS_CERT_PATH`        | Путь к сертификату (для custom)       | —                  |
-| `TLS_KEY_PATH`         | Путь к ключу (для custom)             | —                  |
 | `MONITORING_MODE`      | none/local/external                   | none               |
-| `MONITORING_CHOICE`    | Номер в меню (1/2/3)                  | 1                  |
-| `MONITORING_ENDPOINT`  | URL (для external)                    | —                  |
-| `MONITORING_TOKEN`     | Токен (для external)                  | —                  |
 | `ALERT_MODE`           | none/webhook/telegram                 | none               |
-| `ALERT_CHOICE`         | Номер в меню (1/2/3)                  | 1                  |
-| `ALERT_WEBHOOK_URL`    | Webhook URL                           | —                  |
-| `ALERT_TELEGRAM_TOKEN` | Telegram bot token                    | —                  |
-| `ALERT_TELEGRAM_CHAT_ID` | Telegram chat ID                   | —                  |
 | `BACKUP_TARGET`        | local/remote/both                     | local              |
 | `BACKUP_SCHEDULE`      | Cron expression                       | 0 3 * * *          |
-| `DOKPLOY_CHOICE`       | 1=да, 2=нет                           | 2                  |
-| `TUNNEL_CHOICE`        | 1=да, 2=нет                           | 2                  |
+
+### Безопасность и GPU
+
+| Переменная               | Описание                            | По умолчанию |
+|--------------------------|-------------------------------------|--------------|
+| `ENABLE_UFW`             | Настройка UFW файрвола              | false        |
+| `ENABLE_FAIL2BAN`        | Установка и настройка Fail2ban      | false        |
+| `ENABLE_SOPS`            | Шифрование .env (SOPS + age)        | false        |
+| `ENABLE_SECRET_ROTATION` | Авто-ротация секретов (cron)        | false        |
+| `ENABLE_AUTHELIA`        | Authelia 2FA proxy                  | false        |
+| `FORCE_GPU_TYPE`         | Принудительный тип GPU              | —            |
+| `SKIP_GPU_DETECT`        | Пропустить GPU детекцию             | false        |
+| `SKIP_PREFLIGHT`         | Пропустить pre-flight проверки      | false        |
+| `FORCE_REINSTALL`        | Переустановка поверх существующей   | false        |
+
+### Бэкапы
+
+| Переменная                 | Описание                          | По умолчанию |
+|----------------------------|-----------------------------------|--------------|
+| `BACKUP_RETENTION_COUNT`   | Макс. количество бэкапов          | 10           |
+| `ENABLE_S3_BACKUP`         | Загрузка бэкапов в S3 (rclone)    | false        |
+| `ENABLE_BACKUP_ENCRYPTION` | Шифрование бэкапов (age)          | false        |
+| `S3_REMOTE_NAME`           | Имя rclone remote                 | s3           |
+| `S3_BUCKET`                | S3 bucket                         | agmind-backups |
+| `S3_PATH`                  | Путь внутри bucket                | hostname     |
+
+### Мониторинг
+
+| Переменная             | Описание                          | По умолчанию |
+|------------------------|-----------------------------------|--------------|
+| `ENABLE_LOKI`          | Loki + Promtail для логов         | true         |
+| `GRAFANA_BIND_ADDR`    | Bind address Grafana              | 127.0.0.1 (vps), 0.0.0.0 (lan) |
+| `PORTAINER_BIND_ADDR`  | Bind address Portainer            | 127.0.0.1 (vps), 0.0.0.0 (lan) |
+| `HEALTHCHECK_INTERVAL` | Интервал Docker healthcheck       | 30s          |
+| `HEALTHCHECK_RETRIES`  | Количество ретраев healthcheck    | 5            |
 
 ## Выбор LLM модели
 
@@ -93,61 +169,59 @@ sudo DEPLOY_PROFILE=lan ADMIN_EMAIL=admin@company.com ADMIN_PASSWORD=secret \
 
 ## Мониторинг
 
-### Локальный (Grafana + Portainer)
-- **Grafana**: `http://server:3001` — дашборд контейнерных метрик (CPU, RAM, Network)
+### Локальный (Grafana + Portainer + Loki)
+- **Grafana**: `http://server:3001` — дашборды метрик и логов
 - **Portainer**: `https://server:9443` — UI для управления Docker
+- **Loki + Promtail** — агрегация логов всех контейнеров (вкл. по умолчанию)
 - Prometheus + cAdvisor собирают метрики автоматически
+
+> **VPS профиль:** Grafana и Portainer привязаны к `127.0.0.1` (не доступны снаружи). Для доступа используйте SSH tunnel.
 
 ### Внешний
 Укажите endpoint и token для отправки метрик на внешний сервер мониторинга.
 
-## Алерты
+## Обслуживание
 
-| Режим      | Описание                                |
-|------------|-----------------------------------------|
-| `none`     | Отключены (по умолчанию)                |
-| `webhook`  | HTTP POST на указанный URL при сбоях    |
-| `telegram` | Сообщение через Telegram бот при сбоях  |
-
-Алерты срабатывают автоматически при запуске `health.sh`, если один или более сервисов не работает.
-
-## Восстановление из бэкапа
-
+### Обновление
 ```bash
-# Посмотреть доступные бэкапы
-ls /var/backups/agmind/
-
-# Восстановить конкретный бэкап
-/opt/agmind/scripts/restore.sh /var/backups/agmind/2025-01-15_0300
-
-# Или интерактивно
-/opt/agmind/scripts/restore.sh
+/opt/agmind/scripts/update.sh              # Интерактивное обновление
+/opt/agmind/scripts/update.sh --auto       # Автоматическое (без подтверждения)
+/opt/agmind/scripts/update.sh --check-only # Только проверить наличие обновлений
 ```
 
-Бэкап включает:
-- PostgreSQL дамп (Dify + Plugin DB)
-- Векторное хранилище (Weaviate или Qdrant)
-- Dify storage (загруженные файлы)
-- Open WebUI данные
-- Ollama модели
-- Конфигурация (.env, nginx.conf, docker-compose.yml)
-- SHA256 контрольные суммы
+Rolling update: обновляет сервисы по одному, проверяет healthcheck после каждого, откатывает при ошибке.
 
-## Обновление Docker образов
-
+### Бэкап и восстановление
 ```bash
-cd /opt/agmind/docker
-
-# Обновить конкретный сервис
-docker compose pull api worker web
-docker compose up -d api worker web
-
-# Обновить все сервисы (кроме Open WebUI — пин на v0.5.20)
-docker compose pull
-docker compose up -d
+/opt/agmind/scripts/backup.sh                          # Ручной бэкап
+/opt/agmind/scripts/restore.sh                         # Интерактивное восстановление
+/opt/agmind/scripts/restore.sh /var/backups/agmind/... # Указать конкретный бэкап
+AUTO_CONFIRM=true /opt/agmind/scripts/restore.sh ...   # Без подтверждений
 ```
 
-> **Open WebUI v0.5.20**: версия зафиксирована для совместимости с white-label/re-branding. Не обновляйте до `:main` или `:latest` без проверки работы брендинга.
+Бэкап включает: PostgreSQL (Dify + Plugin DB), векторное хранилище (Weaviate/Qdrant snapshots), Dify storage, Open WebUI, Ollama модели, конфигурацию, age ключи, Authelia конфиг, SHA256 контрольные суммы.
+
+### Проверка здоровья
+```bash
+/opt/agmind/scripts/health.sh              # Полный отчёт
+/opt/agmind/scripts/health.sh --send-test  # Тест отправки алертов
+```
+
+Проверяет: контейнеры, GPU, модели Ollama, векторные хранилища, диск, статус бэкапов.
+
+### Multi-instance
+```bash
+/opt/agmind/scripts/multi-instance.sh create --name client1 --port-offset 100
+/opt/agmind/scripts/multi-instance.sh list
+/opt/agmind/scripts/multi-instance.sh delete --name client1
+```
+
+### Удаление
+```bash
+/opt/agmind/scripts/uninstall.sh           # Интерактивное удаление
+/opt/agmind/scripts/uninstall.sh --dry-run # Показать что будет удалено
+/opt/agmind/scripts/uninstall.sh --force   # Без подтверждений
+```
 
 ## Полезные команды
 
@@ -167,8 +241,8 @@ docker compose logs -f api
 # Перезапуск
 cd /opt/agmind/docker && docker compose restart
 
-# Удаление
-/opt/agmind/scripts/uninstall.sh
+# Ротация секретов
+/opt/agmind/scripts/rotate_secrets.sh
 ```
 
 ## Структура установки
@@ -176,20 +250,29 @@ cd /opt/agmind/docker && docker compose restart
 ```
 /opt/agmind/
 ├── docker/
-│   ├── .env                    # Конфигурация
+│   ├── .env                    # Конфигурация (chmod 600)
 │   ├── docker-compose.yml      # Стек сервисов
 │   ├── nginx/nginx.conf        # Nginx конфигурация
 │   ├── pipeline/               # OpenAI-совместимый прокси
-│   ├── monitoring/             # Prometheus + Grafana (если включен)
+│   ├── authelia/               # Authelia конфиг (если включена)
+│   ├── monitoring/             # Prometheus + Grafana + Loki
 │   └── volumes/                # Данные сервисов
+│       ├── redis/redis.conf    # Redis конфиг (пароль в файле, не в CLI)
+│       └── ...
 ├── scripts/
-│   ├── backup.sh               # Бэкап
-│   ├── restore.sh              # Восстановление
-│   ├── health.sh               # Проверка здоровья
-│   └── uninstall.sh            # Удаление
+│   ├── backup.sh               # Бэкап (flock, pg_isready, S3, encryption)
+│   ├── restore.sh              # Восстановление (AUTO_CONFIRM, decrypt)
+│   ├── health.sh               # Проверка здоровья (GPU, Ollama, vectors)
+│   ├── update.sh               # Rolling update с rollback
+│   ├── uninstall.sh            # Удаление (--force, --dry-run)
+│   ├── rotate_secrets.sh       # Ротация 6 секретов
+│   └── multi-instance.sh       # Управление multi-instance
+├── versions.env                # Пиннинг версий образов
 ├── workflows/                  # Dify workflow шаблоны
 ├── branding/                   # Логотип и тема
-└── .admin_password             # Пароль администратора
+├── .age/                       # age ключи шифрования (chmod 700)
+├── .admin_password             # Пароль администратора (chmod 600)
+└── .agmind_installed           # Маркер завершённой установки
 ```
 
 ## Устранение неполадок
@@ -216,7 +299,7 @@ ollama pull bge-m3
 
 ### Dify Console недоступен
 Консоль доступна по секретному URL: `http://server/<admin_token>/`
-Admin token указан в финальном выводе инсталлера и в `/opt/agmind/docker/.env` (переменная `ADMIN_TOKEN`).
+Admin token указан в `/opt/agmind/docker/.env` (переменная `ADMIN_TOKEN`).
 
 ### Сертификат не получен (VPS)
 ```bash
@@ -226,4 +309,10 @@ dig +short your-domain.com
 # Принудительно получить сертификат
 docker compose exec certbot certbot certonly --webroot -w /var/www/certbot -d your-domain.com
 docker compose restart nginx
+```
+
+### Параллельные операции заблокированы
+Скрипты backup/update/restore используют flock (`/var/lock/agmind-operation.lock`). Если предыдущая операция зависла:
+```bash
+rm -f /var/lock/agmind-operation.lock
 ```
