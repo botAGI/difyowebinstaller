@@ -1,0 +1,321 @@
+worker_processes auto;
+worker_rlimit_nofile 65535;
+
+events {
+    worker_connections 4096;
+}
+
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+
+    sendfile        on;
+    tcp_nopush      on;
+    tcp_nodelay     on;
+    keepalive_timeout 65;
+    types_hash_max_size 2048;
+
+    client_max_body_size 50M;
+
+    # Gzip compression
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml;
+
+    # Logging
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+    access_log /var/log/nginx/access.log main;
+    error_log /var/log/nginx/error.log warn;
+
+    # Upstream: Dify API
+    upstream dify_api {
+        server api:5001;
+    }
+
+    # Upstream: Dify Web Console
+    upstream dify_web {
+        server web:3000;
+    }
+
+    # Upstream: Open WebUI
+    upstream openwebui {
+        server open-webui:8080;
+    }
+
+    # Upstream: Plugin Daemon
+    upstream plugin_daemon {
+        server plugin_daemon:5002;
+    }
+
+    # --- HTTP server ---
+    server {
+        listen 80;
+        server_name __SERVER_NAME__;
+
+        # Certbot challenge (must be BEFORE redirect to allow ACME verification)
+        location /.well-known/acme-challenge/ {
+            root /var/www/certbot;
+        }
+
+        # =============================================
+        # Open WebUI — default frontend (/)
+        # =============================================
+        location / {
+            #__TLS_REDIRECT__return 301 https://$host$request_uri;
+            proxy_pass http://openwebui;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_read_timeout 300s;
+            proxy_send_timeout 300s;
+            proxy_buffering off;
+        }
+
+        # =============================================
+        # Dify Console — hidden behind secret ADMIN_TOKEN
+        # Access: /__ADMIN_TOKEN__/
+        # =============================================
+
+        # Dify Console Web UI (rewrite token prefix, proxy to web:3000)
+        location /__ADMIN_TOKEN__/ {
+            proxy_pass http://dify_web/;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            # Rewrite internal links so Dify Console works under token path
+            sub_filter '/"/' '/"/__ADMIN_TOKEN__/"/' ;
+            sub_filter "'/'" "'/__ADMIN_TOKEN__/'" ;
+            sub_filter '/apps' '/__ADMIN_TOKEN__/apps' ;
+            sub_filter '/signin' '/__ADMIN_TOKEN__/signin' ;
+            sub_filter '/install' '/__ADMIN_TOKEN__/install' ;
+            sub_filter '/_next/' '/__ADMIN_TOKEN__/_next/' ;
+            sub_filter '/console/' '/__ADMIN_TOKEN__/console/' ;
+            sub_filter '/explore' '/__ADMIN_TOKEN__/explore' ;
+            sub_filter_once off;
+            sub_filter_types text/html application/javascript;
+        }
+
+        # Dify Console API — behind token path
+        location /__ADMIN_TOKEN__/console/api {
+            rewrite ^/__ADMIN_TOKEN__/(.*)$ /$1 break;
+            proxy_pass http://dify_api;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 3600s;
+            proxy_send_timeout 3600s;
+        }
+
+        # Dify API — behind token path
+        location /__ADMIN_TOKEN__/api {
+            rewrite ^/__ADMIN_TOKEN__/(.*)$ /$1 break;
+            proxy_pass http://dify_api;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 3600s;
+            proxy_send_timeout 3600s;
+        }
+
+        # Dify Service API (/v1) — behind token path
+        location /__ADMIN_TOKEN__/v1 {
+            rewrite ^/__ADMIN_TOKEN__/(.*)$ /$1 break;
+            proxy_pass http://dify_api;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 3600s;
+            proxy_send_timeout 3600s;
+        }
+
+        # Dify Files — behind token path
+        location /__ADMIN_TOKEN__/files {
+            rewrite ^/__ADMIN_TOKEN__/(.*)$ /$1 break;
+            proxy_pass http://dify_api;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # Plugin Daemon — behind token path
+        location /__ADMIN_TOKEN__/e/ {
+            rewrite ^/__ADMIN_TOKEN__/(.*)$ /$1 break;
+            proxy_pass http://plugin_daemon;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # Dify static assets — behind token path
+        location /__ADMIN_TOKEN__/_next {
+            rewrite ^/__ADMIN_TOKEN__/(.*)$ /$1 break;
+            proxy_pass http://dify_web;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+        }
+
+        # =============================================
+        # Block direct access to Dify paths (no token)
+        # =============================================
+        location /console {
+            return 404;
+        }
+        location /explore {
+            return 404;
+        }
+        location /signin {
+            return 404;
+        }
+        location /install {
+            return 404;
+        }
+    }
+
+    #__TLS__server {
+    #__TLS__    listen 443 ssl http2;
+    #__TLS__    server_name __SERVER_NAME__;
+    #__TLS__
+    #__TLS__    ssl_certificate __TLS_CERT_PATH__;
+    #__TLS__    ssl_certificate_key __TLS_KEY_PATH__;
+    #__TLS__    ssl_protocols TLSv1.2 TLSv1.3;
+    #__TLS__    ssl_ciphers HIGH:!aNULL:!MD5;
+    #__TLS__    ssl_prefer_server_ciphers on;
+    #__TLS__    ssl_session_cache shared:SSL:10m;
+    #__TLS__    ssl_session_timeout 10m;
+    #__TLS__
+    #__TLS__    # Certbot challenge
+    #__TLS__    location /.well-known/acme-challenge/ {
+    #__TLS__        root /var/www/certbot;
+    #__TLS__    }
+    #__TLS__
+    #__TLS__    # Open WebUI — default frontend
+    #__TLS__    location / {
+    #__TLS__        proxy_pass http://openwebui;
+    #__TLS__        proxy_http_version 1.1;
+    #__TLS__        proxy_set_header Host $host;
+    #__TLS__        proxy_set_header X-Real-IP $remote_addr;
+    #__TLS__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #__TLS__        proxy_set_header X-Forwarded-Proto $scheme;
+    #__TLS__        proxy_set_header Upgrade $http_upgrade;
+    #__TLS__        proxy_set_header Connection "upgrade";
+    #__TLS__        proxy_read_timeout 300s;
+    #__TLS__        proxy_send_timeout 300s;
+    #__TLS__        proxy_buffering off;
+    #__TLS__    }
+    #__TLS__
+    #__TLS__    # Dify Console Web UI
+    #__TLS__    location /__ADMIN_TOKEN__/ {
+    #__TLS__        proxy_pass http://dify_web/;
+    #__TLS__        proxy_http_version 1.1;
+    #__TLS__        proxy_set_header Host $host;
+    #__TLS__        proxy_set_header X-Real-IP $remote_addr;
+    #__TLS__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #__TLS__        proxy_set_header X-Forwarded-Proto $scheme;
+    #__TLS__        sub_filter '/"/' '/"/__ADMIN_TOKEN__/"/' ;
+    #__TLS__        sub_filter "'/'" "'/__ADMIN_TOKEN__/'" ;
+    #__TLS__        sub_filter '/apps' '/__ADMIN_TOKEN__/apps' ;
+    #__TLS__        sub_filter '/signin' '/__ADMIN_TOKEN__/signin' ;
+    #__TLS__        sub_filter '/install' '/__ADMIN_TOKEN__/install' ;
+    #__TLS__        sub_filter '/_next/' '/__ADMIN_TOKEN__/_next/' ;
+    #__TLS__        sub_filter '/console/' '/__ADMIN_TOKEN__/console/' ;
+    #__TLS__        sub_filter '/explore' '/__ADMIN_TOKEN__/explore' ;
+    #__TLS__        sub_filter_once off;
+    #__TLS__        sub_filter_types text/html application/javascript;
+    #__TLS__    }
+    #__TLS__
+    #__TLS__    # Dify Console API
+    #__TLS__    location /__ADMIN_TOKEN__/console/api {
+    #__TLS__        rewrite ^/__ADMIN_TOKEN__/(.*)$ /$1 break;
+    #__TLS__        proxy_pass http://dify_api;
+    #__TLS__        proxy_http_version 1.1;
+    #__TLS__        proxy_set_header Host $host;
+    #__TLS__        proxy_set_header X-Real-IP $remote_addr;
+    #__TLS__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #__TLS__        proxy_set_header X-Forwarded-Proto $scheme;
+    #__TLS__        proxy_read_timeout 3600s;
+    #__TLS__        proxy_send_timeout 3600s;
+    #__TLS__    }
+    #__TLS__
+    #__TLS__    # Dify API
+    #__TLS__    location /__ADMIN_TOKEN__/api {
+    #__TLS__        rewrite ^/__ADMIN_TOKEN__/(.*)$ /$1 break;
+    #__TLS__        proxy_pass http://dify_api;
+    #__TLS__        proxy_http_version 1.1;
+    #__TLS__        proxy_set_header Host $host;
+    #__TLS__        proxy_set_header X-Real-IP $remote_addr;
+    #__TLS__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #__TLS__        proxy_set_header X-Forwarded-Proto $scheme;
+    #__TLS__        proxy_read_timeout 3600s;
+    #__TLS__        proxy_send_timeout 3600s;
+    #__TLS__    }
+    #__TLS__
+    #__TLS__    # Dify Service API (/v1)
+    #__TLS__    location /__ADMIN_TOKEN__/v1 {
+    #__TLS__        rewrite ^/__ADMIN_TOKEN__/(.*)$ /$1 break;
+    #__TLS__        proxy_pass http://dify_api;
+    #__TLS__        proxy_http_version 1.1;
+    #__TLS__        proxy_set_header Host $host;
+    #__TLS__        proxy_set_header X-Real-IP $remote_addr;
+    #__TLS__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #__TLS__        proxy_set_header X-Forwarded-Proto $scheme;
+    #__TLS__        proxy_read_timeout 3600s;
+    #__TLS__        proxy_send_timeout 3600s;
+    #__TLS__    }
+    #__TLS__
+    #__TLS__    # Dify Files
+    #__TLS__    location /__ADMIN_TOKEN__/files {
+    #__TLS__        rewrite ^/__ADMIN_TOKEN__/(.*)$ /$1 break;
+    #__TLS__        proxy_pass http://dify_api;
+    #__TLS__        proxy_http_version 1.1;
+    #__TLS__        proxy_set_header Host $host;
+    #__TLS__        proxy_set_header X-Real-IP $remote_addr;
+    #__TLS__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #__TLS__        proxy_set_header X-Forwarded-Proto $scheme;
+    #__TLS__    }
+    #__TLS__
+    #__TLS__    # Plugin Daemon
+    #__TLS__    location /__ADMIN_TOKEN__/e/ {
+    #__TLS__        rewrite ^/__ADMIN_TOKEN__/(.*)$ /$1 break;
+    #__TLS__        proxy_pass http://plugin_daemon;
+    #__TLS__        proxy_http_version 1.1;
+    #__TLS__        proxy_set_header Host $host;
+    #__TLS__        proxy_set_header X-Real-IP $remote_addr;
+    #__TLS__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #__TLS__        proxy_set_header X-Forwarded-Proto $scheme;
+    #__TLS__    }
+    #__TLS__
+    #__TLS__    # Dify static assets
+    #__TLS__    location /__ADMIN_TOKEN__/_next {
+    #__TLS__        rewrite ^/__ADMIN_TOKEN__/(.*)$ /$1 break;
+    #__TLS__        proxy_pass http://dify_web;
+    #__TLS__        proxy_http_version 1.1;
+    #__TLS__        proxy_set_header Host $host;
+    #__TLS__    }
+    #__TLS__
+    #__TLS__    # Block direct Dify paths
+    #__TLS__    location /console { return 404; }
+    #__TLS__    location /explore { return 404; }
+    #__TLS__    location /signin { return 404; }
+    #__TLS__    location /install { return 404; }
+    #__TLS__}
+}

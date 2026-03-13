@@ -1,0 +1,9 @@
+{
+  "name": "AGMind Default",
+  "primary_color": "#4F46E5",
+  "background_color": "#F9FAFB",
+  "sidebar_color": "#1F2937",
+  "text_color": "#111827",
+  "accent_color": "#6366F1",
+  "font_family": "Inter, system-ui, -apple-system, sans-serif"
+}
