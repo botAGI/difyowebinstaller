@@ -302,7 +302,7 @@ services:
   # ==================== Weaviate ====================
   weaviate:
     <<: *security-defaults
-    image: semitechnologies/weaviate:${WEAVIATE_VERSION}
+    image: semitechnologies/weaviate:${WEAVIATE_VERSION:-1.27.6}
     container_name: agmind-weaviate
     restart: always
     profiles:
@@ -353,7 +353,7 @@ services:
   # ==================== Docling (ETL service) ====================
   docling:
     <<: *security-defaults
-    image: ghcr.io/docling-project/docling-serve:${DOCLING_SERVE_VERSION}
+    image: ghcr.io/docling-project/docling-serve:${DOCLING_SERVE_VERSION:-v1.14.3}
     container_name: agmind-docling
     restart: always
     profiles:
@@ -373,7 +373,7 @@ services:
   # ==================== Xinference (Reranker) ====================
   xinference:
     <<: *security-defaults
-    image: xprobe/xinference:${XINFERENCE_VERSION}
+    image: xprobe/xinference:${XINFERENCE_VERSION:-v0.16.3}
     container_name: agmind-xinference
     restart: always
     profiles:
@@ -445,7 +445,7 @@ services:
   # ==================== Plugin Daemon ====================
   plugin_daemon:
     <<: *security-defaults
-    image: langgenius/dify-plugin-daemon:${PLUGIN_DAEMON_VERSION}
+    image: langgenius/dify-plugin-daemon:${PLUGIN_DAEMON_VERSION:-0.5.3-local}
     container_name: agmind-plugin-daemon
     restart: always
     environment:
@@ -579,7 +579,7 @@ services:
       start_period: 15s
     networks:
       - agmind-backend
-    restart: unless-stopped
+    restart: always
 
   # ==================== Promtail (monitoring profile) ====================
   promtail:
@@ -592,12 +592,18 @@ services:
       - ./monitoring/promtail-config.yml:/etc/promtail/config.yml:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     command: -config.file=/etc/promtail/config.yml
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9080/ready || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 15s
     depends_on:
       loki:
         condition: service_healthy
     networks:
       - agmind-backend
-    restart: unless-stopped
+    restart: always
 
   # ==================== cAdvisor (monitoring profile) ====================
   cadvisor:
@@ -681,7 +687,7 @@ services:
     image: authelia/authelia:${AUTHELIA_VERSION:-4.38}
     container_name: agmind-authelia
     profiles: ["authelia"]
-    restart: unless-stopped
+    restart: always
     volumes:
       - ./authelia:/config:ro
     environment:
