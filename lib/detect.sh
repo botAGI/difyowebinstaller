@@ -420,7 +420,7 @@ preflight_checks() {
 
     # 5. RAM >= 4GB
     local ram_gb
-    ram_gb=$(free -g 2>/dev/null | awk '/^Mem:/ {print $2}' || echo "0")
+    ram_gb="${DETECTED_RAM_TOTAL_GB:-0}"
     if [[ "$ram_gb" -ge 8 ]] 2>/dev/null; then
         echo -e "  ${GREEN}[PASS]${NC} RAM: ${ram_gb}GB"
     elif [[ "$ram_gb" -ge 4 ]] 2>/dev/null; then
