@@ -30,4 +30,4 @@ jobs:
           scan-type: 'config'
           scan-ref: '.'
           severity: 'CRITICAL,HIGH'
-          exit-code: '0'
+          exit-code: '1'
