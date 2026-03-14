@@ -96,9 +96,9 @@
       "platforms": ["linux/amd64"]
     },
     "docling-serve": {
-      "registry": "docker.io",
-      "image": "ds4sd/docling-serve",
-      "tag": "2.15.0",
+      "registry": "ghcr.io",
+      "image": "docling-project/docling-serve",
+      "tag": "v1.14.3",
       "digest": "",
       "platforms": ["linux/amd64"]
     },

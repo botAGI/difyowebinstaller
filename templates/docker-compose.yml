@@ -353,7 +353,7 @@ services:
   # ==================== Docling (ETL service) ====================
   docling:
     <<: *security-defaults
-    image: ds4sd/docling-serve:${DOCLING_VERSION}
+    image: ghcr.io/docling-project/docling-serve:${DOCLING_SERVE_VERSION}
     container_name: agmind-docling
     restart: always
     profiles:
