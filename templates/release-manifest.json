@@ -91,9 +91,9 @@
     "dify-plugin-daemon": {
       "registry": "docker.io",
       "image": "langgenius/dify-plugin-daemon",
-      "tag": "0.5.3",
+      "tag": "0.5.3-local",
       "digest": "",
-      "platforms": ["linux/amd64"]
+      "platforms": ["linux/amd64", "linux/arm64"]
     },
     "docling-serve": {
       "registry": "ghcr.io",
