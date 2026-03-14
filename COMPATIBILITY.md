@@ -16,7 +16,7 @@
 | Squid (SSRF Proxy) | 6.6-24.04_edge | 6.0 | SSRF protection proxy |
 | Plugin Daemon | 0.5.3 | 0.5.0 | ⚠️ <0.5.0 is ancient/broken |
 | Certbot | v3.1.0 | v2.0.0 | Let's Encrypt certificates |
-| Docling | 2.15.0 | 2.10.0 | ETL document processing |
+| Docling Serve | v1.14.3 | v1.10.0 | ETL document processing |
 | Xinference | v0.16.3 | v0.14.0 | Reranker model serving |
 | Authelia | 4.38 | 4.37 | Optional 2FA |
 | Grafana | 11.4.0 | 10.0.0 | Monitoring dashboards |
