@@ -30,7 +30,7 @@ teardown() {
 
 @test "escape_sed handles special characters" {
     result=$(escape_sed "test&value/with|backslash\\")
-    [[ "$result" == *'\\&'* ]] || [[ "$result" == *'\\/'* ]]
+    [[ "$result" == *'\&'* ]] && [[ "$result" == *'\/'* ]]
 }
 
 @test "validate_no_default_secrets rejects 'changeme'" {
