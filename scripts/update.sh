@@ -16,6 +16,12 @@ HEALTH_SCRIPT="${INSTALL_DIR}/scripts/health.sh"
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 
+# Define log functions BEFORE flock block that uses them
+log_info() { echo -e "${CYAN}→ $*${NC}"; }
+log_success() { echo -e "${GREEN}✓ $*${NC}"; }
+log_warn() { echo -e "${YELLOW}⚠ $*${NC}"; }
+log_error() { echo -e "${RED}✗ $*${NC}"; }
+
 # Exclusive lock — prevent parallel operations
 LOCK_FILE="/var/lock/agmind-operation.lock"
 exec 9>"$LOCK_FILE"
@@ -23,6 +29,12 @@ if ! flock -n 9; then
     log_error "Другая операция AGMind уже запущена. Дождитесь завершения."
     exit 1
 fi
+
+# Fix log file permissions
+mkdir -p "$(dirname "$LOG_FILE")"
+chmod 700 "$(dirname "$LOG_FILE")"
+touch "$LOG_FILE"
+chmod 600 "$LOG_FILE"
 
 # Cleanup on failure
 cleanup_on_failure() {
@@ -32,7 +44,7 @@ cleanup_on_failure() {
         log_error "Проверьте: diff ${ENV_FILE} ${ENV_FILE}.pre-update"
     fi
 }
-trap cleanup_on_failure EXIT
+trap cleanup_on_failure EXIT INT TERM
 
 AUTO_UPDATE="${AUTO_UPDATE:-false}"
 CHECK_ONLY=false
@@ -44,11 +56,6 @@ for arg in "$@"; do
         --check-only) CHECK_ONLY=true ;;
     esac
 done
-
-log_info() { echo -e "${CYAN}→ $*${NC}"; }
-log_success() { echo -e "${GREEN}✓ $*${NC}"; }
-log_warn() { echo -e "${YELLOW}⚠ $*${NC}"; }
-log_error() { echo -e "${RED}✗ $*${NC}"; }
 
 # Send notification via configured alert channel
 send_notification() {
@@ -64,12 +71,13 @@ send_notification() {
             token=$(grep '^ALERT_TELEGRAM_TOKEN=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2-)
             chat_id=$(grep '^ALERT_TELEGRAM_CHAT_ID=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2-)
             if [[ -n "$token" && -n "$chat_id" ]]; then
-                local escaped_msg
-                escaped_msg=$(echo "$message" | sed 's/\\/\\\\/g; s/"/\\"/g')
-                curl -sf "https://api.telegram.org/bot${token}/sendMessage" \
+                curl -sf --max-time 10 -K - \
                     -d "chat_id=${chat_id}" \
-                    -d "text=${escaped_msg}" \
-                    -d "parse_mode=HTML" >/dev/null 2>&1 || true
+                    -d "text=${message}" \
+                    -d "parse_mode=HTML" \
+                    >/dev/null 2>&1 <<CURL_CFG || true
+url = "https://api.telegram.org/bot${token}/sendMessage"
+CURL_CFG
             fi
             ;;
         webhook)
@@ -78,7 +86,7 @@ send_notification() {
             if [[ -n "$url" ]]; then
                 local escaped_msg
                 escaped_msg=$(echo "$message" | sed 's/\\/\\\\/g; s/"/\\"/g')
-                curl -sf -X POST "$url" \
+                curl -sf --max-time 10 -X POST "$url" \
                     -H "Content-Type: application/json" \
                     -d "{\"text\":\"${escaped_msg}\",\"source\":\"agmind-update\"}" \
                     >/dev/null 2>&1 || true
@@ -94,7 +102,10 @@ check_preflight() {
     # Disk space
     local free_gb
     free_gb=$(df -BG "${INSTALL_DIR}" 2>/dev/null | awk 'NR==2{gsub(/G/,"");print $4}' || echo "0")
-    if [[ "$free_gb" -lt 5 ]] 2>/dev/null; then
+    if ! [[ "$free_gb" =~ ^[0-9]+$ ]]; then
+        free_gb=0
+    fi
+    if [[ "$free_gb" -lt 5 ]]; then
         log_error "Недостаточно места: ${free_gb}GB (требуется 5GB+)"
         errors=$((errors + 1))
     else
@@ -183,7 +194,12 @@ display_version_diff() {
 get_service_image() {
     local service="$1"
     docker compose -f "$COMPOSE_FILE" config --format json 2>/dev/null | \
-        python3 -c "import json,sys; cfg=json.load(sys.stdin); print(cfg.get('services',{}).get('$service',{}).get('image',''))" 2>/dev/null || echo ""
+        python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+svc = data.get('services', {}).get(sys.argv[1], {})
+print(svc.get('image', 'unknown'))
+" "$service" 2>/dev/null || echo ""
 }
 
 # Save current image digest for rollback
@@ -366,15 +382,21 @@ main() {
 
     # Save .env backup for rollback
     cp "$ENV_FILE" "${ENV_FILE}.pre-update"
+    chmod 600 "${ENV_FILE}.pre-update"
 
     # Update versions in .env
     if [[ -f "$VERSIONS_FILE" && -f "$ENV_FILE" ]]; then
         while IFS='=' read -r key value; do
             [[ "$key" =~ _VERSION$ ]] || continue
             [[ -z "$value" ]] && continue
-            sed -i.bak "s|^${key}=.*|${key}=${value}|" "$ENV_FILE" 2>/dev/null || true
+            # Validate key format to prevent injection
+            [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+            # Safe replacement: remove old line, append new one
+            grep -v "^${key}=" "$ENV_FILE" > "${ENV_FILE}.tmp"
+            echo "${key}=${value}" >> "${ENV_FILE}.tmp"
+            mv "${ENV_FILE}.tmp" "$ENV_FILE"
+            chmod 600 "$ENV_FILE"
         done < <(grep '_VERSION=' "$VERSIONS_FILE" 2>/dev/null | grep -v '^#')
-        rm -f "${ENV_FILE}.bak"
     fi
 
     # Rolling update

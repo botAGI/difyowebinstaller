@@ -94,16 +94,24 @@ generate_config() {
         cp "$env_file" "${env_file}.backup.$(date +%Y%m%d_%H%M%S)"
     fi
     cp "$template_file" "$env_file"
+    chmod 600 "$env_file"
 
     # Escape user-input values for safe sed replacement (& | / \ chars)
     local safe_admin_email safe_company safe_domain safe_certbot_email
     local safe_monitoring_endpoint safe_webhook_url
+    local safe_llm_model safe_embedding_model
+    local safe_monitoring_token safe_telegram_token safe_telegram_chat_id
     safe_admin_email=$(escape_sed "${ADMIN_EMAIL:-admin@admin.com}")
     safe_company=$(escape_sed "${COMPANY_NAME:-AGMind}")
     safe_domain=$(escape_sed "${DOMAIN:-localhost}")
     safe_certbot_email=$(escape_sed "${CERTBOT_EMAIL:-}")
     safe_monitoring_endpoint=$(escape_sed "${MONITORING_ENDPOINT:-}")
     safe_webhook_url=$(escape_sed "${ALERT_WEBHOOK_URL:-}")
+    safe_llm_model=$(escape_sed "${LLM_MODEL:-qwen2.5:14b}")
+    safe_embedding_model=$(escape_sed "${EMBEDDING_MODEL:-bge-m3}")
+    safe_monitoring_token=$(escape_sed "${MONITORING_TOKEN:-}")
+    safe_telegram_token=$(escape_sed "${ALERT_TELEGRAM_TOKEN:-}")
+    safe_telegram_chat_id=$(escape_sed "${ALERT_TELEGRAM_CHAT_ID:-}")
 
     # Replace placeholders in .env
     sed -i.bak \
@@ -116,8 +124,8 @@ generate_config() {
         -e "s|__ADMIN_EMAIL__|${safe_admin_email}|g" \
         -e "s|__ADMIN_PASSWORD_B64__|${admin_password_b64}|g" \
         -e "s|__COMPANY_NAME__|${safe_company}|g" \
-        -e "s|__LLM_MODEL__|${LLM_MODEL:-qwen2.5:14b}|g" \
-        -e "s|__EMBEDDING_MODEL__|${EMBEDDING_MODEL:-bge-m3}|g" \
+        -e "s|__LLM_MODEL__|${safe_llm_model}|g" \
+        -e "s|__EMBEDDING_MODEL__|${safe_embedding_model}|g" \
         -e "s|__DOMAIN__|${safe_domain}|g" \
         -e "s|__CERTBOT_EMAIL__|${safe_certbot_email}|g" \
         -e "s|__ADMIN_TOKEN__|${admin_token}|g" \
@@ -127,12 +135,12 @@ generate_config() {
         -e "s|__TLS_MODE__|${TLS_MODE:-none}|g" \
         -e "s|__MONITORING_MODE__|${MONITORING_MODE:-none}|g" \
         -e "s|__MONITORING_ENDPOINT__|${safe_monitoring_endpoint}|g" \
-        -e "s|__MONITORING_TOKEN__|${MONITORING_TOKEN:-}|g" \
+        -e "s|__MONITORING_TOKEN__|${safe_monitoring_token}|g" \
         -e "s|__GRAFANA_ADMIN_PASSWORD__|${grafana_admin_password}|g" \
         -e "s|__ALERT_MODE__|${ALERT_MODE:-none}|g" \
         -e "s|__ALERT_WEBHOOK_URL__|${safe_webhook_url}|g" \
-        -e "s|__ALERT_TELEGRAM_TOKEN__|${ALERT_TELEGRAM_TOKEN:-}|g" \
-        -e "s|__ALERT_TELEGRAM_CHAT_ID__|${ALERT_TELEGRAM_CHAT_ID:-}|g" \
+        -e "s|__ALERT_TELEGRAM_TOKEN__|${safe_telegram_token}|g" \
+        -e "s|__ALERT_TELEGRAM_CHAT_ID__|${safe_telegram_chat_id}|g" \
         "$env_file"
     rm -f "${env_file}.bak"
 
@@ -148,8 +156,12 @@ generate_config() {
     local versions_file="${template_dir}/versions.env"
     if [[ -f "$versions_file" ]]; then
         cp "$versions_file" "${INSTALL_DIR}/versions.env"
-        # Source version variables and update .env with pinned versions
-        source "$versions_file"
+        # Safely parse version variables (no arbitrary code execution)
+        while IFS='=' read -r key value; do
+            [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*_VERSION$ ]] || continue
+            [[ "$value" =~ ^[a-zA-Z0-9._:-]+$ ]] || continue
+            declare "$key=$value"
+        done < <(grep -E '^[A-Z].*_VERSION=' "$versions_file")
         sed -i.bak \
             -e "s|DIFY_VERSION=.*|DIFY_VERSION=${DIFY_VERSION}|" \
             -e "s|OLLAMA_VERSION=.*|OLLAMA_VERSION=${OLLAMA_VERSION}|" \
@@ -173,9 +185,9 @@ generate_config() {
         rm -f "${env_file}.bak"
     fi
 
-    # Export ADMIN_TOKEN for nginx config generation
-    export ADMIN_TOKEN="$admin_token"
-    export GRAFANA_ADMIN_PASSWORD="$grafana_admin_password"
+    # Set ADMIN_TOKEN for nginx config generation (not exported to avoid /proc/environ leak)
+    ADMIN_TOKEN="$admin_token"
+    GRAFANA_ADMIN_PASSWORD="$grafana_admin_password"
 
     # Generate nginx.conf from template
     generate_nginx_config "$profile" "$template_dir"

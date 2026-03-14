@@ -4,8 +4,27 @@ set -euo pipefail
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 
+# --- Root check ---
+if [[ $EUID -ne 0 ]]; then
+    echo -e "${RED}This script must be run as root${NC}"
+    exit 1
+fi
+
+# --- Validate INSTALL_DIR ---
 INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
+[[ "$INSTALL_DIR" == /opt/agmind* ]] || { echo -e "${RED}Invalid INSTALL_DIR: must start with /opt/agmind${NC}"; exit 1; }
+
 COMPOSE_FILE="${INSTALL_DIR}/docker/docker-compose.yml"
+
+# --- Trap for partial cleanup tracking ---
+CLEANUP_STAGE=""
+cleanup_status() {
+    if [[ -n "$CLEANUP_STAGE" ]]; then
+        echo -e "${YELLOW}Uninstall interrupted at stage: ${CLEANUP_STAGE}${NC}"
+        echo -e "${YELLOW}Run again with --force to continue cleanup${NC}"
+    fi
+}
+trap cleanup_status EXIT
 
 # Parse flags
 FORCE=false
@@ -69,19 +88,22 @@ fi
 echo ""
 
 # 1. Stop and remove containers
+CLEANUP_STAGE="docker-compose-down"
 if [[ -f "$COMPOSE_FILE" ]]; then
     echo -e "${YELLOW}Остановка контейнеров...${NC}"
     docker compose -f "$COMPOSE_FILE" down --remove-orphans 2>/dev/null || true
 fi
 
-# 2. Remove Docker volumes (including Loki/Promtail)
+# 2. Remove Docker volumes (including Loki; removed promtail_data — not a named volume)
+CLEANUP_STAGE="docker-volumes"
 echo -e "${YELLOW}Удаление Docker volumes...${NC}"
-docker volume ls -q | grep -E "^agmind_|openwebui_data|ollama_data|xinference_data|grafana_data|portainer_data|prometheus_data|loki_data|promtail_data" | while read -r vol; do
+docker volume ls -q | grep -E "^agmind_|_openwebui_data$|_ollama_data$|_xinference_data$|_grafana_data$|_portainer_data$|_prometheus_data$|_loki_data$|_authelia_data$" | while read -r vol; do
     docker volume rm "$vol" 2>/dev/null || true
     echo "  Удалён volume: $vol"
 done
 
 # 3. Remove systemd services
+CLEANUP_STAGE="systemd-services"
 if [[ -f /etc/systemd/system/agmind-tunnel.service ]]; then
     echo -e "${YELLOW}Удаление systemd сервисов...${NC}"
     systemctl stop agmind-tunnel 2>/dev/null || true
@@ -91,10 +113,12 @@ if [[ -f /etc/systemd/system/agmind-tunnel.service ]]; then
 fi
 
 # 4. Remove cron entries (backup + secret rotation)
+CLEANUP_STAGE="cron-entries"
 echo -e "${YELLOW}Удаление cron задач...${NC}"
 crontab -l 2>/dev/null | grep -v 'agmind\|rotate_secrets' | crontab - 2>/dev/null || true
 
 # 5. Remove Fail2ban filter and jail
+CLEANUP_STAGE="fail2ban"
 if [[ -f /etc/fail2ban/filter.d/agmind-nginx.conf ]]; then
     echo -e "${YELLOW}Удаление Fail2ban конфигурации...${NC}"
     rm -f /etc/fail2ban/filter.d/agmind-nginx.conf
@@ -103,6 +127,7 @@ if [[ -f /etc/fail2ban/filter.d/agmind-nginx.conf ]]; then
 fi
 
 # 6. Remove UFW rules
+CLEANUP_STAGE="ufw-rules"
 if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q 'AGMind'; then
     echo -e "${YELLOW}Удаление UFW правил AGMind...${NC}"
     ufw status numbered 2>/dev/null | grep -i 'agmind\|Grafana\|Portainer' | \
@@ -112,15 +137,18 @@ if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q 'AGMind'; then
 fi
 
 # 7. Remove age encryption keys
+CLEANUP_STAGE="age-keys"
 if [[ -d "${INSTALL_DIR}/.age" ]]; then
     echo -e "${YELLOW}Удаление ключей шифрования (.age)...${NC}"
     rm -rf "${INSTALL_DIR}/.age"
 fi
 
 # 8. Remove GPU profile file
+CLEANUP_STAGE="gpu-profile"
 rm -f "${INSTALL_DIR}/.agmind_gpu_profile" 2>/dev/null || true
 
 # 9. Remove multi-instance directories
+CLEANUP_STAGE="multi-instance"
 if [[ -d "/opt/agmind-instances" ]]; then
     echo -e "${YELLOW}Обнаружены multi-instance директории в /opt/agmind-instances/${NC}"
     if [[ "$FORCE" == "true" ]]; then
@@ -140,8 +168,12 @@ if [[ -d "/opt/agmind-instances" ]]; then
 fi
 
 # 10. Remove installation directory
+CLEANUP_STAGE="install-dir"
 echo -e "${YELLOW}Удаление ${INSTALL_DIR}...${NC}"
 rm -rf "${INSTALL_DIR}"
+
+# All done — clear stage so trap doesn't fire
+CLEANUP_STAGE=""
 
 echo ""
 echo -e "${GREEN}=== AGMind удалён ===${NC}"

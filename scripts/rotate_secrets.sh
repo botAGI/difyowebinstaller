@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # AGMind Secret Rotation Script
 set -euo pipefail
+umask 077
 
 INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
 ENV_FILE="${INSTALL_DIR}/docker/.env"
@@ -9,6 +10,27 @@ COMPOSE_FILE="${INSTALL_DIR}/docker/docker-compose.yml"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
+
+# --- Exclusive lock ---
+LOCK_FILE="/var/lock/agmind-operation.lock"
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+    echo -e "${RED}Another AGMind operation is running${NC}"
+    exit 1
+fi
+
+# --- Rollback trap ---
+ROTATION_STARTED=false
+TIMESTAMP=""
+cleanup_rotation() {
+    if [[ "$ROTATION_STARTED" == "true" ]] && [[ -n "$TIMESTAMP" ]] && [[ -f "${ENV_FILE}.pre-rotation.${TIMESTAMP}" ]]; then
+        echo -e "${RED}Rotation failed — restoring backup...${NC}"
+        cp "${ENV_FILE}.pre-rotation.${TIMESTAMP}" "$ENV_FILE"
+        chmod 600 "$ENV_FILE"
+        cd "${INSTALL_DIR}/docker" && docker compose restart 2>/dev/null || true
+    fi
+}
+trap cleanup_rotation EXIT
 
 generate_secret() {
     local length="${1:-32}"
@@ -27,10 +49,12 @@ rotate_secrets() {
     mkdir -p "${INSTALL_DIR}/logs"
 
     # Backup current .env
-    cp "$ENV_FILE" "${ENV_FILE}.pre-rotation.$(date +%Y%m%d_%H%M%S)"
+    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+    cp "$ENV_FILE" "${ENV_FILE}.pre-rotation.${TIMESTAMP}"
+    chmod 600 "${ENV_FILE}.pre-rotation.${TIMESTAMP}"
 
-    local timestamp
-    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local timestamp_log
+    timestamp_log=$(date '+%Y-%m-%d %H:%M:%S')
 
     # Rotate secrets
     local new_secret_key new_redis_pass new_grafana_pass
@@ -44,6 +68,8 @@ rotate_secrets() {
     local new_plugin_inner_key
     new_plugin_inner_key=$(generate_secret 48)
 
+    ROTATION_STARTED=true
+
     sed -i.bak \
         -e "s|^SECRET_KEY=.*|SECRET_KEY=${new_secret_key}|" \
         -e "s|^REDIS_PASSWORD=.*|REDIS_PASSWORD=${new_redis_pass}|" \
@@ -55,12 +81,12 @@ rotate_secrets() {
     rm -f "${ENV_FILE}.bak"
 
     echo -e "${GREEN}Секреты обновлены:${NC}"
-    echo "  SECRET_KEY:             $(echo "${new_secret_key}" | head -c 8)..."
-    echo "  REDIS_PASSWORD:         $(echo "${new_redis_pass}" | head -c 8)..."
-    echo "  GRAFANA_ADMIN_PASSWORD: $(echo "${new_grafana_pass}" | head -c 8)..."
-    echo "  SANDBOX_API_KEY:        $(echo "${new_sandbox_key}" | head -c 16)..."
-    echo "  PLUGIN_DAEMON_KEY:      $(echo "${new_plugin_daemon_key}" | head -c 8)..."
-    echo "  PLUGIN_INNER_API_KEY:   $(echo "${new_plugin_inner_key}" | head -c 8)..."
+    echo -e "  ${GREEN}✓${NC} SECRET_KEY rotated"
+    echo -e "  ${GREEN}✓${NC} REDIS_PASSWORD rotated"
+    echo -e "  ${GREEN}✓${NC} GRAFANA_ADMIN_PASSWORD rotated"
+    echo -e "  ${GREEN}✓${NC} SANDBOX_API_KEY rotated"
+    echo -e "  ${GREEN}✓${NC} PLUGIN_DAEMON_KEY rotated"
+    echo -e "  ${GREEN}✓${NC} PLUGIN_INNER_API_KEY rotated"
 
     # Re-encrypt if SOPS is enabled
     if [[ -f "${INSTALL_DIR}/.age/agmind.key" && -f "${ENV_FILE}.enc" ]]; then
@@ -83,8 +109,11 @@ rotate_secrets() {
     cd "${INSTALL_DIR}/docker"
     docker compose restart api worker redis grafana sandbox plugin_daemon 2>/dev/null || true
 
+    ROTATION_STARTED=false
+
     # Log rotation
-    echo "${timestamp} | Secrets rotated: SECRET_KEY, REDIS_PASSWORD, GRAFANA_ADMIN_PASSWORD, SANDBOX_API_KEY, PLUGIN_DAEMON_KEY, PLUGIN_INNER_API_KEY" >> "$LOG_FILE"
+    echo "${timestamp_log} | Secrets rotated: SECRET_KEY, REDIS_PASSWORD, GRAFANA_ADMIN_PASSWORD, SANDBOX_API_KEY, PLUGIN_DAEMON_KEY, PLUGIN_INNER_API_KEY" >> "$LOG_FILE"
+    chmod 600 "$LOG_FILE"
 
     # Send notification
     local alert_mode
@@ -94,7 +123,7 @@ rotate_secrets() {
         token=$(grep '^ALERT_TELEGRAM_TOKEN=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2-)
         chat_id=$(grep '^ALERT_TELEGRAM_CHAT_ID=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2-)
         if [[ -n "$token" && -n "$chat_id" ]]; then
-            curl -sf "https://api.telegram.org/bot${token}/sendMessage" \
+            curl -sf --max-time 10 "https://api.telegram.org/bot${token}/sendMessage" \
                 -d "chat_id=${chat_id}" \
                 -d "text=🔐 AGMind: секреты ротированы ($(hostname 2>/dev/null || echo 'unknown'))" \
                 -d "parse_mode=HTML" >/dev/null 2>&1 || true

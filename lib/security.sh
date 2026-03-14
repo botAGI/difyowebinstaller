@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # AGMind Security Hardening Module
 
+# Colors (may be inherited from install.sh)
+RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
+CYAN="${CYAN:-\033[0;36m}"; BOLD="${BOLD:-\033[1m}"; NC="${NC:-\033[0m}"
+
 configure_ufw() {
     if [[ "${ENABLE_UFW:-false}" != "true" ]]; then return 0; fi
     if ! command -v ufw &>/dev/null; then
@@ -8,7 +12,13 @@ configure_ufw() {
         return 0
     fi
     echo -e "${CYAN}→ configure_ufw: настройка файрвола...${NC}"
+
+    # Backup existing UFW rules before reset
+    if ufw status 2>/dev/null | grep -q "active"; then
+        ufw status numbered > "/tmp/ufw-backup-$(date +%s).txt" 2>/dev/null || true
+    fi
     ufw --force reset
+
     ufw default deny incoming
     ufw default allow outgoing
     ufw allow ssh comment "SSH"
@@ -83,6 +93,10 @@ encrypt_secrets() {
     echo -e "${CYAN}→ encrypt_secrets: настройка шифрования...${NC}"
 
     local install_dir="${INSTALL_DIR:-/opt/agmind}"
+
+    # Validate INSTALL_DIR is absolute path
+    [[ "${install_dir}" == /* ]] || { echo -e "${RED}INSTALL_DIR must be absolute${NC}"; return 1; }
+
     local age_dir="${install_dir}/.age"
     local age_key="${age_dir}/agmind.key"
 
@@ -102,6 +116,11 @@ encrypt_secrets() {
         [[ "$(uname -m)" == "aarch64" || "$(uname -m)" == "arm64" ]] && arch="arm64"
         local sops_url="https://github.com/getsops/sops/releases/download/v3.9.4/sops-v3.9.4.linux.${arch}"
         if curl -sSL "$sops_url" -o /usr/local/bin/sops; then
+            # Verify SHA256 checksum if expected hash is provided
+            local sops_sha256
+            if ! echo "${SOPS_EXPECTED_SHA256:-}  /usr/local/bin/sops" | sha256sum -c - 2>/dev/null; then
+                echo -e "${YELLOW}Warning: SOPS checksum not verified (set SOPS_EXPECTED_SHA256 to verify)${NC}"
+            fi
             chmod +x /usr/local/bin/sops
         else
             echo -e "${YELLOW}Не удалось скачать sops${NC}"
@@ -115,6 +134,7 @@ encrypt_secrets() {
     if [[ ! -f "$age_key" ]]; then
         age-keygen -o "$age_key" 2>/dev/null
         chmod 600 "$age_key"
+        chown root:root "$age_key" 2>/dev/null || true
     fi
 
     local pub_key
@@ -134,6 +154,7 @@ EOF
         echo -e "${GREEN}✓ encrypt_secrets: .env зашифрован → .env.enc${NC}"
         echo -e "${YELLOW}⚠ ВАЖНО: Сохраните ключ ${age_key} в безопасное место!${NC}"
         echo -e "${YELLOW}  Без него невозможно расшифровать секреты.${NC}"
+        echo -e "${YELLOW}WARNING: Plaintext .env file still exists. Consider running: shred -u ${env_file}${NC}"
     fi
 
     # Add .env to .gitignore

@@ -59,6 +59,7 @@ check_container() {
 
 wait_healthy() {
     local timeout="${1:-300}"
+    [[ "$timeout" =~ ^[0-9]+$ ]] || timeout=300
     local interval=5
     local elapsed=0
 
@@ -87,7 +88,7 @@ wait_healthy() {
             return 0
         fi
 
-        sleep $interval
+        sleep "$interval"
         elapsed=$((elapsed + interval))
         echo -ne "\r  Ожидание... ${elapsed}/${timeout}с"
     done
@@ -115,7 +116,10 @@ check_all() {
         echo -e "${GREEN}Все сервисы работают${NC}"
     else
         echo -e "${YELLOW}${failed} сервис(ов) не запущен(о)${NC}"
-        send_alert "⚠️ AGMind: ${failed} сервис(ов) не работает. Проверьте: $(hostname -I 2>/dev/null | awk '{print $1}')"
+        local server_ip
+        server_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+        [[ -z "$server_ip" ]] && server_ip=$(hostname 2>/dev/null || echo 'unknown')
+        send_alert "⚠️ AGMind: ${failed} сервис(ов) не работает. Проверьте: ${server_ip}"
         echo "Проверьте логи: docker compose -f ${COMPOSE_FILE} logs <service>"
     fi
 
@@ -137,7 +141,7 @@ send_alert() {
                 # Escape special JSON characters in message
                 local escaped_message
                 escaped_message=$(echo "$message" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\t/\\t/g')
-                curl -sf -X POST "$webhook_url" \
+                curl -sf --max-time 10 -X POST "$webhook_url" \
                     -H "Content-Type: application/json" \
                     -d "{\"text\":\"$escaped_message\",\"source\":\"agmind-health\"}" \
                     >/dev/null 2>&1 || true
@@ -148,11 +152,13 @@ send_alert() {
             tg_token=$(grep '^ALERT_TELEGRAM_TOKEN=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "")
             tg_chat_id=$(grep '^ALERT_TELEGRAM_CHAT_ID=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "")
             if [[ -n "$tg_token" && -n "$tg_chat_id" ]]; then
-                curl -sf "https://api.telegram.org/bot${tg_token}/sendMessage" \
+                curl -sf --max-time 10 -K - \
                     -d "chat_id=${tg_chat_id}" \
                     -d "text=${message}" \
                     -d "parse_mode=HTML" \
-                    >/dev/null 2>&1 || true
+                    >/dev/null 2>&1 <<CURL_CFG || true
+url = "https://api.telegram.org/bot${tg_token}/sendMessage"
+CURL_CFG
             fi
             ;;
     esac
@@ -162,7 +168,9 @@ check_gpu_status() {
     echo -e "${BOLD}GPU Status:${NC}"
     local gpu_profile="${INSTALL_DIR}/.agmind_gpu_profile"
     if [[ -f "$gpu_profile" ]]; then
-        source "$gpu_profile"
+        GPU_TYPE=$(grep '^GPU_TYPE=' "$gpu_profile" | cut -d= -f2 | head -1)
+        GPU_NAME=$(grep '^GPU_NAME=' "$gpu_profile" | cut -d= -f2- | head -1)
+        GPU_VRAM=$(grep '^GPU_VRAM=' "$gpu_profile" | cut -d= -f2 | head -1)
     fi
 
     case "${GPU_TYPE:-none}" in
@@ -200,9 +208,8 @@ check_gpu_status() {
 
 check_ollama_models() {
     echo -e "${BOLD}Ollama Models:${NC}"
-    local ollama_url="http://localhost:${OLLAMA_PORT:-11434}"
     local response
-    response=$(curl -sf "${ollama_url}/api/tags" 2>/dev/null) || {
+    response=$(docker compose -f "$COMPOSE_FILE" exec -T ollama curl -sf --max-time 5 http://localhost:11434/api/tags 2>/dev/null) || {
         echo -e "  ${RED}Ollama API недоступен${NC}"
         echo ""
         return 1
@@ -237,7 +244,7 @@ check_vector_health() {
     case "$vs" in
         weaviate)
             local meta
-            meta=$(curl -sf http://localhost:8080/v1/meta 2>/dev/null) || {
+            meta=$(docker compose -f "$COMPOSE_FILE" exec -T weaviate curl -sf --max-time 5 http://localhost:8080/v1/meta 2>/dev/null) || {
                 echo -e "  ${RED}Weaviate: недоступен${NC}"
                 echo ""
                 return 1
@@ -247,9 +254,9 @@ check_vector_health() {
             echo -e "  ${GREEN}Weaviate: v${version} — OK${NC}"
             ;;
         qdrant)
-            if curl -sf http://localhost:6333/healthz >/dev/null 2>&1; then
+            if docker compose -f "$COMPOSE_FILE" exec -T qdrant curl -sf --max-time 5 http://localhost:6333/healthz >/dev/null 2>&1; then
                 local collections
-                collections=$(curl -sf http://localhost:6333/collections 2>/dev/null | \
+                collections=$(docker compose -f "$COMPOSE_FILE" exec -T qdrant curl -sf --max-time 5 http://localhost:6333/collections 2>/dev/null | \
                     python3 -c "import json,sys; colls=json.load(sys.stdin).get('result',{}).get('collections',[]); print(len(colls))" 2>/dev/null || echo "?")
                 echo -e "  ${GREEN}Qdrant: OK (${collections} коллекций)${NC}"
             else

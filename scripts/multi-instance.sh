@@ -23,6 +23,16 @@ INSTANCE_DOMAIN=""
 BASE_DIR="${DEFAULT_BASE_DIR}"
 FORCE=false
 
+# --- Cleanup trap for create_instance ---
+INSTANCE_DIR_CREATED=""
+cleanup_instance() {
+    if [[ -n "$INSTANCE_DIR_CREATED" ]] && [[ -d "$INSTANCE_DIR_CREATED" ]]; then
+        echo -e "${RED}Instance creation failed — cleaning up...${NC}"
+        rm -rf "$INSTANCE_DIR_CREATED"
+    fi
+}
+trap cleanup_instance EXIT
+
 # ============================================================================
 # USAGE
 # ============================================================================
@@ -67,19 +77,23 @@ parse_args() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --name)
-                INSTANCE_NAME="${2:-}"
+                [[ $# -ge 2 ]] || { echo "Missing value for --name"; exit 1; }
+                INSTANCE_NAME="$2"
                 shift 2
                 ;;
             --port-offset)
-                PORT_OFFSET="${2:-}"
+                [[ $# -ge 2 ]] || { echo "Missing value for --port-offset"; exit 1; }
+                PORT_OFFSET="$2"
                 shift 2
                 ;;
             --domain)
-                INSTANCE_DOMAIN="${2:-}"
+                [[ $# -ge 2 ]] || { echo "Missing value for --domain"; exit 1; }
+                INSTANCE_DOMAIN="$2"
                 shift 2
                 ;;
             --base-dir)
-                BASE_DIR="${2:-}"
+                [[ $# -ge 2 ]] || { echo "Missing value for --base-dir"; exit 1; }
+                BASE_DIR="$2"
                 shift 2
                 ;;
             --force)
@@ -97,6 +111,15 @@ parse_args() {
                 ;;
         esac
     done
+
+    # --- Validate BASE_DIR ---
+    [[ "$BASE_DIR" == /opt/agmind* ]] || { echo -e "${RED}Base dir must be under /opt/agmind*${NC}"; exit 1; }
+
+    # --- Validate PORT_OFFSET ---
+    if [[ -n "$PORT_OFFSET" ]]; then
+        [[ "$PORT_OFFSET" =~ ^[0-9]+$ ]] || { echo -e "${RED}Port offset must be a positive integer${NC}"; exit 1; }
+        [[ "$PORT_OFFSET" -gt 0 && "$PORT_OFFSET" -lt 65000 ]] || { echo -e "${RED}Port offset must be 1-65000${NC}"; exit 1; }
+    fi
 }
 
 # ============================================================================
@@ -173,13 +196,13 @@ create_instance() {
 
     # --- Create directory structure ---
     mkdir -p "${instance_dir}"
+    INSTANCE_DIR_CREATED="${instance_dir}"
 
     # --- Copy docker-compose.yml and configs ---
     if [[ -f "${INSTALLER_DIR}/templates/docker-compose.yml" ]]; then
         cp "${INSTALLER_DIR}/templates/docker-compose.yml" "${instance_dir}/docker-compose.yml"
     else
         echo -e "${RED}Error: docker-compose.yml template not found at ${INSTALLER_DIR}/templates/${NC}"
-        rm -rf "${instance_dir}"
         exit 1
     fi
 
@@ -233,6 +256,7 @@ create_instance() {
     local base_url="${url_scheme}://${url_host}"
 
     # --- Write .env ---
+    umask 077
     cat > "${instance_dir}/.env" <<ENVEOF
 # =========================================
 # AGMind Instance: ${name}
@@ -404,6 +428,14 @@ AGMIND_NETWORK=agmind-${name}-network
 HEALTHCHECK_INTERVAL=30s
 HEALTHCHECK_RETRIES=5
 ENVEOF
+    chmod 600 "${instance_dir}/.env"
+
+    # --- Save admin password to file instead of printing ---
+    echo "${init_password}" > "${instance_dir}/.admin_password"
+    chmod 600 "${instance_dir}/.admin_password"
+
+    # Clear cleanup trap — creation succeeded
+    INSTANCE_DIR_CREATED=""
 
     echo -e "${GREEN}Instance '${name}' created successfully!${NC}"
     echo ""
@@ -424,7 +456,7 @@ ENVEOF
     echo -e "${YELLOW}To start this instance:${NC}"
     echo "  cd ${instance_dir} && docker compose up -d"
     echo ""
-    echo -e "${YELLOW}Init admin password:${NC} ${init_password}"
+    echo -e "  Admin password saved to: ${instance_dir}/.admin_password"
 }
 
 # ============================================================================

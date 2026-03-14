@@ -27,11 +27,18 @@ detect_os() {
 detect_gpu() {
     DETECTED_GPU="none"
     DETECTED_GPU_NAME=""
-    DETECTED_GPU_VRAM=""
+    DETECTED_GPU_VRAM="0"
 
     # ENV override: force a specific GPU type
     if [[ -n "${FORCE_GPU_TYPE:-}" ]]; then
-        DETECTED_GPU="$FORCE_GPU_TYPE"
+        case "$FORCE_GPU_TYPE" in
+            nvidia|amd|intel|apple|none)
+                DETECTED_GPU="$FORCE_GPU_TYPE"
+                ;;
+            *)
+                echo -e "${YELLOW}Unknown FORCE_GPU_TYPE '${FORCE_GPU_TYPE}', ignoring (valid: nvidia, amd, intel, apple, none)${NC}"
+                ;;
+        esac
         export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM
         return 0
     fi
@@ -50,6 +57,7 @@ detect_gpu() {
             DETECTED_GPU="nvidia"
             DETECTED_GPU_NAME=$(echo "$gpu_info" | head -1 | cut -d',' -f1 | xargs)
             DETECTED_GPU_VRAM=$(echo "$gpu_info" | head -1 | cut -d',' -f2 | xargs)
+            [[ "$DETECTED_GPU_VRAM" =~ ^[0-9]+$ ]] || DETECTED_GPU_VRAM="0"
             export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM
             return 0
         fi
@@ -59,7 +67,8 @@ detect_gpu() {
     if [[ -e /dev/kfd ]] || command -v rocminfo &>/dev/null; then
         DETECTED_GPU="amd"
         DETECTED_GPU_NAME=$(rocminfo 2>/dev/null | grep 'Marketing Name' | head -1 | cut -d: -f2- | xargs 2>/dev/null || echo "")
-        DETECTED_GPU_VRAM=$(rocm-smi --showmeminfo vram 2>/dev/null | grep 'Total' | awk '{print $NF}' || echo "")
+        DETECTED_GPU_VRAM=$(rocm-smi --showmeminfo vram 2>/dev/null | grep 'Total' | awk '{print $NF}' || echo "0")
+        [[ "$DETECTED_GPU_VRAM" =~ ^[0-9]+$ ]] || DETECTED_GPU_VRAM="0"
         export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM
         return 0
     fi
@@ -90,10 +99,10 @@ detect_gpu() {
 persist_gpu_profile() {
     local profile_file="${INSTALL_DIR:-.}/.agmind_gpu_profile"
     cat > "$profile_file" <<EOF
-GPU_TYPE=${DETECTED_GPU}
-GPU_NAME=${DETECTED_GPU_NAME:-unknown}
-GPU_VRAM=${DETECTED_GPU_VRAM:-0}
-DOCKER_PLATFORM=${DOCKER_PLATFORM:-linux/amd64}
+GPU_TYPE="${DETECTED_GPU}"
+GPU_NAME="${DETECTED_GPU_NAME:-unknown}"
+GPU_VRAM="${DETECTED_GPU_VRAM:-0}"
+DOCKER_PLATFORM="${DOCKER_PLATFORM:-linux/amd64}"
 EOF
 }
 
@@ -169,7 +178,7 @@ detect_docker() {
 detect_network() {
     DETECTED_NETWORK="false"
     if command -v curl &>/dev/null; then
-        if curl -s --connect-timeout 5 https://hub.docker.com >/dev/null 2>&1; then
+        if curl -sf --connect-timeout 5 https://hub.docker.com >/dev/null 2>&1; then
             DETECTED_NETWORK="true"
         fi
     elif command -v wget &>/dev/null; then

@@ -18,7 +18,14 @@ CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 
 # Exclusive lock — prevent parallel install
 LOCK_FILE="/var/lock/agmind-install.lock"
-if [[ "$(uname)" != "Darwin" ]]; then
+if [[ "$(uname)" == "Darwin" ]]; then
+    LOCK_DIR="/tmp/agmind-install.lock"
+    if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+        echo -e "${RED}Another install is running${NC}"
+        exit 1
+    fi
+    trap 'rmdir "$LOCK_DIR" 2>/dev/null' EXIT
+else
     exec 9>"$LOCK_FILE"
     if ! flock -n 9; then
         echo -e "${RED}Другой процесс установки уже запущен. Дождитесь завершения.${NC}"
@@ -88,6 +95,43 @@ ALERT_TELEGRAM_TOKEN=""
 ALERT_TELEGRAM_CHAT_ID=""
 NON_INTERACTIVE=false
 ENABLE_UFW="false"
+
+# --- Input validation functions ---
+validate_model_name() {
+    local name="$1"
+    [[ "$name" =~ ^[a-zA-Z0-9._:/-]+$ ]] || { echo -e "${RED}Invalid model name. Allowed: letters, digits, . _ : / -${NC}"; return 1; }
+}
+
+validate_domain() {
+    [[ "$1" =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$ ]] || { echo -e "${RED}Invalid domain name${NC}"; return 1; }
+}
+
+validate_email() {
+    [[ "$1" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]] || { echo -e "${RED}Invalid email format${NC}"; return 1; }
+}
+
+validate_cron() {
+    [[ "$1" =~ ^[0-9*,/-]+\ [0-9*,/-]+\ [0-9*,/-]+\ [0-9*,/-]+\ [0-9*,/-]+$ ]] || return 1
+}
+
+validate_url() {
+    [[ "$1" =~ ^https?://[a-zA-Z0-9._:/-]+$ ]] || { echo -e "${RED}Invalid URL format${NC}"; return 1; }
+}
+
+validate_path() {
+    local p
+    p="$(realpath "$1" 2>/dev/null)" || { echo -e "${RED}Invalid path${NC}"; return 1; }
+    [[ "$p" == /tmp/* || "$p" == /home/* || "$p" == /root/* || "$p" == /etc/ssl/* || "$p" == /opt/* ]] || { echo -e "${RED}Path must be in /tmp, /home, /root, /etc/ssl, or /opt${NC}"; return 1; }
+    echo "$p"
+}
+
+validate_hostname() {
+    [[ "$1" =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$ ]] || { echo -e "${RED}Invalid hostname${NC}"; return 1; }
+}
+
+validate_port() {
+    [[ "$1" =~ ^[0-9]+$ ]] && [[ "$1" -ge 1 && "$1" -le 65535 ]] || { echo -e "${RED}Invalid port number${NC}"; return 1; }
+}
 ENABLE_FAIL2BAN="false"
 ENABLE_SOPS="false"
 ENABLE_SECRET_ROTATION="false"
@@ -177,7 +221,9 @@ phase_wizard() {
     if [[ "$DEPLOY_PROFILE" == "vps" ]]; then
         if [[ "$NON_INTERACTIVE" != "true" ]]; then
             read -rp "Домен для доступа: " DOMAIN
+            validate_domain "$DOMAIN" || { echo -e "${RED}Некорректный домен, установка прервана${NC}"; exit 1; }
             read -rp "Email для сертификата: " CERTBOT_EMAIL
+            validate_email "$CERTBOT_EMAIL" || { echo -e "${RED}Некорректный email, установка прервана${NC}"; exit 1; }
         fi
         echo ""
     fi
@@ -187,6 +233,12 @@ phase_wizard() {
         read -rp "Название компании [AGMind]: " COMPANY_NAME
         COMPANY_NAME="${COMPANY_NAME:-AGMind}"
         read -rp "Путь к логотипу (Enter = дефолтный): " LOGO_PATH
+        if [[ -n "$LOGO_PATH" ]]; then
+            LOGO_PATH="$(realpath "$LOGO_PATH" 2>/dev/null)" || { echo -e "${RED}Invalid logo path${NC}"; LOGO_PATH=""; }
+            if [[ -n "$LOGO_PATH" ]]; then
+                [[ "$LOGO_PATH" == /tmp/* || "$LOGO_PATH" == /home/* || "$LOGO_PATH" == /root/* ]] || { echo -e "${RED}Logo must be in /tmp, /home, or /root${NC}"; LOGO_PATH=""; }
+            fi
+        fi
     else
         COMPANY_NAME="${COMPANY_NAME:-AGMind}"
     fi
@@ -290,7 +342,9 @@ phase_wizard() {
                 13) LLM_MODEL="qwen2.5:72b-instruct-q4_K_M"; break;;
                 14) LLM_MODEL="llama3.1:70b-instruct-q4_K_M"; break;;
                 15) LLM_MODEL="qwen3:32b"; break;;
-                16) read -rp "Название модели: " LLM_MODEL; break;;
+                16) read -rp "Название модели: " LLM_MODEL
+                    validate_model_name "$LLM_MODEL" || { LLM_MODEL="qwen2.5:14b"; echo "Using default model"; }
+                    break;;
                 *)  echo "Введите число от 1 до 16";;
             esac
         done
@@ -302,6 +356,7 @@ phase_wizard() {
     if [[ "$NON_INTERACTIVE" != "true" ]]; then
         read -rp "Embedding модель [bge-m3]: " EMBEDDING_MODEL
         EMBEDDING_MODEL="${EMBEDDING_MODEL:-bge-m3}"
+        validate_model_name "$EMBEDDING_MODEL" || { EMBEDDING_MODEL="bge-m3"; echo "Using default embedding model"; }
     else
         EMBEDDING_MODEL="${EMBEDDING_MODEL:-bge-m3}"
     fi
@@ -335,6 +390,18 @@ phase_wizard() {
                 if [[ "$NON_INTERACTIVE" != "true" ]]; then
                     read -rp "Путь к сертификату (.pem): " TLS_CERT_PATH
                     read -rp "Путь к ключу (.pem): " TLS_KEY_PATH
+                    if [[ -n "$TLS_CERT_PATH" ]]; then
+                        TLS_CERT_PATH="$(realpath "$TLS_CERT_PATH" 2>/dev/null)" || { echo -e "${RED}Invalid cert path${NC}"; TLS_CERT_PATH=""; }
+                        if [[ -n "$TLS_CERT_PATH" ]]; then
+                            [[ "$TLS_CERT_PATH" == /tmp/* || "$TLS_CERT_PATH" == /home/* || "$TLS_CERT_PATH" == /root/* || "$TLS_CERT_PATH" == /etc/ssl/* || "$TLS_CERT_PATH" == /opt/* ]] || { echo -e "${RED}Cert must be in /tmp, /home, /root, /etc/ssl, or /opt${NC}"; TLS_CERT_PATH=""; }
+                        fi
+                    fi
+                    if [[ -n "$TLS_KEY_PATH" ]]; then
+                        TLS_KEY_PATH="$(realpath "$TLS_KEY_PATH" 2>/dev/null)" || { echo -e "${RED}Invalid key path${NC}"; TLS_KEY_PATH=""; }
+                        if [[ -n "$TLS_KEY_PATH" ]]; then
+                            [[ "$TLS_KEY_PATH" == /tmp/* || "$TLS_KEY_PATH" == /home/* || "$TLS_KEY_PATH" == /root/* || "$TLS_KEY_PATH" == /etc/ssl/* || "$TLS_KEY_PATH" == /opt/* ]] || { echo -e "${RED}Key must be in /tmp, /home, /root, /etc/ssl, or /opt${NC}"; TLS_KEY_PATH=""; }
+                        fi
+                    fi
                 fi
                 ;;
             *) TLS_MODE="none";;
@@ -347,11 +414,12 @@ phase_wizard() {
     # --- Admin ---
     if [[ "$NON_INTERACTIVE" != "true" ]]; then
         read -rp "Email администратора: " ADMIN_EMAIL
+        validate_email "$ADMIN_EMAIL" || { echo -e "${RED}Некорректный email, установка прервана${NC}"; exit 1; }
         read -rsp "Пароль (Enter для авто-генерации): " ADMIN_PASSWORD
         echo ""
         if [[ -z "$ADMIN_PASSWORD" ]]; then
             ADMIN_PASSWORD=$(head -c 256 /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z0-9' | head -c 16)
-            echo -e "  Пароль сгенерирован: ${YELLOW}${ADMIN_PASSWORD:0:4}****${NC} (полный пароль в конце установки)"
+            echo -e "  Пароль сгенерирован и сохранён в ${INSTALL_DIR}/.admin_password"
         fi
     else
         ADMIN_EMAIL="${ADMIN_EMAIL:-admin@admin.com}"
@@ -382,6 +450,7 @@ phase_wizard() {
                 MONITORING_MODE="external"
                 if [[ "$NON_INTERACTIVE" != "true" ]]; then
                     read -rp "Endpoint (URL): " MONITORING_ENDPOINT
+                    validate_url "$MONITORING_ENDPOINT" || { echo -e "${RED}Некорректный URL, мониторинг отключён${NC}"; MONITORING_MODE="none"; MONITORING_ENDPOINT=""; }
                     read -rp "Token: " MONITORING_TOKEN
                 fi
             fi
@@ -409,6 +478,7 @@ phase_wizard() {
             ALERT_MODE="webhook"
             if [[ "$NON_INTERACTIVE" != "true" ]]; then
                 read -rp "Webhook URL: " ALERT_WEBHOOK_URL
+                validate_url "$ALERT_WEBHOOK_URL" || { echo -e "${RED}Некорректный URL, алерты отключены${NC}"; ALERT_MODE="none"; ALERT_WEBHOOK_URL=""; }
             fi
             ;;
         3)
@@ -503,7 +573,8 @@ phase_wizard() {
         choice="${choice:-1}"
         case "$choice" in
             2) BACKUP_SCHEDULE="0 3,15 * * *";;
-            3) read -rp "Cron expression: " BACKUP_SCHEDULE;;
+            3) read -rp "Cron expression: " BACKUP_SCHEDULE
+               validate_cron "$BACKUP_SCHEDULE" || { echo -e "${YELLOW}Некорректный cron, используется значение по умолчанию${NC}"; BACKUP_SCHEDULE="0 3 * * *"; };;
             *) BACKUP_SCHEDULE="0 3 * * *";;
         esac
     else
@@ -515,8 +586,10 @@ phase_wizard() {
     if [[ "$BACKUP_TARGET" != "local" ]]; then
         if [[ "$NON_INTERACTIVE" != "true" ]]; then
             read -rp "SSH хост для бэкапов: " REMOTE_BACKUP_HOST
+            validate_hostname "$REMOTE_BACKUP_HOST" || { echo -e "${RED}Некорректный хост${NC}"; BACKUP_TARGET="local"; }
             read -rp "SSH порт [22]: " REMOTE_BACKUP_PORT
             REMOTE_BACKUP_PORT="${REMOTE_BACKUP_PORT:-22}"
+            validate_port "$REMOTE_BACKUP_PORT" || { REMOTE_BACKUP_PORT="22"; echo "Using default port 22"; }
             read -rp "SSH пользователь: " REMOTE_BACKUP_USER
             read -rp "SSH ключ (путь, Enter для генерации): " REMOTE_BACKUP_KEY
         fi
@@ -556,10 +629,13 @@ phase_wizard() {
         if [[ "$choice" == "1" ]]; then
             if [[ "$NON_INTERACTIVE" != "true" ]]; then
                 read -rp "VPS хост: " TUNNEL_VPS_HOST
+                validate_hostname "$TUNNEL_VPS_HOST" || { echo -e "${RED}Некорректный хост, tunnel отключён${NC}"; TUNNEL_VPS_HOST=""; }
                 read -rp "VPS порт SSH [22]: " TUNNEL_VPS_PORT
                 TUNNEL_VPS_PORT="${TUNNEL_VPS_PORT:-22}"
+                validate_port "$TUNNEL_VPS_PORT" || { TUNNEL_VPS_PORT="22"; echo "Using default port 22"; }
                 read -rp "Порт на VPS для проброса [8080]: " TUNNEL_REMOTE_PORT
                 TUNNEL_REMOTE_PORT="${TUNNEL_REMOTE_PORT:-8080}"
+                validate_port "$TUNNEL_REMOTE_PORT" || { TUNNEL_REMOTE_PORT="8080"; echo "Using default port 8080"; }
             fi
         fi
         echo ""

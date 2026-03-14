@@ -206,7 +206,7 @@ services:
 
   # ==================== Ollama ====================
   ollama:
-    image: ollama/ollama:${OLLAMA_VERSION:-latest}
+    image: ollama/ollama:${OLLAMA_VERSION:-0.5.4}
     container_name: agmind-ollama
     restart: always
     volumes:
@@ -380,7 +380,7 @@ services:
       HTTPS_PROXY: ${SSRF_PROXY_HTTPS_URL:-http://ssrf_proxy:3128}
       SANDBOX_PORT: ${SANDBOX_PORT:-8194}
     volumes:
-      - ./volumes/sandbox/conf:/conf
+      - ./volumes/sandbox/conf:/conf:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8194/health || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
@@ -392,11 +392,11 @@ services:
 
   # ==================== SSRF Proxy ====================
   ssrf_proxy:
-    image: ubuntu/squid:${SQUID_VERSION:-latest}
+    image: ubuntu/squid:${SQUID_VERSION:-6.6-24.04_edge}
     container_name: agmind-ssrf-proxy
     restart: always
     volumes:
-      - ./volumes/ssrf_proxy/squid.conf:/etc/squid/squid.conf
+      - ./volumes/ssrf_proxy/squid.conf:/etc/squid/squid.conf:ro
     healthcheck:
       test: ["CMD-SHELL", "squid -k check 2>/dev/null || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
@@ -443,7 +443,7 @@ services:
 
   # ==================== Nginx ====================
   nginx:
-    image: nginx:${NGINX_VERSION:-alpine}
+    image: nginx:${NGINX_VERSION:-1.27-alpine}
     container_name: agmind-nginx
     restart: always
     ports:
@@ -479,7 +479,7 @@ services:
 
   # ==================== Prometheus (monitoring profile) ====================
   prometheus:
-    image: prom/prometheus:${PROMETHEUS_VERSION:-latest}
+    image: prom/prometheus:${PROMETHEUS_VERSION:-v2.53.0}
     container_name: agmind-prometheus
     restart: always
     profiles:
@@ -535,7 +535,7 @@ services:
 
   # ==================== cAdvisor (monitoring profile) ====================
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:${CADVISOR_VERSION:-latest}
+    image: gcr.io/cadvisor/cadvisor:${CADVISOR_VERSION:-v0.49.1}
     container_name: agmind-cadvisor
     restart: always
     profiles:
@@ -558,15 +558,15 @@ services:
 
   # ==================== Grafana (monitoring profile) ====================
   grafana:
-    image: grafana/grafana:${GRAFANA_VERSION:-latest}
+    image: grafana/grafana:${GRAFANA_VERSION:-11.2.0}
     container_name: agmind-grafana
     restart: always
     profiles:
       - monitoring
     ports:
-      - "${GRAFANA_BIND_ADDR:-0.0.0.0}:${GRAFANA_PORT:-3001}:3000"
+      - "${GRAFANA_BIND_ADDR:-127.0.0.1}:${GRAFANA_PORT:-3001}:3000"
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -585,13 +585,13 @@ services:
 
   # ==================== Portainer (monitoring profile) ====================
   portainer:
-    image: portainer/portainer-ce:${PORTAINER_VERSION:-latest}
+    image: portainer/portainer-ce:${PORTAINER_VERSION:-2.21.0}
     container_name: agmind-portainer
     restart: always
     profiles:
       - monitoring
     ports:
-      - "${PORTAINER_BIND_ADDR:-0.0.0.0}:${PORTAINER_PORT:-9443}:9443"
+      - "${PORTAINER_BIND_ADDR:-127.0.0.1}:${PORTAINER_PORT:-9443}:9443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data
@@ -611,7 +611,7 @@ services:
     profiles: ["authelia"]
     restart: unless-stopped
     volumes:
-      - ./authelia:/config
+      - ./authelia:/config:ro
     environment:
       TZ: UTC
     healthcheck:
@@ -625,8 +625,9 @@ services:
 
   # ==================== Certbot (VPS profile only) ====================
   certbot:
-    image: certbot/certbot:${CERTBOT_VERSION:-latest}
+    image: certbot/certbot:${CERTBOT_VERSION:-v3.0.0}
     container_name: agmind-certbot
+    restart: unless-stopped
     profiles:
       - vps
     volumes:
