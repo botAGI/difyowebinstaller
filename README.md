@@ -1,6 +1,6 @@
 # AGMind Installer
 
-Production-ready RAG-стек: **Dify + Open WebUI + Ollama** — автоматическая установка, безопасность, мониторинг и DR.
+Production-ready RAG-стек: **Dify + Open WebUI + Ollama** — автоматическая установка за 11 шагов.
 
 [![Lint](https://github.com/botAGI/difyowebinstaller/actions/workflows/lint.yml/badge.svg)](https://github.com/botAGI/difyowebinstaller/actions/workflows/lint.yml)
 [![Tests](https://github.com/botAGI/difyowebinstaller/actions/workflows/test.yml/badge.svg)](https://github.com/botAGI/difyowebinstaller/actions/workflows/test.yml)
@@ -22,37 +22,94 @@ sudo DEPLOY_PROFILE=lan ADMIN_EMAIL=admin@company.com \
 
 После установки:
 
-| Сервис | URL |
-|--------|-----|
-| Open WebUI (чат) | `http://server/` |
-| Dify Console | `http://server/dify/` |
-| Grafana (мониторинг) | `http://server:3001/` |
+| Сервис | URL | Примечание |
+|--------|-----|------------|
+| Open WebUI (чат) | `http://server/` | Основной интерфейс |
+| Dify Console | `http://server/dify/` | Управление workflow |
+| Grafana | `http://server:3001/` | Только при `MONITORING_MODE=local` |
+| Portainer | `https://server:9443/` | Только при `MONITORING_MODE=local` |
 
-Пароль администратора сохранён в `/opt/agmind/docker/.admin_password`.
+Пароль администратора: `/opt/agmind/.admin_password`
+
+---
+
+## Этапы установки (11 фаз)
+
+| Фаза | Что происходит |
+|------|----------------|
+| 1/11 | Диагностика системы + pre-flight checks |
+| 2/11 | Интерактивный визард (профиль, модель, TLS, мониторинг, бэкапы) |
+| 3/11 | Установка Docker (если отсутствует) |
+| 4/11 | Генерация .env, nginx.conf, копирование скриптов |
+| 5/11 | Запуск контейнеров (docker compose up) |
+| 6/11 | Ожидание healthcheck всех сервисов (300 сек таймаут) |
+| 7/11 | Загрузка LLM + embedding моделей в Ollama |
+| 8/11 | Импорт RAG workflow в Dify |
+| 9/11 | Настройка cron-бэкапов |
+| 10/11 | Dokploy + SSH tunnel (опционально) |
+| 11/11 | Итоговая информация |
 
 ---
 
 ## Профили деплоя
 
-| Профиль  | Интернет | TLS           | UFW | Fail2ban | Описание                       |
-|----------|----------|---------------|-----|----------|--------------------------------|
-| `vps`    | ✅       | Let's Encrypt | ✅  | ✅       | Публичный доступ через домен   |
-| `lan`    | ✅       | Опционально   | ❌  | ✅       | Локальная сеть офиса           |
-| `vpn`    | ✅       | Опционально   | ❌  | ✅       | Корпоративный VPN              |
-| `offline`| ❌       | ❌            | ❌  | ❌       | Изолированная сеть             |
+| Профиль  | Интернет | TLS           | UFW | Fail2ban | SOPS | Описание |
+|----------|----------|---------------|-----|----------|------|----------|
+| `vps`    | ✅       | Let's Encrypt | да  | да       | да   | Публичный доступ через домен |
+| `lan`    | ✅       | Опционально   | нет | да       | нет  | Локальная сеть офиса |
+| `vpn`    | ✅       | Опционально   | нет | да       | нет  | Корпоративный VPN |
+| `offline`| ❌       | нет           | нет | нет      | нет  | Изолированная сеть |
+
+Security-дефолты задаются в `phase_wizard()` через `DISABLE_SECURITY_DEFAULTS=true` для переопределения.
+
+---
+
+## Компоненты и версии
+
+Все образы запинены в `templates/versions.env`. Ни один сервис не использует `:latest`.
+
+| Компонент | Версия | Image |
+|-----------|--------|-------|
+| Dify API/Worker/Web | 1.13.0 | `langgenius/dify-api`, `langgenius/dify-web` |
+| Open WebUI | v0.5.20 | `ghcr.io/open-webui/open-webui` |
+| Ollama | 0.6.2 | `ollama/ollama` |
+| PostgreSQL | 15.10-alpine | `postgres` |
+| Redis | 7.4.1-alpine | `redis` |
+| Weaviate | 1.27.6 | `semitechnologies/weaviate` |
+| Qdrant | v1.12.1 | `qdrant/qdrant` |
+| Nginx | 1.27.3-alpine | `nginx` |
+| Sandbox | 0.2.12 | `langgenius/dify-sandbox` |
+| Squid (SSRF) | 6.6-24.04_edge | `ubuntu/squid` |
+| Plugin Daemon | 0.5.3-local | `langgenius/dify-plugin-daemon` |
+| Certbot | v3.1.0 | `certbot/certbot` |
+| Docling Serve | v1.14.3 | `ghcr.io/docling-project/docling-serve` |
+| Xinference | v0.16.3 | `xprobe/xinference` |
+| Authelia | 4.38 | `authelia/authelia` |
+| Grafana | 11.4.0 | `grafana/grafana` |
+| Portainer | 2.21.4 | `portainer/portainer-ce` |
+| cAdvisor | v0.49.1 | `gcr.io/cadvisor/cadvisor` |
+| Prometheus | v2.54.1 | `prom/prometheus` |
+| Alertmanager | v0.27.0 | `prom/alertmanager` |
+| Loki | 3.3.2 | `grafana/loki` |
+| Promtail | 3.3.2 | `grafana/promtail` |
+
+Open WebUI запинен на v0.5.20 для совместимости с white-label брендингом.
+
+---
 
 ## GPU поддержка
 
-Автоматическое определение GPU:
+Автоматическое определение в `lib/detect.sh` → `detect_gpu()`:
 
-| GPU       | Обнаружение           | Метод                          |
-|-----------|-----------------------|--------------------------------|
-| NVIDIA    | `nvidia-smi`          | deploy.resources (CUDA)        |
-| AMD ROCm  | `/dev/kfd`, `rocminfo`| device passthrough             |
-| Intel Arc | `/dev/dri` + `lspci`  | device passthrough             |
-| Apple M   | arm64 + Darwin        | Metal нативно (без Docker GPU) |
-| CPU       | fallback              | OLLAMA_NUM_PARALLEL=2          |
+| GPU | Обнаружение | Метод в docker-compose |
+|-----|-------------|----------------------|
+| NVIDIA | `nvidia-smi` | deploy.resources.reservations (CUDA) |
+| AMD ROCm | `/dev/kfd`, `rocminfo` | device passthrough + `OLLAMA_ROCM=1` |
+| Intel Arc | `/dev/dri` + `lspci` | device passthrough |
+| Apple M | arm64 + Darwin | Metal нативно (GPU блок удаляется) |
+| CPU | fallback | GPU блоки удаляются из compose |
 
+Переопределение:
 ```bash
 FORCE_GPU_TYPE=amd bash install.sh --non-interactive    # Принудительно AMD
 SKIP_GPU_DETECT=true bash install.sh --non-interactive  # Без GPU
@@ -60,229 +117,233 @@ SKIP_GPU_DETECT=true bash install.sh --non-interactive  # Без GPU
 
 ---
 
-## Безопасность
+## Nginx routing
 
-AGMind реализует defense-in-depth по CIS Docker Benchmark:
+Определено в `templates/nginx.conf.template`, генерируется `lib/config.sh` → `generate_nginx_config()`.
 
-| Уровень | Что | По умолчанию |
-|---------|-----|-------------|
-| **Хост** | UFW файрвол | VPS: вкл |
-| **Хост** | Fail2ban IDS | VPS/LAN: вкл |
-| **Сеть** | Frontend/backend изоляция | Всегда вкл |
-| **Сеть** | Backend internal (нет внешнего доступа) | Всегда вкл |
-| **Контейнеры** | `no-new-privileges`, `cap_drop: ALL` | Всегда вкл |
-| **Контейнеры** | Read-only filesystems (nginx, redis) | Всегда вкл |
-| **Контейнеры** | Resource limits | Всегда вкл |
-| **Приложение** | Rate limiting (Nginx) | Всегда вкл |
-| **Приложение** | Security headers (XFO, CSP, HSTS) | Всегда вкл |
-| **Данные** | scram-sha-256 (PostgreSQL) | Всегда вкл |
-| **Данные** | Redis requirepass + отключение опасных команд | Всегда вкл |
-| **Секреты** | Авто-генерация через `openssl rand` | Всегда вкл |
-| **Секреты** | SOPS шифрование .env | VPS: вкл |
+| Путь | Upstream | Примечание |
+|------|----------|------------|
+| `/` | `open-webui:8080` | Основной фронтенд |
+| `/dify/` | `dify_web:3000` | Dify Console (sub_filter для path rewrite) |
+| `/dify/console/api` | `dify_api:5001` | Dify Console API (rate limit: 10r/s) |
+| `/dify/api` | `dify_api:5001` | Dify API |
+| `/dify/v1` | `dify_api:5001` | Dify Service API |
+| `/dify/files` | `dify_api:5001` | Dify файлы |
+| `/dify/e/` | `plugin_daemon:5002` | Plugin Daemon |
+| `/dify/_next` | `dify_web:3000` | Static assets |
+| `~ ^/[a-f0-9]{24,}/` | — | Блокируется (return 404) |
 
-Нет дефолтных паролей — инсталлер валидирует отсутствие `changeme`, `password`, `difyai123456` и т.д.
-
-### Опциональные модули
-
-```bash
-ENABLE_AUTHELIA=true        # Authelia 2FA proxy
-ENABLE_SOPS=true            # SOPS + age шифрование .env
-ENABLE_SECRET_ROTATION=true # Авто-ротация секретов (ежемесячно)
-```
-
-### Сетевая изоляция
-
-```
-Internet → [UFW/Fail2ban] → [Nginx: rate limit + headers]
-                                    │
-                    ┌───── agmind-frontend (bridge) ─────┐
-                    │  nginx, grafana, portainer          │
-                    └───────────────┬─────────────────────┘
-                                    │
-                    ┌───── agmind-backend (internal) ─────┐
-                    │  api, worker, db, redis, ollama,    │
-                    │  weaviate — НЕТ портов наружу       │
-                    └─────────────────────────────────────┘
-```
+TLS-блок дублирует все маршруты. Управляется маркерами `#__TLS__` и `#__TLS_REDIRECT__`.
+Authelia 2FA: маркеры `#__AUTHELIA__` активируются при `ENABLE_AUTHELIA=true`.
 
 ---
 
-## Мониторинг и алертинг
+## Docker networks
 
-При `MONITORING_MODE=local` разворачивается полный стек:
+| Сеть | Тип | Сервисы |
+|------|-----|---------|
+| `agmind-frontend` | bridge | nginx, grafana, portainer |
+| `agmind-backend` | bridge, internal | api, worker, web, db, redis, ollama, weaviate/qdrant, plugin_daemon, sandbox, pipeline, open-webui, все мониторинговые |
+| `ssrf-network` | bridge, internal | sandbox, ssrf_proxy, api, worker |
 
-- **Prometheus** — сбор метрик (15s scrape interval)
-- **Grafana** — 2 преднастроенных дашборда (Overview, Alerts)
-- **Alertmanager** — 9 правил алертов (контейнеры, хост, сервисы)
-- **cAdvisor** — метрики контейнеров
-- **Loki + Promtail** — агрегация логов
+Backend — `internal: true`, порты наружу не выставлены.
+
+---
+
+## Безопасность
+
+Реализовано в docker-compose.yml, lib/config.sh, lib/security.sh:
+
+| Уровень | Механизм | Где реализовано |
+|---------|----------|----------------|
+| Контейнеры | `security_opt: [no-new-privileges:true]`, `cap_drop: [ALL]` | x-security-defaults anchor |
+| Контейнеры | Read-only fs (nginx, redis) | `read_only: true` + tmpfs |
+| Nginx | Rate limiting (10r/s API, 3r/s login) | nginx.conf.template |
+| Nginx | Security headers (X-Frame-Options, X-Content-Type-Options, XSS, Referrer-Policy, Permissions-Policy) | nginx.conf.template |
+| Nginx | `server_tokens off` | nginx.conf.template |
+| PostgreSQL | `password_encryption=scram-sha-256` | docker-compose.yml |
+| Redis | `requirepass`, опасные команды отключены (FLUSHALL, CONFIG, DEBUG) | lib/config.sh → `generate_redis_config()` |
+| Секреты | Авто-генерация (64 символа SECRET_KEY, 32 символа пароли) | lib/config.sh → `generate_config()` |
+| Секреты | Валидация: блокировка `changeme`, `password`, `difyai123456` и нерезольвленных `__PLACEHOLDER__` | lib/config.sh → `validate_no_default_secrets()` |
+| .env | `chmod 600`, `chown root:root` | lib/config.sh |
+| Healthcheck | 24 из 25 сервисов (все кроме certbot) | docker-compose.yml |
+| Restart | `restart: always` на всех сервисах (certbot: `unless-stopped`) | docker-compose.yml |
+
+### Security-дефолты по профилям (из env templates)
+
+| Переменная | vps | lan | vpn | offline |
+|------------|-----|-----|-----|---------|
+| `ENABLE_UFW` | true | false | false | false |
+| `ENABLE_FAIL2BAN` | true | true | true | false |
+| `ENABLE_SOPS` | true | false | false | false |
+| `ENABLE_SECRET_ROTATION` | false | false | false | false |
+| `ENABLE_AUTHELIA` | false | false | false | false |
+
+---
+
+## Мониторинг
+
+Активируется при `MONITORING_MODE=local` (compose profile: `monitoring`).
+
+Сервисы: Prometheus, Alertmanager, Grafana, cAdvisor, Loki, Promtail, Portainer.
+
+Порты (из env templates):
+- Grafana: `${GRAFANA_PORT:-3001}`, bind: `127.0.0.1` (vps) / `0.0.0.0` (lan/vpn)
+- Portainer: `${PORTAINER_PORT:-9443}`, bind: `127.0.0.1` (vps) / `0.0.0.0` (lan/vpn)
 
 ### Алерты
 
-| Алерт | Условие | Уровень |
-|-------|---------|---------|
-| ContainerDown | Сервис не работает > 1 мин | critical |
-| ContainerRestarting | > 3 рестартов за 15 мин | warning |
-| HighCPU/HighMemory | > 80-90% за 5 мин | warning/critical |
-| DiskSpaceLow | > 85% занято | critical |
-| PostgresDown / RedisDown | Недоступен > 1 мин | critical |
-
-Каналы доставки:
+Каналы (`ALERT_MODE`):
 ```bash
-ALERT_MODE=telegram               # Telegram бот
+ALERT_MODE=telegram
 ALERT_TELEGRAM_TOKEN=...
 ALERT_TELEGRAM_CHAT_ID=...
 
-ALERT_MODE=webhook                # Slack, Discord и т.д.
+ALERT_MODE=webhook
 ALERT_WEBHOOK_URL=https://...
 ```
 
-### Health check (26 проверок)
-```bash
-/opt/agmind/scripts/health.sh              # Полный отчёт
-/opt/agmind/scripts/health.sh --send-test  # Тест отправки алертов
-```
-
 ---
 
-## Обслуживание
+## Скрипты
 
-### Обновление (rolling update с rollback)
+Копируются в `/opt/agmind/scripts/` на фазе 4/11.
+
+| Скрипт | Назначение | Ключевые флаги |
+|--------|-----------|----------------|
+| `backup.sh` | Бэкап PostgreSQL (pg_dump), volumes, конфиг, checksums | `ENABLE_S3_BACKUP`, `ENABLE_BACKUP_ENCRYPTION`, `BACKUP_RETENTION_COUNT` |
+| `restore.sh` | Восстановление из бэкапа | `AUTO_CONFIRM=true` |
+| `restore-runbook.sh` | 7-step verified restore | `<backup_path>` |
+| `update.sh` | Rolling update с rollback | `--auto`, `--check-only` |
+| `health.sh` | Проверка здоровья всех сервисов | `--send-test` |
+| `rotate_secrets.sh` | Ротация секретов в .env | — |
+| `uninstall.sh` | Удаление контейнеров, volumes, конфигурации | `--force`, `--dry-run` |
+| `multi-instance.sh` | Создание изолированных инстансов | `create\|list\|delete --name NAME --port-offset N` |
+| `build-offline-bundle.sh` | Сборка offline-архива с образами | `--include-models M1,M2`, `--platform`, `--skip-images` |
+| `dr-drill.sh` | Ежемесячный DR тест | `--dry-run`, `--skip-restore`, `--report-only` |
+
+### Бэкап
+
+```bash
+/opt/agmind/scripts/backup.sh                          # Ручной
+/opt/agmind/scripts/restore.sh /var/backups/agmind/...  # Восстановление
+/opt/agmind/scripts/restore-runbook.sh /var/backups/...  # 7-step verified
+```
+
+Бэкап создаёт: `dify_db.sql.gz`, `dify_plugin_db.sql.gz`, volumes tar, SHA256 checksums.
+
+Cron настраивается на фазе 9/11 (дефолт: `0 3 * * *`).
+
+```bash
+BACKUP_RETENTION_COUNT=10       # Хранить N последних
+ENABLE_S3_BACKUP=true           # Загрузка через rclone
+ENABLE_BACKUP_ENCRYPTION=true   # Шифрование (age)
+ENABLE_DR_DRILL=true            # Ежемесячный DR drill cron
+```
+
+### Обновление
+
 ```bash
 /opt/agmind/scripts/update.sh              # Интерактивное
 /opt/agmind/scripts/update.sh --auto       # Автоматическое
-/opt/agmind/scripts/update.sh --check-only # Только проверить
+/opt/agmind/scripts/update.sh --check-only # Только проверка версий
 ```
 
-Обновление: создаёт бэкап → сохраняет rollback state → обновляет по одному сервису → healthcheck → откат при ошибке.
-
-### Бэкап и восстановление
-```bash
-/opt/agmind/scripts/backup.sh                          # Ручной бэкап
-/opt/agmind/scripts/restore.sh /var/backups/agmind/...  # Восстановление
-/opt/agmind/scripts/restore-runbook.sh /var/backups/... # 7-step verified restore
-```
-
-Бэкап включает: PostgreSQL, векторное хранилище (Weaviate/Qdrant snapshots), Dify storage, Open WebUI, Ollama модели, конфигурацию, SHA256 checksums.
-
-Опции:
-```bash
-BACKUP_SCHEDULE="0 3 * * *"     # Cron (по умолчанию ежедневно 03:00)
-BACKUP_RETENTION_COUNT=10       # Хранить N последних бэкапов
-ENABLE_S3_BACKUP=true           # Загрузка в S3 (rclone)
-ENABLE_BACKUP_ENCRYPTION=true   # Шифрование бэкапов (age)
-```
-
-### DR drill (ежемесячный тест)
-```bash
-/opt/agmind/scripts/dr-drill.sh                # Полный тест (с downtime)
-/opt/agmind/scripts/dr-drill.sh --skip-restore  # Только бэкап + проверка
-/opt/agmind/scripts/dr-drill.sh --dry-run       # Без изменений
-```
-
-### Offline bundle
-```bash
-./scripts/build-offline-bundle.sh                              # Базовый
-./scripts/build-offline-bundle.sh --include-models llama3.2    # С моделями
-./scripts/build-offline-bundle.sh --platform linux/arm64       # Для ARM64
-```
-
-### Multi-instance
-```bash
-/opt/agmind/scripts/multi-instance.sh create --name client1 --port-offset 100
-/opt/agmind/scripts/multi-instance.sh list
-/opt/agmind/scripts/multi-instance.sh delete --name client1
-```
-
-### Удаление
-```bash
-/opt/agmind/scripts/uninstall.sh           # Интерактивное
-/opt/agmind/scripts/uninstall.sh --force   # Без подтверждений
-```
-
----
-
-## Версии и совместимость
-
-Все образы запинены в `versions.env` — ни один сервис не использует `:latest`.
-
-Проверенные комбинации: [COMPATIBILITY.md](COMPATIBILITY.md)
-Журнал изменений: [CHANGELOG.md](CHANGELOG.md)
-DR политика: [DR-POLICY.md](DR-POLICY.md)
-
----
-
-## CI/CD
-
-| Workflow | Что проверяет |
-|----------|--------------|
-| **Lint** | ShellCheck, yamllint, JSON validate, bash -n |
-| **Test** | BATS unit tests, Trivy security scan |
+Порядок: pre-flight → бэкап → сравнение версий → rolling restart по одному сервису → healthcheck → rollback при ошибке.
 
 ---
 
 ## Переменные окружения
 
-### Основные
+### Основные (парсятся в install.sh)
 
-| Переменная             | Описание                              | По умолчанию      |
-|------------------------|---------------------------------------|--------------------|
-| `DEPLOY_PROFILE`       | Профиль: vps/lan/vpn/offline          | lan                |
-| `DOMAIN`               | Домен (только VPS)                    | —                  |
-| `COMPANY_NAME`         | Название компании                     | AGMind             |
-| `ADMIN_EMAIL`          | Email администратора                  | admin@admin.com    |
-| `ADMIN_PASSWORD`       | Пароль (или авто-генерация)           | авто               |
-| `LLM_MODEL`            | Модель LLM                            | qwen2.5:14b        |
-| `VECTOR_STORE`         | weaviate / qdrant                     | weaviate           |
-| `MONITORING_MODE`      | none / local / external               | none               |
-| `ALERT_MODE`           | none / webhook / telegram             | none               |
+| Переменная | Описание | По умолчанию |
+|------------|-------|--------------|
+| `DEPLOY_PROFILE` | Профиль: vps/lan/vpn/offline | lan |
+| `DOMAIN` | Домен (только VPS) | — |
+| `CERTBOT_EMAIL` | Email для Let's Encrypt (VPS) | — |
+| `COMPANY_NAME` | Название компании (Open WebUI branding) | AGMind |
+| `ADMIN_EMAIL` | Email администратора | admin@admin.com |
+| `ADMIN_PASSWORD` | Пароль (пусто = авто-генерация 16 символов) | авто |
+| `LLM_MODEL` | Модель LLM для Ollama | qwen2.5:14b |
+| `EMBEDDING_MODEL` | Embedding модель | bge-m3 |
+| `VECTOR_STORE` | weaviate / qdrant | weaviate |
+| `ETL_ENHANCED` | Docling + Xinference (yes/no) | no |
+| `TLS_MODE` | none / self-signed / custom / letsencrypt | none (vps: letsencrypt) |
+| `MONITORING_MODE` | none / local / external | none |
+| `ALERT_MODE` | none / webhook / telegram | none |
+| `BACKUP_TARGET` | local / remote / both | local |
+| `BACKUP_SCHEDULE` | Cron расписание бэкапов | 0 3 * * * |
+| `NON_INTERACTIVE` | Без интерактивного визарда | false |
+| `FORCE_REINSTALL` | Разрешить переустановку в non-interactive | false |
 
 ### Безопасность
 
-| Переменная               | Описание                            | По умолчанию |
-|--------------------------|-------------------------------------|--------------|
-| `ENABLE_UFW`             | UFW файрвол                         | false (vps: true) |
-| `ENABLE_FAIL2BAN`        | Fail2ban IDS                        | false (vps/lan: true) |
-| `ENABLE_SOPS`            | SOPS + age шифрование               | false (vps: true) |
-| `ENABLE_AUTHELIA`        | Authelia 2FA                        | false        |
-| `ENABLE_SECRET_ROTATION` | Авто-ротация секретов               | false        |
-| `FORCE_GPU_TYPE`         | Принудительный тип GPU              | —            |
-| `SKIP_GPU_DETECT`        | Пропустить GPU детекцию             | false        |
-| `SKIP_PREFLIGHT`         | Пропустить pre-flight проверки      | false        |
+| Переменная | Описание | По умолчанию |
+|------------|-------|--------------|
+| `ENABLE_UFW` | UFW файрвол | false (vps: true) |
+| `ENABLE_FAIL2BAN` | Fail2ban IDS | false (vps/lan/vpn: true) |
+| `ENABLE_SOPS` | SOPS + age шифрование .env | false (vps: true) |
+| `ENABLE_AUTHELIA` | Authelia 2FA proxy | false |
+| `ENABLE_SECRET_ROTATION` | Авто-ротация секретов | false |
+| `FORCE_GPU_TYPE` | Принудительный тип GPU (nvidia/amd/intel/apple) | — |
+| `SKIP_GPU_DETECT` | Пропустить GPU детекцию | false |
+| `SKIP_PREFLIGHT` | Пропустить pre-flight проверки | false |
+| `DISABLE_SECURITY_DEFAULTS` | Не применять security defaults для профиля | false |
 
-### Бэкапы
+### Бэкапы и мониторинг
 
-| Переменная                 | Описание                          | По умолчанию |
-|----------------------------|-----------------------------------|--------------|
-| `BACKUP_SCHEDULE`          | Cron расписание                   | 0 3 * * *    |
-| `BACKUP_RETENTION_COUNT`   | Макс. количество бэкапов          | 10           |
-| `ENABLE_S3_BACKUP`         | Загрузка в S3 (rclone)            | false        |
-| `ENABLE_BACKUP_ENCRYPTION` | Шифрование бэкапов (age)          | false        |
-| `ENABLE_DR_DRILL`          | Ежемесячный DR drill (cron)       | true         |
+| Переменная | Описание | По умолчанию |
+|------------|-------|--------------|
+| `BACKUP_RETENTION_COUNT` | Макс. количество бэкапов | — |
+| `ENABLE_S3_BACKUP` | Загрузка в S3 (rclone) | false |
+| `ENABLE_BACKUP_ENCRYPTION` | Шифрование бэкапов (age) | false |
+| `ENABLE_DR_DRILL` | Ежемесячный DR drill cron | true |
+| `ENABLE_LOKI` | Loki log aggregation (при monitoring) | true |
+| `HEALTHCHECK_INTERVAL` | Интервал healthcheck | 30s |
+| `HEALTHCHECK_RETRIES` | Количество попыток healthcheck | 5 |
+
+### Wizard shortcuts (non-interactive)
+
+| Переменная | Значения |
+|------------|----------|
+| `VECTOR_STORE_CHOICE` | 1 (weaviate) / 2 (qdrant) |
+| `ETL_ENHANCED_CHOICE` | 1 (нет) / 2 (да) |
+| `TLS_MODE_CHOICE` | 1 (none) / 2 (self-signed) / 3 (custom) |
+| `MONITORING_CHOICE` | 1 (none) / 2 (local) / 3 (external) |
+| `ALERT_CHOICE` | 1 (none) / 2 (webhook) / 3 (telegram) |
+| `ENABLE_UFW_CHOICE` | 1 (да) / 2 (нет) |
+| `ENABLE_FAIL2BAN_CHOICE` | 1 (да) / 2 (нет) |
+| `ENABLE_AUTHELIA_CHOICE` | 1 (нет) / 2 (да) |
+| `DOKPLOY_CHOICE` | 1 (да) / 2 (нет) |
+| `TUNNEL_CHOICE` | 1 (да) / 2 (нет) |
 
 ---
 
 ## Выбор LLM модели
 
-| # | Модель                             | Размер | RAM     | VRAM   | Скорость     |
-|---|------------------------------------|--------|---------|--------|--------------|
-| 1 | `gemma3:4b`                        | 4B     | 8GB+    | 6GB+   | ⚡ Быстрая   |
-| 2 | `qwen2.5:7b`                       | 7B     | 8GB+    | 6GB+   | ⚡ Быстрая   |
-| 3 | `qwen3:8b`                         | 8B     | 8GB+    | 6GB+   | ⚡ Быстрая   |
-| 4 | `llama3.1:8b`                      | 8B     | 8GB+    | 6GB+   | ⚡ Быстрая   |
-| 5 | `mistral:7b`                       | 7B     | 8GB+    | 6GB+   | ⚡ Быстрая   |
-| 6 | `qwen2.5:14b` ★                   | 14B    | 16GB+   | 10GB+  | ⚖️ Баланс    |
-| 7 | `phi-4:14b`                        | 14B    | 16GB+   | 10GB+  | ⚖️ Баланс    |
-| 8 | `mistral-nemo:12b`                 | 12B    | 16GB+   | 10GB+  | ⚖️ Баланс    |
-| 9 | `gemma3:12b`                       | 12B    | 16GB+   | 10GB+  | ⚖️ Баланс    |
-| 10| `qwen2.5:32b`                      | 32B    | 32GB+   | 16GB+  | 🎯 Качество  |
-| 11| `gemma3:27b`                       | 27B    | 32GB+   | 16GB+  | 🎯 Качество  |
-| 12| `command-r:35b`                    | 35B    | 32GB+   | 16GB+  | 🎯 Качество  |
-| 13| `qwen2.5:72b-instruct-q4_K_M`     | 72B    | 64GB+   | 24GB+  | 🏆 Макс      |
-| 14| `llama3.1:70b-instruct-q4_K_M`    | 70B    | 64GB+   | 24GB+  | 🏆 Макс      |
-| 15| `qwen3:32b`                        | 32B    | 32GB+   | 16GB+  | 🎯 Качество  |
+Инсталлер определяет GPU/RAM и рекомендует оптимальную модель (`lib/detect.sh` → `recommend_model()`).
 
-★ — рекомендуется по умолчанию. Инсталлер автоматически определяет GPU/RAM и предлагает оптимальную модель.
+| # | Модель | Размер | RAM | VRAM |
+|---|--------|--------|-----|------|
+| 1 | `gemma3:4b` | 4B | 8GB+ | 6GB+ |
+| 2 | `qwen2.5:7b` | 7B | 8GB+ | 6GB+ |
+| 3 | `qwen3:8b` | 8B | 8GB+ | 6GB+ |
+| 4 | `llama3.1:8b` | 8B | 8GB+ | 6GB+ |
+| 5 | `mistral:7b` | 7B | 8GB+ | 6GB+ |
+| 6 | `qwen2.5:14b` ★ | 14B | 16GB+ | 10GB+ |
+| 7 | `phi-4:14b` | 14B | 16GB+ | 10GB+ |
+| 8 | `mistral-nemo:12b` | 12B | 16GB+ | 10GB+ |
+| 9 | `gemma3:12b` | 12B | 16GB+ | 10GB+ |
+| 10 | `qwen2.5:32b` | 32B | 32GB+ | 16GB+ |
+| 11 | `gemma3:27b` | 27B | 32GB+ | 16GB+ |
+| 12 | `command-r:35b` | 35B | 32GB+ | 16GB+ |
+| 13 | `qwen2.5:72b-instruct-q4_K_M` | 72B | 64GB+ | 24GB+ |
+| 14 | `llama3.1:70b-instruct-q4_K_M` | 70B | 64GB+ | 24GB+ |
+| 15 | `qwen3:32b` | 32B | 32GB+ | 16GB+ |
+| 16 | Своя модель | — | — | — |
+
+★ — дефолт.
 
 ---
 
@@ -291,69 +352,99 @@ DR политика: [DR-POLICY.md](DR-POLICY.md)
 ```
 /opt/agmind/
 ├── docker/
-│   ├── .env                    # Конфигурация (chmod 600)
-│   ├── docker-compose.yml      # Стек сервисов
-│   ├── nginx/nginx.conf        # Nginx (rate limit, security headers)
-│   ├── authelia/               # Authelia конфиг (если включена)
-│   ├── monitoring/             # Prometheus + Grafana + Loki
-│   └── volumes/                # Данные сервисов
+│   ├── .env                       # Конфигурация (chmod 600, root:root)
+│   ├── docker-compose.yml         # 25 сервисов, 3 сети
+│   ├── nginx/nginx.conf           # Из nginx.conf.template
+│   ├── pipeline/                  # Dockerfile + dify_pipeline.py
+│   ├── authelia/                  # Если ENABLE_AUTHELIA=true
+│   ├── monitoring/                # Prometheus, Grafana, Loki конфиги
+│   │   ├── prometheus.yml
+│   │   ├── alertmanager.yml
+│   │   ├── alert_rules.yml
+│   │   ├── loki-config.yml
+│   │   ├── promtail-config.yml
+│   │   └── grafana/
+│   │       ├── provisioning/datasources/
+│   │       ├── provisioning/dashboards/
+│   │       └── dashboards/*.json
+│   └── volumes/
+│       ├── app/storage/           # Dify uploads
+│       ├── db/data/               # PostgreSQL data
+│       ├── redis/                 # Redis data + redis.conf
+│       ├── weaviate/              # Weaviate data
+│       ├── qdrant/                # Qdrant data
+│       ├── sandbox/conf/          # Sandbox config.yaml
+│       ├── ssrf_proxy/squid.conf  # Squid config
+│       ├── plugin_daemon/storage/ # Plugin storage
+│       └── certbot/               # TLS certs
 ├── scripts/
-│   ├── backup.sh               # Бэкап (flock, pg_isready, S3, encryption)
-│   ├── restore.sh              # Восстановление (AUTO_CONFIRM, decrypt)
-│   ├── restore-runbook.sh      # 7-step verified restore
-│   ├── health.sh               # 26 проверок + auto-alert
-│   ├── update.sh               # Rolling update с rollback
-│   ├── dr-drill.sh             # Ежемесячный DR drill
-│   ├── rotate_secrets.sh       # Ротация секретов
-│   ├── build-offline-bundle.sh # Сборка offline инсталлятора
-│   ├── multi-instance.sh       # Управление multi-instance
-│   └── uninstall.sh            # Удаление (--force, --dry-run)
-├── versions.env                # Пиннинг версий (единый источник)
-├── release-manifest.json       # Манифест релиза
-├── .age/                       # age ключи шифрования (chmod 700)
-└── .admin_password             # Пароль администратора (chmod 600)
+│   ├── backup.sh
+│   ├── restore.sh
+│   ├── restore-runbook.sh
+│   ├── health.sh
+│   ├── update.sh
+│   ├── rotate_secrets.sh
+│   ├── multi-instance.sh
+│   └── uninstall.sh
+├── workflows/
+│   ├── rag-assistant.json         # RAG workflow для импорта в Dify
+│   └── import.py                  # Скрипт импорта
+├── branding/
+│   ├── logo.svg
+│   └── theme.json
+├── versions.env                   # Пиннинг версий
+├── release-manifest.json
+├── .admin_password                # chmod 600
+└── .agmind_installed              # Маркер завершённой установки
 ```
+
+---
+
+## CI/CD
+
+| Workflow | Что проверяет | Блокирует? |
+|----------|---------------|------------|
+| **Lint** | ShellCheck (все .sh), yamllint (docker-compose.yml), JSON validate, bash -n | Да |
+| **Tests** | BATS unit tests (11 тестов), Trivy security scan (CRITICAL/HIGH) | Да |
 
 ---
 
 ## Устранение неполадок
 
-### Контейнер не запускается
 ```bash
-docker compose -f /opt/agmind/docker/docker-compose.yml logs <service>
-```
+# Логи конкретного сервиса
+cd /opt/agmind/docker && docker compose logs -f api
 
-### Dify Console недоступен
-Консоль доступна по адресу `http://server/dify/`. Логин через стандартную форму Dify.
+# Статус всех контейнеров
+cd /opt/agmind/docker && docker compose ps
 
-### Ollama не отвечает
-```bash
-docker compose exec ollama ollama list    # Проверить модели
-docker compose restart ollama             # Перезапустить
-```
+# Health check
+/opt/agmind/scripts/health.sh
 
-### Сертификат не получен (VPS)
-```bash
+# Перезапуск сервиса
+cd /opt/agmind/docker && docker compose restart <service>
+
+# Dify Console не открывается — проверить nginx
+cd /opt/agmind/docker && docker compose logs nginx
+
+# Ollama не отвечает
+cd /opt/agmind/docker && docker compose exec ollama ollama list
+cd /opt/agmind/docker && docker compose restart ollama
+
+# Сертификат не получен (VPS)
 dig +short your-domain.com
-docker compose exec certbot certbot certonly --webroot -w /var/www/certbot -d your-domain.com
-docker compose restart nginx
-```
+cd /opt/agmind/docker && docker compose exec certbot certbot certonly \
+    --webroot -w /var/www/certbot -d your-domain.com
+cd /opt/agmind/docker && docker compose restart nginx
 
-### Параллельные операции заблокированы
-```bash
+# Параллельные операции заблокированы
+rm -f /var/lock/agmind-install.lock
 rm -f /var/lock/agmind-operation.lock
-```
 
-### Полное восстановление после сбоя
-```bash
-# 1. Найти последний бэкап
+# Полное восстановление
 ls -lt /var/backups/agmind/
-
-# 2. Запустить verified restore
 sudo /opt/agmind/scripts/restore-runbook.sh /var/backups/agmind/<backup>
-
-# 3. Проверить здоровье
-sudo /opt/agmind/scripts/health.sh
+/opt/agmind/scripts/health.sh
 ```
 
 ---
@@ -366,7 +457,11 @@ sudo /opt/agmind/scripts/health.sh
 cd docs && npm install && npm start
 ```
 
-Разделы: [Installation](docs/docs/installation/quickstart.md) · [Operations](docs/docs/operations/health-monitoring.md) · [Security](docs/docs/security/overview.md) · [Migration](docs/docs/migration/version-upgrade.md)
+---
+
+## Совместимость
+
+[COMPATIBILITY.md](COMPATIBILITY.md) — матрица версий, ОС, минимальные требования.
 
 ---
 
