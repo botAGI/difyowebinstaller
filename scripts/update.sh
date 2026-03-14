@@ -132,7 +132,8 @@ check_preflight() {
 }
 
 create_update_backup() {
-    local tag="pre-update-$(date +%Y%m%d_%H%M%S)"
+    local tag
+    tag="pre-update-$(date +%Y%m%d_%H%M%S)"
     log_info "Создание бэкапа: ${tag}..."
 
     if [[ -x "$BACKUP_SCRIPT" ]]; then

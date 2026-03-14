@@ -62,7 +62,8 @@ rotate_secrets() {
     new_redis_pass=$(generate_secret 32)
     new_grafana_pass=$(generate_secret 16)
 
-    local new_sandbox_key="dify-sandbox-$(generate_secret 16)"
+    local new_sandbox_key
+    new_sandbox_key="dify-sandbox-$(generate_secret 16)"
     local new_plugin_daemon_key
     new_plugin_daemon_key=$(generate_secret 48)
     local new_plugin_inner_key

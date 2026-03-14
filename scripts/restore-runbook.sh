@@ -55,13 +55,11 @@ else
 fi
 
 # Check required files
-for required in dify_db.sql.gz; do
-    if [[ -f "${BACKUP_PATH}/${required}" ]]; then
-        log_ok "Found: ${required}"
-    else
-        log_warn "Missing: ${required}"
-    fi
-done
+if [[ -f "${BACKUP_PATH}/dify_db.sql.gz" ]]; then
+    log_ok "Found: dify_db.sql.gz"
+else
+    log_warn "Missing: dify_db.sql.gz"
+fi
 
 # ──────────────────────────────────────────
 # Step 2: Pre-restore health check

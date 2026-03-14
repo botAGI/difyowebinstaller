@@ -92,7 +92,7 @@ fi
 # Stage 1: Prepare staging directory
 # ──────────────────────────────────────────
 STAGING=$(mktemp -d)
-trap "rm -rf $STAGING" EXIT
+trap 'rm -rf "$STAGING"' EXIT
 
 echo ""
 echo -e "${BOLD}Stage 1: Preparing installer files${NC}"

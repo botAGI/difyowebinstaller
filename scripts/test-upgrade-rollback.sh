@@ -132,7 +132,7 @@ if [[ "$DRY_RUN" == "true" ]]; then
 
     # Create a temporary rollback state to validate the mechanism
     TEST_ROLLBACK_DIR=$(mktemp -d)
-    trap "rm -rf $TEST_ROLLBACK_DIR" EXIT
+    trap 'rm -rf "$TEST_ROLLBACK_DIR"' EXIT
 
     # Simulate what save_rollback_state() does
     if [[ -f "$VERSIONS_FILE" ]]; then
