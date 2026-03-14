@@ -25,7 +25,7 @@ get_service_list() {
         local monitoring_mode
         monitoring_mode=$(grep '^MONITORING_MODE=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "none")
         if [[ "$monitoring_mode" == "local" ]]; then
-            services+=(prometheus cadvisor grafana portainer)
+            services+=(prometheus alertmanager cadvisor grafana portainer loki promtail)
         fi
 
         local etl_type

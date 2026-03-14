@@ -1,0 +1,96 @@
+groups:
+  - name: agmind_container_alerts
+    rules:
+      # Container down for >2 minutes
+      - alert: ContainerDown
+        expr: absent(container_last_seen{name=~"agmind-.*"}) == 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.name }} is down"
+          description: "Container {{ $labels.name }} has been down for more than 2 minutes."
+
+      # Container restart loop (>3 restarts in 15 min)
+      - alert: ContainerRestartLoop
+        expr: increase(container_start_time_seconds{name=~"agmind-.*"}[15m]) > 3
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.name }} is in restart loop"
+          description: "Container {{ $labels.name }} has restarted {{ $value }} times in the last 15 minutes."
+
+      # High CPU usage (>90% for 5 min)
+      - alert: HighCpuUsage
+        expr: rate(container_cpu_usage_seconds_total{name=~"agmind-.*"}[5m]) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage on {{ $labels.name }}"
+          description: "Container {{ $labels.name }} CPU usage is {{ $value | humanize }}%."
+
+      # High memory usage (>85%)
+      - alert: HighMemoryUsage
+        expr: container_memory_usage_bytes{name=~"agmind-.*"} / container_spec_memory_limit_bytes{name=~"agmind-.*"} * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage on {{ $labels.name }}"
+          description: "Container {{ $labels.name }} memory usage is {{ $value | humanize }}%."
+
+  - name: agmind_host_alerts
+    rules:
+      # Disk space low (<15%)
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 15
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low disk space"
+          description: "Root filesystem has only {{ $value | humanize }}% free space."
+
+      # Disk space critical (<5%)
+      - alert: DiskSpaceCritical
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 5
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical disk space"
+          description: "Root filesystem has only {{ $value | humanize }}% free space. Immediate action required."
+
+  - name: agmind_service_alerts
+    rules:
+      # API response time >5s
+      - alert: SlowApiResponse
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{service="agmind-api"}[5m])) > 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow API response times"
+          description: "95th percentile API response time is {{ $value }}s."
+
+      # Redis connection errors
+      - alert: RedisConnectionError
+        expr: increase(redis_connection_errors_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis connection errors detected"
+          description: "Redis has reported connection errors."
+
+      # PostgreSQL connection saturation
+      - alert: PostgresConnectionSaturation
+        expr: sum(pg_stat_activity_count) / pg_settings_max_connections * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PostgreSQL connection saturation"
+          description: "PostgreSQL connections are at {{ $value }}% capacity."

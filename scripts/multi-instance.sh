@@ -234,8 +234,6 @@ create_instance() {
     plugin_daemon_key=$(generate_password 16)
     local plugin_inner_api_key
     plugin_inner_api_key=$(generate_password 16)
-    local admin_token
-    admin_token=$(generate_password 24)
     local grafana_password
     grafana_password=$(generate_password 12)
     local init_password
@@ -350,9 +348,6 @@ CERTBOT_DOMAIN=${domain:-}
 
 # --- Pipeline ---
 DIFY_API_KEY=
-
-# --- Admin Token ---
-ADMIN_TOKEN=${admin_token}
 
 # --- Open WebUI ---
 COMPANY_NAME=${name}

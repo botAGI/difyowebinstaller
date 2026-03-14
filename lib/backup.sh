@@ -45,11 +45,21 @@ BKCONF
     # Add new entry
     (crontab -l 2>/dev/null; echo "$cron_entry") | crontab -
 
+    # Setup monthly DR drill (1st of month at 3 AM, backup-only mode)
+    if [[ "${ENABLE_DR_DRILL:-true}" == "true" ]]; then
+        local dr_cron_entry="0 3 1 * * ${INSTALL_DIR}/scripts/dr-drill.sh --skip-restore >> /var/log/agmind-dr-drill.log 2>&1"
+        crontab -l 2>/dev/null | grep -v 'dr-drill' | crontab - 2>/dev/null || true
+        (crontab -l 2>/dev/null; echo "$dr_cron_entry") | crontab -
+    fi
+
     echo -e "${GREEN}Бэкапы настроены${NC}"
     echo "  Расписание: ${backup_schedule}"
     echo "  Хранение:   /var/backups/agmind/"
     if [[ "$backup_target" != "local" && -n "$remote_host" ]]; then
         echo "  Удалённо:   ${remote_user}@${remote_host}:${remote_path}"
+    fi
+    if [[ "${ENABLE_DR_DRILL:-true}" == "true" ]]; then
+        echo "  DR Drill:   ежемесячно (1-го числа в 03:00)"
     fi
 }
 

@@ -16,6 +16,44 @@ escape_sed() {
     printf '%s' "$1" | sed 's/[&/|\]/\\&/g'
 }
 
+# Validate that .env contains no known default/weak passwords
+validate_no_default_secrets() {
+    local env_file="$1"
+    local known_defaults=(
+        "difyai123456"
+        "QaHbTe77"
+        "changeme"
+        "password"
+        "admin123"
+        "secret"
+        "default"
+        "test1234"
+    )
+    local found=0
+    for default in "${known_defaults[@]}"; do
+        if grep -qE "^[^#].*=${default}$" "$env_file" 2>/dev/null; then
+            local offending
+            offending=$(grep -E "^[^#].*=${default}$" "$env_file" | head -5)
+            echo -e "${RED}SECURITY FAIL: Default password '${default}' found in .env:${NC}"
+            echo "$offending"
+            found=1
+        fi
+    done
+    # Also check for unresolved placeholders
+    if grep -qE "^[^#].*=__[A-Z_]+__" "$env_file" 2>/dev/null; then
+        local unresolved
+        unresolved=$(grep -E "^[^#].*=__[A-Z_]+__" "$env_file" | head -5)
+        echo -e "${RED}SECURITY FAIL: Unresolved placeholders in .env:${NC}"
+        echo "$unresolved"
+        found=1
+    fi
+    if [[ $found -eq 1 ]]; then
+        echo -e "${RED}Aborting: fix secrets before proceeding${NC}"
+        return 1
+    fi
+    return 0
+}
+
 generate_config() {
     local profile="$1"
     local template_dir="$2"
@@ -77,10 +115,6 @@ generate_config() {
     local admin_password_b64
     admin_password_b64=$(echo -n "$admin_password_plain" | base64)
 
-    # Admin token for secret Dify Console access path
-    local admin_token
-    admin_token=$(generate_random 40)
-
     # Generate .env from template
     local template_file="${template_dir}/env.${profile}.template"
     if [[ ! -f "$template_file" ]]; then
@@ -128,7 +162,6 @@ generate_config() {
         -e "s|__EMBEDDING_MODEL__|${safe_embedding_model}|g" \
         -e "s|__DOMAIN__|${safe_domain}|g" \
         -e "s|__CERTBOT_EMAIL__|${safe_certbot_email}|g" \
-        -e "s|__ADMIN_TOKEN__|${admin_token}|g" \
         -e "s|__VECTOR_STORE__|${VECTOR_STORE:-weaviate}|g" \
         -e "s|__QDRANT_API_KEY__|${qdrant_api_key}|g" \
         -e "s|__ETL_TYPE__|$([ "${ETL_ENHANCED:-no}" = "yes" ] && echo "unstructured_api" || echo "dify")|g" \
@@ -152,41 +185,27 @@ generate_config() {
         "$env_file"
     rm -f "${env_file}.bak"
 
-    # Copy and apply versions.env
+    # Copy release manifest
+    local manifest_file="${template_dir}/release-manifest.json"
+    if [[ -f "$manifest_file" ]]; then
+        cp "$manifest_file" "${INSTALL_DIR}/release-manifest.json"
+    fi
+
+    # Copy versions.env and append to .env (single source of truth)
     local versions_file="${template_dir}/versions.env"
     if [[ -f "$versions_file" ]]; then
         cp "$versions_file" "${INSTALL_DIR}/versions.env"
-        # Safely parse version variables (no arbitrary code execution)
+        # Safely parse and append version variables to .env
+        echo "" >> "$env_file"
+        echo "# === Pinned versions (from versions.env) ===" >> "$env_file"
         while IFS='=' read -r key value; do
             [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*_VERSION$ ]] || continue
             [[ "$value" =~ ^[a-zA-Z0-9._:-]+$ ]] || continue
             declare "$key=$value"
+            echo "${key}=${value}" >> "$env_file"
         done < <(grep -E '^[A-Z].*_VERSION=' "$versions_file")
-        sed -i.bak \
-            -e "s|DIFY_VERSION=.*|DIFY_VERSION=${DIFY_VERSION}|" \
-            -e "s|OLLAMA_VERSION=.*|OLLAMA_VERSION=${OLLAMA_VERSION}|" \
-            -e "s|POSTGRES_VERSION=.*|POSTGRES_VERSION=${POSTGRES_VERSION}|" \
-            -e "s|REDIS_VERSION=.*|REDIS_VERSION=${REDIS_VERSION}|" \
-            -e "s|WEAVIATE_VERSION=.*|WEAVIATE_VERSION=${WEAVIATE_VERSION}|" \
-            -e "s|QDRANT_VERSION=.*|QDRANT_VERSION=${QDRANT_VERSION}|" \
-            -e "s|SANDBOX_VERSION=.*|SANDBOX_VERSION=${SANDBOX_VERSION}|" \
-            -e "s|SQUID_VERSION=.*|SQUID_VERSION=${SQUID_VERSION}|" \
-            -e "s|NGINX_VERSION=.*|NGINX_VERSION=${NGINX_VERSION}|" \
-            -e "s|CERTBOT_VERSION=.*|CERTBOT_VERSION=${CERTBOT_VERSION}|" \
-            -e "s|PLUGIN_DAEMON_VERSION=.*|PLUGIN_DAEMON_VERSION=${PLUGIN_DAEMON_VERSION}|" \
-            -e "s|DOCLING_VERSION=.*|DOCLING_VERSION=${DOCLING_VERSION}|" \
-            -e "s|XINFERENCE_VERSION=.*|XINFERENCE_VERSION=${XINFERENCE_VERSION}|" \
-            -e "s|GRAFANA_VERSION=.*|GRAFANA_VERSION=${GRAFANA_VERSION}|" \
-            -e "s|PORTAINER_VERSION=.*|PORTAINER_VERSION=${PORTAINER_VERSION}|" \
-            -e "s|CADVISOR_VERSION=.*|CADVISOR_VERSION=${CADVISOR_VERSION}|" \
-            -e "s|PROMETHEUS_VERSION=.*|PROMETHEUS_VERSION=${PROMETHEUS_VERSION}|" \
-            -e "s|AUTHELIA_VERSION=.*|AUTHELIA_VERSION=${AUTHELIA_VERSION}|" \
-            "$env_file"
-        rm -f "${env_file}.bak"
     fi
 
-    # Set ADMIN_TOKEN for nginx config generation (not exported to avoid /proc/environ leak)
-    ADMIN_TOKEN="$admin_token"
     GRAFANA_ADMIN_PASSWORD="$grafana_admin_password"
 
     # Generate nginx.conf from template
@@ -204,6 +223,7 @@ generate_config() {
     # Copy monitoring provisioning files if local monitoring
     if [[ "${MONITORING_MODE:-none}" == "local" ]]; then
         copy_monitoring_files "$template_dir"
+        configure_alertmanager
     fi
 
     # Generate Redis config (password in file, not command line)
@@ -212,9 +232,21 @@ generate_config() {
     # Generate sandbox config
     generate_sandbox_config
 
+    # Validate no default/weak secrets remain
+    validate_no_default_secrets "$env_file"
+
+    # Secure file permissions
+    chmod 600 "$env_file"
+    if [[ $(id -u) -eq 0 ]]; then
+        chown root:root "$env_file"
+    fi
+
     # Store admin credentials for final output
     echo "$admin_password_plain" > "${INSTALL_DIR}/.admin_password"
     chmod 600 "${INSTALL_DIR}/.admin_password"
+    if [[ $(id -u) -eq 0 ]]; then
+        chown root:root "${INSTALL_DIR}/.admin_password"
+    fi
 
     echo -e "${GREEN}Конфигурация сгенерирована: ${INSTALL_DIR}/docker/.env${NC}"
 }
@@ -234,7 +266,6 @@ generate_nginx_config() {
     # Replace all placeholders
     sed -i.bak \
         -e "s|__SERVER_NAME__|${server_name}|g" \
-        -e "s|__ADMIN_TOKEN__|${ADMIN_TOKEN}|g" \
         "$nginx_conf"
     rm -f "${nginx_conf}.bak"
 
@@ -273,16 +304,94 @@ generate_redis_config() {
     local redis_pass
     redis_pass=$(grep '^REDIS_PASSWORD=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "")
     cat > "$redis_conf" << REDISEOF
-# AGMind Redis Configuration
+# AGMind Redis Configuration — Hardened
+# bind 0.0.0.0 — container networking requires this; access controlled by Docker network + requirepass
+bind 0.0.0.0
+protected-mode no
 requirepass ${redis_pass}
-maxmemory 256mb
+maxmemory 512mb
 maxmemory-policy allkeys-lru
 save 60 1000
 save 300 100
 appendonly yes
 appendfilename "appendonly.aof"
+
+# Disable dangerous commands
+rename-command FLUSHALL ""
+rename-command FLUSHDB ""
+rename-command CONFIG ""
+rename-command DEBUG ""
+rename-command SHUTDOWN AGMIND_SHUTDOWN_$(head -c 8 /dev/urandom | LC_ALL=C tr -dc 'a-f0-9')
+
+# Connection limits
+maxclients 100
+timeout 300
+tcp-keepalive 60
 REDISEOF
     chmod 600 "$redis_conf"
+}
+
+configure_alertmanager() {
+    local alertmanager_conf="${INSTALL_DIR}/docker/monitoring/alertmanager.yml"
+    [[ ! -f "$alertmanager_conf" ]] && return 0
+
+    local alert_mode="${ALERT_MODE:-none}"
+
+    case "$alert_mode" in
+        telegram)
+            local token="${ALERT_TELEGRAM_TOKEN:-}"
+            local chat_id="${ALERT_TELEGRAM_CHAT_ID:-}"
+            if [[ -n "$token" && -n "$chat_id" ]]; then
+                # Replace default receiver with telegram config
+                cat > "$alertmanager_conf" << AMEOF
+global:
+  resolve_timeout: 5m
+  telegram_api_url: 'https://api.telegram.org'
+
+route:
+  group_by: ['alertname', 'severity']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 1h
+  receiver: 'telegram'
+  routes:
+    - match:
+        severity: critical
+      receiver: 'telegram'
+      repeat_interval: 15m
+
+receivers:
+  - name: 'telegram'
+    telegram_configs:
+      - bot_token: '${token}'
+        chat_id: ${chat_id}
+        parse_mode: 'HTML'
+        send_resolved: true
+        message: '{{ range .Alerts }}{{ if eq .Status "firing" }}🔴{{ else }}🟢{{ end }} <b>{{ .Labels.alertname }}</b>\n{{ .Annotations.summary }}\n{{ .Annotations.description }}{{ end }}'
+
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname']
+AMEOF
+            fi
+            ;;
+        webhook)
+            local webhook_url="${ALERT_WEBHOOK_URL:-}"
+            if [[ -n "$webhook_url" ]]; then
+                # Enable webhook markers
+                sed -i.bak 's|#__WEBHOOK__||g' "$alertmanager_conf"
+                rm -f "${alertmanager_conf}.bak"
+                local safe_webhook
+                safe_webhook=$(escape_sed "$webhook_url")
+                sed -i.bak "s|__ALERT_WEBHOOK_URL__|${safe_webhook}|g" "$alertmanager_conf"
+                rm -f "${alertmanager_conf}.bak"
+            fi
+            ;;
+    esac
+    chmod 600 "$alertmanager_conf"
 }
 
 generate_sandbox_config() {

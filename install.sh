@@ -215,6 +215,20 @@ phase_wizard() {
     else
         DEPLOY_PROFILE="${DEPLOY_PROFILE:-lan}"
     fi
+
+    # --- Security defaults per profile (override with DISABLE_SECURITY_DEFAULTS=true) ---
+    if [[ "${DISABLE_SECURITY_DEFAULTS:-false}" != "true" ]]; then
+        case "$DEPLOY_PROFILE" in
+            vps)
+                ENABLE_UFW="${ENABLE_UFW:-true}"
+                ENABLE_FAIL2BAN="${ENABLE_FAIL2BAN:-true}"
+                ENABLE_SOPS="${ENABLE_SOPS:-true}"
+                ;;
+            lan|vpn)
+                ENABLE_FAIL2BAN="${ENABLE_FAIL2BAN:-true}"
+                ;;
+        esac
+    fi
     echo ""
 
     # --- Domain (VPS only) ---
@@ -841,14 +855,9 @@ phase_workflow() {
     # ADMIN_PASSWORD passed via global scope, not exported to /proc/environ
     export INSTALL_DIR ADMIN_EMAIL LLM_MODEL EMBEDDING_MODEL COMPANY_NAME
 
-    # Read admin token to construct the correct URL path through nginx
-    local admin_token
-    admin_token=$(grep '^ADMIN_TOKEN=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "")
-
-    # Use the admin token path so import.py can reach /console/api/* through nginx
-    # (nginx blocks direct /console/* access, only allows /__ADMIN_TOKEN__/console/api/*)
+    # Dify Console accessible at /dify/ — standard authenticated path
     export DIFY_INTERNAL_URL="http://localhost"
-    export DIFY_CONSOLE_PREFIX="/${admin_token}"
+    export DIFY_CONSOLE_PREFIX="/dify"
 
     import_workflow
 
@@ -924,9 +933,7 @@ phase_complete() {
             ;;
     esac
 
-    local admin_token
-    admin_token=$(grep '^ADMIN_TOKEN=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "UNKNOWN")
-    local dify_url="${access_url}/${admin_token}/"
+    local dify_url="${access_url}/dify/"
 
     echo ""
     echo -e "${GREEN}"
@@ -968,8 +975,8 @@ phase_complete() {
     [[ "$ENABLE_AUTHELIA" == "true" ]] && echo "║  Authelia:  2FA включена                         ║"
     [[ "$ALERT_MODE" != "none" ]] && printf "║  Алерты:    %-35s║\n" "$ALERT_MODE"
     echo "║                                                ║"
-    echo "║  Dify Console (секретный URL):                 ║"
-    echo "║  ${dify_url}"
+    echo "║  Dify Console:                                 ║"
+    printf "║  %-47s║\n" "${dify_url}"
     echo "║                                                ║"
     echo "║  Логи:      cd /opt/agmind/docker &&           ║"
     echo "║             docker compose logs -f             ║"
