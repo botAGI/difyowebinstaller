@@ -10,9 +10,9 @@ wait_for_dify_api() {
     echo -e "${YELLOW}Ожидание готовности Dify API...${NC}"
     local retries=60
     local i=0
-    local prefix="${DIFY_CONSOLE_PREFIX:-}"
+    local prefix="${DIFY_CONSOLE_PREFIX:-/dify}"
     while [[ $i -lt $retries ]]; do
-        # Use admin token prefix path since nginx blocks direct /console/* access
+        # Use /dify/ path since nginx proxies console at /dify/*
         if curl -sf "http://localhost${prefix}/console/api/setup" >/dev/null 2>&1; then
             echo -e "${GREEN}Dify API готов${NC}"
             return 0
@@ -62,9 +62,8 @@ import_workflow() {
         fi
     fi
 
-    # Console prefix: nginx blocks direct /console/* access, so we use
-    # the admin token path /__ADMIN_TOKEN__/console/api/* instead
-    local console_prefix="${DIFY_CONSOLE_PREFIX:-}"
+    # Console prefix: Dify Console served at /dify/* via nginx
+    local console_prefix="${DIFY_CONSOLE_PREFIX:-/dify}"
 
     # Run import script
     python3 "${INSTALL_DIR}/workflows/import.py" \

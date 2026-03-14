@@ -8,6 +8,8 @@ set -euo pipefail
 INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
 COMPOSE_FILE="${INSTALL_DIR}/docker/docker-compose.yml"
 VERSIONS_FILE="${INSTALL_DIR}/versions.env"
+MANIFEST_FILE="${INSTALL_DIR}/release-manifest.json"
+ROLLBACK_DIR="${INSTALL_DIR}/.rollback"
 ENV_FILE="${INSTALL_DIR}/docker/.env"
 LOG_FILE="${INSTALL_DIR}/logs/update_history.log"
 BACKUP_SCRIPT="${INSTALL_DIR}/scripts/backup.sh"
@@ -158,6 +160,54 @@ load_new_versions() {
             [[ "$key" =~ _VERSION$ ]] && NEW_VERSIONS["$key"]="$value"
         done < <(grep '_VERSION=' "$VERSIONS_FILE" 2>/dev/null | grep -v '^#')
     fi
+}
+
+# Save current state for rollback
+save_rollback_state() {
+    mkdir -p "$ROLLBACK_DIR"
+    chmod 700 "$ROLLBACK_DIR"
+
+    # Save current versions.env
+    [[ -f "$VERSIONS_FILE" ]] && cp "$VERSIONS_FILE" "${ROLLBACK_DIR}/versions.env.bak"
+
+    # Save current .env
+    [[ -f "$ENV_FILE" ]] && cp "$ENV_FILE" "${ROLLBACK_DIR}/dot-env.bak"
+
+    # Save current manifest
+    [[ -f "$MANIFEST_FILE" ]] && cp "$MANIFEST_FILE" "${ROLLBACK_DIR}/release-manifest.json.bak"
+
+    # Save running image digests
+    if command -v docker &>/dev/null; then
+        docker compose -f "$COMPOSE_FILE" ps -q 2>/dev/null | while read -r cid; do
+            local img
+            img=$(docker inspect --format '{{.Config.Image}}' "$cid" 2>/dev/null || true)
+            [[ -n "$img" ]] && echo "$img" >> "${ROLLBACK_DIR}/running-images.txt"
+        done
+    fi
+
+    log_success "Rollback state сохранён в ${ROLLBACK_DIR}"
+}
+
+# Rollback to previous state
+perform_rollback() {
+    log_warn "Откат к предыдущему состоянию..."
+
+    if [[ -f "${ROLLBACK_DIR}/versions.env.bak" ]]; then
+        cp "${ROLLBACK_DIR}/versions.env.bak" "$VERSIONS_FILE"
+    fi
+    if [[ -f "${ROLLBACK_DIR}/dot-env.bak" ]]; then
+        cp "${ROLLBACK_DIR}/dot-env.bak" "$ENV_FILE"
+        chmod 600 "$ENV_FILE"
+    fi
+    if [[ -f "${ROLLBACK_DIR}/release-manifest.json.bak" ]]; then
+        cp "${ROLLBACK_DIR}/release-manifest.json.bak" "$MANIFEST_FILE"
+    fi
+
+    cd "${INSTALL_DIR}/docker"
+    docker compose -f "$COMPOSE_FILE" up -d 2>/dev/null || true
+
+    log_success "Rollback выполнен"
+    send_notification "⚠️ AGMind Update ROLLBACK — восстановлены предыдущие версии"
 }
 
 display_version_diff() {
@@ -380,6 +430,9 @@ main() {
     # Backup
     create_update_backup
 
+    # Save rollback state (images + configs)
+    save_rollback_state
+
     # Save .env backup for rollback
     cp "$ENV_FILE" "${ENV_FILE}.pre-update"
     chmod 600 "${ENV_FILE}.pre-update"
@@ -412,11 +465,8 @@ main() {
         send_notification "✅ AGMind обновлён успешно на $(hostname 2>/dev/null || echo 'server')"
     else
         log_error "Обновление завершено с ошибками"
-        # Rollback .env on failure
-        if [[ -f "${ENV_FILE}.pre-update" ]]; then
-            cp "${ENV_FILE}.pre-update" "$ENV_FILE"
-            log_warn "Версии в .env откачены к предыдущим"
-        fi
+        # Rollback to previous state
+        perform_rollback
         log_update "PARTIAL_FAILURE" "Some services failed to update"
         send_notification "⚠️ AGMind обновление завершено с ошибками на $(hostname 2>/dev/null || echo 'server')"
         exit 1

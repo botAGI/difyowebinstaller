@@ -1,3 +1,14 @@
+x-security-defaults: &security-defaults
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "5"
+
 x-shared-env: &shared-env
   # --- Core ---
   SECRET_KEY: ${SECRET_KEY:-}
@@ -77,6 +88,7 @@ x-shared-env: &shared-env
 services:
   # ==================== Dify API ====================
   api:
+    <<: *security-defaults
     image: langgenius/dify-api:${DIFY_VERSION:-1.13.0}
     container_name: agmind-api
     restart: always
@@ -99,11 +111,12 @@ services:
       sandbox:
         condition: service_healthy
     networks:
-      - agmind-network
+      - agmind-backend
       - ssrf-network
 
   # ==================== Dify Worker ====================
   worker:
+    <<: *security-defaults
     image: langgenius/dify-api:${DIFY_VERSION:-1.13.0}
     container_name: agmind-worker
     restart: always
@@ -124,11 +137,12 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - agmind-network
+      - agmind-backend
       - ssrf-network
 
   # ==================== Dify Web (Console UI) ====================
   web:
+    <<: *security-defaults
     image: langgenius/dify-web:${DIFY_VERSION:-1.13.0}
     container_name: agmind-web
     restart: always
@@ -144,10 +158,11 @@ services:
       retries: ${HEALTHCHECK_RETRIES:-5}
       start_period: 15s
     networks:
-      - agmind-network
+      - agmind-backend
 
   # ==================== Pipeline (OpenAI-compatible proxy to Dify) ====================
   pipeline:
+    <<: *security-defaults
     build:
       context: ./pipeline
       dockerfile: Dockerfile
@@ -167,12 +182,13 @@ services:
       api:
         condition: service_healthy
     networks:
-      - agmind-network
+      - agmind-backend
 
   # ==================== Open WebUI ====================
   # WARNING: Version pinned for white-label/re-branding compatibility.
   # Do NOT change to :main or :latest without verifying branding features still work.
   open-webui:
+    <<: *security-defaults
     # WARNING: open-webui version pinned for white-label compatibility
     image: ghcr.io/open-webui/open-webui:${OPENWEBUI_VERSION:-v0.5.20}
     container_name: agmind-openwebui
@@ -202,13 +218,16 @@ services:
       ollama:
         condition: service_healthy
     networks:
-      - agmind-network
+      - agmind-backend
 
   # ==================== Ollama ====================
   ollama:
-    image: ollama/ollama:${OLLAMA_VERSION:-0.5.4}
+    <<: *security-defaults
+    image: ollama/ollama:${OLLAMA_VERSION:-0.6.2}
     container_name: agmind-ollama
     restart: always
+    cap_add:
+      - SYS_ADMIN
     volumes:
       - ollama_data:/root/.ollama
     healthcheck:
@@ -225,11 +244,12 @@ services:
     #__GPU__          count: all
     #__GPU__          capabilities: [gpu]
     networks:
-      - agmind-network
+      - agmind-backend
 
   # ==================== PostgreSQL ====================
   db:
-    image: postgres:${POSTGRES_VERSION:-15-alpine}
+    <<: *security-defaults
+    image: postgres:${POSTGRES_VERSION:-15.10-alpine}
     container_name: agmind-db
     restart: always
     environment:
@@ -243,6 +263,11 @@ services:
                -c 'work_mem=16MB'
                -c 'maintenance_work_mem=128MB'
                -c 'effective_cache_size=512MB'
+               -c 'password_encryption=scram-sha-256'
+               -c 'log_connections=on'
+               -c 'log_disconnections=on'
+               -c 'log_statement=ddl'
+               -c 'log_min_duration_statement=1000'
     volumes:
       - ./volumes/db/data:/var/lib/postgresql/data
     healthcheck:
@@ -251,13 +276,17 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - agmind-network
+      - agmind-backend
 
   # ==================== Redis ====================
   redis:
-    image: redis:${REDIS_VERSION:-7-alpine}
+    <<: *security-defaults
+    image: redis:${REDIS_VERSION:-7.4.1-alpine}
     container_name: agmind-redis
     restart: always
+    read_only: true
+    tmpfs:
+      - /tmp
     command: redis-server /etc/redis/redis.conf
     volumes:
       - ./volumes/redis/data:/data
@@ -268,11 +297,12 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - agmind-network
+      - agmind-backend
 
   # ==================== Weaviate ====================
   weaviate:
-    image: semitechnologies/weaviate:${WEAVIATE_VERSION:-1.19.0}
+    <<: *security-defaults
+    image: semitechnologies/weaviate:${WEAVIATE_VERSION}
     container_name: agmind-weaviate
     restart: always
     profiles:
@@ -297,10 +327,11 @@ services:
       retries: ${HEALTHCHECK_RETRIES:-5}
       start_period: 15s
     networks:
-      - agmind-network
+      - agmind-backend
 
   # ==================== Qdrant (alternative vector store) ====================
   qdrant:
+    <<: *security-defaults
     image: qdrant/qdrant:${QDRANT_VERSION:-v1.12.1}
     container_name: agmind-qdrant
     restart: always
@@ -317,11 +348,12 @@ services:
       retries: ${HEALTHCHECK_RETRIES:-5}
       start_period: 15s
     networks:
-      - agmind-network
+      - agmind-backend
 
   # ==================== Docling (ETL service) ====================
   docling:
-    image: ds4sd/docling-serve:${DOCLING_VERSION:-latest}
+    <<: *security-defaults
+    image: ds4sd/docling-serve:${DOCLING_VERSION}
     container_name: agmind-docling
     restart: always
     profiles:
@@ -336,11 +368,12 @@ services:
       retries: ${HEALTHCHECK_RETRIES:-5}
       start_period: 30s
     networks:
-      - agmind-network
+      - agmind-backend
 
   # ==================== Xinference (Reranker) ====================
   xinference:
-    image: xprobe/xinference:${XINFERENCE_VERSION:-latest}
+    <<: *security-defaults
+    image: xprobe/xinference:${XINFERENCE_VERSION}
     container_name: agmind-xinference
     restart: always
     profiles:
@@ -364,10 +397,11 @@ services:
       retries: ${HEALTHCHECK_RETRIES:-5}
       start_period: 30s
     networks:
-      - agmind-network
+      - agmind-backend
 
   # ==================== Sandbox (Code Execution) ====================
   sandbox:
+    <<: *security-defaults
     image: langgenius/dify-sandbox:${SANDBOX_VERSION:-0.2.12}
     container_name: agmind-sandbox
     restart: always
@@ -392,6 +426,7 @@ services:
 
   # ==================== SSRF Proxy ====================
   ssrf_proxy:
+    <<: *security-defaults
     image: ubuntu/squid:${SQUID_VERSION:-6.6-24.04_edge}
     container_name: agmind-ssrf-proxy
     restart: always
@@ -405,11 +440,12 @@ services:
       start_period: 10s
     networks:
       - ssrf-network
-      - agmind-network
+      - agmind-backend
 
   # ==================== Plugin Daemon ====================
   plugin_daemon:
-    image: langgenius/dify-plugin-daemon:${PLUGIN_DAEMON_VERSION:-0.1.0-local}
+    <<: *security-defaults
+    image: langgenius/dify-plugin-daemon:${PLUGIN_DAEMON_VERSION}
     container_name: agmind-plugin-daemon
     restart: always
     environment:
@@ -439,13 +475,19 @@ services:
       db:
         condition: service_healthy
     networks:
-      - agmind-network
+      - agmind-backend
 
   # ==================== Nginx ====================
   nginx:
-    image: nginx:${NGINX_VERSION:-1.27-alpine}
+    <<: *security-defaults
+    image: nginx:${NGINX_VERSION:-1.27.3-alpine}
     container_name: agmind-nginx
     restart: always
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+      - /var/run
     ports:
       - "${EXPOSE_NGINX_PORT:-80}:80"
       - "${EXPOSE_NGINX_SSL_PORT:-443}:443"
@@ -475,17 +517,20 @@ services:
       pipeline:
         condition: service_healthy
     networks:
-      - agmind-network
+      - agmind-frontend
+      - agmind-backend
 
   # ==================== Prometheus (monitoring profile) ====================
   prometheus:
-    image: prom/prometheus:${PROMETHEUS_VERSION:-v2.53.0}
+    <<: *security-defaults
+    image: prom/prometheus:${PROMETHEUS_VERSION:-v2.54.1}
     container_name: agmind-prometheus
     restart: always
     profiles:
       - monitoring
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
       - prometheus_data:/prometheus
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy || exit 1"]
@@ -494,11 +539,31 @@ services:
       retries: ${HEALTHCHECK_RETRIES:-5}
       start_period: 15s
     networks:
-      - agmind-network
+      - agmind-backend
+
+  # ==================== Alertmanager (monitoring profile) ====================
+  alertmanager:
+    <<: *security-defaults
+    image: prom/alertmanager:${ALERTMANAGER_VERSION:-v0.27.0}
+    container_name: agmind-alertmanager
+    restart: always
+    profiles:
+      - monitoring
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9093/-/healthy || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 10s
+    networks:
+      - agmind-backend
 
   # ==================== Loki (monitoring profile) ====================
   loki:
-    image: grafana/loki:${LOKI_VERSION:-3.0.0}
+    <<: *security-defaults
+    image: grafana/loki:${LOKI_VERSION:-3.3.2}
     container_name: agmind-loki
     profiles:
       - monitoring
@@ -513,12 +578,13 @@ services:
       retries: ${HEALTHCHECK_RETRIES:-5}
       start_period: 15s
     networks:
-      - agmind-network
+      - agmind-backend
     restart: unless-stopped
 
   # ==================== Promtail (monitoring profile) ====================
   promtail:
-    image: grafana/promtail:${PROMTAIL_VERSION:-3.0.0}
+    <<: *security-defaults
+    image: grafana/promtail:${PROMTAIL_VERSION:-3.3.2}
     container_name: agmind-promtail
     profiles:
       - monitoring
@@ -530,11 +596,12 @@ services:
       loki:
         condition: service_healthy
     networks:
-      - agmind-network
+      - agmind-backend
     restart: unless-stopped
 
   # ==================== cAdvisor (monitoring profile) ====================
   cadvisor:
+    <<: *security-defaults
     image: gcr.io/cadvisor/cadvisor:${CADVISOR_VERSION:-v0.49.1}
     container_name: agmind-cadvisor
     restart: always
@@ -554,11 +621,12 @@ services:
       retries: ${HEALTHCHECK_RETRIES:-5}
       start_period: 15s
     networks:
-      - agmind-network
+      - agmind-backend
 
   # ==================== Grafana (monitoring profile) ====================
   grafana:
-    image: grafana/grafana:${GRAFANA_VERSION:-11.2.0}
+    <<: *security-defaults
+    image: grafana/grafana:${GRAFANA_VERSION:-11.4.0}
     container_name: agmind-grafana
     restart: always
     profiles:
@@ -581,11 +649,13 @@ services:
       prometheus:
         condition: service_healthy
     networks:
-      - agmind-network
+      - agmind-frontend
+      - agmind-backend
 
   # ==================== Portainer (monitoring profile) ====================
   portainer:
-    image: portainer/portainer-ce:${PORTAINER_VERSION:-2.21.0}
+    <<: *security-defaults
+    image: portainer/portainer-ce:${PORTAINER_VERSION:-2.21.4}
     container_name: agmind-portainer
     restart: always
     profiles:
@@ -602,10 +672,12 @@ services:
       retries: ${HEALTHCHECK_RETRIES:-5}
       start_period: 15s
     networks:
-      - agmind-network
+      - agmind-frontend
+      - agmind-backend
 
   # ==================== Authelia (authelia profile) ====================
   authelia:
+    <<: *security-defaults
     image: authelia/authelia:${AUTHELIA_VERSION:-4.38}
     container_name: agmind-authelia
     profiles: ["authelia"]
@@ -621,11 +693,12 @@ services:
       retries: ${HEALTHCHECK_RETRIES:-5}
       start_period: 10s
     networks:
-      - agmind-network
+      - agmind-backend
 
   # ==================== Certbot (VPS profile only) ====================
   certbot:
-    image: certbot/certbot:${CERTBOT_VERSION:-v3.0.0}
+    <<: *security-defaults
+    image: certbot/certbot:${CERTBOT_VERSION:-v3.1.0}
     container_name: agmind-certbot
     restart: unless-stopped
     profiles:
@@ -635,11 +708,14 @@ services:
       - ./volumes/certbot/www:/var/www/certbot
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
     networks:
-      - agmind-network
+      - agmind-backend
 
 networks:
-  agmind-network:
+  agmind-frontend:
     driver: bridge
+  agmind-backend:
+    driver: bridge
+    internal: true
   ssrf-network:
     driver: bridge
     internal: true

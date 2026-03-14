@@ -1,0 +1,69 @@
+name: Lint
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ShellCheck
+        run: sudo apt-get install -y shellcheck
+      - name: Run ShellCheck on all scripts
+        run: |
+          find . -name "*.sh" -type f | while read -r f; do
+            echo "Checking: $f"
+            shellcheck -S warning -e SC1091 "$f" || true
+          done
+
+  yamllint:
+    name: YAML Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install yamllint
+        run: pip install yamllint
+      - name: Run yamllint
+        run: |
+          yamllint -d "{extends: relaxed, rules: {line-length: {max: 200}, truthy: disable}}" \
+            templates/docker-compose.yml \
+            monitoring/prometheus.yml \
+            monitoring/alertmanager.yml \
+            monitoring/alert_rules.yml \
+            monitoring/loki-config.yml \
+            monitoring/promtail-config.yml
+
+  json-validate:
+    name: JSON Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate JSON files
+        run: |
+          find . -name "*.json" -type f | while read -r f; do
+            echo "Validating: $f"
+            python3 -m json.tool "$f" > /dev/null
+          done
+
+  bash-syntax:
+    name: Bash Syntax Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check bash -n on all scripts
+        run: |
+          errors=0
+          find . -name "*.sh" -type f | while read -r f; do
+            if ! bash -n "$f" 2>/dev/null; then
+              echo "FAIL: $f"
+              errors=$((errors + 1))
+            else
+              echo "OK: $f"
+            fi
+          done
+          exit $errors
