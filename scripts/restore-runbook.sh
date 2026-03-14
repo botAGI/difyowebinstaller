@@ -55,7 +55,7 @@ else
 fi
 
 # Check required files
-for required in db_backup.sql.gz; do
+for required in dify_db.sql.gz; do
     if [[ -f "${BACKUP_PATH}/${required}" ]]; then
         log_ok "Found: ${required}"
     else

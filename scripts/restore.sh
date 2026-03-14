@@ -137,7 +137,7 @@ SERVICES_DOWN=true
 docker compose -f "$COMPOSE_FILE" down
 
 # 1. Restore PostgreSQL
-if [[ -f "${RESTORE_DIR}/dify.sql.gz" ]]; then
+if [[ -f "${RESTORE_DIR}/dify_db.sql.gz" ]]; then
     echo -e "${YELLOW}Восстановление PostgreSQL...${NC}"
     docker compose -f "$COMPOSE_FILE" up -d db
 
@@ -155,17 +155,17 @@ if [[ -f "${RESTORE_DIR}/dify.sql.gz" ]]; then
     docker compose -f "$COMPOSE_FILE" exec -T db psql -U postgres -c "CREATE DATABASE dify;" 2>/dev/null || true
 
     # R-04: Check psql exit codes
-    if ! gunzip -c "${RESTORE_DIR}/dify.sql.gz" | \
+    if ! gunzip -c "${RESTORE_DIR}/dify_db.sql.gz" | \
         docker compose -f "$COMPOSE_FILE" exec -T db psql -U postgres -d dify 2>/dev/null; then
         echo -e "${RED}PostgreSQL restore failed for dify DB${NC}"
         exit 1
     fi
 
     # Restore plugin DB if exists
-    if [[ -f "${RESTORE_DIR}/dify_plugin.sql.gz" ]]; then
+    if [[ -f "${RESTORE_DIR}/dify_plugin_db.sql.gz" ]]; then
         docker compose -f "$COMPOSE_FILE" exec -T db psql -U postgres -c "DROP DATABASE IF EXISTS dify_plugin;" 2>/dev/null || true
         docker compose -f "$COMPOSE_FILE" exec -T db psql -U postgres -c "CREATE DATABASE dify_plugin;" 2>/dev/null || true
-        if ! gunzip -c "${RESTORE_DIR}/dify_plugin.sql.gz" | \
+        if ! gunzip -c "${RESTORE_DIR}/dify_plugin_db.sql.gz" | \
             docker compose -f "$COMPOSE_FILE" exec -T db psql -U postgres -d dify_plugin 2>/dev/null; then
             echo -e "${RED}PostgreSQL restore failed for dify_plugin DB${NC}"
             exit 1

@@ -92,3 +92,19 @@ teardown() {
     local service_count=$(grep -c "<<: \*security-defaults" "$compose")
     [ "$service_count" -ge 20 ]
 }
+
+@test "backup and restore use same DB dump filename" {
+    local base="$(dirname "$BATS_TEST_FILENAME")/.."
+    local backup_file="$base/scripts/backup.sh"
+    local restore_file="$base/scripts/restore.sh"
+    local runbook_file="$base/scripts/restore-runbook.sh"
+
+    # backup.sh creates dify_db.sql — extract the canonical name
+    grep -q 'dify_db\.sql' "$backup_file"
+    grep -q 'dify_db\.sql' "$restore_file"
+    grep -q 'dify_db\.sql' "$runbook_file"
+
+    # plugin DB name must also match
+    grep -q 'dify_plugin_db\.sql' "$backup_file"
+    grep -q 'dify_plugin_db\.sql' "$restore_file"
+}
