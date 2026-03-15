@@ -812,6 +812,21 @@ phase_start() {
     [[ "$MONITORING_MODE" == "local" ]] && profiles="${profiles:+$profiles,}monitoring"
     [[ "$ENABLE_AUTHELIA" == "true" ]] && profiles="${profiles:+$profiles,}authelia"
 
+    # Clean up directory artifacts from previous failed Docker bind mounts
+    # Docker creates directories when a bind-mounted file doesn't exist
+    local bind_mounted_files=(
+        "monitoring/prometheus.yml"
+        "monitoring/alert_rules.yml"
+        "monitoring/alertmanager.yml"
+        "monitoring/loki-config.yml"
+        "monitoring/promtail-config.yml"
+        "nginx/nginx.conf"
+        "volumes/redis/redis.conf"
+    )
+    for f in "${bind_mounted_files[@]}"; do
+        [[ -d "${INSTALL_DIR}/docker/${f}" ]] && rm -rf "${INSTALL_DIR}/docker/${f}"
+    done
+
     if [[ "$DEPLOY_PROFILE" == "offline" ]]; then
         if [[ -n "$profiles" ]]; then
             COMPOSE_PROFILES="${profiles}" docker compose up -d --pull never
