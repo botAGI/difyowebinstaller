@@ -255,6 +255,8 @@ generate_nginx_config() {
     local profile="$1"
     local template_dir="$2"
     local nginx_conf="${INSTALL_DIR}/docker/nginx/nginx.conf"
+    [[ -d "$nginx_conf" ]] && rm -rf "$nginx_conf"
+    mkdir -p "$(dirname "$nginx_conf")"
 
     cp "${template_dir}/nginx.conf.template" "$nginx_conf"
 
@@ -301,6 +303,8 @@ generate_nginx_config() {
 
 generate_redis_config() {
     local redis_conf="${INSTALL_DIR}/docker/volumes/redis/redis.conf"
+    [[ -d "$redis_conf" ]] && rm -rf "$redis_conf"
+    mkdir -p "$(dirname "$redis_conf")"
     local redis_pass
     redis_pass=$(grep '^REDIS_PASSWORD=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "")
     cat > "$redis_conf" << REDISEOF
@@ -427,6 +431,8 @@ AMEOF
 
 generate_sandbox_config() {
     local sandbox_conf="${INSTALL_DIR}/docker/volumes/sandbox/conf/config.yaml"
+    [[ -d "$sandbox_conf" ]] && rm -rf "$sandbox_conf"
+    mkdir -p "$(dirname "$sandbox_conf")"
     cat > "$sandbox_conf" << 'SANDBOXEOF'
 # Dify Sandbox Configuration
 app:
@@ -669,25 +675,34 @@ copy_monitoring_files() {
         [[ -d "${dest}/${f}" ]] && rm -rf "${dest}/${f}"
     done
 
+    # Helper: safe copy file — remove directory artifact, then cp
+    _safe_cp() {
+        local src="$1" dst="$2"
+        [[ -d "$dst" ]] && rm -rf "$dst"
+        cp "$src" "$dst"
+    }
+
     # Copy prometheus config
     if [[ -f "${installer_root}/monitoring/prometheus.yml" ]]; then
-        cp "${installer_root}/monitoring/prometheus.yml" "${dest}/prometheus.yml"
+        _safe_cp "${installer_root}/monitoring/prometheus.yml" "${dest}/prometheus.yml"
     fi
 
     # Copy alert rules (required by prometheus bind mount)
     if [[ -f "${installer_root}/monitoring/alert_rules.yml" ]]; then
-        cp "${installer_root}/monitoring/alert_rules.yml" "${dest}/alert_rules.yml"
+        _safe_cp "${installer_root}/monitoring/alert_rules.yml" "${dest}/alert_rules.yml"
     fi
 
     # Copy alertmanager config (required by alertmanager bind mount)
     if [[ -f "${installer_root}/monitoring/alertmanager.yml" ]]; then
-        cp "${installer_root}/monitoring/alertmanager.yml" "${dest}/alertmanager.yml"
+        _safe_cp "${installer_root}/monitoring/alertmanager.yml" "${dest}/alertmanager.yml"
     fi
 
     # Loki + Promtail configs
     if [[ "${ENABLE_LOKI:-true}" == "true" ]]; then
-        cp "${installer_root}/monitoring/loki-config.yml" "${INSTALL_DIR}/docker/monitoring/" 2>/dev/null || true
-        cp "${installer_root}/monitoring/promtail-config.yml" "${INSTALL_DIR}/docker/monitoring/" 2>/dev/null || true
+        [[ -f "${installer_root}/monitoring/loki-config.yml" ]] && \
+            _safe_cp "${installer_root}/monitoring/loki-config.yml" "${dest}/loki-config.yml"
+        [[ -f "${installer_root}/monitoring/promtail-config.yml" ]] && \
+            _safe_cp "${installer_root}/monitoring/promtail-config.yml" "${dest}/promtail-config.yml"
     fi
 
     # Copy grafana provisioning

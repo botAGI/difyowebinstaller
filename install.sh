@@ -768,6 +768,7 @@ phase_config() {
 create_squid_config() {
     local squid_dir="${INSTALL_DIR}/docker/volumes/ssrf_proxy"
     mkdir -p "$squid_dir"
+    [[ -d "${squid_dir}/squid.conf" ]] && rm -rf "${squid_dir}/squid.conf"
     cat > "${squid_dir}/squid.conf" << 'SQUIDEOF'
 acl localnet src 0.0.0.0/8
 acl localnet src 10.0.0.0/8
