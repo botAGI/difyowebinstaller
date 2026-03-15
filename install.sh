@@ -709,6 +709,24 @@ phase_config() {
     export ALERT_MODE ALERT_WEBHOOK_URL ALERT_TELEGRAM_TOKEN ALERT_TELEGRAM_CHAT_ID
     export ENABLE_UFW ENABLE_FAIL2BAN ENABLE_SOPS ENABLE_SECRET_ROTATION ENABLE_AUTHELIA
 
+    # Clean up directory artifacts from previous failed Docker bind mounts
+    # Docker creates directories when a bind-mounted file doesn't exist;
+    # must run BEFORE generate_config which writes these files
+    local bind_mounted_files=(
+        "monitoring/prometheus.yml"
+        "monitoring/alert_rules.yml"
+        "monitoring/alertmanager.yml"
+        "monitoring/loki-config.yml"
+        "monitoring/promtail-config.yml"
+        "nginx/nginx.conf"
+        "volumes/redis/redis.conf"
+        "volumes/ssrf_proxy/squid.conf"
+        "volumes/sandbox/conf/config.yaml"
+    )
+    for f in "${bind_mounted_files[@]}"; do
+        [[ -d "${INSTALL_DIR}/docker/${f}" ]] && rm -rf "${INSTALL_DIR}/docker/${f}"
+    done
+
     generate_config "$DEPLOY_PROFILE" "$TEMPLATE_DIR"
     enable_gpu_compose
 
@@ -811,21 +829,6 @@ phase_start() {
     [[ "$ETL_ENHANCED" == "yes" ]] && profiles="${profiles:+$profiles,}etl"
     [[ "$MONITORING_MODE" == "local" ]] && profiles="${profiles:+$profiles,}monitoring"
     [[ "$ENABLE_AUTHELIA" == "true" ]] && profiles="${profiles:+$profiles,}authelia"
-
-    # Clean up directory artifacts from previous failed Docker bind mounts
-    # Docker creates directories when a bind-mounted file doesn't exist
-    local bind_mounted_files=(
-        "monitoring/prometheus.yml"
-        "monitoring/alert_rules.yml"
-        "monitoring/alertmanager.yml"
-        "monitoring/loki-config.yml"
-        "monitoring/promtail-config.yml"
-        "nginx/nginx.conf"
-        "volumes/redis/redis.conf"
-    )
-    for f in "${bind_mounted_files[@]}"; do
-        [[ -d "${INSTALL_DIR}/docker/${f}" ]] && rm -rf "${INSTALL_DIR}/docker/${f}"
-    done
 
     if [[ "$DEPLOY_PROFILE" == "offline" ]]; then
         if [[ -n "$profiles" ]]; then
