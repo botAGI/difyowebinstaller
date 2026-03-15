@@ -714,6 +714,11 @@ phase_config() {
     export ENABLE_UFW ENABLE_FAIL2BAN ENABLE_SOPS ENABLE_SECRET_ROTATION ENABLE_AUTHELIA
 
     generate_config "$DEPLOY_PROFILE" "$TEMPLATE_DIR"
+
+    # SECOND: clean up after generate_config — copy_monitoring_files or other
+    # functions inside generate_config may recreate directory artifacts.
+    ensure_bind_mount_files
+
     enable_gpu_compose
 
     # Security hardening

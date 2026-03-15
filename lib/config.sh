@@ -811,42 +811,46 @@ copy_monitoring_files() {
 
     echo -e "${YELLOW}Копирование файлов мониторинга...${NC}"
 
-    # Copy prometheus config
-    if [[ -f "${installer_root}/monitoring/prometheus.yml" ]]; then
-        safe_write_file "${dest}/prometheus.yml"
-        cp "${installer_root}/monitoring/prometheus.yml" "${dest}/prometheus.yml"
-    fi
+    # Ensure destination exists as directory
+    mkdir -p "${dest}"
 
-    # Copy alert rules (required by prometheus bind mount)
-    if [[ -f "${installer_root}/monitoring/alert_rules.yml" ]]; then
-        safe_write_file "${dest}/alert_rules.yml"
-        cp "${installer_root}/monitoring/alert_rules.yml" "${dest}/alert_rules.yml"
-    fi
-
-    # Copy alertmanager config (required by alertmanager bind mount)
-    if [[ -f "${installer_root}/monitoring/alertmanager.yml" ]]; then
-        safe_write_file "${dest}/alertmanager.yml"
-        cp "${installer_root}/monitoring/alertmanager.yml" "${dest}/alertmanager.yml"
-    fi
+    # Copy individual config files with safe_write_file protection
+    local mon_files=("prometheus.yml" "alert_rules.yml" "alertmanager.yml")
+    for f in "${mon_files[@]}"; do
+        if [[ -f "${installer_root}/monitoring/${f}" ]]; then
+            safe_write_file "${dest}/${f}"
+            cp "${installer_root}/monitoring/${f}" "${dest}/${f}"
+            echo -e "  ${GREEN}✓ ${f} ($(file -b "${dest}/${f}" 2>/dev/null))${NC}"
+        else
+            echo -e "  ${YELLOW}⚠ source not found: ${installer_root}/monitoring/${f}${NC}"
+        fi
+    done
 
     # Loki + Promtail configs
     if [[ "${ENABLE_LOKI:-true}" == "true" ]]; then
-        if [[ -f "${installer_root}/monitoring/loki-config.yml" ]]; then
-            safe_write_file "${dest}/loki-config.yml"
-            cp "${installer_root}/monitoring/loki-config.yml" "${dest}/loki-config.yml"
-        fi
-        if [[ -f "${installer_root}/monitoring/promtail-config.yml" ]]; then
-            safe_write_file "${dest}/promtail-config.yml"
-            cp "${installer_root}/monitoring/promtail-config.yml" "${dest}/promtail-config.yml"
-        fi
+        for f in "loki-config.yml" "promtail-config.yml"; do
+            if [[ -f "${installer_root}/monitoring/${f}" ]]; then
+                safe_write_file "${dest}/${f}"
+                cp "${installer_root}/monitoring/${f}" "${dest}/${f}"
+                echo -e "  ${GREEN}✓ ${f}${NC}"
+            fi
+        done
     fi
 
     # Copy grafana provisioning
     if [[ -d "${installer_root}/monitoring/grafana" ]]; then
-        cp -r "${installer_root}/monitoring/grafana/provisioning/"* "${dest}/grafana/provisioning/"
-        cp -r "${installer_root}/monitoring/grafana/dashboards/"* "${dest}/grafana/dashboards/"
-        cp "${installer_root}/monitoring/grafana/dashboards/logs.json" "${INSTALL_DIR}/docker/monitoring/grafana/dashboards/" 2>/dev/null || true
+        cp -r "${installer_root}/monitoring/grafana/provisioning/"* "${dest}/grafana/provisioning/" 2>/dev/null || true
+        cp -r "${installer_root}/monitoring/grafana/dashboards/"* "${dest}/grafana/dashboards/" 2>/dev/null || true
     fi
+
+    # POST-COPY VERIFICATION: catch any corruption immediately
+    for f in "${mon_files[@]}"; do
+        if [[ -d "${dest}/${f}" ]]; then
+            echo -e "  ${RED}✗ BUG: ${f} is a DIRECTORY after copy! Fixing...${NC}"
+            rm -rf "${dest}/${f}"
+            cp "${installer_root}/monitoring/${f}" "${dest}/${f}" 2>/dev/null || touch "${dest}/${f}"
+        fi
+    done
 
     echo -e "${GREEN}Файлы мониторинга скопированы${NC}"
 }
