@@ -334,6 +334,12 @@ REDISEOF
 configure_alertmanager() {
     local alertmanager_conf="${INSTALL_DIR}/docker/monitoring/alertmanager.yml"
 
+    # Remove directory artifact if Docker created it from a missing bind mount
+    if [[ -d "$alertmanager_conf" ]]; then
+        rm -rf "$alertmanager_conf"
+    fi
+    mkdir -p "$(dirname "$alertmanager_conf")"
+
     # Create default alertmanager config if not copied from monitoring/
     if [[ ! -f "$alertmanager_conf" ]]; then
         echo -e "${YELLOW}Создание дефолтного alertmanager.yml...${NC}"
@@ -657,6 +663,11 @@ copy_monitoring_files() {
     local dest="${INSTALL_DIR}/docker/monitoring"
 
     echo -e "${YELLOW}Копирование файлов мониторинга...${NC}"
+
+    # Clean up directory artifacts from failed Docker bind mounts
+    for f in prometheus.yml alert_rules.yml alertmanager.yml loki-config.yml promtail-config.yml; do
+        [[ -d "${dest}/${f}" ]] && rm -rf "${dest}/${f}"
+    done
 
     # Copy prometheus config
     if [[ -f "${installer_root}/monitoring/prometheus.yml" ]]; then
