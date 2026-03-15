@@ -847,7 +847,7 @@ copy_monitoring_files() {
     for f in "${mon_files[@]}"; do
         if [[ -d "${dest}/${f}" ]]; then
             echo -e "  ${RED}✗ BUG: ${f} is a DIRECTORY after copy! Fixing...${NC}"
-            rm -rf "${dest}/${f}"
+            rm -rf "${dest:?}/${f}"
             cp "${installer_root}/monitoring/${f}" "${dest}/${f}" 2>/dev/null || touch "${dest}/${f}"
         fi
     done
