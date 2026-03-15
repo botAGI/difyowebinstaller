@@ -819,9 +819,9 @@ phase_start() {
             docker compose up -d --pull never
         fi
     elif [[ -n "$profiles" ]]; then
-        COMPOSE_PROFILES="${profiles}" docker compose up -d
+        COMPOSE_PROFILES="${profiles}" docker compose up -d --pull missing
     else
-        docker compose up -d
+        docker compose up -d --pull missing
     fi
 
     echo ""

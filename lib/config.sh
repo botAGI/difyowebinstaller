@@ -333,7 +333,32 @@ REDISEOF
 
 configure_alertmanager() {
     local alertmanager_conf="${INSTALL_DIR}/docker/monitoring/alertmanager.yml"
-    [[ ! -f "$alertmanager_conf" ]] && return 0
+
+    # Create default alertmanager config if not copied from monitoring/
+    if [[ ! -f "$alertmanager_conf" ]]; then
+        echo -e "${YELLOW}Создание дефолтного alertmanager.yml...${NC}"
+        cat > "$alertmanager_conf" << 'DEFAULTAMEOF'
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ['alertname', 'severity']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 1h
+  receiver: 'default'
+
+receivers:
+  - name: 'default'
+
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname']
+DEFAULTAMEOF
+    fi
 
     local alert_mode="${ALERT_MODE:-none}"
 
@@ -636,6 +661,16 @@ copy_monitoring_files() {
     # Copy prometheus config
     if [[ -f "${installer_root}/monitoring/prometheus.yml" ]]; then
         cp "${installer_root}/monitoring/prometheus.yml" "${dest}/prometheus.yml"
+    fi
+
+    # Copy alert rules (required by prometheus bind mount)
+    if [[ -f "${installer_root}/monitoring/alert_rules.yml" ]]; then
+        cp "${installer_root}/monitoring/alert_rules.yml" "${dest}/alert_rules.yml"
+    fi
+
+    # Copy alertmanager config (required by alertmanager bind mount)
+    if [[ -f "${installer_root}/monitoring/alertmanager.yml" ]]; then
+        cp "${installer_root}/monitoring/alertmanager.yml" "${dest}/alertmanager.yml"
     fi
 
     # Loki + Promtail configs
