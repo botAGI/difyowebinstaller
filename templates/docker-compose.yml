@@ -380,7 +380,7 @@ services:
       - etl
     expose:
       - "9997"
-    command: ["--host", "0.0.0.0", "--port", "9997"]
+    command: ["xinference-local", "--host", "0.0.0.0", "--port", "9997"]
     volumes:
       - xinference_data:/root/.xinference
     #__GPU__deploy:
