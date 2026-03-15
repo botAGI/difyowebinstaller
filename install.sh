@@ -821,10 +821,14 @@ phase_start() {
     [[ "$MONITORING_MODE" == "local" ]] && profiles="${profiles:+$profiles,}monitoring"
     [[ "$ENABLE_AUTHELIA" == "true" ]] && profiles="${profiles:+$profiles,}authelia"
 
-    # Stop and remove stale containers from previous failed installs.
-    # Without this, Docker reuses old containers whose bind mounts were
-    # created when source files were directories — causing OCI mount errors.
-    docker compose down --remove-orphans 2>/dev/null || true
+    # Stop and remove ALL stale containers from previous failed installs.
+    # Must use ALL profiles — docker compose down without profiles won't touch
+    # services that have profiles: [monitoring], etc. Without this, Docker
+    # reuses old containers whose bind mounts were cached as directories.
+    COMPOSE_PROFILES=vps,monitoring,qdrant,weaviate,etl,authelia \
+        docker compose down --remove-orphans 2>/dev/null || true
+    # Belt-and-suspenders: force-remove any agmind containers docker compose missed
+    docker ps -a --filter "name=agmind-" -q | xargs -r docker rm -f 2>/dev/null || true
 
     # Final safety net: fix any remaining directory artifacts before compose up
     ensure_bind_mount_files
