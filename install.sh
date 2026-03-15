@@ -698,6 +698,10 @@ phase_docker() {
 phase_config() {
     echo -e "${BOLD}[4/11] Генерация конфигурации${NC}"
 
+    # FIRST: clean directory artifacts left by previous failed installs.
+    # Must run BEFORE generate_config — otherwise cat/cp into a directory path fails.
+    ensure_bind_mount_files
+
     # Export variables for config.sh
     # Note: ADMIN_PASSWORD intentionally NOT exported (visible in /proc/environ)
     # config.sh reads it from global scope (same process via source)
@@ -814,6 +818,9 @@ phase_start() {
 
     # Final safety net: fix any remaining directory artifacts before compose up
     ensure_bind_mount_files
+
+    # Pre-flight validation: abort if any .yml/.conf are still directories
+    preflight_bind_mount_check
 
     if [[ "$DEPLOY_PROFILE" == "offline" ]]; then
         if [[ -n "$profiles" ]]; then

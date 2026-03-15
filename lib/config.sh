@@ -48,6 +48,101 @@ ensure_bind_mount_files() {
     done
 }
 
+# Pre-flight validation before docker compose up.
+# Catches any remaining directory artifacts or missing bind mount sources.
+# Aborts with clear error if anything is wrong.
+preflight_bind_mount_check() {
+    local docker_dir="${INSTALL_DIR}/docker"
+    local errors=0
+
+    echo -e "${CYAN}Pre-flight: проверка bind mount файлов...${NC}"
+
+    # 1. Find .yml/.yaml files that are actually directories
+    local yml_dirs
+    yml_dirs=$(find "$docker_dir" -name "*.yml" -type d 2>/dev/null || true)
+    yml_dirs+=$'\n'
+    yml_dirs+=$(find "$docker_dir" -name "*.yaml" -type d 2>/dev/null || true)
+    yml_dirs=$(echo "$yml_dirs" | sed '/^$/d')
+    if [[ -n "$yml_dirs" ]]; then
+        echo -e "${RED}✗ ОШИБКА: .yml/.yaml пути являются директориями (а не файлами):${NC}"
+        while IFS= read -r d; do
+            echo -e "  ${RED}→ ${d}${NC}"
+        done <<< "$yml_dirs"
+        errors=$((errors + 1))
+    fi
+
+    # 2. Find .conf files that are actually directories
+    local conf_dirs
+    conf_dirs=$(find "$docker_dir" -name "*.conf" -type d 2>/dev/null || true)
+    conf_dirs=$(echo "$conf_dirs" | sed '/^$/d')
+    if [[ -n "$conf_dirs" ]]; then
+        echo -e "${RED}✗ ОШИБКА: .conf пути являются директориями (а не файлами):${NC}"
+        while IFS= read -r d; do
+            echo -e "  ${RED}→ ${d}${NC}"
+        done <<< "$conf_dirs"
+        errors=$((errors + 1))
+    fi
+
+    # 3. Verify all bind-mount source files exist
+    local bind_files=(
+        "nginx/nginx.conf"
+        "volumes/redis/redis.conf"
+        "volumes/ssrf_proxy/squid.conf"
+        "volumes/sandbox/conf/config.yaml"
+    )
+    for f in "${bind_files[@]}"; do
+        local full="${docker_dir}/${f}"
+        if [[ ! -f "$full" ]]; then
+            echo -e "${RED}✗ ОШИБКА: bind mount файл отсутствует: ${f}${NC}"
+            errors=$((errors + 1))
+        fi
+    done
+
+    # 4. Verify monitoring files exist (only if monitoring profile is active)
+    if [[ "${MONITORING_MODE:-}" == "local" ]]; then
+        local mon_files=(
+            "monitoring/prometheus.yml"
+            "monitoring/alert_rules.yml"
+            "monitoring/alertmanager.yml"
+        )
+        for f in "${mon_files[@]}"; do
+            local full="${docker_dir}/${f}"
+            if [[ ! -f "$full" ]]; then
+                echo -e "${RED}✗ ОШИБКА: monitoring bind mount файл отсутствует: ${f}${NC}"
+                errors=$((errors + 1))
+            fi
+        done
+    fi
+
+    # 5. Verify Loki/Promtail files (only if Loki enabled)
+    if [[ "${ENABLE_LOKI:-false}" == "true" ]]; then
+        local loki_files=(
+            "monitoring/loki-config.yml"
+            "monitoring/promtail-config.yml"
+        )
+        for f in "${loki_files[@]}"; do
+            local full="${docker_dir}/${f}"
+            if [[ ! -f "$full" ]]; then
+                echo -e "${RED}✗ ОШИБКА: Loki bind mount файл отсутствует: ${f}${NC}"
+                errors=$((errors + 1))
+            fi
+        done
+    fi
+
+    # Abort if any errors found
+    if [[ $errors -gt 0 ]]; then
+        echo ""
+        echo -e "${RED}╔══════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${RED}║  PRE-FLIGHT FAILED: ${errors} ошибка(и) bind mount обнаружено    ║${NC}"
+        echo -e "${RED}║  docker compose up отменён для предотвращения OCI ошибок ║${NC}"
+        echo -e "${RED}║  Удалите ${INSTALL_DIR} и запустите установку заново     ║${NC}"
+        echo -e "${RED}╚══════════════════════════════════════════════════════════╝${NC}"
+        exit 1
+    fi
+
+    echo -e "${GREEN}✓ Pre-flight: все bind mount файлы в порядке${NC}"
+}
+
 # ============================================================================
 # HELPERS
 # ============================================================================
