@@ -6,6 +6,52 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 
 INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
 
+# ============================================================================
+# SAFE FILE OPERATIONS
+# ============================================================================
+
+# Prepare a path for writing: remove directory artifact, ensure parent exists.
+# Usage: safe_write_file "/path/to/file.yml"
+#   then: cat > "/path/to/file.yml" <<EOF ...
+#   or:   cp source "/path/to/file.yml"
+safe_write_file() {
+    local filepath="$1"
+    # Docker creates directories when bind mount source files don't exist.
+    # On reinstall these stale directories block file creation.
+    [[ -d "$filepath" ]] && rm -rf "$filepath"
+    mkdir -p "$(dirname "$filepath")"
+}
+
+# Ensure all bind-mounted config files exist as FILES (not dirs, not missing).
+# Call right before docker compose up as final safety net.
+ensure_bind_mount_files() {
+    local docker_dir="${INSTALL_DIR}/docker"
+    local files=(
+        "monitoring/prometheus.yml"
+        "monitoring/alert_rules.yml"
+        "monitoring/alertmanager.yml"
+        "monitoring/loki-config.yml"
+        "monitoring/promtail-config.yml"
+        "nginx/nginx.conf"
+        "volumes/redis/redis.conf"
+        "volumes/ssrf_proxy/squid.conf"
+        "volumes/sandbox/conf/config.yaml"
+    )
+    for f in "${files[@]}"; do
+        local full="${docker_dir}/${f}"
+        if [[ -d "$full" ]]; then
+            rm -rf "$full"
+            mkdir -p "$(dirname "$full")"
+            touch "$full"
+            echo -e "${YELLOW}⚠ Fixed directory artifact: ${f}${NC}"
+        fi
+    done
+}
+
+# ============================================================================
+# HELPERS
+# ============================================================================
+
 generate_random() {
     local length="${1:-32}"
     head -c 256 /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z0-9' | head -c "$length"
@@ -54,13 +100,17 @@ validate_no_default_secrets() {
     return 0
 }
 
+# ============================================================================
+# MAIN CONFIG GENERATION
+# ============================================================================
+
 generate_config() {
     local profile="$1"
     local template_dir="$2"
 
     echo -e "${YELLOW}Генерация конфигурации (профиль: ${profile})...${NC}"
 
-    # Create directory structure
+    # Create directory structure (ONLY directories, never file paths)
     mkdir -p "${INSTALL_DIR}/docker/volumes/sandbox/conf"
     mkdir -p "${INSTALL_DIR}/docker/volumes/app/storage"
     mkdir -p "${INSTALL_DIR}/docker/volumes/db/data"
@@ -72,6 +122,7 @@ generate_config() {
     mkdir -p "${INSTALL_DIR}/docker/volumes/certbot/ssl"
     mkdir -p "${INSTALL_DIR}/docker/nginx"
     mkdir -p "${INSTALL_DIR}/docker/volumes/qdrant"
+    mkdir -p "${INSTALL_DIR}/docker/volumes/ssrf_proxy"
     mkdir -p "${INSTALL_DIR}/docker/monitoring/grafana/provisioning/datasources"
     mkdir -p "${INSTALL_DIR}/docker/monitoring/grafana/provisioning/dashboards"
     mkdir -p "${INSTALL_DIR}/docker/monitoring/grafana/dashboards"
@@ -251,13 +302,16 @@ generate_config() {
     echo -e "${GREEN}Конфигурация сгенерирована: ${INSTALL_DIR}/docker/.env${NC}"
 }
 
+# ============================================================================
+# CONFIG FILE GENERATORS (all use safe_write_file)
+# ============================================================================
+
 generate_nginx_config() {
     local profile="$1"
     local template_dir="$2"
     local nginx_conf="${INSTALL_DIR}/docker/nginx/nginx.conf"
-    [[ -d "$nginx_conf" ]] && rm -rf "$nginx_conf"
-    mkdir -p "$(dirname "$nginx_conf")"
 
+    safe_write_file "$nginx_conf"
     cp "${template_dir}/nginx.conf.template" "$nginx_conf"
 
     local server_name="_"
@@ -303,8 +357,8 @@ generate_nginx_config() {
 
 generate_redis_config() {
     local redis_conf="${INSTALL_DIR}/docker/volumes/redis/redis.conf"
-    [[ -d "$redis_conf" ]] && rm -rf "$redis_conf"
-    mkdir -p "$(dirname "$redis_conf")"
+    safe_write_file "$redis_conf"
+
     local redis_pass
     redis_pass=$(grep '^REDIS_PASSWORD=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "")
     cat > "$redis_conf" << REDISEOF
@@ -337,12 +391,7 @@ REDISEOF
 
 configure_alertmanager() {
     local alertmanager_conf="${INSTALL_DIR}/docker/monitoring/alertmanager.yml"
-
-    # Remove directory artifact if Docker created it from a missing bind mount
-    if [[ -d "$alertmanager_conf" ]]; then
-        rm -rf "$alertmanager_conf"
-    fi
-    mkdir -p "$(dirname "$alertmanager_conf")"
+    safe_write_file "$alertmanager_conf"
 
     # Create default alertmanager config if not copied from monitoring/
     if [[ ! -f "$alertmanager_conf" ]]; then
@@ -431,8 +480,8 @@ AMEOF
 
 generate_sandbox_config() {
     local sandbox_conf="${INSTALL_DIR}/docker/volumes/sandbox/conf/config.yaml"
-    [[ -d "$sandbox_conf" ]] && rm -rf "$sandbox_conf"
-    mkdir -p "$(dirname "$sandbox_conf")"
+    safe_write_file "$sandbox_conf"
+
     cat > "$sandbox_conf" << 'SANDBOXEOF'
 # Dify Sandbox Configuration
 app:
@@ -518,6 +567,10 @@ SANDBOXEOF
     rm -f "${sandbox_conf}.bak"
 }
 
+# ============================================================================
+# GPU SUPPORT
+# ============================================================================
+
 # Enable GPU in docker-compose based on detected GPU type
 enable_gpu_compose() {
     local compose_file="${INSTALL_DIR}/docker/docker-compose.yml"
@@ -570,6 +623,10 @@ enable_gpu_compose() {
 
     persist_gpu_profile
 }
+
+# ============================================================================
+# TLS
+# ============================================================================
 
 handle_tls_config() {
     local profile="$1"
@@ -629,6 +686,10 @@ copy_custom_cert() {
     fi
 }
 
+# ============================================================================
+# AUTHELIA
+# ============================================================================
+
 enable_authelia_nginx() {
     local nginx_conf="${INSTALL_DIR}/docker/nginx/nginx.conf"
 
@@ -652,15 +713,21 @@ copy_authelia_files() {
     echo -e "${YELLOW}Копирование файлов Authelia...${NC}"
 
     if [[ -f "${template_dir}/authelia/configuration.yml.template" ]]; then
+        safe_write_file "${authelia_dir}/configuration.yml"
         cp "${template_dir}/authelia/configuration.yml.template" "${authelia_dir}/configuration.yml"
     fi
 
     if [[ -f "${template_dir}/authelia/users_database.yml.template" ]]; then
+        safe_write_file "${authelia_dir}/users_database.yml"
         cp "${template_dir}/authelia/users_database.yml.template" "${authelia_dir}/users_database.yml"
     fi
 
     echo -e "${GREEN}Файлы Authelia скопированы${NC}"
 }
+
+# ============================================================================
+# MONITORING
+# ============================================================================
 
 copy_monitoring_files() {
     local template_dir="$1"
@@ -670,39 +737,34 @@ copy_monitoring_files() {
 
     echo -e "${YELLOW}Копирование файлов мониторинга...${NC}"
 
-    # Clean up directory artifacts from failed Docker bind mounts
-    for f in prometheus.yml alert_rules.yml alertmanager.yml loki-config.yml promtail-config.yml; do
-        [[ -d "${dest}/${f}" ]] && rm -rf "${dest}/${f}"
-    done
-
-    # Helper: safe copy file — remove directory artifact, then cp
-    _safe_cp() {
-        local src="$1" dst="$2"
-        [[ -d "$dst" ]] && rm -rf "$dst"
-        cp "$src" "$dst"
-    }
-
     # Copy prometheus config
     if [[ -f "${installer_root}/monitoring/prometheus.yml" ]]; then
-        _safe_cp "${installer_root}/monitoring/prometheus.yml" "${dest}/prometheus.yml"
+        safe_write_file "${dest}/prometheus.yml"
+        cp "${installer_root}/monitoring/prometheus.yml" "${dest}/prometheus.yml"
     fi
 
     # Copy alert rules (required by prometheus bind mount)
     if [[ -f "${installer_root}/monitoring/alert_rules.yml" ]]; then
-        _safe_cp "${installer_root}/monitoring/alert_rules.yml" "${dest}/alert_rules.yml"
+        safe_write_file "${dest}/alert_rules.yml"
+        cp "${installer_root}/monitoring/alert_rules.yml" "${dest}/alert_rules.yml"
     fi
 
     # Copy alertmanager config (required by alertmanager bind mount)
     if [[ -f "${installer_root}/monitoring/alertmanager.yml" ]]; then
-        _safe_cp "${installer_root}/monitoring/alertmanager.yml" "${dest}/alertmanager.yml"
+        safe_write_file "${dest}/alertmanager.yml"
+        cp "${installer_root}/monitoring/alertmanager.yml" "${dest}/alertmanager.yml"
     fi
 
     # Loki + Promtail configs
     if [[ "${ENABLE_LOKI:-true}" == "true" ]]; then
-        [[ -f "${installer_root}/monitoring/loki-config.yml" ]] && \
-            _safe_cp "${installer_root}/monitoring/loki-config.yml" "${dest}/loki-config.yml"
-        [[ -f "${installer_root}/monitoring/promtail-config.yml" ]] && \
-            _safe_cp "${installer_root}/monitoring/promtail-config.yml" "${dest}/promtail-config.yml"
+        if [[ -f "${installer_root}/monitoring/loki-config.yml" ]]; then
+            safe_write_file "${dest}/loki-config.yml"
+            cp "${installer_root}/monitoring/loki-config.yml" "${dest}/loki-config.yml"
+        fi
+        if [[ -f "${installer_root}/monitoring/promtail-config.yml" ]]; then
+            safe_write_file "${dest}/promtail-config.yml"
+            cp "${installer_root}/monitoring/promtail-config.yml" "${dest}/promtail-config.yml"
+        fi
     fi
 
     # Copy grafana provisioning
