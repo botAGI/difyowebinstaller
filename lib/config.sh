@@ -44,6 +44,10 @@ ensure_bind_mount_files() {
             mkdir -p "$(dirname "$full")"
             touch "$full"
             echo -e "${YELLOW}⚠ Fixed directory artifact: ${f}${NC}"
+        elif [[ ! -f "$full" ]]; then
+            mkdir -p "$(dirname "$full")"
+            touch "$full"
+            echo -e "${YELLOW}⚠ Created missing bind mount file: ${f}${NC}"
         fi
     done
 }
@@ -83,51 +87,26 @@ preflight_bind_mount_check() {
         errors=$((errors + 1))
     fi
 
-    # 3. Verify all bind-mount source files exist
-    local bind_files=(
+    # 3. Verify ALL bind-mount source files exist (unconditional — Docker creates
+    #    directories for missing sources, which causes OCI mount errors)
+    local all_bind_files=(
         "nginx/nginx.conf"
         "volumes/redis/redis.conf"
         "volumes/ssrf_proxy/squid.conf"
         "volumes/sandbox/conf/config.yaml"
+        "monitoring/prometheus.yml"
+        "monitoring/alert_rules.yml"
+        "monitoring/alertmanager.yml"
+        "monitoring/loki-config.yml"
+        "monitoring/promtail-config.yml"
     )
-    for f in "${bind_files[@]}"; do
+    for f in "${all_bind_files[@]}"; do
         local full="${docker_dir}/${f}"
         if [[ ! -f "$full" ]]; then
             echo -e "${RED}✗ ОШИБКА: bind mount файл отсутствует: ${f}${NC}"
             errors=$((errors + 1))
         fi
     done
-
-    # 4. Verify monitoring files exist (only if monitoring profile is active)
-    if [[ "${MONITORING_MODE:-}" == "local" ]]; then
-        local mon_files=(
-            "monitoring/prometheus.yml"
-            "monitoring/alert_rules.yml"
-            "monitoring/alertmanager.yml"
-        )
-        for f in "${mon_files[@]}"; do
-            local full="${docker_dir}/${f}"
-            if [[ ! -f "$full" ]]; then
-                echo -e "${RED}✗ ОШИБКА: monitoring bind mount файл отсутствует: ${f}${NC}"
-                errors=$((errors + 1))
-            fi
-        done
-    fi
-
-    # 5. Verify Loki/Promtail files (only if Loki enabled)
-    if [[ "${ENABLE_LOKI:-false}" == "true" ]]; then
-        local loki_files=(
-            "monitoring/loki-config.yml"
-            "monitoring/promtail-config.yml"
-        )
-        for f in "${loki_files[@]}"; do
-            local full="${docker_dir}/${f}"
-            if [[ ! -f "$full" ]]; then
-                echo -e "${RED}✗ ОШИБКА: Loki bind mount файл отсутствует: ${f}${NC}"
-                errors=$((errors + 1))
-            fi
-        done
-    fi
 
     # Abort if any errors found
     if [[ $errors -gt 0 ]]; then
