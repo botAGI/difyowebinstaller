@@ -151,6 +151,9 @@ services:
       APP_API_URL: ${APP_API_URL:-}
       SENTRY_DSN: ${WEB_SENTRY_DSN:-}
       NEXT_TELEMETRY_DISABLED: ${NEXT_TELEMETRY_DISABLED:-1}
+      # Next.js binds to container hostname by default, not 0.0.0.0.
+      # Without this, healthcheck on localhost:3000 gets Connection refused.
+      HOSTNAME: "0.0.0.0"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000 || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
