@@ -1,6 +1,4 @@
 x-security-defaults: &security-defaults
-  security_opt:
-    - no-new-privileges:true
   cap_drop:
     - AUDIT_CONTROL
     - AUDIT_READ
