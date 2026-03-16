@@ -837,7 +837,6 @@ networks:
     driver: bridge
   agmind-backend:
     driver: bridge
-    internal: true
   ssrf-network:
     driver: bridge
     internal: true
