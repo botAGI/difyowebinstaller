@@ -231,6 +231,9 @@ services:
     restart: always
     cap_add:
       - SYS_ADMIN
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     volumes:
       - ollama_data:/root/.ollama
     healthcheck:
