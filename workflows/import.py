@@ -111,11 +111,10 @@ class DifyClient:
             pass
 
         try:
-            password_b64 = base64.b64encode(password.encode()).decode()
             result = self._request("POST", "/console/api/setup", {
                 "email": email,
                 "name": name,
-                "password": password_b64,
+                "password": password,  # plain text, not base64
             })
             print("  Setup: account created")
             return result
