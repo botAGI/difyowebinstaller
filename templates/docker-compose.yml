@@ -155,7 +155,7 @@ services:
       # Without this, healthcheck on localhost:3000 gets Connection refused.
       HOSTNAME: "0.0.0.0"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000 || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000 || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
