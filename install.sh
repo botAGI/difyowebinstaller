@@ -833,6 +833,10 @@ phase_start() {
     # Final safety net: fix any remaining directory artifacts before compose up
     ensure_bind_mount_files
 
+    # Enable signup temporarily so we can create the first admin via API
+    sed -i.bak "s|^ENABLE_SIGNUP=.*|ENABLE_SIGNUP=true|g" "${INSTALL_DIR}/docker/.env"
+    rm -f "${INSTALL_DIR}/docker/.env.bak"
+
     # Nuclear cleanup: find and remove ANY .yml/.conf that is a directory
     find "${INSTALL_DIR}/docker" -name "*.yml" -type d -exec rm -rf {} + 2>/dev/null || true
     find "${INSTALL_DIR}/docker" -name "*.yaml" -type d -exec rm -rf {} + 2>/dev/null || true
@@ -867,7 +871,57 @@ phase_start() {
     # Post-launch status: wait briefly and report unhealthy/restarting containers
     post_launch_status
 
+    # Create Open WebUI admin account, then lock down signups
+    create_openwebui_admin
+
     echo ""
+}
+
+# Create admin user in Open WebUI via API, then disable public signups
+create_openwebui_admin() {
+    local admin_email="${ADMIN_EMAIL:-admin@admin.com}"
+    local admin_password="${ADMIN_PASSWORD:-}"
+    local admin_name="${COMPANY_NAME:-AGMind} Admin"
+
+    echo -e "${YELLOW}Создание администратора Open WebUI...${NC}"
+
+    # Wait for Open WebUI to be healthy (up to 120 sec)
+    local attempts=0
+    while [[ $attempts -lt 24 ]]; do
+        if curl -sf http://localhost:80/health >/dev/null 2>&1; then
+            break
+        fi
+        sleep 5
+        attempts=$((attempts + 1))
+    done
+    if [[ $attempts -ge 24 ]]; then
+        echo -e "${RED}Open WebUI не ответил за 120 сек, пропускаем создание админа${NC}"
+        return 0
+    fi
+
+    # Create admin account (first signup becomes admin in Open WebUI)
+    local resp
+    resp=$(curl -sf -X POST http://localhost:80/api/v1/auths/signup \
+        -H "Content-Type: application/json" \
+        -d "{\"name\":\"${admin_name}\",\"email\":\"${admin_email}\",\"password\":\"${admin_password}\"}" 2>&1) || true
+
+    if echo "$resp" | grep -q '"token"'; then
+        echo -e "${GREEN}✓ Админ Open WebUI создан (${admin_email})${NC}"
+    elif echo "$resp" | grep -qi "already"; then
+        echo -e "${YELLOW}Админ Open WebUI уже существует${NC}"
+    else
+        echo -e "${YELLOW}Open WebUI signup: ${resp}${NC}"
+    fi
+
+    # Lock down signups after admin is created
+    sed -i.bak "s|^ENABLE_SIGNUP=.*|ENABLE_SIGNUP=false|g" "${INSTALL_DIR}/docker/.env"
+    sed -i.bak "s|^DEFAULT_USER_ROLE=.*|DEFAULT_USER_ROLE=user|g" "${INSTALL_DIR}/docker/.env"
+    rm -f "${INSTALL_DIR}/docker/.env.bak"
+
+    # Recreate open-webui with locked-down env
+    cd "${INSTALL_DIR}/docker"
+    docker compose up -d open-webui >/dev/null 2>&1 || true
+    echo -e "${GREEN}✓ Регистрация закрыта (ENABLE_SIGNUP=false)${NC}"
 }
 
 sync_db_password() {
