@@ -6,92 +6,150 @@
 
 ---
 
-## Текущий статус: ✅ install.sh exit 0 — первый полностью успешный деплой!
+## Текущий статус: ✅ install.sh exit 0, плагины/модели устанавливаются программно
 
-**Последний тест:** 2026-03-16 15:42 PDT (деплой #8)  
+**Последний тест:** 2026-03-16 16:15 PDT (ручной тест на деплое #8)  
 **Сервер:** ragbot@192.168.50.26 (Ubuntu 24.04, Docker 29.3.0, RTX 5070 Ti)  
 **Коммит:** 2b97bfe  
-**Режим установки:** интерактивный (визард)  
-**Параметры:** lan / AGMind / weaviate / ETL enhanced / qwen2.5:7b / bge-m3 / monitoring local  
-**Контейнеры:** 34/34 Up+Healthy автоматически  
-**Exit code:** 0 (все 11 фаз завершены)
 
 ---
 
-## 🟢 Все критические задачи закрыты
+## 🔴 TASK-010: Полная автоматизация import.py — плагины с GitHub + модели + KB + workflow
+
+**Приоритет:** 🔴 Критический — последний блокер для "из коробки"
+
+### Проблема
+import.py пытается скачать плагины из Dify Marketplace (marketplace.dify.ai) → получает HTTP 403 Forbidden. Без плагинов → провайдеры не существуют → модели не добавляются → KB не создаётся → workflow не импортируется.
+
+### Решение (проверено вручную — работает!)
+
+**Источники плагинов (НЕ marketplace):**
+- ollama: `github.com/langgenius/dify-official-plugins` → `models/ollama/` → zip в .difypkg
+- xinference: `github.com/langgenius/dify-official-plugins` → `models/xinference/` → zip в .difypkg  
+- docling: `github.com/langgenius/dify-plugins` → `s20ss/docling_plugin.difypkg` (готовый файл)
+
+**Обязательная настройка .env:**
+```
+FORCE_VERIFYING_SIGNATURE=false
+```
+Без этого upload отклоняется с "bad signature". Добавить в шаблон .env (или в generate_env).
+
+**Auth flow (Dify 1.13+):**
+```bash
+# Login — пароль в base64, токен в COOKIE (не в body!)
+PASS_B64=$(echo -n "$PASSWORD" | base64)
+COOKIES=$(curl -sf -X POST http://localhost:3000/console/api/login \
+  -H "Content-Type: application/json" -c - \
+  -d '{"email":"EMAIL","password":"'$PASS_B64'","language":"en-US","remember_me":true}')
+TOKEN=$(echo "$COOKIES" | grep access_token | awk '{print $NF}')
+CSRF=$(echo "$COOKIES" | grep csrf_token | awk '{print $NF}')
+
+# Все запросы с тройной авторизацией:
+-H "Authorization: Bearer $TOKEN"
+-H "X-CSRF-Token: $CSRF"
+-H "Cookie: access_token=$TOKEN; csrf_token=$CSRF"
+```
+
+**Последовательность шагов import.py:**
+
+```
+1.  wait_for_api()
+2.  init_validate()                    — INIT_PASSWORD base64
+3.  setup_account()                    — skip if finished
+4.  login()                            — base64 пароль, токен из cookie
+5.  build_difypkg(ollama)              — git clone + zip models/ollama
+6.  build_difypkg(xinference)          — git clone + zip models/xinference
+7.  download_difypkg(docling)          — curl raw GitHub s20ss/docling_plugin.difypkg
+8.  upload_plugin(ollama.difypkg)      — POST /plugin/upload/pkg (multipart)
+9.  upload_plugin(xinference.difypkg)  — POST /plugin/upload/pkg
+10. upload_plugin(docling.difypkg)     — POST /plugin/upload/pkg
+11. install_plugin(ollama_id)          — POST /plugin/install/pkg {"plugin_unique_identifiers":[ID]}
+12. install_plugin(xinference_id)      — POST /plugin/install/pkg
+13. install_plugin(docling_id)         — POST /plugin/install/pkg
+14. wait_for_plugins()                 — poll GET /plugin/tasks/{task_id} до status=success
+15. add_model(LLM qwen2.5:7b)         — POST /model-providers/langgenius/ollama/ollama/models/credentials
+16. add_model(embedding bge-m3)        — POST /model-providers/.../models/credentials
+17. set_default(llm)                   — POST /default-model {"model_settings":[]}  ← массив!
+18. set_default(text-embedding)        — POST /default-model {"model_settings":[]}
+19. create_dataset()                   — теперь сработает (embedding default есть)
+20. import_workflow()                  — import JSON
+```
+
+### API endpoints (проверены):
+
+**Upload plugin:**
+```
+POST /console/api/workspaces/current/plugin/upload/pkg
+Content-Type: multipart/form-data
+-F "pkg=@/path/to/plugin.difypkg"
+→ {"unique_identifier": "author/name:version@hash", "manifest": {...}}
+```
+
+**Install plugin:**
+```
+POST /console/api/workspaces/current/plugin/install/pkg
+Content-Type: application/json
+{"plugin_unique_identifiers": ["author/name:version@hash"]}
+→ {"all_installed": false, "task_id": "UUID"}
+```
+
+**Poll task:**
+```
+GET /console/api/workspaces/current/plugin/tasks/{task_id}
+→ {"task": {"status": "success|running|failed", "plugins": [...]}}
+```
+
+**Add model:**
+```
+POST /console/api/workspaces/current/model-providers/langgenius/ollama/ollama/models/credentials
+{"model":"qwen2.5:7b","model_type":"llm","credentials":{"base_url":"http://ollama:11434","mode":"chat","context_size":"32768","max_tokens":"8192","vision_support":"false","function_call_support":"true"}}
+→ {"result": "success"}
+```
+
+**Set default:**
+```
+POST /console/api/workspaces/current/default-model
+{"model":"qwen2.5:7b","model_type":"llm","provider":"langgenius/ollama/ollama","model_settings":[]}
+→ {"result": "success"}
+```
+
+### Сборка .difypkg из исходников:
+```bash
+# Клонировать (shallow):
+git clone --depth 1 https://github.com/langgenius/dify-official-plugins.git /tmp/dify-plugins
+
+# Собрать (только файлы, без директорий):
+cd /tmp/dify-plugins/models/ollama
+find . -type f | grep -v '.git' | zip /tmp/ollama.difypkg -@
+
+cd /tmp/dify-plugins/models/xinference
+find . -type f | grep -v '.git' | zip /tmp/xinference.difypkg -@
+
+# Docling — готовый файл:
+curl -sfL "https://raw.githubusercontent.com/langgenius/dify-plugins/main/s20ss/docling_plugin.difypkg" \
+  -o /tmp/docling.difypkg
+```
+
+### Важные нюансы:
+- `zip` должен содержать ТОЛЬКО файлы (не пустые директории) — иначе "is a directory" ошибка
+- `FORCE_VERIFYING_SIGNATURE=false` должен быть в .env ДО docker compose up
+- `model_settings` в set_default — это массив `[]`, не объект
+- Пароль для login — base64 encoded
+- Токен в cookie, не в body response
+- CSRF обязателен для всех POST запросов
+- Docling ставится ~1-2 мин (компиляция Python deps)
+
+---
+
+## ✅ Закрытые задачи
 
 | Задача | Статус | Деплой | Коммит |
 |--------|--------|--------|--------|
-| ✅ TASK-009: cAdvisor v0.56.2 → v0.55.1 | Закрыт | #8 | 2b97bfe |
-| ✅ TASK-004: import.py graceful skip | Закрыт | #8 | a116142 |
+| ✅ TASK-009: cAdvisor v0.55.1 | Закрыт | #8 | 2b97bfe |
 | ✅ TASK-002: cAdvisor name labels | Закрыт | #8 | 2b97bfe |
-| ✅ BUG-009: Loki delete_request_store | Закрыт | #3 | 8dc5ae2 |
-| ✅ BUG-010: Promtail healthcheck | Закрыт | #3-8 | 90776b3 |
-| ✅ BUG-013: Grafana provisioning dirs | Закрыт | #3-8 | 90776b3 |
-| ✅ BUG-014: install.sh health verification | Закрыт | #3-8 | 90776b3 |
-| ✅ TASK-005: контейнеры в Created | Закрыт | #4-8 | 40b35d9 |
-| ✅ TASK-007: wget→curl Open WebUI admin | Закрыт | #5-8 | d21c854 |
-| ✅ TASK-008: IPv6 Ollama pull | Закрыт | #6-8 | 51b736d |
+| ✅ BUG-009–BUG-017 | Закрыты | #3-8 | various |
+| ✅ TASK-003,005,007,008 | Закрыты | #4-8 | various |
 
 ---
 
-## 🎉 Верификация деплоя #8
-
-### ✅ cAdvisor v0.55.1 (TASK-009)
-```
-gcr.io/cadvisor/cadvisor:v0.55.1 Pulled 5.8s
-Container agmind-cadvisor Started
-```
-**Результат:** Pull успешен, контейнер работает.
-
-### ✅ cAdvisor name labels (TASK-002)
-```
-name="agmind-prometheus"
-name="agmind-redis"
-name="agmind-weaviate"
-name="agmind-plugin-daemon"
-```
-**Результат:** Docker 29.x overlayfs + cAdvisor v0.55.1 — name labels ВИДНЫ в metrics. Проблема решена.
-
-### ✅ import.py graceful fallback (TASK-004)
-```
-⚠ Cannot fetch marketplace manifest: HTTP Error 403: Forbidden
-⚠ Marketplace unreachable — plugins must be installed manually
-HTTP Error 400: BAD REQUEST
-⚠ Workflow import failed — configure models manually in Dify UI
-```
-```bash
-exit 0  # install.sh завершился успешно несмотря на падение import.py
-```
-**Результат:** Graceful fallback работает. Dify API стартовал, логи чистые, marketplace 403 не прерывает установку.
-
-### ✅ Автозапуск контейнеров (TASK-005)
-```
-✓ Все контейнеры запущены!
-[OK] db, redis, sandbox, ssrf_proxy, api, worker, web, plugin_daemon, ollama, pipeline, nginx, open-webui, weaviate, prometheus, alertmanager, cadvisor, grafana, portainer, loki, promtail, docling, xinference
-```
-**Результат:** 34/34 контейнеров Up+Healthy без ручного вмешательства.
-
----
-
-## 📋 Known Issues (не критичные)
-
-### TASK-004: Dify marketplace 403 Forbidden
-**Статус:** Workaround работает (graceful skip).  
-**Симптом:** `import.py` не может скачать плагины из Dify marketplace.  
-**Причина:** Marketplace API возвращает HTTP 403 (проблема upstream).  
-**Workaround:** Модели и KB настраиваются вручную через Dify UI (Settings > Model Provider > Add Ollama).  
-**Действие:** Оставить как есть. Manual setup задокументирован в выводе install.sh.
-
----
-
-## 🚀 Следующие шаги
-
-1. ✅ **Деплой готов к production** — все критические баги решены.
-2. 📖 **Документация:** добавить README с manual Dify setup (Settings > Model Provider > Add Ollama http://ollama:11434).
-3. 🎨 **Опционально:** UI для визарда (web-based installer вместо PTY).
-4. 🔍 **Долгосрочно:** решить TASK-004 через альтернативный репозиторий плагинов или форк Dify marketplace.
-
----
-
-_Обновлено: 2026-03-16 15:50 PDT — Gbot (деплой #8 SUCCESS, коммит 2b97bfe)_
+_Обновлено: 2026-03-16 16:20 PDT — Gbot (TASK-010 с полной документацией API)_
