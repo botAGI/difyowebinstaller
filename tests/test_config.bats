@@ -87,10 +87,15 @@ teardown() {
     [ "$status" -eq 0 ]
 }
 
-@test "all services have security-defaults" {
+@test "all services have security or logging defaults" {
     local compose="$(dirname "$BATS_TEST_FILENAME")/../templates/docker-compose.yml"
-    local service_count=$(grep -c "<<: \*security-defaults" "$compose")
-    [ "$service_count" -ge 20 ]
+    # Count services using either *security-defaults or *logging-defaults
+    # (logging-defaults inherits security-defaults + adds logging config)
+    local security_count=$(grep -c "<<: \*security-defaults" "$compose")
+    local logging_count=$(grep -c "<<: \*logging-defaults" "$compose")
+    local total=$((security_count + logging_count))
+    # 26 services total, 1 (sandbox) intentionally excluded = 25 minimum
+    [ "$total" -ge 25 ]
 }
 
 @test "backup and restore use same DB dump filename" {
