@@ -140,7 +140,7 @@
     "cadvisor": {
       "registry": "gcr.io",
       "image": "cadvisor/cadvisor",
-      "tag": "v0.52.1",
+      "tag": "v0.56.2",
       "digest": "",
       "platforms": ["linux/amd64", "linux/arm64"]
     },

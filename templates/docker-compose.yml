@@ -785,7 +785,7 @@ services:
   # See: https://github.com/google/cadvisor/issues/3749
   cadvisor:
     <<: *logging-defaults
-    image: gcr.io/cadvisor/cadvisor:${CADVISOR_VERSION:-v0.52.1}
+    image: gcr.io/cadvisor/cadvisor:${CADVISOR_VERSION:-v0.56.2}
     container_name: agmind-cadvisor
     restart: always
     privileged: true

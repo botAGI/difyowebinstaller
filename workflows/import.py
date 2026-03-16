@@ -931,6 +931,23 @@ def main():
               file=sys.stderr)
         print("  Continuing with workflow import...\n", file=sys.stderr)
 
+    # --- Step 13-19: KB + Workflow + API key ---
+    # Requires models to be configured (create_dataset needs default embedding).
+    # If models failed, skip entirely — user must configure manually.
+    if not models_ok:
+        print("\n--- Knowledge Base ---")
+        print("  ⚠ Skipped: default text-embedding model not configured",
+              file=sys.stderr)
+        print("\n--- Workflow ---")
+        print("  ⚠ Skipped: depends on Knowledge Base", file=sys.stderr)
+        print(f"\n=== Частичная настройка ===")
+        print("  Dify аккаунт создан, login работает")
+        print("  ⚠ Модели, KB и workflow нужно настроить вручную:")
+        print(f"    1. Dify UI → Settings → Model Provider → Ollama: http://ollama:11434")
+        print(f"    2. Dify UI → Knowledge Base → Create")
+        print(f"    3. Dify UI → Studio → Import workflow from {args.install_dir}/workflows/")
+        return 0
+
     # --- Step 13: Find or create Knowledge Base ---
     print("\n--- Knowledge Base ---")
     kb_id = client.find_dataset("Documents")
