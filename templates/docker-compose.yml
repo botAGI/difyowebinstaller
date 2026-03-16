@@ -279,6 +279,11 @@ services:
     image: ollama/ollama:${OLLAMA_VERSION:-0.6.2}
     container_name: agmind-ollama
     restart: always
+    # BUG-017: Go runtime prefers IPv6 AAAA records for registry.ollama.ai.
+    # On hosts without IPv6 routing this causes "cannot assign requested address".
+    # Disable IPv6 inside container so DNS/dial always uses IPv4.
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=1
     volumes:
       - ollama_data:/root/.ollama
     healthcheck:
