@@ -150,6 +150,11 @@ if [[ -f "${RESTORE_DIR}/dify_db.sql.gz" ]]; then
         sleep 2
     done
 
+    if ! docker compose -f "$COMPOSE_FILE" exec -T db pg_isready -U "${DB_USER:-postgres}" >/dev/null 2>&1; then
+        echo -e "${RED}✗ PostgreSQL не готов за отведённое время${NC}"
+        exit 1
+    fi
+
     # Drop and recreate database
     docker compose -f "$COMPOSE_FILE" exec -T db psql -U postgres -c "DROP DATABASE IF EXISTS dify;" 2>/dev/null || true
     docker compose -f "$COMPOSE_FILE" exec -T db psql -U postgres -c "CREATE DATABASE dify;" 2>/dev/null || true

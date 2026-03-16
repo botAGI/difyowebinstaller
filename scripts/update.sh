@@ -32,6 +32,11 @@ if ! flock -n 9; then
     exit 1
 fi
 
+if [[ $EUID -ne 0 ]]; then
+    log_error "Этот скрипт необходимо запускать от root"
+    exit 1
+fi
+
 # Fix log file permissions
 mkdir -p "$(dirname "$LOG_FILE")"
 chmod 700 "$(dirname "$LOG_FILE")"
@@ -438,22 +443,7 @@ main() {
     cp "$ENV_FILE" "${ENV_FILE}.pre-update"
     chmod 600 "${ENV_FILE}.pre-update"
 
-    # Update versions in .env
-    if [[ -f "$VERSIONS_FILE" && -f "$ENV_FILE" ]]; then
-        while IFS='=' read -r key value; do
-            [[ "$key" =~ _VERSION$ ]] || continue
-            [[ -z "$value" ]] && continue
-            # Validate key format to prevent injection
-            [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
-            # Safe replacement: remove old line, append new one
-            grep -v "^${key}=" "$ENV_FILE" > "${ENV_FILE}.tmp"
-            echo "${key}=${value}" >> "${ENV_FILE}.tmp"
-            mv "${ENV_FILE}.tmp" "$ENV_FILE"
-            chmod 600 "$ENV_FILE"
-        done < <(grep '_VERSION=' "$VERSIONS_FILE" 2>/dev/null | grep -v '^#')
-    fi
-
-    # Rolling update
+    # Rolling update (versions in .env are updated AFTER success to allow rollback)
     echo ""
     log_info "Начинаем rolling update..."
     echo ""
@@ -461,6 +451,20 @@ main() {
     cd "${INSTALL_DIR}/docker"
 
     if perform_rolling_update; then
+        # Update versions in .env only after all services are healthy
+        if [[ -f "$VERSIONS_FILE" && -f "$ENV_FILE" ]]; then
+            while IFS='=' read -r key value; do
+                [[ "$key" =~ _VERSION$ ]] || continue
+                [[ -z "$value" ]] && continue
+                # Validate key format to prevent injection
+                [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+                # Safe replacement: remove old line, append new one
+                grep -v "^${key}=" "$ENV_FILE" > "${ENV_FILE}.tmp"
+                echo "${key}=${value}" >> "${ENV_FILE}.tmp"
+                mv "${ENV_FILE}.tmp" "$ENV_FILE"
+                chmod 600 "$ENV_FILE"
+            done < <(grep '_VERSION=' "$VERSIONS_FILE" 2>/dev/null | grep -v '^#')
+        fi
         log_success "Обновление завершено успешно!"
         log_update "SUCCESS" "Rolling update completed"
         send_notification "✅ AGMind обновлён успешно на $(hostname 2>/dev/null || echo 'server')"

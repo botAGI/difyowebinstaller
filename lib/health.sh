@@ -117,7 +117,11 @@ check_all() {
     else
         echo -e "${YELLOW}${failed} сервис(ов) не запущен(о)${NC}"
         local server_ip
-        server_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+        if [[ "$(uname)" == "Darwin" ]]; then
+            server_ip=$(ipconfig getifaddr en0 2>/dev/null || echo "unknown")
+        else
+            server_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+        fi
         [[ -z "$server_ip" ]] && server_ip=$(hostname 2>/dev/null || echo 'unknown')
         send_alert "⚠️ AGMind: ${failed} сервис(ов) не работает. Проверьте: ${server_ip}"
         echo "Проверьте логи: docker compose -f ${COMPOSE_FILE} logs <service>"

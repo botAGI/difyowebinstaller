@@ -91,7 +91,7 @@ echo ""
 CLEANUP_STAGE="docker-compose-down"
 if [[ -f "$COMPOSE_FILE" ]]; then
     echo -e "${YELLOW}Остановка контейнеров...${NC}"
-    docker compose -f "$COMPOSE_FILE" down --remove-orphans 2>/dev/null || true
+    docker compose -f "$COMPOSE_FILE" down -v --remove-orphans 2>/dev/null || true
 fi
 
 # 2. Remove Docker volumes (including Loki; removed promtail_data — not a named volume)

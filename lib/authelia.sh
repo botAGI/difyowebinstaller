@@ -27,7 +27,11 @@ configure_authelia() {
     fi
 
     local admin_hash
-    admin_hash=$(generate_argon2_hash "$admin_password")
+    admin_hash=$(generate_argon2_hash "$admin_password") || {
+        echo -e "${RED}Ошибка: не удалось сгенерировать хеш пароля для Authelia${NC}"
+        echo -e "${YELLOW}Установите argon2 или Docker для генерации хешей${NC}"
+        return 1
+    }
 
     # Copy users database template
     cp "${template_dir}/authelia/users_database.yml.template" "${authelia_dir}/users_database.yml"
@@ -104,6 +108,7 @@ print(base64.b64encode(salt).decode() + '\$' + base64.b64encode(h).decode())
     # Last resort: placeholder that must be replaced manually
     echo -e "${RED}ВНИМАНИЕ: не удалось сгенерировать argon2 хеш. Замените вручную.${NC}" >&2
     echo '$argon2id$v=19$m=65536,t=3,p=4$PLACEHOLDER_SALT$PLACEHOLDER_HASH'
+    return 1
 }
 
 create_authelia_user() {
@@ -132,14 +137,8 @@ create_authelia_user() {
     password_hash=$(generate_argon2_hash "$password")
 
     # Append user to users_database.yml
-    cat >> "$users_file" << EOF
-  ${username}:
-    displayname: "${username}"
-    password: "${password_hash}"
-    email: "${email}"
-    groups:
-      - users
-EOF
+    printf '  %s:\n    displayname: "%s"\n    password: "%s"\n    email: %s\n    groups:\n      - admins\n      - users\n' \
+        "$username" "$username" "$password_hash" "$email" >> "$users_file"
 
     echo -e "${GREEN}Пользователь ${username} (${email}) добавлен в Authelia${NC}"
 }

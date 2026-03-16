@@ -49,7 +49,11 @@ setup_dokploy() {
 
     # Determine connection info based on profile
     local node_ip
-    node_ip=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "UNKNOWN")
+    if [[ "$(uname)" == "Darwin" ]]; then
+        node_ip=$(ipconfig getifaddr en0 2>/dev/null || echo "UNKNOWN")
+    else
+        node_ip=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "UNKNOWN")
+    fi
     local ssh_port=22
 
     echo ""

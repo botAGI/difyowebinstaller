@@ -5,10 +5,16 @@
 # Usage: curl -sSL https://install.aillmsystems.com | bash
 # ============================================================================
 set -euo pipefail
+trap 'echo "ERROR at line $LINENO: $BASH_COMMAND" >&2' ERR
 
 # --- Constants ---
 VERSION="1.0.0"
 INSTALLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -z "${BASH_SOURCE[0]:-}" || ! -f "${INSTALLER_DIR}/lib/detect.sh" ]]; then
+    echo -e "\033[0;31mОшибка: запустите инсталлер из директории проекта: bash install.sh\033[0m"
+    echo "  git clone https://github.com/... && cd agmind-installer && sudo bash install.sh"
+    exit 1
+fi
 INSTALL_DIR="/opt/agmind"
 TEMPLATE_DIR="${INSTALLER_DIR}/templates"
 
@@ -18,6 +24,10 @@ CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 
 # Exclusive lock — prevent parallel install
 LOCK_FILE="/var/lock/agmind-install.lock"
+if [[ -L "$LOCK_FILE" ]]; then
+    echo "ERROR: Lock file is a symlink, aborting for security" >&2
+    exit 1
+fi
 if [[ "$(uname)" == "Darwin" ]]; then
     LOCK_DIR="/tmp/agmind-install.lock"
     if ! mkdir "$LOCK_DIR" 2>/dev/null; then
@@ -43,7 +53,11 @@ cleanup_on_failure() {
         echo -e "${YELLOW}Для очистки: rm -rf ${INSTALL_DIR}${NC}"
     fi
 }
-trap cleanup_on_failure EXIT
+if [[ "$(uname)" == "Darwin" ]]; then
+    trap 'cleanup_on_failure; rmdir "$LOCK_DIR" 2>/dev/null' EXIT
+else
+    trap cleanup_on_failure EXIT
+fi
 
 # --- Source library modules ---
 source "${INSTALLER_DIR}/lib/detect.sh"
@@ -364,6 +378,7 @@ phase_wizard() {
         done
     else
         LLM_MODEL="${LLM_MODEL:-qwen2.5:14b}"
+        validate_model_name "$LLM_MODEL" || { LLM_MODEL="qwen2.5:14b"; echo "Invalid LLM_MODEL, using default"; }
     fi
     echo ""
 
@@ -432,13 +447,14 @@ phase_wizard() {
         read -rsp "Пароль (Enter для авто-генерации): " ADMIN_PASSWORD
         echo ""
         if [[ -z "$ADMIN_PASSWORD" ]]; then
-            ADMIN_PASSWORD=$(head -c 256 /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z0-9' | head -c 16)
+            ADMIN_PASSWORD=$(set +o pipefail; head -c 256 /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z0-9' | head -c 16)
             echo -e "  Пароль сгенерирован и сохранён в ${INSTALL_DIR}/.admin_password"
         fi
     else
         ADMIN_EMAIL="${ADMIN_EMAIL:-admin@admin.com}"
+        validate_email "$ADMIN_EMAIL" || { echo -e "${RED}Invalid ADMIN_EMAIL env var${NC}"; exit 1; }
         if [[ -z "$ADMIN_PASSWORD" ]]; then
-            ADMIN_PASSWORD=$(head -c 256 /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z0-9' | head -c 16)
+            ADMIN_PASSWORD=$(set +o pipefail; head -c 256 /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z0-9' | head -c 16)
         fi
     fi
     echo ""
@@ -709,11 +725,20 @@ phase_config() {
     export LLM_MODEL EMBEDDING_MODEL DOMAIN CERTBOT_EMAIL
     export DEPLOY_PROFILE VECTOR_STORE ETL_ENHANCED
     export TLS_MODE TLS_CERT_PATH TLS_KEY_PATH
-    export MONITORING_MODE MONITORING_ENDPOINT MONITORING_TOKEN
-    export ALERT_MODE ALERT_WEBHOOK_URL ALERT_TELEGRAM_TOKEN ALERT_TELEGRAM_CHAT_ID
+    export MONITORING_MODE MONITORING_ENDPOINT
+    MONITORING_TOKEN="${MONITORING_TOKEN:-}"
+    export ALERT_MODE
+    ALERT_WEBHOOK_URL="${ALERT_WEBHOOK_URL:-}"
+    ALERT_TELEGRAM_TOKEN="${ALERT_TELEGRAM_TOKEN:-}"
+    ALERT_TELEGRAM_CHAT_ID="${ALERT_TELEGRAM_CHAT_ID:-}"
     export ENABLE_UFW ENABLE_FAIL2BAN ENABLE_SOPS ENABLE_SECRET_ROTATION ENABLE_AUTHELIA
 
     generate_config "$DEPLOY_PROFILE" "$TEMPLATE_DIR"
+
+    # Ensure .admin_password has restrictive permissions
+    if [[ -f "${INSTALL_DIR}/.admin_password" ]]; then
+        chmod 600 "${INSTALL_DIR}/.admin_password"
+    fi
 
     # SECOND: clean up after generate_config — copy_monitoring_files or other
     # functions inside generate_config may recreate directory artifacts.
@@ -760,14 +785,9 @@ create_squid_config() {
     local squid_conf="${INSTALL_DIR}/docker/volumes/ssrf_proxy/squid.conf"
     safe_write_file "$squid_conf"
     cat > "$squid_conf" << 'SQUIDEOF'
-acl localnet src 0.0.0.0/8
-acl localnet src 10.0.0.0/8
-acl localnet src 100.64.0.0/10
-acl localnet src 169.254.0.0/16
+# Restrict to Docker bridge networks only (not all RFC1918)
 acl localnet src 172.16.0.0/12
-acl localnet src 192.168.0.0/16
-acl localnet src fc00::/7
-acl localnet src fe80::/10
+acl localnet src 10.0.0.0/8
 
 acl SSL_ports port 443
 acl Safe_ports port 80
@@ -828,7 +848,7 @@ phase_start() {
     COMPOSE_PROFILES=vps,monitoring,qdrant,weaviate,etl,authelia \
         docker compose down --remove-orphans 2>/dev/null || true
     # Belt-and-suspenders: force-remove any agmind containers docker compose missed
-    docker ps -a --filter "name=agmind-" -q | xargs -r docker rm -f 2>/dev/null || true
+    docker ps -a --filter "name=agmind-" -q | while read -r id; do docker rm -f "$id" 2>/dev/null; done
 
     # Final safety net: fix any remaining directory artifacts before compose up
     ensure_bind_mount_files
@@ -837,9 +857,9 @@ phase_start() {
     # to avoid exposing signup endpoint through nginx (race condition fix)
 
     # Nuclear cleanup: find and remove ANY .yml/.conf that is a directory
-    find "${INSTALL_DIR}/docker" -name "*.yml" -type d -exec rm -rf {} + 2>/dev/null || true
-    find "${INSTALL_DIR}/docker" -name "*.yaml" -type d -exec rm -rf {} + 2>/dev/null || true
-    find "${INSTALL_DIR}/docker" -name "*.conf" -type d -exec rm -rf {} + 2>/dev/null || true
+    find "${INSTALL_DIR}/docker" -maxdepth 3 -name "*.yml" -type d -exec rm -rf {} + 2>/dev/null || true
+    find "${INSTALL_DIR}/docker" -maxdepth 3 -name "*.yaml" -type d -exec rm -rf {} + 2>/dev/null || true
+    find "${INSTALL_DIR}/docker" -maxdepth 3 -name "*.conf" -type d -exec rm -rf {} + 2>/dev/null || true
 
     # Pre-flight validation: abort if any .yml/.conf are still directories
     preflight_bind_mount_check
@@ -899,7 +919,7 @@ create_openwebui_admin() {
     # Step 3: Wait for Open WebUI to be healthy (up to 120 sec)
     local attempts=0
     while [[ $attempts -lt 24 ]]; do
-        if docker exec agmind-open-webui wget -q --spider http://localhost:8080/health 2>/dev/null; then
+        if docker exec agmind-openwebui wget -q --spider http://localhost:8080/health 2>/dev/null; then
             break
         fi
         sleep 5
@@ -914,15 +934,17 @@ create_openwebui_admin() {
 
     # Step 4: Create admin via container-internal API (NOT through nginx)
     # Sanitize inputs: escape double quotes in JSON values
-    local safe_name safe_email safe_password
-    safe_name=$(printf '%s' "$admin_name" | sed 's/"/\\"/g')
-    safe_email=$(printf '%s' "$admin_email" | sed 's/"/\\"/g')
-    safe_password=$(printf '%s' "$admin_password" | sed 's/"/\\"/g')
+    # Construct JSON payload safely using printf with proper escaping
+    local json_payload
+    json_payload=$(printf '{"name":"%s","email":"%s","password":"%s"}' \
+        "$(printf '%s' "$admin_name" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\n/\\n/g')" \
+        "$(printf '%s' "$admin_email" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\n/\\n/g')" \
+        "$(printf '%s' "$admin_password" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\n/\\n/g')")
 
     local resp
-    resp=$(docker exec agmind-open-webui wget -q -O- \
+    resp=$(docker exec agmind-openwebui wget -q -O- \
         --header="Content-Type: application/json" \
-        --post-data="{\"name\":\"${safe_name}\",\"email\":\"${safe_email}\",\"password\":\"${safe_password}\"}" \
+        --post-data="$json_payload" \
         http://localhost:8080/api/v1/auths/signup 2>&1) || true
 
     if echo "$resp" | grep -q '"token"'; then
@@ -930,7 +952,7 @@ create_openwebui_admin() {
     elif echo "$resp" | grep -qi "already"; then
         echo -e "${YELLOW}Админ Open WebUI уже существует${NC}"
     else
-        echo -e "${YELLOW}Open WebUI signup: ${resp}${NC}"
+        echo -e "${YELLOW}Open WebUI signup: $(echo "$resp" | head -c 200)${NC}"
     fi
 
     # Step 5: Restart open-webui with signup locked (reads .env: ENABLE_SIGNUP=false)
@@ -1013,8 +1035,17 @@ create_plugin_db() {
 }
 
 post_launch_status() {
-    echo -e "${YELLOW}Ожидание запуска контейнеров (60 сек)...${NC}"
-    sleep 60
+    echo -e "${YELLOW}Ожидание запуска контейнеров...${NC}"
+    local elapsed=0
+    while [[ $elapsed -lt 120 ]]; do
+        local starting
+        starting=$(docker ps --filter "name=agmind-" --filter "health=starting" -q 2>/dev/null | wc -l || echo "0")
+        [[ "$starting" -eq 0 ]] && break
+        sleep 5
+        elapsed=$((elapsed + 5))
+        echo -n "."
+    done
+    echo ""
 
     local bad
     bad=$(docker ps --filter "name=agmind-" --format "{{.Names}}\t{{.Status}}" 2>/dev/null | grep -iE "unhealthy|restarting" || true)
@@ -1070,15 +1101,9 @@ phase_workflow() {
 
     import_workflow
 
-    # Update .env with the Dify API key for pipeline
+    # import.py now patches .env with DIFY_API_KEY directly (BUG-6)
+    # Restart pipeline and Open WebUI to pick up the new API key
     if [[ -f "${INSTALL_DIR}/.dify_service_api_key" ]]; then
-        local api_key
-        api_key=$(cat "${INSTALL_DIR}/.dify_service_api_key")
-        sed -i.bak "s|^DIFY_API_KEY=.*|DIFY_API_KEY=${api_key}|g" \
-            "${INSTALL_DIR}/docker/.env"
-        rm -f "${INSTALL_DIR}/docker/.env.bak"
-
-        # Restart pipeline and Open WebUI with new API key
         docker compose -f "${INSTALL_DIR}/docker/docker-compose.yml" restart pipeline open-webui
     fi
     echo ""
@@ -1116,6 +1141,15 @@ phase_connectivity() {
     echo ""
 }
 
+# Portable helper: get local IP on both Linux and macOS
+get_local_ip() {
+    if [[ "$(uname)" == "Darwin" ]]; then
+        ipconfig getifaddr en0 2>/dev/null || echo "127.0.0.1"
+    else
+        hostname -I 2>/dev/null | awk '{print $1}' || echo "127.0.0.1"
+    fi
+}
+
 # ============================================================================
 # PHASE 11: Final Output
 # ============================================================================
@@ -1132,12 +1166,12 @@ phase_complete() {
             ;;
         lan|vpn)
             local lan_ip
-            lan_ip=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "192.168.x.x")
+            lan_ip=$(get_local_ip)
             access_url="http://${lan_ip}"
             ;;
         offline)
             local lan_ip
-            lan_ip=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "192.168.x.x")
+            lan_ip=$(get_local_ip)
             access_url="http://${lan_ip}"
             ;;
     esac
@@ -1154,7 +1188,7 @@ phase_complete() {
             ;;
         *)
             local dify_ip
-            dify_ip=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
+            dify_ip=$(get_local_ip)
             dify_url="http://${dify_ip}:3000"
             ;;
     esac
@@ -1189,7 +1223,7 @@ phase_complete() {
     [[ "$TLS_MODE" != "none" ]] && printf "║  TLS:       %-35s║\n" "$TLS_MODE"
     if [[ "$MONITORING_MODE" == "local" ]]; then
         local lan_ip_mon
-        lan_ip_mon=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
+        lan_ip_mon=$(get_local_ip)
         printf "║  Grafana:   %-35s║\n" "http://${lan_ip_mon}:3001"
         printf "║  Gr.пароль: %-35s║\n" "(см. GRAFANA_ADMIN_PASSWORD в .env)"
         printf "║  Portainer: %-35s║\n" "https://${lan_ip_mon}:9443"

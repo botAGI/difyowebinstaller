@@ -70,7 +70,18 @@ import_workflow() {
     local init_password
     init_password=$(grep '^INIT_PASSWORD=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "")
 
-    # Run import script
+    # Rerank model (Xinference, empty string to skip)
+    local rerank_model="${RERANK_MODEL:-bce-reranker-base_v1}"
+
+    # Plugins to install from marketplace
+    # Skip marketplace plugins in offline mode (no internet access)
+    local plugins=""
+    if [[ "${DEPLOY_PROFILE:-}" != "offline" ]]; then
+        plugins="${DIFY_PLUGINS:-langgenius/ollama,langgenius/xinference,s20ss/docling}"
+    fi
+
+    # Run import script — full automated setup:
+    # plugins → providers → models → defaults → KB → workflow → API key
     python3 "${INSTALL_DIR}/workflows/import.py" \
         --url "$dify_url" \
         --email "$admin_email" \
@@ -79,8 +90,16 @@ import_workflow() {
         --embedding "$embedding_model" \
         --company "$company_name" \
         --workflow "${INSTALL_DIR}/workflows/rag-assistant.json" \
+        --install-dir "$INSTALL_DIR" \
         --console-prefix "$console_prefix" \
-        --init-password "$init_password"
+        --init-password "$init_password" \
+        --ollama-url "http://ollama:11434" \
+        --rerank-model "$rerank_model" \
+        --xinference-url "http://xinference:9997" \
+        --model-provider "langgenius/ollama/ollama" \
+        --embedding-provider "langgenius/ollama/ollama" \
+        --rerank-provider "langgenius/xinference/xinference" \
+        --plugins "$plugins"
 
     local exit_code=$?
     if [[ $exit_code -eq 0 ]]; then

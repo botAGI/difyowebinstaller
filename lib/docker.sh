@@ -55,6 +55,7 @@ install_docker_debian() {
 
     # Add Docker GPG key
     install -m 0755 -d /etc/apt/keyrings
+    rm -f /etc/apt/keyrings/docker.gpg
     curl -fsSL "https://download.docker.com/linux/$DETECTED_OS/gpg" | \
         gpg --dearmor -o /etc/apt/keyrings/docker.gpg
     chmod a+r /etc/apt/keyrings/docker.gpg

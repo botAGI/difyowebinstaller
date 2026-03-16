@@ -77,18 +77,26 @@ PGDUMP_LOG="${TARGET_DIR}/pgdump.log"
 
 # 1. PostgreSQL dump — B-11: detect pg_dump failure via intermediate file
 echo "  PostgreSQL..."
-docker compose -f "$COMPOSE_FILE" exec -T db \
-    pg_dump -U postgres dify > "${TARGET_DIR}/dify_db.sql" 2>>"${PGDUMP_LOG}"
-if [[ $? -ne 0 ]]; then echo -e "${RED}pg_dump failed${NC}"; BACKUP_OK=false; fi
-gzip "${TARGET_DIR}/dify_db.sql"
+if ! docker compose -f "$COMPOSE_FILE" exec -T db \
+    pg_dump -U "${DB_USER:-postgres}" "${DB_NAME:-dify}" > "${TARGET_DIR}/dify_db.sql" 2>>"$PGDUMP_LOG"; then
+    echo -e "${RED}✗ pg_dump failed${NC}"
+    BACKUP_OK=false
+fi
+if [[ "$BACKUP_OK" == "true" && -f "${TARGET_DIR}/dify_db.sql" ]]; then
+    gzip "${TARGET_DIR}/dify_db.sql"
+fi
 
 # Check if plugin DB exists and dump it too
 if docker compose -f "$COMPOSE_FILE" exec -T db \
-    psql -U postgres -lqt 2>/dev/null | grep -q dify_plugin; then
-    docker compose -f "$COMPOSE_FILE" exec -T db \
-        pg_dump -U postgres dify_plugin > "${TARGET_DIR}/dify_plugin_db.sql" 2>>"${PGDUMP_LOG}"
-    if [[ $? -ne 0 ]]; then echo -e "${RED}pg_dump (plugin) failed${NC}"; BACKUP_OK=false; fi
-    gzip "${TARGET_DIR}/dify_plugin_db.sql"
+    psql -U "${DB_USER:-postgres}" -lqt 2>/dev/null | grep -q dify_plugin; then
+    if ! docker compose -f "$COMPOSE_FILE" exec -T db \
+        pg_dump -U "${DB_USER:-postgres}" dify_plugin > "${TARGET_DIR}/dify_plugin_db.sql" 2>>"$PGDUMP_LOG"; then
+        echo -e "${RED}✗ pg_dump (plugin) failed${NC}"
+        BACKUP_OK=false
+    fi
+    if [[ -f "${TARGET_DIR}/dify_plugin_db.sql" ]]; then
+        gzip "${TARGET_DIR}/dify_plugin_db.sql"
+    fi
 fi
 
 # 2. Vector store data
@@ -187,6 +195,13 @@ if [[ "${ENABLE_BACKUP_ENCRYPTION:-false}" == "true" ]]; then
     else
         echo -e "${YELLOW}age ключ не найден — пропускаем шифрование${NC}"
     fi
+fi
+
+# Regenerate checksums after encryption
+if [[ "${ENABLE_BACKUP_ENCRYPTION:-false}" == "true" ]]; then
+    cd "${TARGET_DIR}"
+    sha256sum *.age 2>/dev/null > sha256sums.txt || true
+    cd - >/dev/null
 fi
 
 # 8. Rotation — delete backups older than retention period

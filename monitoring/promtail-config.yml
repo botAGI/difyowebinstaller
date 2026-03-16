@@ -2,7 +2,7 @@ server:
   http_listen_port: 9080
   grpc_listen_port: 0
 positions:
-  filename: /tmp/positions.yaml
+  filename: /promtail/positions.yaml
 clients:
   - url: http://loki:3100/loki/api/v1/push
 scrape_configs:
@@ -18,3 +18,5 @@ scrape_configs:
         target_label: service
       - source_labels: ['__meta_docker_container_label_com_docker_compose_project']
         target_label: project
+    pipeline_stages:
+      - docker: {}

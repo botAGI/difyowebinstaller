@@ -16,6 +16,11 @@ INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
 #   or:   cp source "/path/to/file.yml"
 safe_write_file() {
     local filepath="$1"
+    # Safety: only operate within INSTALL_DIR
+    if [[ -n "${INSTALL_DIR:-}" && "$filepath" != "${INSTALL_DIR}"/* ]]; then
+        echo -e "${RED}ERROR: safe_write_file called with path outside INSTALL_DIR: ${filepath}${NC}" >&2
+        return 1
+    fi
     # Docker creates directories when bind mount source files don't exist.
     # On reinstall these stale directories block file creation.
     [[ -d "$filepath" ]] && rm -rf "${filepath:?}"

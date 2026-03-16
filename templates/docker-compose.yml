@@ -86,7 +86,7 @@ x-shared-env: &shared-env
   # --- Vector Store ---
   VECTOR_STORE: ${VECTOR_STORE:-weaviate}
   WEAVIATE_ENDPOINT: ${WEAVIATE_ENDPOINT:-http://weaviate:8080}
-  WEAVIATE_API_KEY: ${WEAVIATE_API_KEY}
+  WEAVIATE_API_KEY: ${WEAVIATE_API_KEY:-}
   QDRANT_HOST: ${QDRANT_HOST:-qdrant}
   QDRANT_PORT: ${QDRANT_PORT:-6333}
   QDRANT_API_KEY: ${QDRANT_API_KEY:-}
@@ -126,10 +126,15 @@ x-shared-env: &shared-env
 services:
   # ==================== Dify API ====================
   api:
-    <<: *logging-defaults
+    <<: *security-defaults
     image: langgenius/dify-api:${DIFY_VERSION:-1.13.0}
     container_name: agmind-api
     restart: always
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
     environment:
       <<: *shared-env
       MODE: api
@@ -154,10 +159,15 @@ services:
 
   # ==================== Dify Worker ====================
   worker:
-    <<: *logging-defaults
+    <<: *security-defaults
     image: langgenius/dify-api:${DIFY_VERSION:-1.13.0}
     container_name: agmind-worker
     restart: always
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
     environment:
       <<: *shared-env
       MODE: worker
@@ -173,6 +183,8 @@ services:
       db:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      sandbox:
         condition: service_healthy
     networks:
       - agmind-backend
@@ -236,7 +248,7 @@ services:
     restart: always
     environment:
       - WEBUI_NAME=${COMPANY_NAME:-AGMind}
-      - ENABLE_SIGNUP=${ENABLE_SIGNUP:-true}
+      - ENABLE_SIGNUP=${ENABLE_SIGNUP:-false}
       - ENABLE_LOGIN_FORM=true
       - DEFAULT_USER_ROLE=${DEFAULT_USER_ROLE:-user}
       - WEBUI_AUTH=true
@@ -320,6 +332,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
     networks:
       - agmind-backend
 
@@ -342,10 +355,11 @@ services:
       - ./volumes/redis/data:/data
       - ./volumes/redis/redis.conf:/etc/redis/redis.conf:ro
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-}", "ping"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH='${REDIS_PASSWORD:-}' redis-cli ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
     networks:
       - agmind-backend
 
@@ -361,7 +375,7 @@ services:
       QUERY_DEFAULTS_LIMIT: 25
       AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "false"
       AUTHENTICATION_APIKEY_ENABLED: "true"
-      AUTHENTICATION_APIKEY_ALLOWED_KEYS: ${WEAVIATE_API_KEY}
+      AUTHENTICATION_APIKEY_ALLOWED_KEYS: ${WEAVIATE_API_KEY:-}
       AUTHENTICATION_APIKEY_USERS: hello@dify.ai
       AUTHORIZATION_ADMINLIST_ENABLED: "true"
       AUTHORIZATION_ADMINLIST_USERS: hello@dify.ai
@@ -482,6 +496,9 @@ services:
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
       start_period: 10s
+    depends_on:
+      ssrf_proxy:
+        condition: service_healthy
     networks:
       - ssrf-network
 
@@ -510,10 +527,15 @@ services:
 
   # ==================== Plugin Daemon ====================
   plugin_daemon:
-    <<: *logging-defaults
+    <<: *security-defaults
     image: langgenius/dify-plugin-daemon:${PLUGIN_DAEMON_VERSION:-0.5.3-local}
     container_name: agmind-plugin-daemon
     restart: always
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
     environment:
       # --- Database ---
       DB_USERNAME: ${DB_USERNAME:-postgres}
@@ -579,6 +601,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - agmind-backend
 
@@ -613,7 +637,7 @@ services:
       - ./volumes/certbot/www:/var/www/certbot:ro
       - ./volumes/certbot/ssl:/etc/nginx/ssl:ro
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:80/ || exit 1"]
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:80/ 2>/dev/null && wget -q --spider http://localhost:3000/ 2>/dev/null || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
@@ -680,6 +704,7 @@ services:
       - SETUID
       - SETGID
     container_name: agmind-loki
+    restart: always
     profiles:
       - monitoring
     volumes:
@@ -694,21 +719,22 @@ services:
       start_period: 15s
     networks:
       - agmind-backend
-    restart: always
 
   # ==================== Promtail (monitoring profile) ====================
   promtail:
     <<: *security-defaults
     image: grafana/promtail:${PROMTAIL_VERSION:-3.3.2}
     container_name: agmind-promtail
+    restart: always
     profiles:
       - monitoring
     volumes:
       - ./monitoring/promtail-config.yml:/etc/promtail/config.yml:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - promtail_positions:/promtail
     command: -config.file=/etc/promtail/config.yml
     healthcheck:
-      test: ["CMD", "promtail", "-check-syntax", "-config.file=/etc/promtail/config.yml"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9080/ready 2>/dev/null || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
@@ -718,7 +744,6 @@ services:
         condition: service_healthy
     networks:
       - agmind-backend
-    restart: always
 
   # ==================== Node Exporter (monitoring profile) ====================
   node-exporter:
@@ -748,11 +773,16 @@ services:
       - agmind-backend
 
   # ==================== cAdvisor (monitoring profile) ====================
+  # cAdvisor requires privileged access to read cgroups, /proc, /sys, and
+  # Docker storage driver paths.  It is intentionally excluded from
+  # x-security-defaults (cap_drop + no-new-privileges would break metrics).
+  # See: https://github.com/google/cadvisor/issues/3749
   cadvisor:
-    <<: *security-defaults
-    image: gcr.io/cadvisor/cadvisor:${CADVISOR_VERSION:-v0.49.1}
+    <<: *logging-defaults
+    image: gcr.io/cadvisor/cadvisor:${CADVISOR_VERSION:-v0.52.1}
     container_name: agmind-cadvisor
     restart: always
+    privileged: true
     profiles:
       - monitoring
     expose:
@@ -762,6 +792,13 @@ services:
       - /var/run:/var/run:ro
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    command:
+      # Docker 29.x uses overlayfs snapshotter; pass storage driver explicitly
+      # to avoid empty DockerVersion / overlay2 path mismatch
+      - '--docker_only=true'
+      - '--store_container_labels=false'
+      - '--housekeeping_interval=30s'
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
@@ -786,7 +823,7 @@ services:
     ports:
       - "${GRAFANA_BIND_ADDR:-127.0.0.1}:${GRAFANA_PORT:-3001}:3000"
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -826,11 +863,7 @@ services:
     # portainer-ce is built on scratch — no shell, no wget, no curl.
     # In-container healthcheck is impossible. Use NONE and rely on restart policy.
     healthcheck:
-      test: ["NONE"]
-      interval: ${HEALTHCHECK_INTERVAL:-30s}
-      timeout: 10s
-      retries: ${HEALTHCHECK_RETRIES:-5}
-      start_period: 15s
+      disable: true
     networks:
       - agmind-frontend
       - agmind-backend
@@ -860,13 +893,15 @@ services:
     <<: *security-defaults
     image: certbot/certbot:${CERTBOT_VERSION:-v3.1.0}
     container_name: agmind-certbot
-    restart: unless-stopped
+    restart: always
     profiles:
       - vps
     volumes:
       - ./volumes/certbot/conf:/etc/letsencrypt
       - ./volumes/certbot/www:/var/www/certbot
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    healthcheck:
+      disable: true
     networks:
       - agmind-backend
 
@@ -888,3 +923,4 @@ volumes:
   prometheus_data:
   authelia_data:
   loki_data:
+  promtail_positions:

@@ -3,7 +3,7 @@ groups:
     rules:
       # Container down for >2 minutes
       - alert: ContainerDown
-        expr: absent(container_last_seen{name=~"agmind-.*"}) == 1
+        expr: time() - container_last_seen{name=~"agmind-.*"} > 120
         for: 2m
         labels:
           severity: critical
@@ -13,7 +13,7 @@ groups:
 
       # Container restart loop (>3 restarts in 15 min)
       - alert: ContainerRestartLoop
-        expr: increase(container_start_time_seconds{name=~"agmind-.*"}[15m]) > 3
+        expr: changes(container_start_time_seconds{name=~"agmind-.*"}[15m]) > 3
         for: 0m
         labels:
           severity: critical
@@ -33,7 +33,7 @@ groups:
 
       # High memory usage (>85%)
       - alert: HighMemoryUsage
-        expr: container_memory_usage_bytes{name=~"agmind-.*"} / container_spec_memory_limit_bytes{name=~"agmind-.*"} * 100 > 85
+        expr: (container_memory_usage_bytes{name=~"agmind-.*"} / container_spec_memory_limit_bytes{name=~"agmind-.*"}) * 100 > 90 and container_spec_memory_limit_bytes{name=~"agmind-.*"} > 0
         for: 5m
         labels:
           severity: warning
@@ -65,32 +65,32 @@ groups:
 
   - name: agmind_service_alerts
     rules:
-      # API response time >5s
-      - alert: SlowApiResponse
-        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{service="agmind-api"}[5m])) > 5
-        for: 10m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Slow API response times"
-          description: "95th percentile API response time is {{ $value }}s."
+      # NOTE: Requires an application exporter exposing http_request_duration_seconds_bucket (not yet configured)
+      # - alert: SlowApiResponse
+      #   expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{service="agmind-api"}[5m])) > 5
+      #   for: 10m
+      #   labels:
+      #     severity: warning
+      #   annotations:
+      #     summary: "Slow API response times"
+      #     description: "95th percentile API response time is {{ $value }}s."
 
-      # Redis connection errors
-      - alert: RedisConnectionError
-        expr: increase(redis_connection_errors_total[5m]) > 0
-        for: 0m
-        labels:
-          severity: critical
-        annotations:
-          summary: "Redis connection errors detected"
-          description: "Redis has reported connection errors."
+      # NOTE: Requires redis-exporter service (not yet configured)
+      # - alert: RedisConnectionError
+      #   expr: increase(redis_connection_errors_total[5m]) > 0
+      #   for: 0m
+      #   labels:
+      #     severity: critical
+      #   annotations:
+      #     summary: "Redis connection errors detected"
+      #     description: "Redis has reported connection errors."
 
-      # PostgreSQL connection saturation
-      - alert: PostgresConnectionSaturation
-        expr: sum(pg_stat_activity_count) / pg_settings_max_connections * 100 > 80
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "PostgreSQL connection saturation"
-          description: "PostgreSQL connections are at {{ $value }}% capacity."
+      # NOTE: Requires postgres-exporter service (not yet configured)
+      # - alert: PostgresConnectionSaturation
+      #   expr: sum(pg_stat_activity_count) / pg_settings_max_connections * 100 > 80
+      #   for: 5m
+      #   labels:
+      #     severity: warning
+      #   annotations:
+      #     summary: "PostgreSQL connection saturation"
+      #     description: "PostgreSQL connections are at {{ $value }}% capacity."

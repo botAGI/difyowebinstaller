@@ -179,16 +179,39 @@ harden_docker_compose() {
     local compose_file="${INSTALL_DIR}/docker/docker-compose.yml"
     [[ ! -f "$compose_file" ]] && return 0
 
-    # Add security_opt to all services via sed
-    # Find each "container_name:" line and add security_opt after it
-    # This is a lightweight approach — full YAML anchor would require rewriting the template
+    # Add security_opt: no-new-privileges to all services EXCEPT:
+    #   - cadvisor: requires privileged mode to read cgroups/proc/sys
+    #   - sandbox: needs cap_add which conflicts with no-new-privileges
     # Only add if not already present (idempotent)
-    if ! grep -q 'no-new-privileges' "$compose_file" 2>/dev/null; then
-        sed -i.bak '/container_name: agmind-/a\    security_opt:\n      - no-new-privileges:true' "$compose_file" 2>/dev/null || true
-        rm -f "${compose_file}.bak"
-    else
+    if grep -q 'no-new-privileges' "$compose_file" 2>/dev/null; then
         echo -e "${GREEN}✓ security_opt уже применён${NC}"
+        return 0
     fi
+
+    # Use Python for reliable YAML-aware line insertion (avoid sed portability issues)
+    python3 -c "
+import re, sys
+with open('$compose_file', 'r') as f:
+    lines = f.readlines()
+# Skip list: containers that need elevated privileges
+skip = {'agmind-cadvisor', 'agmind-sandbox'}
+result = []
+for i, line in enumerate(lines):
+    result.append(line)
+    m = re.match(r'^(\s+)container_name:\s+(\S+)', line)
+    if m and m.group(2) not in skip:
+        # Check if next lines already have security_opt
+        upcoming = ''.join(lines[i+1:i+5]) if i+1 < len(lines) else ''
+        if 'security_opt' not in upcoming and 'no-new-privileges' not in upcoming:
+            indent = m.group(1)
+            result.append(f'{indent}security_opt:\n')
+            result.append(f'{indent}  - no-new-privileges:true\n')
+with open('$compose_file', 'w') as f:
+    f.writelines(result)
+" 2>/dev/null || {
+        echo -e "${YELLOW}⚠ Не удалось применить security_opt автоматически${NC}"
+        return 0
+    }
 
     echo -e "${GREEN}✓ harden_docker_compose: no-new-privileges applied${NC}"
 }
