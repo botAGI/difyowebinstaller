@@ -164,8 +164,64 @@ install_nvidia_toolkit() {
     echo -e "${GREEN}NVIDIA Container Toolkit установлен${NC}"
 }
 
+configure_docker_dns() {
+    # systemd-resolved uses 127.0.0.53 — Docker containers can't reach it
+    # Check if system uses stub resolver and Docker has no DNS configured
+    local daemon_json="/etc/docker/daemon.json"
+
+    # Skip if not systemd-resolved
+    if ! grep -q '127.0.0.53' /etc/resolv.conf 2>/dev/null; then
+        return 0
+    fi
+
+    # Skip if daemon.json already has dns configured
+    if [[ -f "$daemon_json" ]] && grep -q '"dns"' "$daemon_json" 2>/dev/null; then
+        echo -e "${GREEN}Docker DNS уже настроен${NC}"
+        return 0
+    fi
+
+    echo -e "${YELLOW}Обнаружен systemd-resolved — настройка Docker DNS...${NC}"
+
+    # Try to get real upstream DNS from resolved
+    local dns1="" dns2=""
+    if command -v resolvectl &>/dev/null; then
+        dns1=$(resolvectl status 2>/dev/null | grep -m1 'DNS Servers' | awk '{print $3}') || true
+    fi
+    # Fallback to public DNS
+    dns1="${dns1:-8.8.8.8}"
+    dns2="1.1.1.1"
+
+    if [[ -f "$daemon_json" ]]; then
+        # Merge dns into existing config using python
+        python3 -c "
+import json, sys
+with open('$daemon_json') as f:
+    cfg = json.load(f)
+cfg['dns'] = ['$dns1', '$dns2']
+with open('$daemon_json', 'w') as f:
+    json.dump(cfg, f, indent=2)
+" 2>/dev/null || {
+            echo -e "${YELLOW}Не удалось обновить daemon.json, пропуск${NC}"
+            return 0
+        }
+    else
+        cat > "$daemon_json" << EOF
+{
+  "dns": ["$dns1", "$dns2"]
+}
+EOF
+    fi
+
+    # Restart Docker to apply
+    if systemctl is-active docker &>/dev/null; then
+        systemctl restart docker
+        echo -e "${GREEN}Docker DNS настроен: $dns1, $dns2${NC}"
+    fi
+}
+
 setup_docker() {
     install_docker
+    configure_docker_dns
     install_nvidia_toolkit
 }
 
