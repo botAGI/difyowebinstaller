@@ -30,10 +30,17 @@ pull_model() {
     local label="${2:-$model}"
 
     echo -e "${YELLOW}Скачивание модели: ${label}...${NC}"
+    # Validate model name: only allow alphanumeric, colons, dots, hyphens, slashes, underscores
+    if [[ ! "$model" =~ ^[a-zA-Z0-9.:/_-]+$ ]]; then
+        echo -e "${RED}Недопустимое имя модели: ${model}${NC}"
+        return 1
+    fi
+
     # Override resolv.conf inside running container to bypass Docker embedded DNS
     # (127.0.0.11) which fails on systemd-resolved hosts
+    # Pass model as a positional argument to sh -c to prevent injection
     if docker exec agmind-ollama sh -c \
-        "echo 'nameserver 8.8.8.8' > /etc/resolv.conf && ollama pull $model"; then
+        'echo "nameserver 8.8.8.8" > /etc/resolv.conf && ollama pull "$1"' _ "$model"; then
         echo -e "${GREEN}Модель ${label} загружена${NC}"
     else
         echo -e "${RED}Ошибка загрузки модели ${label}${NC}"
