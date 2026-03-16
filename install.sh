@@ -1027,9 +1027,9 @@ phase_workflow() {
     # ADMIN_PASSWORD passed via global scope, not exported to /proc/environ
     export INSTALL_DIR ADMIN_EMAIL LLM_MODEL EMBEDDING_MODEL COMPANY_NAME
 
-    # Dify Console accessible at /dify/ — standard authenticated path
-    export DIFY_INTERNAL_URL="http://localhost"
-    export DIFY_CONSOLE_PREFIX="/dify"
+    # Dify Console served on port 3000 (no sub-path prefix needed)
+    export DIFY_INTERNAL_URL="http://localhost:3000"
+    export DIFY_CONSOLE_PREFIX=""
 
     import_workflow
 
@@ -1105,7 +1105,22 @@ phase_complete() {
             ;;
     esac
 
-    local dify_url="${access_url}/dify/"
+    # Dify Console on port 3000
+    local dify_url
+    case "$DEPLOY_PROFILE" in
+        vps)
+            if [[ -n "$DOMAIN" ]]; then
+                dify_url="http://${DOMAIN}:3000"
+            else
+                dify_url="http://$(curl -sf --max-time 10 ifconfig.me 2>/dev/null || echo 'YOUR_IP'):3000"
+            fi
+            ;;
+        *)
+            local dify_ip
+            dify_ip=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
+            dify_url="http://${dify_ip}:3000"
+            ;;
+    esac
 
     echo ""
     echo -e "${GREEN}"

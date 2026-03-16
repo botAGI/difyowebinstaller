@@ -10,10 +10,10 @@ wait_for_dify_api() {
     echo -e "${YELLOW}Ожидание готовности Dify API...${NC}"
     local retries=60
     local i=0
-    local prefix="${DIFY_CONSOLE_PREFIX:-/dify}"
+    local dify_port="${DIFY_PORT:-3000}"
     while [[ $i -lt $retries ]]; do
-        # Use /dify/ path since nginx proxies console at /dify/*
-        if curl -sf "http://localhost${prefix}/console/api/setup" >/dev/null 2>&1; then
+        # Dify Console served on its own port (default 3000)
+        if curl -sf "http://localhost:${dify_port}/console/api/setup" >/dev/null 2>&1; then
             echo -e "${GREEN}Dify API готов${NC}"
             return 0
         fi
@@ -48,7 +48,8 @@ import_workflow() {
     local llm_model="${LLM_MODEL:-qwen2.5:14b}"
     local embedding_model="${EMBEDDING_MODEL:-bge-m3}"
     local company_name="${COMPANY_NAME:-AGMind}"
-    local dify_url="${DIFY_INTERNAL_URL:-http://localhost}"
+    local dify_port="${DIFY_PORT:-3000}"
+    local dify_url="${DIFY_INTERNAL_URL:-http://localhost:${dify_port}}"
 
     echo -e "${YELLOW}Импорт workflow в Dify...${NC}"
 
@@ -62,8 +63,8 @@ import_workflow() {
         fi
     fi
 
-    # Console prefix: Dify Console served at /dify/* via nginx
-    local console_prefix="${DIFY_CONSOLE_PREFIX:-/dify}"
+    # Console prefix: Dify Console served on its own port, no prefix needed
+    local console_prefix="${DIFY_CONSOLE_PREFIX:-}"
 
     # Get INIT_PASSWORD from .env for first-boot init validation
     local init_password

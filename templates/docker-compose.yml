@@ -601,6 +601,7 @@ services:
     ports:
       - "${EXPOSE_NGINX_PORT:-80}:80"
       - "${EXPOSE_NGINX_SSL_PORT:-443}:443"
+      - "${EXPOSE_DIFY_PORT:-3000}:3000"
     environment:
       NGINX_SERVER_NAME: ${NGINX_SERVER_NAME:-_}
       NGINX_HTTPS_ENABLED: ${NGINX_HTTPS_ENABLED:-false}

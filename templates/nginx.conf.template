@@ -118,40 +118,45 @@ http {
         location ~ "^/[a-f0-9]{24,}/" {
             return 404;
         }
+    }
 
-        # =============================================
-        # Dify Console — accessible at /dify/
-        # Authentication handled by Dify's built-in login (/dify/signin)
-        # =============================================
+    # =============================================
+    # Dify Console — separate server on port 3000
+    # No sub_filter needed — Next.js serves at root /
+    # =============================================
+    server {
+        listen 3000;
+        server_name __SERVER_NAME__;
 
-        # Dify Console Web UI
-        location /dify/ {
+        client_max_body_size 50M;
+
+    #__AUTHELIA__# Authelia verify endpoint
+    #__AUTHELIA__location /api/verify {
+    #__AUTHELIA__    internal;
+    #__AUTHELIA__    proxy_pass http://authelia:9091/api/verify;
+    #__AUTHELIA__    proxy_pass_request_body off;
+    #__AUTHELIA__    proxy_set_header Content-Length "";
+    #__AUTHELIA__    proxy_set_header X-Original-URL $scheme://$http_host$request_uri;
+    #__AUTHELIA__    proxy_set_header X-Forwarded-For $remote_addr;
+    #__AUTHELIA__    proxy_set_header X-Forwarded-Proto $scheme;
+    #__AUTHELIA__}
+
+        # Dify Console Web UI (root — Next.js works natively)
+        location / {
     #__AUTHELIA__    auth_request /api/verify;
     #__AUTHELIA__    auth_request_set $user $upstream_http_remote_user;
     #__AUTHELIA__    auth_request_set $groups $upstream_http_remote_groups;
-            proxy_pass http://dify_web/;
+            proxy_pass http://dify_web;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
-            # Rewrite internal links so Dify Console works under /dify/ path
-            sub_filter '/"/' '"/"/dify/"/' ;
-            sub_filter "'/'" "'/dify/'" ;
-            sub_filter '/apps' '/dify/apps' ;
-            sub_filter '/signin' '/dify/signin' ;
-            sub_filter '/install' '/dify/install' ;
-            sub_filter '/_next/' '/dify/_next/' ;
-            sub_filter '/console/' '/dify/console/' ;
-            sub_filter '/explore' '/dify/explore' ;
-            sub_filter_once off;
-            sub_filter_types text/html application/javascript;
         }
 
         # Dify Console API
-        location /dify/console/api {
+        location /console/api {
             limit_req zone=api burst=20 nodelay;
-            rewrite ^/dify/(.*)$ /$1 break;
             proxy_pass http://dify_api;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
@@ -163,9 +168,8 @@ http {
         }
 
         # Dify API
-        location /dify/api {
+        location /api {
             limit_req zone=api burst=20 nodelay;
-            rewrite ^/dify/(.*)$ /$1 break;
             proxy_pass http://dify_api;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
@@ -177,8 +181,7 @@ http {
         }
 
         # Dify Service API (/v1)
-        location /dify/v1 {
-            rewrite ^/dify/(.*)$ /$1 break;
+        location /v1 {
             proxy_pass http://dify_api;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
@@ -190,8 +193,7 @@ http {
         }
 
         # Dify Files
-        location /dify/files {
-            rewrite ^/dify/(.*)$ /$1 break;
+        location /files {
             proxy_pass http://dify_api;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
@@ -201,8 +203,7 @@ http {
         }
 
         # Plugin Daemon (dynamic resolve — nginx starts even if daemon is down)
-        location /dify/e/ {
-            rewrite ^/dify/(.*)$ /$1 break;
+        location /e/ {
             set $plugin_upstream http://plugin_daemon:5002;
             proxy_pass $plugin_upstream;
             proxy_http_version 1.1;
@@ -210,14 +211,6 @@ http {
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
-        }
-
-        # Dify static assets
-        location /dify/_next {
-            rewrite ^/dify/(.*)$ /$1 break;
-            proxy_pass http://dify_web;
-            proxy_http_version 1.1;
-            proxy_set_header Host $host;
         }
     }
 
@@ -276,100 +269,5 @@ http {
     #__TLS__
     #__TLS__    # Block old-style hex token URLs
     #__TLS__    location ~ "^/[a-f0-9]{24,}/" { return 404; }
-    #__TLS__
-    #__TLS__    # Dify Console Web UI
-    #__TLS__    location /dify/ {
-    #__TLS__    #__AUTHELIA__    auth_request /api/verify;
-    #__TLS__    #__AUTHELIA__    auth_request_set $user $upstream_http_remote_user;
-    #__TLS__    #__AUTHELIA__    auth_request_set $groups $upstream_http_remote_groups;
-    #__TLS__        proxy_pass http://dify_web/;
-    #__TLS__        proxy_http_version 1.1;
-    #__TLS__        proxy_set_header Host $host;
-    #__TLS__        proxy_set_header X-Real-IP $remote_addr;
-    #__TLS__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    #__TLS__        proxy_set_header X-Forwarded-Proto $scheme;
-    #__TLS__        sub_filter '/"/' '"/"/dify/"/' ;
-    #__TLS__        sub_filter "'/'" "'/dify/'" ;
-    #__TLS__        sub_filter '/apps' '/dify/apps' ;
-    #__TLS__        sub_filter '/signin' '/dify/signin' ;
-    #__TLS__        sub_filter '/install' '/dify/install' ;
-    #__TLS__        sub_filter '/_next/' '/dify/_next/' ;
-    #__TLS__        sub_filter '/console/' '/dify/console/' ;
-    #__TLS__        sub_filter '/explore' '/dify/explore' ;
-    #__TLS__        sub_filter_once off;
-    #__TLS__        sub_filter_types text/html application/javascript;
-    #__TLS__    }
-    #__TLS__
-    #__TLS__    # Dify Console API
-    #__TLS__    location /dify/console/api {
-    #__TLS__        limit_req zone=api burst=20 nodelay;
-    #__TLS__        rewrite ^/dify/(.*)$ /$1 break;
-    #__TLS__        proxy_pass http://dify_api;
-    #__TLS__        proxy_http_version 1.1;
-    #__TLS__        proxy_set_header Host $host;
-    #__TLS__        proxy_set_header X-Real-IP $remote_addr;
-    #__TLS__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    #__TLS__        proxy_set_header X-Forwarded-Proto $scheme;
-    #__TLS__        proxy_read_timeout 3600s;
-    #__TLS__        proxy_send_timeout 3600s;
-    #__TLS__    }
-    #__TLS__
-    #__TLS__    # Dify API
-    #__TLS__    location /dify/api {
-    #__TLS__        limit_req zone=api burst=20 nodelay;
-    #__TLS__        rewrite ^/dify/(.*)$ /$1 break;
-    #__TLS__        proxy_pass http://dify_api;
-    #__TLS__        proxy_http_version 1.1;
-    #__TLS__        proxy_set_header Host $host;
-    #__TLS__        proxy_set_header X-Real-IP $remote_addr;
-    #__TLS__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    #__TLS__        proxy_set_header X-Forwarded-Proto $scheme;
-    #__TLS__        proxy_read_timeout 3600s;
-    #__TLS__        proxy_send_timeout 3600s;
-    #__TLS__    }
-    #__TLS__
-    #__TLS__    # Dify Service API (/v1)
-    #__TLS__    location /dify/v1 {
-    #__TLS__        rewrite ^/dify/(.*)$ /$1 break;
-    #__TLS__        proxy_pass http://dify_api;
-    #__TLS__        proxy_http_version 1.1;
-    #__TLS__        proxy_set_header Host $host;
-    #__TLS__        proxy_set_header X-Real-IP $remote_addr;
-    #__TLS__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    #__TLS__        proxy_set_header X-Forwarded-Proto $scheme;
-    #__TLS__        proxy_read_timeout 3600s;
-    #__TLS__        proxy_send_timeout 3600s;
-    #__TLS__    }
-    #__TLS__
-    #__TLS__    # Dify Files
-    #__TLS__    location /dify/files {
-    #__TLS__        rewrite ^/dify/(.*)$ /$1 break;
-    #__TLS__        proxy_pass http://dify_api;
-    #__TLS__        proxy_http_version 1.1;
-    #__TLS__        proxy_set_header Host $host;
-    #__TLS__        proxy_set_header X-Real-IP $remote_addr;
-    #__TLS__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    #__TLS__        proxy_set_header X-Forwarded-Proto $scheme;
-    #__TLS__    }
-    #__TLS__
-    #__TLS__    # Plugin Daemon (dynamic resolve)
-    #__TLS__    location /dify/e/ {
-    #__TLS__        rewrite ^/dify/(.*)$ /$1 break;
-    #__TLS__        set $plugin_upstream http://plugin_daemon:5002;
-    #__TLS__        proxy_pass $plugin_upstream;
-    #__TLS__        proxy_http_version 1.1;
-    #__TLS__        proxy_set_header Host $host;
-    #__TLS__        proxy_set_header X-Real-IP $remote_addr;
-    #__TLS__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    #__TLS__        proxy_set_header X-Forwarded-Proto $scheme;
-    #__TLS__    }
-    #__TLS__
-    #__TLS__    # Dify static assets
-    #__TLS__    location /dify/_next {
-    #__TLS__        rewrite ^/dify/(.*)$ /$1 break;
-    #__TLS__        proxy_pass http://dify_web;
-    #__TLS__        proxy_http_version 1.1;
-    #__TLS__        proxy_set_header Host $host;
-    #__TLS__    }
     #__TLS__}
 }
