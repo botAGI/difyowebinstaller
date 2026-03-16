@@ -707,7 +707,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     command: -config.file=/etc/promtail/config.yml
     healthcheck:
-      test: ["CMD-SHELL", "kill -0 1 || exit 1"]
+      test: ["CMD", "promtail", "-check-syntax", "-config.file=/etc/promtail/config.yml"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
