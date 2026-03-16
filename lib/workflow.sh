@@ -104,8 +104,10 @@ import_workflow() {
     local exit_code=$?
     if [[ $exit_code -eq 0 ]]; then
         echo -e "${GREEN}Workflow импортирован и опубликован${NC}"
+        return 0
     else
         echo -e "${RED}Ошибка импорта workflow (код: ${exit_code})${NC}"
+        echo -e "${YELLOW}Модели и workflow можно настроить вручную через Dify UI${NC}"
         return 1
     fi
 }

@@ -952,7 +952,7 @@ create_openwebui_admin() {
     # Step 3: Wait for Open WebUI to be healthy (up to 120 sec)
     local attempts=0
     while [[ $attempts -lt 24 ]]; do
-        if docker exec agmind-openwebui wget -q --spider http://localhost:8080/health 2>/dev/null; then
+        if docker exec agmind-openwebui curl -sf http://localhost:8080/health >/dev/null 2>&1; then
             break
         fi
         sleep 5
@@ -975,9 +975,9 @@ create_openwebui_admin() {
         "$(printf '%s' "$admin_password" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\n/\\n/g')")
 
     local resp
-    resp=$(docker exec agmind-openwebui wget -q -O- \
-        --header="Content-Type: application/json" \
-        --post-data="$json_payload" \
+    resp=$(docker exec agmind-openwebui curl -sf \
+        -H "Content-Type: application/json" \
+        -d "$json_payload" \
         http://localhost:8080/api/v1/auths/signup 2>&1) || true
 
     if echo "$resp" | grep -q '"token"'; then
@@ -1153,12 +1153,17 @@ phase_workflow() {
     export DIFY_INTERNAL_URL="http://localhost:3000"
     export DIFY_CONSOLE_PREFIX=""
 
-    import_workflow
-
-    # import.py now patches .env with DIFY_API_KEY directly (BUG-6)
-    # Restart pipeline and Open WebUI to pick up the new API key
-    if [[ -f "${INSTALL_DIR}/.dify_service_api_key" ]]; then
-        docker compose -f "${INSTALL_DIR}/docker/docker-compose.yml" restart pipeline open-webui
+    # import_workflow may fail if marketplace is down or plugins can't install.
+    # Don't let it kill the entire installation — phases 9-11 must still run.
+    if import_workflow; then
+        # import.py now patches .env with DIFY_API_KEY directly (BUG-6)
+        # Restart pipeline and Open WebUI to pick up the new API key
+        if [[ -f "${INSTALL_DIR}/.dify_service_api_key" ]]; then
+            docker compose -f "${INSTALL_DIR}/docker/docker-compose.yml" restart pipeline open-webui
+        fi
+    else
+        echo -e "${YELLOW}⚠ Workflow import failed — configure models manually in Dify UI${NC}"
+        echo -e "${YELLOW}  Settings > Model Provider > Add Ollama (http://ollama:11434)${NC}"
     fi
     echo ""
 }
