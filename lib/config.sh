@@ -227,6 +227,8 @@ generate_config() {
     local plugin_inner_api_key
     plugin_inner_api_key=$(generate_random 48)
 
+    local weaviate_api_key
+    weaviate_api_key=$(generate_random 32)
     local qdrant_api_key
     qdrant_api_key=$(generate_random 32)
     local grafana_admin_password
@@ -288,6 +290,7 @@ generate_config() {
         -e "s|__DOMAIN__|${safe_domain}|g" \
         -e "s|__CERTBOT_EMAIL__|${safe_certbot_email}|g" \
         -e "s|__VECTOR_STORE__|${VECTOR_STORE:-weaviate}|g" \
+        -e "s|__WEAVIATE_API_KEY__|${weaviate_api_key}|g" \
         -e "s|__QDRANT_API_KEY__|${qdrant_api_key}|g" \
         -e "s|__ETL_TYPE__|$([ "${ETL_ENHANCED:-no}" = "yes" ] && echo "unstructured_api" || echo "dify")|g" \
         -e "s|__TLS_MODE__|${TLS_MODE:-none}|g" \
