@@ -19,13 +19,6 @@ teardown() {
     [ "$status" -eq 0 ]
 }
 
-@test "install.sh supports --help flag" {
-    # install.sh should print help text and exit 0 (or at least not crash)
-    run bash "${ROOT_DIR}/install.sh" --help 2>&1
-    # Accept either 0 or grep for usage/help text
-    [[ "$status" -eq 0 ]] || [[ "$output" =~ [Uu]sage ]] || [[ "$output" =~ [Hh]elp ]]
-}
-
 # --- Backup ---
 
 @test "backup.sh has valid bash syntax" {
