@@ -1073,7 +1073,28 @@ post_launch_status() {
 phase_health() {
     echo -e "${BOLD}[6/11] Проверка здоровья${NC}"
     export INSTALL_DIR
-    wait_healthy 300
+    wait_healthy 300 || true
+
+    # Check critical services — halt if any core service is unhealthy
+    local critical_services=(db redis api worker web nginx)
+    local critical_failed=0
+    for svc in "${critical_services[@]}"; do
+        local status
+        status=$(docker ps --filter "name=agmind-${svc}" --format "{{.Status}}" 2>/dev/null | head -1)
+        if echo "$status" | grep -qi "unhealthy\|restarting\|exited"; then
+            echo -e "${RED}✗ Критический сервис ${svc} не работает: ${status}${NC}"
+            docker logs --tail 5 "agmind-${svc}" 2>&1 | sed 's/^/    /'
+            critical_failed=$((critical_failed + 1))
+        fi
+    done
+
+    if [[ $critical_failed -gt 0 ]]; then
+        echo ""
+        echo -e "${RED}${critical_failed} критических сервисов не запустились.${NC}"
+        echo -e "${RED}Установка не может продолжиться. Проверьте логи: docker logs <container>${NC}"
+        exit 1
+    fi
+
     echo ""
 }
 
