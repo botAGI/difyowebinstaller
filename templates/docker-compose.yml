@@ -118,7 +118,7 @@ x-shared-env: &shared-env
   CHECK_UPDATE_URL: ${CHECK_UPDATE_URL:-https://updates.dify.ai}
   # --- Plugin Daemon ---
   PLUGIN_API_URL: ${PLUGIN_API_URL:-http://plugin_daemon:5002}
-  PLUGIN_API_KEY: ${PLUGIN_DAEMON_KEY:-}
+  PLUGIN_DAEMON_KEY: ${PLUGIN_DAEMON_KEY:-}
   INNER_API_KEY_FOR_PLUGIN: ${PLUGIN_INNER_API_KEY:-}
   # --- Ollama ---
   OLLAMA_API_BASE: ${OLLAMA_API_BASE:-http://ollama:11434}
@@ -571,7 +571,7 @@ services:
     volumes:
       - ./volumes/plugin_daemon/storage:/app/storage
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:5002/health 2>/dev/null || wget -qO- http://localhost:5002/health 2>/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:5002/health/check 2>/dev/null || wget -qO- http://localhost:5002/health/check 2>/dev/null || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
