@@ -805,6 +805,9 @@ services:
       - agmind-backend
 
   # ==================== Portainer (monitoring profile) ====================
+  # ⚠ SECURITY: Portainer requires RW docker.sock = full host control.
+  # Mitigations: localhost-only binding, read-only filesystem, no-new-privileges.
+  # Set ENABLE_PORTAINER=false to disable entirely if not needed.
   portainer:
     <<: *security-defaults
     image: portainer/portainer-ce:${PORTAINER_VERSION:-2.21.4}
@@ -814,6 +817,9 @@ services:
       - monitoring
     ports:
       - "${PORTAINER_BIND_ADDR:-127.0.0.1}:${PORTAINER_PORT:-9443}:9443"
+    read_only: true
+    tmpfs:
+      - /tmp
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data
