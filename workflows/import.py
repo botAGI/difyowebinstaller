@@ -19,6 +19,7 @@ import os
 import re
 import sys
 import time
+import http.cookiejar
 import urllib.request
 import urllib.error
 
@@ -26,22 +27,21 @@ import urllib.error
 class DifyClient:
     def __init__(self, base_url, console_prefix=""):
         self.base_url = base_url.rstrip("/")
-        # console_prefix is the admin token path prefix (e.g., "/abc123")
-        # nginx blocks direct /console/* access; all Console API calls
-        # must go through /<admin_token>/console/api/* instead
         self.console_prefix = console_prefix.rstrip("/")
         self.access_token = None
         self.csrf_token = None
+        # CookieJar handles all cookies automatically (session, access_token, etc.)
+        self.cookie_jar = http.cookiejar.CookieJar()
+        self.opener = urllib.request.build_opener(
+            urllib.request.HTTPCookieProcessor(self.cookie_jar)
+        )
 
     def _request(self, method, path, data=None, content_type="application/json"):
-        # Prepend console_prefix for all /console/api/* paths
         if path.startswith("/console/") and self.console_prefix:
             path = f"{self.console_prefix}{path}"
         url = f"{self.base_url}{path}"
         headers = {}
 
-        if self.access_token:
-            headers["Cookie"] = f"access_token={self.access_token}; csrf_token={self.csrf_token}"
         if self.csrf_token:
             headers["X-CSRF-Token"] = self.csrf_token
 
@@ -56,16 +56,13 @@ class DifyClient:
         req = urllib.request.Request(url, data=body, headers=headers, method=method)
 
         try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                # Extract cookies
-                cookie_header = resp.getheader("Set-Cookie") or ""
-                for part in cookie_header.split(","):
-                    for cookie in part.split(";"):
-                        cookie = cookie.strip()
-                        if cookie.startswith("access_token="):
-                            self.access_token = cookie.split("=", 1)[1]
-                        elif cookie.startswith("csrf_token="):
-                            self.csrf_token = cookie.split("=", 1)[1]
+            with self.opener.open(req, timeout=60) as resp:
+                # Extract tokens from cookie jar for later use
+                for cookie in self.cookie_jar:
+                    if cookie.name == "access_token":
+                        self.access_token = cookie.value
+                    elif cookie.name == "csrf_token":
+                        self.csrf_token = cookie.value
 
                 resp_body = resp.read().decode("utf-8")
                 if resp_body:
