@@ -1,4 +1,6 @@
 x-security-defaults: &security-defaults
+  sysctls:
+    - net.ipv6.conf.all.disable_ipv6=1
   cap_drop:
     - AUDIT_CONTROL
     - AUDIT_READ
@@ -37,6 +39,8 @@ x-security-defaults: &security-defaults
       max-file: "5"
 
 x-logging-defaults: &logging-defaults
+  sysctls:
+    - net.ipv6.conf.all.disable_ipv6=1
   logging:
     driver: "json-file"
     options:
