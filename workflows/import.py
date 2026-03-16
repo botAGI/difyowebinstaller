@@ -338,31 +338,40 @@ def main():
     # Step 3: Login
     client.login(args.email, args.password)
 
-    # Step 2: Create Knowledge Base
-    kb_id = client.create_dataset("Documents")
+    # Step 4: Create Knowledge Base
+    try:
+        kb_id = client.create_dataset("Documents")
+    except urllib.error.HTTPError as e:
+        if e.code == 400:
+            print("\n  ⚠ Модели ещё не настроены в Dify.")
+            print("  Настройте модели вручную через Dify UI,")
+            print("  затем создайте Knowledge Base.")
+            print("\n=== Установка продолжена (workflow не импортирован) ===")
+            return 0
+        raise
 
-    # Step 3: Create Dataset API key
+    # Step 5: Create Dataset API key
     dataset_api_key = client.create_dataset_api_key()
 
-    # Step 4: Create Chatflow app
+    # Step 6: Create Chatflow app
     app_name = f"Ассистент {args.company}"
     app_id = client.create_app(app_name, args.company)
 
-    # Step 5: Get draft hash
+    # Step 7: Get draft hash
     _, draft_hash = client.get_workflow_draft(app_id)
 
-    # Step 6: Patch workflow
+    # Step 8: Patch workflow
     print("\n  Патчинг workflow...")
     graph = patch_workflow(workflow_data, kb_id, dataset_api_key, args.model, args.company)
     features = patch_features(workflow_data.get("features", {}), args.company)
 
-    # Step 7: Push workflow draft
+    # Step 9: Push workflow draft
     client.update_workflow_draft(app_id, graph, features, draft_hash)
 
-    # Step 8: Publish
+    # Step 10: Publish
     client.publish_workflow(app_id)
 
-    # Step 9: Create Service API key
+    # Step 11: Create Service API key
     service_api_key = client.create_service_api_key(app_id)
 
     # Save API key for Open WebUI
