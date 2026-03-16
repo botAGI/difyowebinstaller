@@ -116,10 +116,18 @@ encrypt_secrets() {
         [[ "$(uname -m)" == "aarch64" || "$(uname -m)" == "arm64" ]] && arch="arm64"
         local sops_url="https://github.com/getsops/sops/releases/download/v3.9.4/sops-v3.9.4.linux.${arch}"
         if curl -sSL "$sops_url" -o /usr/local/bin/sops; then
-            # Verify SHA256 checksum if expected hash is provided
-            local sops_sha256
-            if ! echo "${SOPS_EXPECTED_SHA256:-}  /usr/local/bin/sops" | sha256sum -c - 2>/dev/null; then
-                echo -e "${YELLOW}Warning: SOPS checksum not verified (set SOPS_EXPECTED_SHA256 to verify)${NC}"
+            # Verify SHA256 checksum — HARD FAIL if hash is set and doesn't match
+            if [[ -n "${SOPS_EXPECTED_SHA256:-}" ]]; then
+                if ! echo "${SOPS_EXPECTED_SHA256}  /usr/local/bin/sops" | sha256sum -c - >/dev/null 2>&1; then
+                    echo -e "${RED}SECURITY FAIL: SOPS binary checksum mismatch!${NC}"
+                    echo -e "${RED}Expected: ${SOPS_EXPECTED_SHA256}${NC}"
+                    echo -e "${RED}Got:      $(sha256sum /usr/local/bin/sops | cut -d' ' -f1)${NC}"
+                    rm -f /usr/local/bin/sops
+                    return 1
+                fi
+                echo -e "${GREEN}✓ SOPS checksum verified${NC}"
+            else
+                echo -e "${YELLOW}⚠ SOPS checksum not verified (set SOPS_EXPECTED_SHA256 to enable)${NC}"
             fi
             chmod +x /usr/local/bin/sops
         else
