@@ -274,13 +274,19 @@ class DifyClient:
 
         model_settings: list of {"model_type", "provider", "model"}
         """
-        self._request(
-            "POST",
-            "/console/api/workspaces/current/default-model",
-            {"model_settings": model_settings},
-        )
-        for s in model_settings:
-            print(f"  Default [{s['model_type']}]: {s['model']}")
+        try:
+            self._request(
+                "POST",
+                "/console/api/workspaces/current/default-model",
+                {"model_settings": model_settings},
+            )
+            for s in model_settings:
+                print(f"  Default [{s['model_type']}]: {s['model']}")
+        except urllib.error.HTTPError as e:
+            print(f"  ⚠ Could not set default models: HTTP {e.code}",
+                  file=sys.stderr)
+            print("  Models must be configured manually in Dify UI",
+                  file=sys.stderr)
 
     # ==================================================================
     # Datasets (Knowledge Bases)
@@ -823,91 +829,107 @@ def main():
     # --- Step 3: Login ---
     client.login(args.email, args.password)
 
-    # --- Step 4-7: Install plugins from marketplace ---
-    print("\n--- \u041f\u043b\u0430\u0433\u0438\u043d\u044b ---")
-    plugin_specs = [
-        s.strip() for s in args.plugins.split(",") if s.strip()
-    ]
-    if plugin_specs:
-        install_plugins(client, plugin_specs)
-    else:
-        print("  No plugins to install")
+    # --- Step 4-12: Plugins + Providers + Models ---
+    # This entire block is non-fatal: if marketplace is down or plugins
+    # can't be installed, we still create KB + workflow + API key.
+    # Models can be configured manually in Dify UI afterward.
+    models_ok = False
+    try:
+        print("\n--- \u041f\u043b\u0430\u0433\u0438\u043d\u044b ---")
+        plugin_specs = [
+            s.strip() for s in args.plugins.split(",") if s.strip()
+        ]
+        plugins_ok = True
+        if plugin_specs:
+            plugins_ok = install_plugins(client, plugin_specs)
+        else:
+            print("  No plugins to install")
 
-    # --- Step 8-9: Configure providers ---
-    print("\n--- \u041f\u0440\u043e\u0432\u0430\u0439\u0434\u0435\u0440\u044b"
-          " ---")
-    # Ollama provider
-    client.configure_provider(
-        args.model_provider,
-        {"base_url": args.ollama_url},
-    )
-    # Xinference provider (if rerank model specified)
-    if args.rerank_model:
+        if not plugins_ok:
+            print("  \u26a0 Plugins not installed — provider/model config may fail",
+                  file=sys.stderr)
+
+        # --- Step 8-9: Configure providers ---
+        print("\n--- \u041f\u0440\u043e\u0432\u0430\u0439\u0434\u0435\u0440\u044b"
+              " ---")
+        # Ollama provider
         client.configure_provider(
-            args.rerank_provider,
-            {
-                "server_url": args.xinference_url,
-            },
+            args.model_provider,
+            {"base_url": args.ollama_url},
         )
+        # Xinference provider (if rerank model specified)
+        if args.rerank_model:
+            client.configure_provider(
+                args.rerank_provider,
+                {
+                    "server_url": args.xinference_url,
+                },
+            )
 
-    # --- Step 10-12: Add models + set defaults ---
-    print("\n--- \u041c\u043e\u0434\u0435\u043b\u0438 ---")
-    # LLM
-    client.add_model(
-        args.model_provider,
-        args.model,
-        "llm",
-        {
-            "base_url": args.ollama_url,
-            "mode": "chat",
-            "context_size": "8192",
-            "max_tokens": "8192",
-            "vision_support": "false",
-            "function_call_support": "false",
-        },
-    )
-    # Embedding
-    client.add_model(
-        args.embedding_provider,
-        args.embedding,
-        "text-embedding",
-        {
-            "base_url": args.ollama_url,
-        },
-    )
-
-    # Reranker (Xinference)
-    if args.rerank_model:
+        # --- Step 10-12: Add models + set defaults ---
+        print("\n--- \u041c\u043e\u0434\u0435\u043b\u0438 ---")
+        # LLM
         client.add_model(
-            args.rerank_provider,
-            args.rerank_model,
-            "rerank",
+            args.model_provider,
+            args.model,
+            "llm",
             {
-                "server_url": args.xinference_url,
-                "model_uid": args.rerank_model,
+                "base_url": args.ollama_url,
+                "mode": "chat",
+                "context_size": "8192",
+                "max_tokens": "8192",
+                "vision_support": "false",
+                "function_call_support": "false",
+            },
+        )
+        # Embedding
+        client.add_model(
+            args.embedding_provider,
+            args.embedding,
+            "text-embedding",
+            {
+                "base_url": args.ollama_url,
             },
         )
 
-    # Set defaults
-    default_settings = [
-        {
-            "model_type": "llm",
-            "provider": args.model_provider,
-            "model": args.model,
-        },
-        {
-            "model_type": "text-embedding",
-            "provider": args.embedding_provider,
-            "model": args.embedding,
-        },
-    ]
-    if args.rerank_model:
-        default_settings.append({
-            "model_type": "rerank",
-            "provider": args.rerank_provider,
-            "model": args.rerank_model,
-        })
-    client.set_default_models(default_settings)
+        # Reranker (Xinference)
+        if args.rerank_model:
+            client.add_model(
+                args.rerank_provider,
+                args.rerank_model,
+                "rerank",
+                {
+                    "server_url": args.xinference_url,
+                    "model_uid": args.rerank_model,
+                },
+            )
+
+        # Set defaults
+        default_settings = [
+            {
+                "model_type": "llm",
+                "provider": args.model_provider,
+                "model": args.model,
+            },
+            {
+                "model_type": "text-embedding",
+                "provider": args.embedding_provider,
+                "model": args.embedding,
+            },
+        ]
+        if args.rerank_model:
+            default_settings.append({
+                "model_type": "rerank",
+                "provider": args.rerank_provider,
+                "model": args.rerank_model,
+            })
+        client.set_default_models(default_settings)
+        models_ok = True
+    except Exception as e:
+        print(f"\n  \u26a0 Plugin/model setup failed: {e}", file=sys.stderr)
+        print("  Models must be configured manually in Dify Settings > Model Provider",
+              file=sys.stderr)
+        print("  Continuing with workflow import...\n", file=sys.stderr)
 
     # --- Step 13: Find or create Knowledge Base ---
     print("\n--- Knowledge Base ---")
