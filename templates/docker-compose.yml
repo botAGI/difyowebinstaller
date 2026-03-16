@@ -1,7 +1,4 @@
 x-security-defaults: &security-defaults
-  dns:
-    - 8.8.8.8
-    - 1.1.1.1
   cap_drop:
     - AUDIT_CONTROL
     - AUDIT_READ
@@ -33,6 +30,13 @@ x-security-defaults: &security-defaults
     - SYS_TTY_CONFIG
     - SYSLOG
     - WAKE_ALARM
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+x-logging-defaults: &logging-defaults
   logging:
     driver: "json-file"
     options:
@@ -118,7 +122,7 @@ x-shared-env: &shared-env
 services:
   # ==================== Dify API ====================
   api:
-    <<: *security-defaults
+    <<: *logging-defaults
     image: langgenius/dify-api:${DIFY_VERSION:-1.13.0}
     container_name: agmind-api
     restart: always
@@ -146,7 +150,7 @@ services:
 
   # ==================== Dify Worker ====================
   worker:
-    <<: *security-defaults
+    <<: *logging-defaults
     image: langgenius/dify-api:${DIFY_VERSION:-1.13.0}
     container_name: agmind-worker
     restart: always
@@ -255,12 +259,10 @@ services:
 
   # ==================== Ollama ====================
   ollama:
-    <<: *security-defaults
+    <<: *logging-defaults
     image: ollama/ollama:${OLLAMA_VERSION:-0.6.2}
     container_name: agmind-ollama
     restart: always
-    cap_add:
-      - SYS_ADMIN
     volumes:
       - ollama_data:/root/.ollama
     healthcheck:
@@ -396,7 +398,7 @@ services:
 
   # ==================== Docling (ETL service) ====================
   docling:
-    <<: *security-defaults
+    <<: *logging-defaults
     image: ghcr.io/docling-project/docling-serve:${DOCLING_SERVE_VERSION:-v1.14.3}
     container_name: agmind-docling
     restart: always
@@ -416,7 +418,7 @@ services:
 
   # ==================== Xinference (Reranker) ====================
   xinference:
-    <<: *security-defaults
+    <<: *logging-defaults
     image: xprobe/xinference:${XINFERENCE_VERSION:-v0.16.3}
     container_name: agmind-xinference
     restart: always
@@ -504,14 +506,10 @@ services:
 
   # ==================== Plugin Daemon ====================
   plugin_daemon:
-    <<: *security-defaults
+    <<: *logging-defaults
     image: langgenius/dify-plugin-daemon:${PLUGIN_DAEMON_VERSION:-0.5.3-local}
     container_name: agmind-plugin-daemon
     restart: always
-    cap_add:
-      - CHOWN
-      - SETUID
-      - SETGID
     environment:
       # --- Database ---
       DB_USERNAME: ${DB_USERNAME:-postgres}

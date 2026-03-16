@@ -168,29 +168,34 @@ configure_docker_dns() {
     # systemd-resolved stub mode (127.0.0.53) breaks Docker DNS.
     # Docker sees loopback DNS → uses embedded resolver 127.0.0.11
     # which can't forward queries on these systems.
-    # Fix: symlink resolv.conf to the real resolver file with upstream DNS.
+    # Fix: disable stub listener, set real DNS, symlink resolv.conf.
     # Ref: https://docs.docker.com/engine/daemon/troubleshoot/#dns-resolver-found-in-resolvconf-and-containers-cant-resolve-dns
 
-    # Only apply if resolv.conf points to stub-resolv.conf
-    if ! readlink -f /etc/resolv.conf 2>/dev/null | grep -q 'stub-resolv'; then
+    # Only apply if resolv.conf is a symlink pointing to stub-resolv
+    if ! [ -L /etc/resolv.conf ] || ! readlink /etc/resolv.conf | grep -q stub; then
         return 0
     fi
 
-    # Check that the real resolv.conf exists
-    if [[ ! -f /run/systemd/resolve/resolv.conf ]]; then
-        echo -e "${YELLOW}systemd-resolved stub detected but /run/systemd/resolve/resolv.conf not found${NC}"
-        return 0
-    fi
+    echo -e "${YELLOW}Обнаружен systemd-resolved stub — настройка DNS для Docker...${NC}"
 
-    echo -e "${YELLOW}Переключение resolv.conf со stub на реальный DNS...${NC}"
+    # Configure systemd-resolved with real DNS and disable stub listener
+    mkdir -p /etc/systemd/resolved.conf.d
+    cat > /etc/systemd/resolved.conf.d/docker-fix.conf << 'DNSEOF'
+[Resolve]
+DNS=8.8.8.8 1.1.1.1
+DNSStubListener=no
+DNSEOF
+
+    # Switch resolv.conf to the real resolver file (no more 127.0.0.53)
     ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
 
-    # Restart Docker so it picks up the new resolv.conf
+    # Restart resolved first (creates new resolv.conf), then Docker
+    systemctl restart systemd-resolved 2>/dev/null || true
     if systemctl is-active docker &>/dev/null; then
         systemctl restart docker
     fi
 
-    echo -e "${GREEN}Docker DNS: $(grep -m2 'nameserver' /etc/resolv.conf | awk '{print $2}' | tr '\n' ' ')${NC}"
+    echo -e "${GREEN}Docker DNS: $(grep -m2 'nameserver' /etc/resolv.conf 2>/dev/null | awk '{print $2}' | tr '\n' ' ')${NC}"
 }
 
 setup_docker() {
