@@ -2,7 +2,36 @@ x-security-defaults: &security-defaults
   security_opt:
     - no-new-privileges:true
   cap_drop:
-    - ALL
+    - AUDIT_CONTROL
+    - AUDIT_READ
+    - AUDIT_WRITE
+    - BLOCK_SUSPEND
+    - BPF
+    - CHECKPOINT_RESTORE
+    - DAC_READ_SEARCH
+    - FSETID
+    - IPC_LOCK
+    - IPC_OWNER
+    - KILL
+    - LEASE
+    - LINUX_IMMUTABLE
+    - MAC_ADMIN
+    - MAC_OVERRIDE
+    - MKNOD
+    - NET_ADMIN
+    - NET_BROADCAST
+    - PERFMON
+    - SYS_BOOT
+    - SYS_MODULE
+    - SYS_NICE
+    - SYS_PACCT
+    - SYS_PTRACE
+    - SYS_RAWIO
+    - SYS_RESOURCE
+    - SYS_TIME
+    - SYS_TTY_CONFIG
+    - SYSLOG
+    - WAKE_ALARM
   logging:
     driver: "json-file"
     options:
@@ -231,9 +260,6 @@ services:
     restart: always
     cap_add:
       - SYS_ADMIN
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
     volumes:
       - ollama_data:/root/.ollama
     healthcheck:
