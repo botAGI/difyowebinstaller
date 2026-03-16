@@ -65,6 +65,10 @@ import_workflow() {
     # Console prefix: Dify Console served at /dify/* via nginx
     local console_prefix="${DIFY_CONSOLE_PREFIX:-/dify}"
 
+    # Get INIT_PASSWORD from .env for first-boot init validation
+    local init_password
+    init_password=$(grep '^INIT_PASSWORD=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "")
+
     # Run import script
     python3 "${INSTALL_DIR}/workflows/import.py" \
         --url "$dify_url" \
@@ -74,7 +78,8 @@ import_workflow() {
         --embedding "$embedding_model" \
         --company "$company_name" \
         --workflow "${INSTALL_DIR}/workflows/rag-assistant.json" \
-        --console-prefix "$console_prefix"
+        --console-prefix "$console_prefix" \
+        --init-password "$init_password"
 
     local exit_code=$?
     if [[ $exit_code -eq 0 ]]; then
