@@ -6,74 +6,50 @@
 
 ---
 
-## Текущий статус: ✅ Первая успешная установка до конца (exit 0)
+## Текущий статус: ❌ install.sh crashed на шаге 5/11 (docker compose up)
 
-**Последний тест:** 2026-03-16 15:00 PDT (деплой #6)  
+**Последний тест:** 2026-03-16 15:30 PDT (деплой #7)  
 **Сервер:** ragbot@192.168.50.26 (Ubuntu 24.04, Docker 29.3.0, RTX 5070 Ti)  
-**Коммит:** 51b736d  
+**Коммит:** a116142  
 **Режим установки:** интерактивный (визард)  
 **Параметры:** lan / AGMind / weaviate / ETL enhanced / qwen2.5:7b / bge-m3 / monitoring local
 
 ---
 
-## ✅ Что работает (подтверждено деплоем #6)
+## 🔴 Открытые задачи
 
-- **34/34 контейнеров** Up+Healthy автоматически
-- **Модели скачаны:** qwen2.5:7b (4.7 GB), bge-m3 (1.2 GB)
-- **Xinference reranker:** зарегистрирован
-- **Open WebUI admin:** `admin@admin.com`, пароль в `/opt/agmind/.admin_password`
-- **install.sh exit 0:** фазы 1-11 завершены, система полностью развёрнута
-- **Graceful fallback:** import.py упал на KB create, но установка не прервалась — пользователь получил инструкцию
-
----
-
-## 🟡 Частично решённые задачи
-
-### TASK-004: import.py — плагины Dify и provisioning моделей
-**Статус:** 🟡 Graceful fallback работает (коммит d21c854 + 51b736d)  
-**Симптом:** Marketplace возвращает 403 Forbidden → плагины `langgenius/ollama` и `langgenius/xinference` не установлены. import.py не может создать provider/model/KB/workflow. Крашится на `create_dataset()`:
+### TASK-009 🔴 cAdvisor v0.56.2 не существует в gcr.io registry
+**Баг:** BUG-018 (новый, критический — блокирует установку)  
+**Коммит:** a116142 (попытка обновления cAdvisor)  
+**Симптом:**
 ```
-HTTP 400: Default model not found for text-embedding
-urllib.error.HTTPError: HTTP Error 400: BAD REQUEST
+Error response from daemon: failed to resolve reference "gcr.io/cadvisor/cadvisor:v0.56.2": not found
 ```
+**Причина:** Версия v0.56.2 не существует. Доступные версии в gcr.io:
+```
+v0.55.1, v0.54.1, v0.52.1, v0.52.0, v0.51.0, v0.50.0
+```
+**Фикс:** Заменить `v0.56.2` → `v0.55.1` в трёх файлах:
+- `templates/docker-compose.yml`
+- `templates/versions.env`
+- `templates/release-manifest.json`
 
-**Что работает:**
-- install.sh **НЕ прерывается** (фазы 9-11 выполняются)
-- Пользователь видит предупреждение:
-  ```
-  ⚠ Workflow import failed — configure models manually in Dify UI
-    Settings > Model Provider > Add Ollama (http://ollama:11434)
-  ```
-- Все контейнеры Up, Ollama с моделями работает
-
-**Что нужно сделать вручную:**
-1. Открыть Dify UI (http://192.168.50.26:3000)
-2. Settings > Model Provider > Add Ollama: `http://ollama:11434`
-3. Settings > Model Provider > Add Xinference: `http://xinference:9997` (если нужен reranker)
-4. Создать KB вручную в Knowledge Base UI
-5. Импортировать workflow из `/opt/agmind/workflows/*.yml`
-
-**Долгосрочное решение:**
-- Либо marketplace починят (вне нашего контроля)
-- Либо добавить manual plugin install в install.sh (установка .zip из локальных файлов)
-- Либо оставить как есть (graceful degradation — приемлемо для enterprise)
-
-**Приоритет:** 🟡 Средний — система работает, но требует manual setup после установки.
+**Приоритет:** 🔴 Критический — docker compose up падает, ничего не стартует.
 
 ---
 
-### TASK-002: cAdvisor не видит имена контейнеров
-**Баг:** BUG-011  
-**Статус:** ❌ НЕ РЕШЕНО  
-**Симптом:** `curl http://localhost:8080/metrics | grep 'container_last_seen.*name='` → пусто  
-**Причина:** Docker 29.x + overlayfs snapshotter несовместим с cAdvisor v0.52.1 — нет `name` лейблов в метриках  
-**Влияние:** Grafana container dashboards → "No data"; ContainerDown alert всегда firing  
-**Вариант фикса:** обновить cAdvisor до v0.53.0+, или добавить `--containerd` socket  
-**Приоритет:** 🟡 Средний — система работает, мониторинг контейнеров частично слепой.
+### TASK-004 🟡 import.py — graceful skip когда модели не сконфигурированы
+**Статус:** ✅ Код добавлен (коммит a116142), но не верифицирован из-за BUG-018  
+**Ожидание:** Верификация в деплое #8 после фикса cAdvisor.
 
 ---
 
-## ✅ Закрытые задачи (полностью рабочие)
+### TASK-002 🟡 cAdvisor не видит имена контейнеров
+**Статус:** Обновление до v0.55.1 должно помочь (Docker 29.x совместимость), но нужно тестировать.
+
+---
+
+## ✅ Закрытые задачи
 
 | Задача | Баг | Проверено | Коммит |
 |--------|-----|-----------|--------|
@@ -88,13 +64,4 @@ urllib.error.HTTPError: HTTP Error 400: BAD REQUEST
 
 ---
 
-## 📊 История деплоев
-
-- **Деплой #1-3:** Диагностика, ранние фиксы
-- **Деплой #4 (40b35d9):** TASK-005 починен, BUG-016 (wget) найден
-- **Деплой #5 (d21c854):** BUG-016 закрыт, BUG-017 (IPv6) найден
-- **Деплой #6 (51b736d):** ✅ **Первый успешный** (exit 0, все 11 фаз)
-
----
-
-_Обновлено: 2026-03-16 15:05 PDT — Gbot (деплой #6, коммит 51b736d) — SUCCESSFUL_
+_Обновлено: 2026-03-16 15:35 PDT — Gbot (деплой #7 FAILED, коммит a116142)_
