@@ -862,7 +862,7 @@ phase_start() {
     create_plugin_db
 
     # Fix Dify API storage permissions (container runs as user "dify")
-    docker exec agmind-api sh -c 'chown -R dify:dify /app/api/storage 2>/dev/null' || true
+    docker exec -u root agmind-api chown -R dify:dify /app/api/storage 2>/dev/null || true
 
     # Post-launch status: wait briefly and report unhealthy/restarting containers
     post_launch_status
