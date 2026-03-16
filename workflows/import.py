@@ -133,7 +133,7 @@ class DifyClient:
         if not self.access_token:
             self.access_token = result.get("data", {}).get("access_token", "")
             self.csrf_token = result.get("data", {}).get("csrf_token", "")
-        print(f"  Login: OK (token: {self.access_token[:16]}...)")
+        print(f"  Login: OK (token: ***masked***)")
         return result
 
     def create_dataset(self, name="Documents"):
@@ -154,7 +154,7 @@ class DifyClient:
         # Sometimes the key is nested
         if not api_key and isinstance(result, dict):
             api_key = result.get("key", "")
-        print(f"  Dataset API Key: {api_key[:20]}...")
+        print(f"  Dataset API Key: ***masked***")
         return api_key
 
     def create_app(self, name, company_name="AGMind"):
@@ -175,7 +175,7 @@ class DifyClient:
         """Get current workflow draft (for hash)"""
         result = self._request("GET", f"/console/api/apps/{app_id}/workflows/draft")
         draft_hash = result.get("hash", "")
-        print(f"  Draft hash: {draft_hash[:16]}...")
+        print(f"  Draft hash: OK")
         return result, draft_hash
 
     def update_workflow_draft(self, app_id, graph, features, draft_hash):
@@ -200,7 +200,7 @@ class DifyClient:
         api_key = result.get("api_key", "") or result.get("token", "")
         if not api_key and isinstance(result, dict):
             api_key = result.get("key", "")
-        print(f"  Service API Key: {api_key[:20]}...")
+        print(f"  Service API Key: ***masked***")
         return api_key
 
 
@@ -381,7 +381,7 @@ def main():
     print(f"  App: {app_name}")
     print(f"  KB: Documents ({kb_id})")
     print(f"  Model: {args.model}")
-    print(f"  Service API Key: {service_api_key}")
+    print(f"  Service API Key: saved to {args.install_dir}/.dify_service_api_key")
 
     return 0
 
