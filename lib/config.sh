@@ -2,7 +2,7 @@
 # config.sh — Generate .env and configuration files from templates
 set -euo pipefail
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
 
 INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
 
@@ -18,7 +18,7 @@ safe_write_file() {
     local filepath="$1"
     # Docker creates directories when bind mount source files don't exist.
     # On reinstall these stale directories block file creation.
-    [[ -d "$filepath" ]] && rm -rf "$filepath"
+    [[ -d "$filepath" ]] && rm -rf "${filepath:?}"
     mkdir -p "$(dirname "$filepath")"
 }
 
@@ -40,7 +40,7 @@ ensure_bind_mount_files() {
     for f in "${files[@]}"; do
         local full="${docker_dir}/${f}"
         if [[ -d "$full" ]]; then
-            rm -rf "$full"
+            rm -rf "${full:?}"
             mkdir -p "$(dirname "$full")"
             touch "$full"
             echo -e "${YELLOW}⚠ Fixed directory artifact: ${f}${NC}"
@@ -463,14 +463,19 @@ REDISEOF
     # 644: redis user (UID 999) in container needs read access; password
     # is already protected by Docker network isolation + bind mount :ro
     chmod 644 "$redis_conf"
+    # Redis image runs as uid 999 (redis user). Without chown, the file
+    # is owned by root and redis gets "Permission denied" on bind mount.
+    if command -v chown &>/dev/null && [[ $(id -u) -eq 0 ]]; then
+        chown 999:999 "$redis_conf"
+    fi
 }
 
 configure_alertmanager() {
     local alertmanager_conf="${INSTALL_DIR}/docker/monitoring/alertmanager.yml"
     safe_write_file "$alertmanager_conf"
 
-    # Create default alertmanager config if not copied from monitoring/
-    if [[ ! -f "$alertmanager_conf" ]]; then
+    # Create default alertmanager config if not copied or empty
+    if [[ ! -s "$alertmanager_conf" ]]; then
         echo -e "${YELLOW}Создание дефолтного alertmanager.yml...${NC}"
         cat > "$alertmanager_conf" << 'DEFAULTAMEOF'
 global:

@@ -833,6 +833,11 @@ phase_start() {
     # Final safety net: fix any remaining directory artifacts before compose up
     ensure_bind_mount_files
 
+    # Nuclear cleanup: find and remove ANY .yml/.conf that is a directory
+    find "${INSTALL_DIR}/docker" -name "*.yml" -type d -exec rm -rf {} + 2>/dev/null || true
+    find "${INSTALL_DIR}/docker" -name "*.yaml" -type d -exec rm -rf {} + 2>/dev/null || true
+    find "${INSTALL_DIR}/docker" -name "*.conf" -type d -exec rm -rf {} + 2>/dev/null || true
+
     # Pre-flight validation: abort if any .yml/.conf are still directories
     preflight_bind_mount_check
 
@@ -848,7 +853,64 @@ phase_start() {
         docker compose up -d --pull missing
     fi
 
+    # Sync PostgreSQL password: if db volume existed from a previous attempt,
+    # the password in the DB won't match the newly generated .env password.
+    # Wait for db healthy, then ALTER USER to match.
+    sync_db_password
+
+    # Post-launch status: wait briefly and report unhealthy/restarting containers
+    post_launch_status
+
     echo ""
+}
+
+sync_db_password() {
+    local db_pass
+    db_pass=$(grep '^DB_PASSWORD=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2-)
+    [[ -z "$db_pass" ]] && return 0
+
+    local db_user
+    db_user=$(grep '^DB_USERNAME=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "postgres")
+    db_user="${db_user:-postgres}"
+
+    echo -e "${YELLOW}Синхронизация пароля PostgreSQL...${NC}"
+    local attempts=0
+    while [[ $attempts -lt 30 ]]; do
+        if docker exec agmind-db pg_isready -U "$db_user" &>/dev/null; then
+            docker exec agmind-db psql -U "$db_user" -c \
+                "ALTER USER ${db_user} WITH PASSWORD '${db_pass}';" &>/dev/null && \
+                echo -e "${GREEN}✓ Пароль PostgreSQL синхронизирован${NC}" && return 0
+            echo -e "${RED}✗ Не удалось обновить пароль PostgreSQL${NC}"
+            return 1
+        fi
+        sleep 2
+        attempts=$((attempts + 1))
+    done
+    echo -e "${RED}✗ PostgreSQL не готов за 60 сек, пропускаем sync${NC}"
+}
+
+post_launch_status() {
+    echo -e "${YELLOW}Ожидание запуска контейнеров (60 сек)...${NC}"
+    sleep 60
+
+    local bad
+    bad=$(docker ps --filter "name=agmind-" --format "{{.Names}}\t{{.Status}}" 2>/dev/null | grep -iE "unhealthy|restarting" || true)
+    if [[ -n "$bad" ]]; then
+        echo -e "${YELLOW}⚠ Контейнеры с проблемами:${NC}"
+        while IFS=$'\t' read -r name status; do
+            echo -e "  ${RED}✗ ${name}: ${status}${NC}"
+            # Show last 3 log lines for diagnosis
+            local logs
+            logs=$(docker logs --tail 3 "$name" 2>&1 || true)
+            if [[ -n "$logs" ]]; then
+                echo "    $(echo "$logs" | head -3 | sed 's/^/    /')"
+            fi
+        done <<< "$bad"
+        echo ""
+        echo -e "${YELLOW}Используйте 'docker logs <container>' для деталей${NC}"
+    else
+        echo -e "${GREEN}✓ Все контейнеры работают${NC}"
+    fi
 }
 
 # ============================================================================

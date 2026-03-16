@@ -98,7 +98,7 @@ services:
     volumes:
       - ./volumes/app/storage:/app/api/storage
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:5001/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:5001/health 2>/dev/null || wget -qO- http://localhost:5001/health 2>/dev/null || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
@@ -152,7 +152,7 @@ services:
       SENTRY_DSN: ${WEB_SENTRY_DSN:-}
       NEXT_TELEMETRY_DISABLED: ${NEXT_TELEMETRY_DISABLED:-1}
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:3000 || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000 || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
@@ -207,7 +207,7 @@ services:
     volumes:
       - openwebui_data:/app/backend/data
     healthcheck:
-      test: ["CMD-SHELL", "unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY && curl -sf http://localhost:8080/health || exit 1"]
+      test: ["CMD-SHELL", "unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY && curl -sf http://localhost:8080/health 2>/dev/null || wget -qO- http://localhost:8080/health 2>/dev/null || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
@@ -231,7 +231,7 @@ services:
     volumes:
       - ollama_data:/root/.ollama
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      test: ["CMD", "ollama", "list"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
@@ -332,7 +332,7 @@ services:
     volumes:
       - ./volumes/weaviate:/var/lib/weaviate
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/v1/.well-known/ready || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/v1/.well-known/ready 2>/dev/null || curl -sf http://localhost:8080/v1/.well-known/ready 2>/dev/null || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
@@ -353,7 +353,7 @@ services:
     volumes:
       - ./volumes/qdrant:/qdrant/storage
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:6333/healthz || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:6333/healthz 2>/dev/null || curl -sf http://localhost:6333/healthz 2>/dev/null || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
@@ -373,7 +373,7 @@ services:
       - "8765"
     command: ["--port", "8765", "--host", "0.0.0.0"]
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8765/health || exit 1"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8765/health')\" 2>/dev/null || curl -sf http://localhost:8765/health 2>/dev/null || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
@@ -402,7 +402,7 @@ services:
     #__GPU__          count: all
     #__GPU__          capabilities: [gpu]
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:9997/v1/models || exit 1"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:9997/v1/models')\" 2>/dev/null || curl -sf http://localhost:9997/v1/models 2>/dev/null || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
@@ -411,11 +411,18 @@ services:
       - agmind-backend
 
   # ==================== Sandbox (Code Execution) ====================
+  # NOTE: sandbox does NOT inherit *security-defaults.
+  # no-new-privileges:true blocks cap_add (SYS_ADMIN needed for sandbox namespaces).
+  # cap_drop: ALL + cap_add is incompatible with sandbox's chroot/mount operations.
   sandbox:
-    <<: *security-defaults
     image: langgenius/dify-sandbox:${SANDBOX_VERSION:-0.2.12}
     container_name: agmind-sandbox
     restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
     cap_add:
       - SETUID
       - SETGID
@@ -431,7 +438,7 @@ services:
     volumes:
       - ./volumes/sandbox/conf:/conf:ro
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8194/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8194/health 2>/dev/null || wget -qO- http://localhost:8194/health 2>/dev/null || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
@@ -490,7 +497,7 @@ services:
     volumes:
       - ./volumes/plugin_daemon/storage:/app/storage
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:5002/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:5002/health 2>/dev/null || wget -qO- http://localhost:5002/health 2>/dev/null || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
@@ -531,7 +538,7 @@ services:
       - ./volumes/certbot/www:/var/www/certbot:ro
       - ./volumes/certbot/ssl:/etc/nginx/ssl:ro
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:80/ || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80/ || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
