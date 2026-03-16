@@ -12,7 +12,7 @@ wait_for_ollama() {
     local i=0
     while [[ $i -lt $retries ]]; do
         if docker compose -f "${COMPOSE_DIR}/docker-compose.yml" exec -T ollama \
-            curl -sf http://localhost:11434/api/tags >/dev/null 2>&1; then
+            ollama list >/dev/null 2>&1; then
             echo -e "${GREEN}Ollama готов${NC}"
             return 0
         fi

@@ -209,29 +209,20 @@ check_gpu_status() {
 check_ollama_models() {
     echo -e "${BOLD}Ollama Models:${NC}"
     local response
-    response=$(docker compose -f "$COMPOSE_FILE" exec -T ollama curl -sf --max-time 5 http://localhost:11434/api/tags 2>/dev/null) || {
+    response=$(docker compose -f "$COMPOSE_FILE" exec -T ollama ollama list 2>/dev/null) || {
         echo -e "  ${RED}Ollama API недоступен${NC}"
         echo ""
         return 1
     }
 
-    # Parse JSON response — extract model names and sizes
-    echo "$response" | python3 -c "
-import json, sys
-try:
-    data = json.load(sys.stdin)
-    models = data.get('models', [])
-    if not models:
-        print('  (нет загруженных моделей)')
-    for m in models:
-        name = m.get('name', 'unknown')
-        size_bytes = m.get('size', 0)
-        size_gb = size_bytes / (1024**3)
-        modified = m.get('modified_at', '')[:10]
-        print(f'  {name:<40} {size_gb:.1f} GB  ({modified})')
-except Exception as e:
-    print(f'  Ошибка парсинга: {e}')
-" 2>/dev/null || echo "  (не удалось прочитать список моделей)"
+    if [[ -z "$response" ]] || ! echo "$response" | grep -q "NAME"; then
+        echo -e "  (нет загруженных моделей)"
+    else
+        # Skip header line, indent output
+        echo "$response" | tail -n +2 | while IFS= read -r line; do
+            [[ -n "$line" ]] && echo "  $line"
+        done
+    fi
     echo ""
 }
 
