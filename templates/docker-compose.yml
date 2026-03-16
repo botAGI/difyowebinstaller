@@ -734,7 +734,8 @@ services:
       - promtail_positions:/promtail
     command: -config.file=/etc/promtail/config.yml
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:9080/ready 2>/dev/null || exit 1"]
+      # promtail image has no wget/curl; use promtail's built-in check
+      test: ["CMD-SHELL", "promtail -check-syntax -config.file=/etc/promtail/config.yml 2>/dev/null || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
@@ -793,12 +794,13 @@ services:
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
       - /dev/disk/:/dev/disk:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     command:
-      # Docker 29.x uses overlayfs snapshotter; pass storage driver explicitly
-      # to avoid empty DockerVersion / overlay2 path mismatch
+      # Docker 29.x + containerd snapshotter: use docker socket for container info
       - '--docker_only=true'
-      - '--store_container_labels=false'
+      - '--store_container_labels=true'
       - '--housekeeping_interval=30s'
+      - '--disable_metrics=percpu,sched,tcp,udp,disk,diskIO,hugetlb,referenced_memory'
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
