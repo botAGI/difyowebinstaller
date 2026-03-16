@@ -252,6 +252,12 @@ services:
     image: postgres:${POSTGRES_VERSION:-15.10-alpine}
     container_name: agmind-db
     restart: always
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+      - FOWNER
     environment:
       PGUSER: ${DB_USERNAME:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-}
@@ -285,6 +291,11 @@ services:
     container_name: agmind-redis
     restart: always
     read_only: true
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
     tmpfs:
       - /tmp
     command: redis-server /etc/redis/redis.conf
@@ -405,6 +416,10 @@ services:
     image: langgenius/dify-sandbox:${SANDBOX_VERSION:-0.2.12}
     container_name: agmind-sandbox
     restart: always
+    cap_add:
+      - SETUID
+      - SETGID
+      - SYS_ADMIN
     environment:
       API_KEY: ${SANDBOX_API_KEY:-dify-sandbox}
       GIN_MODE: release
@@ -430,6 +445,11 @@ services:
     image: ubuntu/squid:${SQUID_VERSION:-6.6-24.04_edge}
     container_name: agmind-ssrf-proxy
     restart: always
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - NET_RAW
     volumes:
       - ./volumes/ssrf_proxy/squid.conf:/etc/squid/squid.conf:ro
     healthcheck:
@@ -448,6 +468,10 @@ services:
     image: langgenius/dify-plugin-daemon:${PLUGIN_DAEMON_VERSION:-0.5.3-local}
     container_name: agmind-plugin-daemon
     restart: always
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
     environment:
       DB_USERNAME: ${DB_USERNAME:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-}
@@ -483,6 +507,11 @@ services:
     image: nginx:${NGINX_VERSION:-1.27.3-alpine}
     container_name: agmind-nginx
     restart: always
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - NET_BIND_SERVICE
     read_only: true
     tmpfs:
       - /tmp
@@ -564,6 +593,10 @@ services:
   loki:
     <<: *security-defaults
     image: grafana/loki:${LOKI_VERSION:-3.3.2}
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
     container_name: agmind-loki
     profiles:
       - monitoring
@@ -635,6 +668,10 @@ services:
     image: grafana/grafana:${GRAFANA_VERSION:-11.4.0}
     container_name: agmind-grafana
     restart: always
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
     profiles:
       - monitoring
     ports:
