@@ -6,11 +6,11 @@
 
 ---
 
-## Текущий статус: 23/23 healthy (после ручного docker start)
+## Текущий статус: ⚠️ 33/33 up, но install.sh crashed на шаге 8/11
 
-**Последний тест:** 2026-03-16 13:42 PDT  
+**Последний тест:** 2026-03-16 14:05 PDT (деплой #4)  
 **Сервер:** ragbot@192.168.50.26 (Ubuntu 24.04, Docker 29.3.0, RTX 5070 Ti)  
-**Коммит:** c893f62  
+**Коммит:** 40b35d9  
 **Режим установки:** интерактивный (визард)  
 **Параметры:** lan / AGMind / weaviate / ETL enhanced / qwen2.5:7b / bge-m3 / monitoring local
 
@@ -18,20 +18,50 @@
 
 ## Открытые задачи
 
-### 🔴 TASK-005: 9 контейнеров застревают в "Created" после docker compose up
-**Баг:** BUG-015 (новый)  
-**Симптом:** После завершения install.sh следующие контейнеры НЕ стартуют (статус "Created"):
-- agmind-sandbox, agmind-plugin-daemon, agmind-api, agmind-worker
-- agmind-promtail, agmind-grafana, agmind-pipeline, agmind-openwebui, agmind-nginx
+### 🟢 TASK-005: 9 контейнеров застревают в "Created" после docker compose up
+**Баг:** BUG-015  
+**Статус:** ✅ **ИСПРАВЛЕНО** — коммит 40b35d9  
+**Результат деплоя:** Все 33 контейнера поднялись автоматически. Retry loop из фикса сработал, ручной `docker start` больше не требуется.
 
-**Контейнеры которые стартуют нормально (14):**
-- db, redis, web, docling, loki, portainer, prometheus, weaviate, ollama, alertmanager, cadvisor, node-exporter, ssrf-proxy, xinference
+---
 
-**Ручной workaround:** `docker start agmind-sandbox agmind-plugin-daemon agmind-api agmind-worker agmind-promtail agmind-grafana agmind-pipeline agmind-openwebui agmind-nginx` — после этого все 23 healthy.
+### 🔴 TASK-007: Open WebUI admin provision использует wget вместо curl
+**Баг:** BUG-016 (новый)  
+**Файл:** `scripts/deploy/create_openwebui_admin.sh`  
+**Симптом:** Скрипт вызывает `wget --spider http://localhost:8080/health` внутри контейнера Open WebUI. Контейнер содержит только `curl`, `wget` отсутствует. Результат: 15 попыток healthcheck → все fail → админ пользователь не создаётся.
 
-**Вероятная причина:** depends_on с condition: service_healthy — docker compose up завершается до того как все зависимости станут healthy. Или install.sh убивает docker compose процесс до завершения каскада.
+**Лог:**
+```
+/opt/agmind/scripts/deploy/create_openwebui_admin.sh: line 32: wget: command not found
+```
 
-**Приоритет:** 🔴 Критический — без ручного вмешательства система не работает
+**Фикс:** Заменить `wget --spider` на `curl -sf` в `create_openwebui_admin.sh`.
+
+**Приоритет:** 🔴 Критический — без админа Open WebUI нельзя использовать (нет логина).
+
+---
+
+### 🔴 TASK-004: import.py — провижонинг моделей и плагинов
+**Баги:** BUG-007, BUG-008  
+**Статус:** ❌ **БЛОКИРУЕТ УСТАНОВКУ** — install.sh падает на шаге 8/11 (Import workflow)  
+**Новый симптом:** Dify marketplace вернул 403 Forbidden → плагины `langgenius/ollama` и `langgenius/xinference` не загружены → provider не существует → модели не регистрируются → import.py крашится при попытке установить дефолтные модели.
+
+**Лог (деплой #4):**
+```
+⚠ Cannot fetch marketplace manifest: HTTP Error 403: Forbidden
+⚠ Marketplace unreachable — plugins must be installed manually
+HTTP 400: Provider langgenius/ollama/ollama does not exist.
+HTTP 400: Provider langgenius/xinference/xinference does not exist.
+urllib.error.HTTPError: HTTP Error 400: BAD REQUEST
+```
+
+**Результат:** install.sh прервался (код 1). Контейнеры работают, но workflow не импортирован, Dify не настроена.
+
+**Рекомендация:** import.py должен устанавливать плагины вручную (не полагаться на marketplace API), либо делать graceful fallback когда модели уже сконфигурированы вручную. Или: перенести model provisioning в post-install manual шаг.
+
+**Приоритет:** 🔴 Критический — install.sh не завершается до конца из-за этого бага.
+
+---
 
 ### 🟡 TASK-002: cAdvisor не видит имена контейнеров
 **Баг:** BUG-011  
@@ -41,16 +71,14 @@
 **Влияние:** Grafana container dashboards показывают "No data"  
 **Примечание:** Docker 29.3.0 + overlayfs (containerd snapshotter). cAdvisor v0.52.1 всё ещё не может прочитать container metadata. Возможно нужен альтернативный подход: Docker API exporter вместо cAdvisor, или cAdvisor с `--containerd=/run/containerd/containerd.sock`.
 
-### 🔴 TASK-004: import.py — провижонинг моделей и плагинов
-**Баги:** BUG-007, BUG-008  
-**Статус:** Отложено (API-level changes)  
-**Описание:** import.py не работает без ручной настройки моделей в Dify UI
+---
 
 ### 🟡 TASK-006: non-interactive режим не принимает CLI параметры
 **Баг:** Обнаружен при деплое  
+**Статус:** ✅ **ЧАСТИЧНО ИСПРАВЛЕНО** — коммит 40b35d9 (CLI args работают в интерактивном режиме)  
 **Описание:** `install.sh --non-interactive` парсит только `--non-interactive` флаг. Параметры типа `--profile lan --llm qwen2.5:7b --monitoring local` игнорируются.  
-**Текущий обход:** env переменные (DEPLOY_PROFILE, LLM_MODEL и т.д.) ИЛИ интерактивный режим.  
-**Рекомендация:** Добавить парсинг CLI аргументов: `--profile`, `--llm`, `--embedding`, `--monitoring`, `--etl`, `--company`, `--admin`
+**Текущий обход:** env переменные (DEPLOY_PROFILE, LLM_MODEL и т.д.) ИЛИ интерактивный режим (рекомендуется).  
+**Рекомендация:** Добавить парсинг CLI аргументов в non-interactive path, если требуется полная автоматизация.
 
 ---
 
@@ -61,7 +89,8 @@
 - ✅ BUG-013: Grafana provisioning dirs (коммит 90776b3) — **ПРОВЕРЕНО**
 - ✅ BUG-014: install.sh health verification (коммит 90776b3)
 - ✅ TASK-003: cAdvisor wget проверен — есть в образе
+- ✅ TASK-005: 9 контейнеров в Created (коммит 40b35d9) — **retry loop работает, все 33 up автоматически**
 
 ---
 
-_Обновлено: 2026-03-16 13:47 PDT — Gbot (автоматический деплой-тест)_
+_Обновлено: 2026-03-16 14:08 PDT — Gbot (деплой #4, коммит 40b35d9)_
