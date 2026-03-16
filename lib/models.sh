@@ -29,22 +29,11 @@ pull_model() {
     local model="$1"
     local label="${2:-$model}"
 
-    # Get the ollama volume name from the running container
-    local vol_name
-    vol_name=$(docker inspect agmind-ollama --format '{{range .Mounts}}{{if eq .Destination "/root/.ollama"}}{{.Name}}{{end}}{{end}}' 2>/dev/null)
-    vol_name="${vol_name:-docker_ollama_data}"
-
-    # Get ollama image from the running container
-    local ollama_image
-    ollama_image=$(docker inspect agmind-ollama --format '{{.Config.Image}}' 2>/dev/null)
-    ollama_image="${ollama_image:-ollama/ollama:0.6.2}"
-
     echo -e "${YELLOW}Скачивание модели: ${label}...${NC}"
-    # docker exec doesn't support --dns; use docker run with --dns to bypass
-    # systemd-resolved stub DNS issues, sharing the same volume as the running container
-    if docker run --rm --dns 8.8.8.8 \
-        -v "${vol_name}:/root/.ollama" \
-        "$ollama_image" pull "$model"; then
+    # Override resolv.conf inside running container to bypass Docker embedded DNS
+    # (127.0.0.11) which fails on systemd-resolved hosts
+    if docker exec agmind-ollama sh -c \
+        "echo 'nameserver 8.8.8.8' > /etc/resolv.conf && ollama pull $model"; then
         echo -e "${GREEN}Модель ${label} загружена${NC}"
     else
         echo -e "${RED}Ошибка загрузки модели ${label}${NC}"
