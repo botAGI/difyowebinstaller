@@ -858,6 +858,9 @@ phase_start() {
     # Wait for db healthy, then ALTER USER to match.
     sync_db_password
 
+    # Create plugin database if it doesn't exist (plugin-daemon needs it)
+    create_plugin_db
+
     # Post-launch status: wait briefly and report unhealthy/restarting containers
     post_launch_status
 
@@ -887,6 +890,32 @@ sync_db_password() {
         attempts=$((attempts + 1))
     done
     echo -e "${RED}✗ PostgreSQL не готов за 60 сек, пропускаем sync${NC}"
+}
+
+create_plugin_db() {
+    local db_user
+    db_user=$(grep '^DB_USERNAME=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "postgres")
+    db_user="${db_user:-postgres}"
+    local plugin_db
+    plugin_db=$(grep '^PLUGIN_DB_DATABASE=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "dify_plugin")
+    plugin_db="${plugin_db:-dify_plugin}"
+
+    # Wait for db to be ready
+    local attempts=0
+    while [[ $attempts -lt 15 ]]; do
+        if docker exec agmind-db pg_isready -U "$db_user" &>/dev/null; then
+            # Create database if not exists
+            docker exec agmind-db psql -U "$db_user" -tc \
+                "SELECT 1 FROM pg_database WHERE datname = '${plugin_db}';" 2>/dev/null | grep -q 1 || {
+                docker exec agmind-db psql -U "$db_user" -c \
+                    "CREATE DATABASE ${plugin_db};" &>/dev/null && \
+                    echo -e "${GREEN}✓ БД ${plugin_db} создана${NC}"
+            }
+            return 0
+        fi
+        sleep 2
+        attempts=$((attempts + 1))
+    done
 }
 
 post_launch_status() {
