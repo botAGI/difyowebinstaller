@@ -950,6 +950,16 @@ sync_db_password() {
     db_user=$(grep '^DB_USERNAME=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "postgres")
     db_user="${db_user:-postgres}"
 
+    # Validate inputs to prevent SQL injection
+    if [[ ! "$db_user" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+        echo -e "${RED}✗ Invalid DB_USERNAME: contains disallowed characters${NC}"
+        return 1
+    fi
+    if [[ ! "$db_pass" =~ ^[a-zA-Z0-9]+$ ]]; then
+        echo -e "${RED}✗ Invalid DB_PASSWORD: contains disallowed characters${NC}"
+        return 1
+    fi
+
     echo -e "${YELLOW}Синхронизация пароля PostgreSQL...${NC}"
     local attempts=0
     while [[ $attempts -lt 30 ]]; do
@@ -973,6 +983,16 @@ create_plugin_db() {
     local plugin_db
     plugin_db=$(grep '^PLUGIN_DB_DATABASE=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "dify_plugin")
     plugin_db="${plugin_db:-dify_plugin}"
+
+    # Validate inputs to prevent SQL injection
+    if [[ ! "$db_user" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+        echo -e "${RED}✗ Invalid DB_USERNAME: contains disallowed characters${NC}"
+        return 1
+    fi
+    if [[ ! "$plugin_db" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+        echo -e "${RED}✗ Invalid PLUGIN_DB_DATABASE: contains disallowed characters${NC}"
+        return 1
+    fi
 
     # Wait for db to be ready
     local attempts=0
