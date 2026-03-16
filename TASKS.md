@@ -31,12 +31,12 @@
 **Риск:** Docker 29.x + overlayfs snapshotter может всё равно не работать с cAdvisor  
 **Действие:** Gbot задеплоит и проверит `container_last_seen{name=~"agmind-.*"}`
 
-### 🟡 TASK-003: cAdvisor healthcheck тоже использует wget
-**Баг:** Новый, обнаружен при ревью коммита 90776b3  
-**Файл:** `templates/docker-compose.yml` строка ~807  
-**Текущий:** `wget -qO- http://localhost:8080/healthz || exit 1`  
-**Проблема:** cAdvisor образ (gcr.io/cadvisor) — тоже без wget. Пока работает потому что в этом образе wget есть, но лучше унифицировать подход.  
-**Действие кодера:** Проверить наличие wget в образе cadvisor. Если есть — ок, оставить. Если нет — заменить на `curl -sf`.
+### ✅ TASK-003: cAdvisor healthcheck тоже использует wget
+**Баг:** Новый, обнаружен при ревью коммита 90776b3
+**Файл:** `templates/docker-compose.yml` строка ~807
+**Текущий:** `wget -qO- http://localhost:8080/healthz || exit 1`
+**Результат:** Проверено — `/usr/bin/wget` присутствует в `gcr.io/cadvisor/cadvisor:v0.52.1`. Оставляем как есть.
+**Статус:** ✅ Закрыто (wget есть в образе)
 
 ### 🔴 TASK-004: import.py — провижонинг моделей и плагинов
 **Баги:** BUG-007, BUG-008  
