@@ -243,7 +243,7 @@ services:
       - OLLAMA_BASE_URL=http://ollama:11434
       - OPENAI_API_BASE_URLS=http://pipeline:9099/v1
       - OPENAI_API_KEYS=${DIFY_API_KEY:-sk-placeholder}
-      - ENABLE_OLLAMA_API=${ENABLE_OLLAMA_API:-false}
+      - ENABLE_OLLAMA_API=${ENABLE_OLLAMA_API:-true}
       - ENABLE_OPENAI_API=true
     volumes:
       - openwebui_data:/app/backend/data
