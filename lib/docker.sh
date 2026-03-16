@@ -165,58 +165,32 @@ install_nvidia_toolkit() {
 }
 
 configure_docker_dns() {
-    # systemd-resolved uses 127.0.0.53 — Docker containers can't reach it
-    # Check if system uses stub resolver and Docker has no DNS configured
-    local daemon_json="/etc/docker/daemon.json"
+    # systemd-resolved stub mode (127.0.0.53) breaks Docker DNS.
+    # Docker sees loopback DNS → uses embedded resolver 127.0.0.11
+    # which can't forward queries on these systems.
+    # Fix: symlink resolv.conf to the real resolver file with upstream DNS.
+    # Ref: https://docs.docker.com/engine/daemon/troubleshoot/#dns-resolver-found-in-resolvconf-and-containers-cant-resolve-dns
 
-    # Skip if not systemd-resolved
-    if ! grep -q '127.0.0.53' /etc/resolv.conf 2>/dev/null; then
+    # Only apply if resolv.conf points to stub-resolv.conf
+    if ! readlink -f /etc/resolv.conf 2>/dev/null | grep -q 'stub-resolv'; then
         return 0
     fi
 
-    # Skip if daemon.json already has dns configured
-    if [[ -f "$daemon_json" ]] && grep -q '"dns"' "$daemon_json" 2>/dev/null; then
-        echo -e "${GREEN}Docker DNS уже настроен${NC}"
+    # Check that the real resolv.conf exists
+    if [[ ! -f /run/systemd/resolve/resolv.conf ]]; then
+        echo -e "${YELLOW}systemd-resolved stub detected but /run/systemd/resolve/resolv.conf not found${NC}"
         return 0
     fi
 
-    echo -e "${YELLOW}Обнаружен systemd-resolved — настройка Docker DNS...${NC}"
+    echo -e "${YELLOW}Переключение resolv.conf со stub на реальный DNS...${NC}"
+    ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
 
-    # Try to get real upstream DNS from resolved
-    local dns1="" dns2=""
-    if command -v resolvectl &>/dev/null; then
-        dns1=$(resolvectl status 2>/dev/null | grep -m1 'DNS Servers' | awk '{print $3}') || true
-    fi
-    # Fallback to public DNS
-    dns1="${dns1:-8.8.8.8}"
-    dns2="1.1.1.1"
-
-    if [[ -f "$daemon_json" ]]; then
-        # Merge dns into existing config using python
-        python3 -c "
-import json, sys
-with open('$daemon_json') as f:
-    cfg = json.load(f)
-cfg['dns'] = ['$dns1', '$dns2']
-with open('$daemon_json', 'w') as f:
-    json.dump(cfg, f, indent=2)
-" 2>/dev/null || {
-            echo -e "${YELLOW}Не удалось обновить daemon.json, пропуск${NC}"
-            return 0
-        }
-    else
-        cat > "$daemon_json" << EOF
-{
-  "dns": ["$dns1", "$dns2"]
-}
-EOF
-    fi
-
-    # Restart Docker to apply
+    # Restart Docker so it picks up the new resolv.conf
     if systemctl is-active docker &>/dev/null; then
         systemctl restart docker
-        echo -e "${GREEN}Docker DNS настроен: $dns1, $dns2${NC}"
     fi
+
+    echo -e "${GREEN}Docker DNS: $(grep -m2 'nameserver' /etc/resolv.conf | awk '{print $2}' | tr '\n' ' ')${NC}"
 }
 
 setup_docker() {
