@@ -76,27 +76,37 @@ class DifyClient:
             print(f"HTTP {e.code} {method} {path}: {error_body}", file=sys.stderr)
             raise
 
-    def login(self, email, password):
-        """Login with Base64-encoded password"""
-        password_b64 = base64.b64encode(password.encode()).decode()
-        result = self._request("POST", "/console/api/login", {
-            "email": email,
-            "password": password_b64,
-            "language": "en-US",
-            "remember_me": True,
-        })
-        if not self.access_token:
-            # Try to extract from response
-            self.access_token = result.get("data", {}).get("access_token", "")
-            self.csrf_token = result.get("data", {}).get("csrf_token", "")
-        print(f"  Login: OK (token: {self.access_token[:16]}...)")
-        return result
+    def init_validate(self, init_password):
+        """Step 1: Validate INIT_PASSWORD (Dify 1.13+ self-hosted)"""
+        # Check if init already done
+        try:
+            status = self._request("GET", "/console/api/init")
+            if status.get("status") == "finished":
+                print("  Init: already completed")
+                return
+        except urllib.error.HTTPError:
+            pass
+
+        try:
+            self._request("POST", "/console/api/init", {
+                "password": init_password,
+            })
+            print("  Init: validated")
+        except urllib.error.HTTPError as e:
+            if e.code == 403:
+                print("  Init: already completed")
+            else:
+                error_body = e.read().decode("utf-8") if e.fp else ""
+                print(f"  Init: HTTP {e.code} — {error_body}", file=sys.stderr)
 
     def setup_account(self, email, password, name="Admin"):
-        """Initial account setup if needed"""
+        """Step 2: Create admin account"""
+        # Check if setup already done
         try:
-            setup_status = self._request("GET", "/console/api/setup")
-            # If setup returns something, it may already be set up
+            status = self._request("GET", "/console/api/setup")
+            if status.get("step") == "finished":
+                print("  Setup: already completed")
+                return
         except urllib.error.HTTPError:
             pass
 
@@ -107,13 +117,28 @@ class DifyClient:
                 "name": name,
                 "password": password_b64,
             })
-            print(f"  Setup: account created")
+            print("  Setup: account created")
             return result
         except urllib.error.HTTPError as e:
             if e.code == 403:
-                print(f"  Setup: already completed")
+                print("  Setup: already completed")
             else:
                 raise
+
+    def login(self, email, password):
+        """Step 3: Login and get access token"""
+        password_b64 = base64.b64encode(password.encode()).decode()
+        result = self._request("POST", "/console/api/login", {
+            "email": email,
+            "password": password_b64,
+            "language": "en-US",
+            "remember_me": True,
+        })
+        if not self.access_token:
+            self.access_token = result.get("data", {}).get("access_token", "")
+            self.csrf_token = result.get("data", {}).get("csrf_token", "")
+        print(f"  Login: OK (token: {self.access_token[:16]}...)")
+        return result
 
     def create_dataset(self, name="Documents"):
         """Create Knowledge Base"""
@@ -286,6 +311,7 @@ def main():
     parser.add_argument("--workflow", required=True, help="Path to workflow JSON")
     parser.add_argument("--install-dir", default="/opt/agmind", help="Install directory")
     parser.add_argument("--console-prefix", default="", help="URL prefix for console API (e.g., /admin_token)")
+    parser.add_argument("--init-password", default="", help="INIT_PASSWORD from .env (for first-boot validation)")
     args = parser.parse_args()
 
     # Wait for API
@@ -300,7 +326,11 @@ def main():
 
     print("\n=== Настройка Dify ===\n")
 
-    # Step 1: Setup account (first run) + Login
+    # Step 1: Init validation (Dify 1.13+ requires INIT_PASSWORD validation first)
+    if args.init_password:
+        client.init_validate(args.init_password)
+
+    # Step 2: Setup account (first run)
     try:
         client.setup_account(args.email, args.password, f"{args.company} Admin")
     except Exception as e:
@@ -309,6 +339,7 @@ def main():
     # Small delay for account creation
     time.sleep(3)
 
+    # Step 3: Login
     client.login(args.email, args.password)
 
     # Step 2: Create Knowledge Base
