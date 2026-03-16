@@ -795,11 +795,13 @@ services:
       - /var/lib/docker/:/var/lib/docker:ro
       - /dev/disk/:/dev/disk:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /run/containerd/containerd.sock:/run/containerd/containerd.sock:ro
     command:
-      # Docker 29.x + containerd snapshotter: use docker socket for container info
+      # Docker 29.x + containerd snapshotter: need both docker + containerd sockets
       - '--docker_only=true'
       - '--store_container_labels=true'
       - '--housekeeping_interval=30s'
+      - '--containerd=/run/containerd/containerd.sock'
       - '--disable_metrics=percpu,sched,tcp,udp,disk,diskIO,hugetlb,referenced_memory'
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]

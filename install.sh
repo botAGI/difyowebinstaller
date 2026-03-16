@@ -884,6 +884,26 @@ phase_start() {
     # Create plugin database if it doesn't exist (plugin-daemon needs it)
     create_plugin_db
 
+    # BUG-015 fix: docker compose up -d returns before the full dependency chain
+    # resolves — containers with condition: service_healthy deps stay in "Created".
+    # Re-run compose up to kick any containers whose dependencies are now healthy.
+    echo -e "${YELLOW}Ожидание каскада зависимостей...${NC}"
+    local retry
+    for retry in 1 2 3; do
+        local created
+        created=$(docker ps -a --filter "name=agmind-" --filter "status=created" -q 2>/dev/null | wc -l | tr -d ' ')
+        if [[ "$created" -eq 0 ]]; then
+            break
+        fi
+        echo "  Попытка ${retry}/3: ${created} контейнеров в Created, перезапуск..."
+        sleep 10
+        if [[ -n "$profiles" ]]; then
+            COMPOSE_PROFILES="${profiles}" docker compose up -d 2>/dev/null || true
+        else
+            docker compose up -d 2>/dev/null || true
+        fi
+    done
+
     # Fix Dify API storage permissions (container runs as user "dify")
     docker exec -u root agmind-api chown -R dify:dify /app/api/storage 2>/dev/null || true
 
@@ -892,6 +912,19 @@ phase_start() {
 
     # Create Open WebUI admin account, then lock down signups
     create_openwebui_admin
+
+    # Final safety: ensure ALL containers are started after admin creation
+    # (create_openwebui_admin restarts open-webui and nginx individually)
+    local final_created
+    final_created=$(docker ps -a --filter "name=agmind-" --filter "status=created" -q 2>/dev/null | wc -l | tr -d ' ')
+    if [[ "$final_created" -gt 0 ]]; then
+        echo -e "${YELLOW}Запуск ${final_created} оставшихся контейнеров...${NC}"
+        if [[ -n "$profiles" ]]; then
+            COMPOSE_PROFILES="${profiles}" docker compose up -d 2>/dev/null || true
+        else
+            docker compose up -d 2>/dev/null || true
+        fi
+    fi
 
     echo ""
 }
@@ -1276,11 +1309,48 @@ phase_complete() {
 # MAIN
 # ============================================================================
 main() {
-    # Parse arguments
-    for arg in "$@"; do
-        case "$arg" in
-            --non-interactive) NON_INTERACTIVE=true;;
+    # Parse arguments (CLI args set defaults; env vars still override)
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --non-interactive) NON_INTERACTIVE=true ;;
+            --profile) DEPLOY_PROFILE="${DEPLOY_PROFILE:-$2}"; shift ;;
+            --profile=*) DEPLOY_PROFILE="${DEPLOY_PROFILE:-${1#*=}}" ;;
+            --llm) LLM_MODEL="${LLM_MODEL:-$2}"; shift ;;
+            --llm=*) LLM_MODEL="${LLM_MODEL:-${1#*=}}" ;;
+            --embedding) EMBEDDING_MODEL="${EMBEDDING_MODEL:-$2}"; shift ;;
+            --embedding=*) EMBEDDING_MODEL="${EMBEDDING_MODEL:-${1#*=}}" ;;
+            --monitoring) MONITORING_MODE="${MONITORING_MODE:-$2}"; shift ;;
+            --monitoring=*) MONITORING_MODE="${MONITORING_MODE:-${1#*=}}" ;;
+            --etl) ETL_TYPE="${ETL_TYPE:-$2}"; shift ;;
+            --etl=*) ETL_TYPE="${ETL_TYPE:-${1#*=}}" ;;
+            --vector-store) VECTOR_STORE="${VECTOR_STORE:-$2}"; shift ;;
+            --vector-store=*) VECTOR_STORE="${VECTOR_STORE:-${1#*=}}" ;;
+            --company) COMPANY_NAME="${COMPANY_NAME:-$2}"; shift ;;
+            --company=*) COMPANY_NAME="${COMPANY_NAME:-${1#*=}}" ;;
+            --admin-email) ADMIN_EMAIL="${ADMIN_EMAIL:-$2}"; shift ;;
+            --admin-email=*) ADMIN_EMAIL="${ADMIN_EMAIL:-${1#*=}}" ;;
+            --domain) DOMAIN="${DOMAIN:-$2}"; shift ;;
+            --domain=*) DOMAIN="${DOMAIN:-${1#*=}}" ;;
+            --help|-h)
+                echo "Usage: sudo bash install.sh [OPTIONS]"
+                echo ""
+                echo "Options:"
+                echo "  --non-interactive    Run without prompts (use env vars or CLI args)"
+                echo "  --profile PROFILE    Deploy profile: vps, lan, vpn, offline"
+                echo "  --llm MODEL          LLM model (e.g. qwen2.5:7b)"
+                echo "  --embedding MODEL    Embedding model (e.g. bge-m3)"
+                echo "  --monitoring MODE    Monitoring: local, none"
+                echo "  --etl TYPE           ETL: dify, unstructured_api"
+                echo "  --vector-store TYPE  Vector store: weaviate, qdrant"
+                echo "  --company NAME       Company name for branding"
+                echo "  --admin-email EMAIL  Admin email"
+                echo "  --domain DOMAIN      Domain for TLS"
+                echo ""
+                echo "Env vars take precedence over CLI args."
+                exit 0
+                ;;
         esac
+        shift
     done
 
     # Check root
