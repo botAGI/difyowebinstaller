@@ -460,7 +460,9 @@ maxclients 100
 timeout 300
 tcp-keepalive 60
 REDISEOF
-    chmod 600 "$redis_conf"
+    # 644: redis user (UID 999) in container needs read access; password
+    # is already protected by Docker network isolation + bind mount :ro
+    chmod 644 "$redis_conf"
 }
 
 configure_alertmanager() {
