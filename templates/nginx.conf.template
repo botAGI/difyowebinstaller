@@ -61,10 +61,8 @@ http {
         server open-webui:8080;
     }
 
-    # Upstream: Plugin Daemon
-    upstream plugin_daemon {
-        server plugin_daemon:5002;
-    }
+    # Plugin Daemon resolved dynamically (allows nginx to start even if daemon is down)
+    resolver 127.0.0.11 valid=10s;
 
     # --- HTTP server ---
     server {
@@ -202,10 +200,11 @@ http {
             proxy_set_header X-Forwarded-Proto $scheme;
         }
 
-        # Plugin Daemon
+        # Plugin Daemon (dynamic resolve — nginx starts even if daemon is down)
         location /dify/e/ {
             rewrite ^/dify/(.*)$ /$1 break;
-            proxy_pass http://plugin_daemon;
+            set $plugin_upstream http://plugin_daemon:5002;
+            proxy_pass $plugin_upstream;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
@@ -353,10 +352,11 @@ http {
     #__TLS__        proxy_set_header X-Forwarded-Proto $scheme;
     #__TLS__    }
     #__TLS__
-    #__TLS__    # Plugin Daemon
+    #__TLS__    # Plugin Daemon (dynamic resolve)
     #__TLS__    location /dify/e/ {
     #__TLS__        rewrite ^/dify/(.*)$ /$1 break;
-    #__TLS__        proxy_pass http://plugin_daemon;
+    #__TLS__        set $plugin_upstream http://plugin_daemon:5002;
+    #__TLS__        proxy_pass $plugin_upstream;
     #__TLS__        proxy_http_version 1.1;
     #__TLS__        proxy_set_header Host $host;
     #__TLS__        proxy_set_header X-Real-IP $remote_addr;
