@@ -15,7 +15,7 @@ AGMind provides automated backups with rotation, encryption, and remote storage.
 | PostgreSQL (Dify) | `pg_dump` | `dify_db.sql.gz` |
 | PostgreSQL (Plugins) | `pg_dump` | `dify_plugin_db.sql.gz` |
 | Weaviate data | Volume tar | `weaviate.tar.gz` |
-| Qdrant data | Snapshot API + tar | `qdrant_*.snapshot` + `qdrant.tar.gz` |
+| Qdrant data | Volume tar | `qdrant.tar.gz` |
 | Dify uploads | Volume tar | `dify-storage.tar.gz` |
 | Open WebUI data | Volume tar | `openwebui.tar.gz` |
 | Ollama models | Volume tar | `ollama.tar.gz` |

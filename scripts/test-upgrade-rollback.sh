@@ -104,6 +104,15 @@ if [[ -f "$UPDATE_SCRIPT" ]]; then
 
     check "update.sh sends notification on rollback" \
         "$(grep -q 'send_notification.*ROLLBACK\|send_notification.*FAILED' "$UPDATE_SCRIPT" && echo true || echo false)"
+
+    check "update.sh contains verify_rollback()" \
+        "$(grep -q 'verify_rollback' "$UPDATE_SCRIPT" && echo true || echo false)"
+
+    check "rollback_service() restores .env before compose up" \
+        "$(awk '/^rollback_service\(\)/,/^}/' "$UPDATE_SCRIPT" | grep -q 'dot-env.bak.*ENV_FILE\|ROLLBACK_DIR.*dot-env' && echo true || echo false)"
+
+    check "save_rollback_state() saves image digests (not just tags)" \
+        "$(grep -q '{{\.Image}}' "$UPDATE_SCRIPT" && echo true || echo false)"
 fi
 
 # Check backup/restore scripts

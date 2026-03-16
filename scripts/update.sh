@@ -182,12 +182,14 @@ save_rollback_state() {
     # Save current manifest
     [[ -f "$MANIFEST_FILE" ]] && cp "$MANIFEST_FILE" "${ROLLBACK_DIR}/release-manifest.json.bak"
 
-    # Save running image digests
+    # Save running image IDs (digest format for deterministic rollback verification)
     if command -v docker &>/dev/null; then
+        : > "${ROLLBACK_DIR}/running-images.txt"
         docker compose -f "$COMPOSE_FILE" ps -q 2>/dev/null | while read -r cid; do
-            local img
-            img=$(docker inspect --format '{{.Config.Image}}' "$cid" 2>/dev/null || true)
-            [[ -n "$img" ]] && echo "$img" >> "${ROLLBACK_DIR}/running-images.txt"
+            local svc img_id
+            svc=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$cid" 2>/dev/null || true)
+            img_id=$(docker inspect --format '{{.Image}}' "$cid" 2>/dev/null || true)
+            [[ -n "$svc" && -n "$img_id" ]] && echo "${svc}=${img_id}" >> "${ROLLBACK_DIR}/running-images.txt"
         done
     fi
 
@@ -214,6 +216,33 @@ perform_rollback() {
 
     log_success "Rollback выполнен"
     send_notification "⚠️ AGMind Update ROLLBACK — восстановлены предыдущие версии"
+}
+
+# Verify rollback by comparing running images against saved state
+verify_rollback() {
+    local saved="${ROLLBACK_DIR}/running-images.txt"
+    [[ -f "$saved" ]] || { log_warn "No saved images to verify rollback against"; return 0; }
+
+    local mismatches=0
+    while IFS='=' read -r svc expected_id; do
+        [[ -z "$svc" || -z "$expected_id" ]] && continue
+        local cid current_id
+        cid=$(docker compose -f "$COMPOSE_FILE" ps -q "$svc" 2>/dev/null | head -1)
+        if [[ -z "$cid" ]]; then
+            log_warn "Rollback verify: ${svc} not running"
+            mismatches=$((mismatches + 1))
+            continue
+        fi
+        current_id=$(docker inspect --format '{{.Image}}' "$cid" 2>/dev/null || true)
+        if [[ "$current_id" == "$expected_id" ]]; then
+            log_success "Rollback verify: ${svc} OK"
+        else
+            log_error "Rollback verify: ${svc} mismatch (expected ${expected_id:0:20}..., got ${current_id:0:20}...)"
+            mismatches=$((mismatches + 1))
+        fi
+    done < "$saved"
+
+    return "$mismatches"
 }
 
 display_version_diff() {
@@ -336,8 +365,17 @@ rollback_service() {
     fi
 
     log_warn "Откат ${service} → ${old_image}..."
+
+    # Restore pre-update config so compose reads OLD version tags
+    if [[ -f "${ROLLBACK_DIR}/dot-env.bak" ]]; then
+        cp "${ROLLBACK_DIR}/dot-env.bak" "$ENV_FILE"
+        chmod 600 "$ENV_FILE"
+    fi
+    if [[ -f "${ROLLBACK_DIR}/versions.env.bak" ]]; then
+        cp "${ROLLBACK_DIR}/versions.env.bak" "$VERSIONS_FILE"
+    fi
+
     docker compose -f "$COMPOSE_FILE" stop "$service" 2>/dev/null
-    # Force use of old image
     docker compose -f "$COMPOSE_FILE" up -d "$service" 2>/dev/null
 
     send_notification "⚠️ AGMind update FAILED for ${service}, rolled back to ${old_image}"
@@ -472,6 +510,7 @@ main() {
         log_error "Обновление завершено с ошибками"
         # Rollback to previous state
         perform_rollback
+        verify_rollback || log_warn "Some services may not have rolled back correctly"
         log_update "PARTIAL_FAILURE" "Some services failed to update"
         send_notification "⚠️ AGMind обновление завершено с ошибками на $(hostname 2>/dev/null || echo 'server')"
         exit 1

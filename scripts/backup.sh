@@ -103,33 +103,8 @@ fi
 VECTOR_STORE=$(grep '^VECTOR_STORE=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "weaviate")
 
 if [[ "$VECTOR_STORE" == "qdrant" ]]; then
-    echo "  Qdrant snapshot..."
-    # Use Qdrant snapshot API for consistent backup
-    # B-06: --max-time 30 on curl
-    collections=$(curl -sf --max-time 30 http://localhost:6333/collections 2>/dev/null | \
-        python3 -c "import json,sys; [print(c['name']) for c in json.load(sys.stdin).get('result',{}).get('collections',[])]" 2>/dev/null || echo "")
-
-    if [[ -n "$collections" ]]; then
-        # B-07: Quote $collections in for loop
-        for coll in $collections; do
-            # Validate collection name — B-06/B-07
-            if [[ ! "$coll" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-                echo -e "${YELLOW}Skipping invalid collection name: ${coll}${NC}"
-                continue
-            fi
-            # Create snapshot via API — B-06: --max-time 30
-            snap_url="http://localhost:6333/collections/${coll}/snapshots"
-            snap_result=$(curl -sf --max-time 30 -X POST "$snap_url" 2>/dev/null || echo "")
-            if [[ -n "$snap_result" ]]; then
-                snap_name=$(echo "$snap_result" | python3 -c "import json,sys; print(json.load(sys.stdin).get('result',{}).get('name',''))" 2>/dev/null || echo "")
-                if [[ -n "$snap_name" ]]; then
-                    # Download snapshot — B-06: --max-time 30
-                    curl -sf --max-time 30 "${snap_url}/${snap_name}" -o "${TARGET_DIR}/qdrant_${coll}_${snap_name}" 2>/dev/null || true
-                fi
-            fi
-        done
-    fi
-    # Fallback: also tar the volume
+    # Qdrant: volume tar backup (API not exposed to host — no ports: in compose)
+    echo "  Qdrant (volume tar)..."
     tar czf "${TARGET_DIR}/qdrant.tar.gz" -C "${INSTALL_DIR}/docker/volumes" qdrant/ 2>/dev/null || true
 else
     echo "  Weaviate..."

@@ -201,44 +201,7 @@ if [[ -f "${RESTORE_DIR}/qdrant.tar.gz" ]]; then
         exit 1
     fi
 
-    # Restore Qdrant snapshots via API if .snapshot files exist
-    has_snapshots=false
-    for snap in "${RESTORE_DIR}"/qdrant_*; do
-        [[ -f "$snap" ]] && has_snapshots=true && break
-    done
-
-    if [[ "$has_snapshots" == "true" ]]; then
-        echo -e "${YELLOW}Восстановление Qdrant коллекций из snapshots...${NC}"
-        # Start qdrant temporarily
-        docker compose -f "$COMPOSE_FILE" up -d qdrant 2>/dev/null || true
-
-        # Wait for Qdrant to be ready
-        for i in $(seq 1 30); do
-            if curl -sf --max-time 5 "http://localhost:6333/healthz" >/dev/null 2>&1; then
-                break
-            fi
-            sleep 2
-        done
-
-        for snap in "${RESTORE_DIR}"/qdrant_*; do
-            [[ -f "$snap" ]] || continue
-            snap_basename=$(basename "$snap")
-            # Extract collection name: qdrant_<collection>_<snapshot_name>
-            coll_name=$(echo "$snap_basename" | sed 's/^qdrant_//; s/_[^_]*$//')
-
-            # R-09/R-15: Validate collection name
-            [[ "$coll_name" =~ ^[a-zA-Z0-9_-]+$ ]] || { echo "Invalid collection name: $coll_name"; continue; }
-
-            echo "  Восстановление коллекции: ${coll_name}"
-            # R-10: Add --max-time 60 to curl
-            curl -sf --max-time 60 -X POST "http://localhost:6333/collections/${coll_name}/snapshots/upload" \
-                -H "Content-Type: multipart/form-data" \
-                -F "snapshot=@${snap}" 2>/dev/null || \
-                echo -e "  ${YELLOW}Не удалось восстановить snapshot для ${coll_name}${NC}"
-        done
-        docker compose -f "$COMPOSE_FILE" stop qdrant 2>/dev/null || true
-    fi
-
+    # Qdrant: volume tar restore only (API not exposed to host — no ports: in compose)
     echo -e "${GREEN}Qdrant восстановлен${NC}"
 elif [[ -f "${RESTORE_DIR}/weaviate.tar.gz" ]]; then
     echo -e "${YELLOW}Восстановление Weaviate...${NC}"

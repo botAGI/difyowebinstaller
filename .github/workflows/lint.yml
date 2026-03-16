@@ -63,6 +63,14 @@ jobs:
             exit 1
           fi
 
+  validate-manifest:
+    name: Validate Release Manifest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check manifest versions match versions.env
+        run: python3 scripts/check-manifest-versions.py
+
   bash-syntax:
     name: Bash Syntax Check
     runs-on: ubuntu-latest

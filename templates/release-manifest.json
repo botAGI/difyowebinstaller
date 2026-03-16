@@ -130,10 +130,17 @@
       "digest": "",
       "platforms": ["linux/amd64", "linux/arm64"]
     },
+    "node-exporter": {
+      "registry": "docker.io",
+      "image": "prom/node-exporter",
+      "tag": "v1.8.2",
+      "digest": "",
+      "platforms": ["linux/amd64", "linux/arm64"]
+    },
     "cadvisor": {
       "registry": "gcr.io",
       "image": "cadvisor/cadvisor",
-      "tag": "v0.49.1",
+      "tag": "v0.52.1",
       "digest": "",
       "platforms": ["linux/amd64", "linux/arm64"]
     },
@@ -157,6 +164,13 @@
       "tag": "3.3.2",
       "digest": "",
       "platforms": ["linux/amd64", "linux/arm64"]
+    },
+    "alertmanager": {
+      "registry": "docker.io",
+      "image": "prom/alertmanager",
+      "tag": "v0.27.0",
+      "digest": "",
+      "platforms": ["linux/amd64", "linux/arm64"]
     }
   },
   "compatibility": {
@@ -165,5 +179,5 @@
     "docker_min_version": "24.0",
     "compose_min_version": "2.20"
   },
-  "changelog_url": "https://github.com/your-org/agmind-installer/blob/main/CHANGELOG.md"
+  "changelog_url": "https://github.com/botAGI/difyowebinstaller/blob/main/CHANGELOG.md"
 }
