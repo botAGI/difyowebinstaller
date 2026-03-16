@@ -117,7 +117,7 @@ x-shared-env: &shared-env
   MARKETPLACE_ENABLED: ${MARKETPLACE_ENABLED:-true}
   CHECK_UPDATE_URL: ${CHECK_UPDATE_URL:-https://updates.dify.ai}
   # --- Plugin Daemon ---
-  PLUGIN_API_URL: ${PLUGIN_API_URL:-http://plugin_daemon:5002}
+  PLUGIN_DAEMON_URL: ${PLUGIN_DAEMON_URL:-http://plugin_daemon:5002}
   PLUGIN_DAEMON_KEY: ${PLUGIN_DAEMON_KEY:-}
   INNER_API_KEY_FOR_PLUGIN: ${PLUGIN_INNER_API_KEY:-}
   # --- Ollama ---
