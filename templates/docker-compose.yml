@@ -236,9 +236,9 @@ services:
     restart: always
     environment:
       - WEBUI_NAME=${COMPANY_NAME:-AGMind}
-      - ENABLE_SIGNUP=${ENABLE_SIGNUP:-false}
+      - ENABLE_SIGNUP=${ENABLE_SIGNUP:-true}
       - ENABLE_LOGIN_FORM=true
-      - DEFAULT_USER_ROLE=user
+      - DEFAULT_USER_ROLE=${DEFAULT_USER_ROLE:-user}
       - WEBUI_AUTH=true
       - OLLAMA_BASE_URL=http://ollama:11434
       - OPENAI_API_BASE_URLS=http://pipeline:9099/v1
