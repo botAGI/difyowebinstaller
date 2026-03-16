@@ -1,4 +1,7 @@
 x-security-defaults: &security-defaults
+  dns:
+    - 8.8.8.8
+    - 1.1.1.1
   cap_drop:
     - AUDIT_CONTROL
     - AUDIT_READ
