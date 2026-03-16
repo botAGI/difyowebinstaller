@@ -560,6 +560,8 @@ generate_sandbox_config() {
 
     cat > "$sandbox_conf" << 'SANDBOXEOF'
 # Dify Sandbox Configuration
+# allowed_syscalls intentionally omitted — sandbox uses its own defaults.
+# Specifying syscall names as strings causes panic (expects int syscall numbers).
 app:
   port: 8194
   debug: false
@@ -576,64 +578,6 @@ worker_timeout: 15
 python_path: ""
 
 enable_network: false
-
-allowed_syscalls:
-  - "read"
-  - "write"
-  - "readv"
-  - "writev"
-  - "open"
-  - "close"
-  - "stat"
-  - "fstat"
-  - "lstat"
-  - "poll"
-  - "lseek"
-  - "mmap"
-  - "mprotect"
-  - "munmap"
-  - "brk"
-  - "rt_sigaction"
-  - "rt_sigprocmask"
-  - "ioctl"
-  - "access"
-  - "pipe"
-  - "select"
-  - "sched_yield"
-  - "mremap"
-  - "dup"
-  - "dup2"
-  - "getpid"
-  - "clone"
-  - "fork"
-  - "vfork"
-  - "execve"
-  - "exit"
-  - "wait4"
-  - "uname"
-  - "fcntl"
-  - "flock"
-  - "fsync"
-  - "fdatasync"
-  - "getcwd"
-  - "chdir"
-  - "openat"
-  - "newfstatat"
-  - "set_tid_address"
-  - "set_robust_list"
-  - "futex"
-  - "sched_getaffinity"
-  - "clock_gettime"
-  - "exit_group"
-  - "epoll_ctl"
-  - "epoll_wait"
-  - "getrandom"
-  - "pread64"
-  - "pwrite64"
-  - "arch_prctl"
-  - "prlimit64"
-  - "getdents64"
-  - "clock_nanosleep"
 SANDBOXEOF
 
     # Replace sandbox key from .env
