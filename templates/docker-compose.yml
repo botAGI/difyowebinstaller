@@ -374,7 +374,7 @@ services:
       - etl
     expose:
       - "8765"
-    command: ["--port", "8765", "--host", "0.0.0.0"]
+    command: ["docling-serve", "run", "--port", "8765", "--host", "0.0.0.0"]
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8765/health')\" 2>/dev/null || curl -sf http://localhost:8765/health 2>/dev/null || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
@@ -491,6 +491,7 @@ services:
       SERVER_PORT: ${PLUGIN_DAEMON_PORT:-5002}
       SERVER_KEY: ${PLUGIN_DAEMON_KEY:-}
       INNER_API_KEY: ${PLUGIN_INNER_API_KEY:-}
+      DIFY_INNER_API_KEY: ${PLUGIN_INNER_API_KEY:-}
       DIFY_INNER_API_URL: ${PLUGIN_DIFY_INNER_API_URL:-http://api:5001}
       STORAGE_TYPE: ${PLUGIN_STORAGE_TYPE:-local}
       STORAGE_LOCAL_PATH: ${PLUGIN_STORAGE_LOCAL_PATH:-/app/storage}

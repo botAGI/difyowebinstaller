@@ -556,7 +556,7 @@ AMEOF
             fi
             ;;
     esac
-    chmod 600 "$alertmanager_conf"
+    chmod 644 "$alertmanager_conf"
 }
 
 generate_sandbox_config() {
@@ -771,6 +771,7 @@ copy_monitoring_files() {
         if [[ -f "${installer_root}/monitoring/${f}" ]]; then
             safe_write_file "${dest}/${f}"
             cp "${installer_root}/monitoring/${f}" "${dest}/${f}"
+            chmod 644 "${dest}/${f}"
             echo -e "  ${GREEN}✓ ${f} ($(file -b "${dest}/${f}" 2>/dev/null))${NC}"
         else
             echo -e "  ${YELLOW}⚠ source not found: ${installer_root}/monitoring/${f}${NC}"
@@ -783,6 +784,7 @@ copy_monitoring_files() {
             if [[ -f "${installer_root}/monitoring/${f}" ]]; then
                 safe_write_file "${dest}/${f}"
                 cp "${installer_root}/monitoring/${f}" "${dest}/${f}"
+                chmod 644 "${dest}/${f}"
                 echo -e "  ${GREEN}✓ ${f}${NC}"
             fi
         done
