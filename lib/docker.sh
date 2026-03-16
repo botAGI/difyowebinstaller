@@ -168,8 +168,20 @@ configure_docker_dns() {
     # systemd-resolved stub mode (127.0.0.53) breaks Docker DNS.
     # Docker sees loopback DNS → uses embedded resolver 127.0.0.11
     # which can't forward queries on these systems.
-    # Fix: disable stub listener, set real DNS, symlink resolv.conf.
+    # Fix: disable stub listener, preserve existing DNS, symlink resolv.conf.
     # Ref: https://docs.docker.com/engine/daemon/troubleshoot/#dns-resolver-found-in-resolvconf-and-containers-cant-resolve-dns
+
+    # Skip for offline profile (no internet, DNS fix unnecessary)
+    if [[ "${DEPLOY_PROFILE:-}" == "offline" ]]; then
+        echo -e "${YELLOW}Профиль offline: пропуск настройки DNS${NC}"
+        return 0
+    fi
+
+    # Allow user to skip DNS changes (e.g., corporate/VPN DNS)
+    if [[ "${SKIP_DNS_FIX:-false}" == "true" ]]; then
+        echo -e "${YELLOW}SKIP_DNS_FIX=true: пропуск настройки DNS${NC}"
+        return 0
+    fi
 
     # Only apply if resolv.conf is a symlink pointing to stub-resolv
     if ! [ -L /etc/resolv.conf ] || ! readlink /etc/resolv.conf | grep -q stub; then
@@ -178,11 +190,28 @@ configure_docker_dns() {
 
     echo -e "${YELLOW}Обнаружен systemd-resolved stub — настройка DNS для Docker...${NC}"
 
-    # Configure systemd-resolved with real DNS and disable stub listener
+    # Detect current upstream DNS servers from systemd-resolved
+    # Prefer existing DNS over hardcoded public DNS to support corporate/VPN environments
+    local dns_servers=""
+    if command -v resolvectl &>/dev/null; then
+        dns_servers=$(resolvectl status 2>/dev/null | grep -A1 'DNS Servers' | tail -1 | xargs 2>/dev/null || true)
+    fi
+    # Filter out loopback addresses (127.x.x.x) — those are the stub we're trying to fix
+    dns_servers=$(echo "$dns_servers" | tr ' ' '\n' | grep -v '^127\.' | tr '\n' ' ' | xargs)
+
+    # Fallback to public DNS only if no upstream was detected
+    if [[ -z "$dns_servers" ]]; then
+        dns_servers="${DOCKER_DNS:-8.8.8.8 1.1.1.1}"
+        echo -e "${YELLOW}Нет upstream DNS — используем: ${dns_servers}${NC}"
+    else
+        echo -e "${GREEN}Обнаружены upstream DNS: ${dns_servers}${NC}"
+    fi
+
+    # Configure systemd-resolved: preserve real DNS, disable stub listener
     mkdir -p /etc/systemd/resolved.conf.d
-    cat > /etc/systemd/resolved.conf.d/docker-fix.conf << 'DNSEOF'
+    cat > /etc/systemd/resolved.conf.d/docker-fix.conf << DNSEOF
 [Resolve]
-DNS=8.8.8.8 1.1.1.1
+DNS=${dns_servers}
 DNSStubListener=no
 DNSEOF
 
