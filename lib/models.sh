@@ -30,8 +30,7 @@ pull_model() {
     local label="${2:-$model}"
 
     echo -e "${YELLOW}Скачивание модели: ${label}...${NC}"
-    if docker compose -f "${COMPOSE_DIR}/docker-compose.yml" exec -T ollama \
-        ollama pull "$model"; then
+    if docker exec --dns 8.8.8.8 agmind-ollama ollama pull "$model"; then
         echo -e "${GREEN}Модель ${label} загружена${NC}"
     else
         echo -e "${RED}Ошибка загрузки модели ${label}${NC}"
