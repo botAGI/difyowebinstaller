@@ -1,2 +1,18 @@
 .DS_Store
 .claude/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Secrets / runtime
+.env
+*.env.enc
+*.key
+.age/
+
+# Editor
+*.swp
+*.swo
+*~
