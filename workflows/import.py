@@ -7,37 +7,55 @@ Steps:
  2.  init_validate()            — Dify 1.13+ INIT_PASSWORD
  3.  setup_account()            — skip if already finished
  4.  login()                    — validate token received
- 5.  install_plugin(ollama)     — from marketplace
- 6.  install_plugin(xinference) — from marketplace
- 7.  install_plugin(docling)    — from marketplace
- 8.  wait_for_plugins()         — poll until installed
- 9.  configure_provider(ollama, base_url)
-10.  configure_provider(xinference, server_url)
+ 5.  build_difypkg(ollama)      — git clone + zip from GitHub
+ 6.  build_difypkg(xinference)  — git clone + zip from GitHub
+ 7.  download_difypkg(docling)  — curl from GitHub
+ 8.  upload_plugin(*.difypkg)   — POST /plugin/upload/pkg (multipart)
+ 9.  install_plugin(id)         — POST /plugin/install/pkg
+10.  wait_for_plugins()         — poll until installed
 11.  add_model(LLM) + set_default
 12.  add_model(embedding) + set_default
-13.  add_model(reranker) + set_default
-14.  find_or_create dataset
-15.  create dataset API key
-16.  find_or_create app
-17.  patch_workflow(kb_id, api_key, model, provider)
-18.  update_draft + publish
-19.  create_service_api_key + save + patch .env
+13.  find_or_create dataset
+14.  create dataset API key
+15.  find_or_create app
+16.  patch_workflow(kb_id, api_key, model, provider)
+17.  update_draft + publish
+18.  create_service_api_key + save + patch .env
 """
 
 import argparse
 import base64
+import io
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
 import time
 import http.cookiejar
 import urllib.request
 import urllib.error
+import zipfile
 
-# Marketplace manifest URL (global CDN)
-MARKETPLACE_MANIFEST_URL = "https://marketplace.dify.ai/api/v1/dist/plugins/manifest.json"
+# GitHub sources for plugins (NOT marketplace — marketplace returns 403)
+PLUGIN_SOURCES = {
+    "langgenius/ollama": {
+        "repo": "https://github.com/langgenius/dify-official-plugins.git",
+        "subdir": "models/ollama",
+        "type": "build",
+    },
+    "langgenius/xinference": {
+        "repo": "https://github.com/langgenius/dify-official-plugins.git",
+        "subdir": "models/xinference",
+        "type": "build",
+    },
+    "s20ss/docling": {
+        "repo_file": "https://raw.githubusercontent.com/langgenius/dify-plugins/main/s20ss/docling_plugin.difypkg",
+        "type": "download",
+    },
+}
 
 
 class DifyClient:
@@ -63,6 +81,11 @@ class DifyClient:
 
         if self.access_token:
             headers["Authorization"] = f"Bearer {self.access_token}"
+            # Dify 1.13+ requires triple auth: Bearer + Cookie + CSRF
+            cookie_parts = [f"access_token={self.access_token}"]
+            if self.csrf_token:
+                cookie_parts.append(f"csrf_token={self.csrf_token}")
+            headers["Cookie"] = "; ".join(cookie_parts)
 
         headers["Accept"] = "application/json"
 
@@ -72,6 +95,7 @@ class DifyClient:
                 headers["Content-Type"] = "application/json"
                 body = json.dumps(data).encode("utf-8")
             else:
+                headers["Content-Type"] = content_type
                 body = data
 
         req = urllib.request.Request(url, data=body, headers=headers, method=method)
@@ -98,6 +122,56 @@ class DifyClient:
             error_body = e.read().decode("utf-8", errors="replace") if e.fp else ""
             e._dify_body = error_body  # preserve for callers
             print(f"HTTP {e.code} {method} {path}: {error_body[:500]}", file=sys.stderr)
+            raise
+
+    def _upload_file(self, path, file_path, field_name="pkg", timeout=120):
+        """Upload a file via multipart/form-data POST."""
+        if path.startswith("/console/") and self.console_prefix:
+            path = f"{self.console_prefix}{path}"
+        url = f"{self.base_url}{path}"
+
+        boundary = f"----DifyUpload{int(time.time())}"
+        filename = os.path.basename(file_path)
+
+        with open(file_path, "rb") as f:
+            file_data = f.read()
+
+        body_parts = []
+        body_parts.append(f"--{boundary}\r\n".encode())
+        body_parts.append(
+            f'Content-Disposition: form-data; name="{field_name}"; '
+            f'filename="{filename}"\r\n'.encode()
+        )
+        body_parts.append(b"Content-Type: application/octet-stream\r\n\r\n")
+        body_parts.append(file_data)
+        body_parts.append(f"\r\n--{boundary}--\r\n".encode())
+
+        body = b"".join(body_parts)
+
+        headers = {
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "Accept": "application/json",
+        }
+        if self.access_token:
+            headers["Authorization"] = f"Bearer {self.access_token}"
+            cookie_parts = [f"access_token={self.access_token}"]
+            if self.csrf_token:
+                cookie_parts.append(f"csrf_token={self.csrf_token}")
+            headers["Cookie"] = "; ".join(cookie_parts)
+        if self.csrf_token:
+            headers["X-CSRF-Token"] = self.csrf_token
+
+        req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+
+        try:
+            with self.opener.open(req, timeout=timeout) as resp:
+                resp_body = resp.read().decode("utf-8", errors="replace")
+                if resp_body:
+                    return json.loads(resp_body)
+                return {}
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode("utf-8", errors="replace") if e.fp else ""
+            print(f"HTTP {e.code} POST {path}: {error_body[:500]}", file=sys.stderr)
             raise
 
     # ==================================================================
@@ -153,7 +227,7 @@ class DifyClient:
                 raise
 
     def login(self, email, password):
-        """Login and get access token. Raises if token is empty."""
+        """Login and get access token from cookies."""
         password_b64 = base64.b64encode(password.encode()).decode()
         result = self._request("POST", "/console/api/login", {
             "email": email,
@@ -161,7 +235,9 @@ class DifyClient:
             "language": "en-US",
             "remember_me": True,
         })
+        # Token comes from Set-Cookie, extracted by cookie_jar in _request
         if not self.access_token:
+            # Fallback: check response body
             self.access_token = result.get("data", {}).get("access_token", "")
             self.csrf_token = result.get("data", {}).get("csrf_token", "")
         if not self.access_token:
@@ -173,7 +249,7 @@ class DifyClient:
         return result
 
     # ==================================================================
-    # Plugin management (marketplace)
+    # Plugin management (GitHub source → upload → install)
     # ==================================================================
 
     def list_installed_plugins(self):
@@ -186,9 +262,7 @@ class DifyClient:
         installed = set()
         for p in result.get("plugins", []):
             decl = p.get("declaration", p.get("plugin_id", {}))
-            # plugin_id can be a string "org/name" or nested
             if isinstance(decl, str):
-                # strip version if present
                 installed.add(decl.split(":")[0])
             else:
                 name = p.get("plugin_id", "") or p.get("name", "")
@@ -196,23 +270,43 @@ class DifyClient:
                     installed.add(name.split(":")[0])
         return installed
 
-    def install_plugin_from_marketplace(self, unique_identifier):
-        """Install a plugin using its marketplace unique_identifier."""
+    def upload_plugin(self, difypkg_path):
+        """Upload a .difypkg file. Returns unique_identifier string."""
+        result = self._upload_file(
+            "/console/api/workspaces/current/plugin/upload/pkg",
+            difypkg_path,
+            field_name="pkg",
+        )
+        uid = result.get("unique_identifier", "")
+        if uid:
+            short = uid.split("@")[0]
+            print(f"  Uploaded: {short}")
+        return uid
+
+    def install_plugin_from_pkg(self, unique_identifier):
+        """Install an uploaded plugin by its unique_identifier."""
         try:
             result = self._request(
                 "POST",
-                "/console/api/workspaces/current/plugin/install/marketplace",
+                "/console/api/workspaces/current/plugin/install/pkg",
                 {"plugin_unique_identifiers": [unique_identifier]},
             )
             task_id = result.get("task_id", "")
-            all_tasks = result.get("all_installed", False)
-            if all_tasks:
+            all_installed = result.get("all_installed", False)
+            if all_installed:
                 return None  # already installed
             return task_id
         except urllib.error.HTTPError as e:
             if e.code == 409:
                 return None  # already installed
             raise
+
+    def get_plugin_task(self, task_id):
+        """Get a specific plugin install task status."""
+        return self._request(
+            "GET",
+            f"/console/api/workspaces/current/plugin/tasks/{task_id}",
+        )
 
     def get_plugin_tasks(self):
         """Get all plugin install tasks."""
@@ -227,10 +321,7 @@ class DifyClient:
     # ==================================================================
 
     def configure_provider(self, provider_path, credentials):
-        """Set provider-level credentials (e.g. base_url for Ollama).
-
-        provider_path: e.g. 'langgenius/ollama/ollama'
-        """
+        """Set provider-level credentials (e.g. base_url for Ollama)."""
         try:
             self._request(
                 "POST",
@@ -241,16 +332,12 @@ class DifyClient:
             print(f"  Provider configured: {provider_path}")
         except urllib.error.HTTPError as e:
             if e.code in (409, 400):
-                # 409 = already configured, 400 = may already exist
                 print(f"  Provider already configured: {provider_path}")
             else:
                 raise
 
     def add_model(self, provider_path, model_name, model_type, credentials):
-        """Add a specific model to a provider.
-
-        provider_path: e.g. 'langgenius/ollama/ollama'
-        """
+        """Add a specific model to a provider."""
         try:
             self._request(
                 "POST",
@@ -269,23 +356,25 @@ class DifyClient:
             else:
                 raise
 
-    def set_default_models(self, model_settings):
-        """Set default models for each type.
+    def set_default_model(self, model_type, provider, model_name):
+        """Set default model for a specific type.
 
-        model_settings: list of {"model_type", "provider", "model"}
+        Dify 1.13 API: each call sets one model type.
         """
         try:
             self._request(
                 "POST",
                 "/console/api/workspaces/current/default-model",
-                {"model_settings": model_settings},
+                {
+                    "model_type": model_type,
+                    "provider": provider,
+                    "model": model_name,
+                    "model_settings": [],
+                },
             )
-            for s in model_settings:
-                print(f"  Default [{s['model_type']}]: {s['model']}")
+            print(f"  Default [{model_type}]: {model_name}")
         except urllib.error.HTTPError as e:
-            print(f"  ⚠ Could not set default models: HTTP {e.code}",
-                  file=sys.stderr)
-            print("  Models must be configured manually in Dify UI",
+            print(f"  ⚠ Could not set default {model_type}: HTTP {e.code}",
                   file=sys.stderr)
 
     # ==================================================================
@@ -321,7 +410,7 @@ class DifyClient:
         return kb_id
 
     def create_dataset_api_key(self):
-        """Create a dataset API key. Raises if empty."""
+        """Create a dataset API key."""
         result = self._request("POST", "/console/api/datasets/api-keys", {})
         api_key = (
             result.get("api_key")
@@ -412,7 +501,7 @@ class DifyClient:
         return result
 
     def create_service_api_key(self, app_id):
-        """Create Service API key. Raises if empty."""
+        """Create Service API key."""
         result = self._request(
             "POST", f"/console/api/apps/{app_id}/api-keys", {}
         )
@@ -445,149 +534,182 @@ class DifyClient:
 
 
 # ======================================================================
-# Marketplace helpers
+# Plugin build/download helpers (GitHub sources, NOT marketplace)
 # ======================================================================
 
-def fetch_marketplace_manifest(timeout=30):
-    """Fetch the global plugin manifest from Dify marketplace."""
-    req = urllib.request.Request(MARKETPLACE_MANIFEST_URL)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except (urllib.error.URLError, OSError, json.JSONDecodeError, ValueError) as e:
-        print(f"  ⚠ Cannot fetch marketplace manifest: {e}", file=sys.stderr)
-        return None
+def build_difypkg_from_github(repo_url, subdir, output_path, clone_dir=None):
+    """Clone a GitHub repo and zip a subdir into a .difypkg file.
 
-
-def resolve_plugin_identifiers(plugin_specs, manifest):
-    """Resolve 'org/name' specs to full 'org/name:version@hash' identifiers.
-
-    plugin_specs: list of strings like 'langgenius/ollama' or
-                  'langgenius/ollama:0.1.2' (with pinned version)
-    manifest: parsed manifest JSON from marketplace
-
-    Returns: dict mapping 'org/name' -> 'org/name:version@hash'
+    The zip must contain ONLY files (no empty dirs) — Dify rejects otherwise.
     """
-    if not manifest or "plugins" not in manifest:
-        return {}
+    if clone_dir is None:
+        clone_dir = tempfile.mkdtemp(prefix="dify-plugin-")
 
-    # Build lookup: 'org/name' -> plugin entry
-    lookup = {}
-    for p in manifest["plugins"]:
-        key = f"{p['org']}/{p['name']}"
-        lookup[key] = p
+    need_clone = True
+    if os.path.exists(os.path.join(clone_dir, ".git")):
+        need_clone = False  # Already cloned (shared repo)
 
-    resolved = {}
-    for spec in plugin_specs:
-        # Parse optional version pin: 'org/name:version'
-        if ":" in spec and "@" not in spec:
-            base, pinned_ver = spec.rsplit(":", 1)
-        else:
-            base = spec.split(":")[0].split("@")[0]
-            pinned_ver = None
+    if need_clone:
+        print(f"  Cloning {repo_url}...")
+        subprocess.run(
+            ["git", "clone", "--depth", "1", repo_url, clone_dir],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
-        entry = lookup.get(base)
-        if not entry:
-            print(f"  ⚠ Plugin not found in marketplace: {base}", file=sys.stderr)
-            continue
+    source_dir = os.path.join(clone_dir, subdir)
+    if not os.path.isdir(source_dir):
+        raise FileNotFoundError(f"Plugin subdir not found: {source_dir}")
 
-        identifier = entry.get("latest_package_identifier", "")
-        if not identifier:
-            print(f"  ⚠ No package identifier for: {base}", file=sys.stderr)
-            continue
+    # Build zip with only files (no empty directories)
+    with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for root, _dirs, files in os.walk(source_dir):
+            for fname in files:
+                full_path = os.path.join(root, fname)
+                arcname = os.path.relpath(full_path, source_dir)
+                if ".git" in arcname.split(os.sep):
+                    continue
+                zf.write(full_path, arcname)
 
-        # If version is pinned and differs from latest, warn but use latest
-        if pinned_ver and pinned_ver != entry.get("latest_version", ""):
-            print(
-                f"  ⚠ Requested {base}:{pinned_ver}, "
-                f"using latest {entry.get('latest_version', '?')}",
-                file=sys.stderr,
-            )
-
-        resolved[base] = identifier
-
-    return resolved
+    size_kb = os.path.getsize(output_path) // 1024
+    print(f"  Built: {os.path.basename(output_path)} ({size_kb} KB)")
+    return output_path
 
 
-def install_plugins(client, plugin_specs, timeout=180):
-    """Install plugins from marketplace with polling.
+def download_difypkg(url, output_path):
+    """Download a pre-built .difypkg from a URL."""
+    print(f"  Downloading {os.path.basename(output_path)}...")
+    req = urllib.request.Request(url)
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        with open(output_path, "wb") as f:
+            f.write(resp.read())
+    size_kb = os.path.getsize(output_path) // 1024
+    print(f"  Downloaded: {os.path.basename(output_path)} ({size_kb} KB)")
+    return output_path
 
+
+def install_plugins_from_github(client, plugin_specs, timeout=300):
+    """Build/download, upload, and install plugins from GitHub sources.
+
+    plugin_specs: list of 'org/name' strings matching PLUGIN_SOURCES keys.
     Returns True if all plugins are ready.
     """
     # Check what's already installed
     installed = client.list_installed_plugins()
-    needed_specs = [s for s in plugin_specs if s.split(":")[0] not in installed]
+    needed = [s for s in plugin_specs if s.split(":")[0] not in installed]
 
-    if not needed_specs:
+    if not needed:
         print("  All plugins already installed")
         return True
 
-    # Fetch manifest
-    print("  Fetching marketplace manifest...")
-    manifest = fetch_marketplace_manifest()
-    if not manifest:
-        print(
-            "  ⚠ Marketplace unreachable — plugins must be installed manually",
-            file=sys.stderr,
-        )
-        return False
+    tmpdir = tempfile.mkdtemp(prefix="dify-plugins-")
+    clone_dir = None  # Shared clone dir for same-repo plugins
 
-    # Resolve identifiers
-    identifiers = resolve_plugin_identifiers(needed_specs, manifest)
-    if not identifiers:
-        print("  ⚠ No plugins resolved from manifest", file=sys.stderr)
-        return False
+    try:
+        # Phase 1: Build/download .difypkg files
+        print("\n  Building plugin packages...")
+        pkg_files = {}
+        for spec in needed:
+            base = spec.split(":")[0]
+            source = PLUGIN_SOURCES.get(base)
+            if not source:
+                print(f"  ⚠ Unknown plugin source: {base}", file=sys.stderr)
+                continue
 
-    # Install each plugin
-    task_ids = []
-    for base_name, identifier in identifiers.items():
-        short_id = identifier.split("@")[0]  # mask hash
-        print(f"  Installing: {short_id}...")
-        task_id = client.install_plugin_from_marketplace(identifier)
-        if task_id:
-            task_ids.append(task_id)
-        else:
-            print(f"  Already installed: {base_name}")
+            pkg_path = os.path.join(tmpdir, f"{base.replace('/', '_')}.difypkg")
 
-    if not task_ids:
-        return True
-
-    # Poll until all tasks complete
-    print("  Waiting for plugin installation...")
-    start = time.time()
-    while time.time() - start < timeout:
-        time.sleep(5)
-        try:
-            tasks_resp = client.get_plugin_tasks()
-            tasks = tasks_resp.get("tasks", [])
-            if not tasks and time.time() - start > 15:
-                # No pending tasks after initial wait = all done
-                break
-
-            pending = 0
-            for t in tasks:
-                status = t.get("status", "")
-                plugin_id = t.get("plugin_unique_identifier", "?")
-                short = plugin_id.split("@")[0] if plugin_id else "?"
-                if status in ("success", "installed"):
-                    continue
-                elif status in ("failed", "error"):
-                    print(
-                        f"  ✗ Plugin failed: {short} — "
-                        f"{t.get('message', 'unknown error')}",
-                        file=sys.stderr,
+            if source["type"] == "build":
+                # Share clone dir for plugins from the same repo
+                if clone_dir is None or not os.path.exists(clone_dir):
+                    clone_dir = os.path.join(tmpdir, "repo")
+                repo_dir = clone_dir
+                # Only clone once for shared repos
+                if not os.path.exists(os.path.join(repo_dir, ".git")):
+                    build_difypkg_from_github(
+                        source["repo"], source["subdir"], pkg_path,
+                        clone_dir=repo_dir,
                     )
                 else:
-                    pending += 1
+                    # Already cloned, just build
+                    source_dir = os.path.join(repo_dir, source["subdir"])
+                    with zipfile.ZipFile(pkg_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                        for root, _dirs, files in os.walk(source_dir):
+                            for fname in files:
+                                full_path = os.path.join(root, fname)
+                                arcname = os.path.relpath(full_path, source_dir)
+                                if ".git" in arcname.split(os.sep):
+                                    continue
+                                zf.write(full_path, arcname)
+                    size_kb = os.path.getsize(pkg_path) // 1024
+                    print(f"  Built: {os.path.basename(pkg_path)} ({size_kb} KB)")
+            elif source["type"] == "download":
+                download_difypkg(source["repo_file"], pkg_path)
 
-            if pending == 0:
-                break
-        except Exception as e:
-            print(f"  Poll error: {e}", file=sys.stderr)
-    else:
-        print(f"  ⚠ Plugin install poll timed out after {timeout}s — check manually", file=sys.stderr)
+            pkg_files[base] = pkg_path
 
-    # Final check
+        if not pkg_files:
+            print("  ⚠ No plugin packages built", file=sys.stderr)
+            return False
+
+        # Phase 2: Upload .difypkg files
+        print("\n  Uploading plugins...")
+        identifiers = {}
+        for base, pkg_path in pkg_files.items():
+            try:
+                uid = client.upload_plugin(pkg_path)
+                if uid:
+                    identifiers[base] = uid
+            except Exception as e:
+                print(f"  ⚠ Upload failed for {base}: {e}", file=sys.stderr)
+
+        # Phase 3: Install uploaded plugins
+        print("\n  Installing plugins...")
+        task_ids = []
+        for base, uid in identifiers.items():
+            try:
+                task_id = client.install_plugin_from_pkg(uid)
+                if task_id:
+                    task_ids.append((base, task_id))
+                    print(f"  Installing: {base} (task: {task_id[:8]}...)")
+                else:
+                    print(f"  Already installed: {base}")
+            except Exception as e:
+                print(f"  ⚠ Install failed for {base}: {e}", file=sys.stderr)
+
+        # Phase 4: Poll until all tasks complete
+        if task_ids:
+            print("\n  Waiting for plugin installation...")
+            start = time.time()
+            pending_tasks = dict(task_ids)
+            while pending_tasks and time.time() - start < timeout:
+                time.sleep(5)
+                done = []
+                for base, tid in pending_tasks.items():
+                    try:
+                        resp = client.get_plugin_task(tid)
+                        task_info = resp.get("task", resp)
+                        status = task_info.get("status", "")
+                        if status in ("success", "installed"):
+                            print(f"  ✓ {base} installed")
+                            done.append(base)
+                        elif status in ("failed", "error"):
+                            msg = task_info.get("message", "unknown error")
+                            print(f"  ✗ {base} failed: {msg}", file=sys.stderr)
+                            done.append(base)
+                    except Exception as e:
+                        print(f"  Poll error for {base}: {e}", file=sys.stderr)
+                for d in done:
+                    del pending_tasks[d]
+
+            if pending_tasks:
+                print(f"  ⚠ Timed out waiting for: {list(pending_tasks.keys())}",
+                      file=sys.stderr)
+
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+    # Final verification
     installed = client.list_installed_plugins()
     all_ok = True
     for spec in plugin_specs:
@@ -796,7 +918,7 @@ def main():
     parser.add_argument(
         "--plugins",
         default="langgenius/ollama,langgenius/xinference,s20ss/docling",
-        help="Comma-separated plugin specs to install from marketplace",
+        help="Comma-separated plugin specs to install from GitHub",
     )
     args = parser.parse_args()
 
@@ -830,43 +952,26 @@ def main():
     client.login(args.email, args.password)
 
     # --- Step 4-12: Plugins + Providers + Models ---
-    # This entire block is non-fatal: if marketplace is down or plugins
-    # can't be installed, we still create KB + workflow + API key.
-    # Models can be configured manually in Dify UI afterward.
+    # Non-fatal: if plugins/models fail, we skip KB+workflow.
+    # User can configure manually in Dify UI.
     models_ok = False
     try:
+        # --- Step 4-10: Install plugins from GitHub ---
         print("\n--- \u041f\u043b\u0430\u0433\u0438\u043d\u044b ---")
         plugin_specs = [
             s.strip() for s in args.plugins.split(",") if s.strip()
         ]
         plugins_ok = True
         if plugin_specs:
-            plugins_ok = install_plugins(client, plugin_specs)
+            plugins_ok = install_plugins_from_github(client, plugin_specs)
         else:
             print("  No plugins to install")
 
         if not plugins_ok:
-            print("  \u26a0 Plugins not installed — provider/model config may fail",
+            print("  ⚠ Some plugins not installed — provider/model config may fail",
                   file=sys.stderr)
 
-        # --- Step 8-9: Configure providers ---
-        print("\n--- \u041f\u0440\u043e\u0432\u0430\u0439\u0434\u0435\u0440\u044b"
-              " ---")
-        # Ollama provider
-        client.configure_provider(
-            args.model_provider,
-            {"base_url": args.ollama_url},
-        )
-        # Xinference provider (if rerank model specified)
-        if args.rerank_model:
-            client.configure_provider(
-                args.rerank_provider,
-                {
-                    "server_url": args.xinference_url,
-                },
-            )
-
-        # --- Step 10-12: Add models + set defaults ---
+        # --- Step 11: Add models ---
         print("\n--- \u041c\u043e\u0434\u0435\u043b\u0438 ---")
         # LLM
         client.add_model(
@@ -876,10 +981,10 @@ def main():
             {
                 "base_url": args.ollama_url,
                 "mode": "chat",
-                "context_size": "8192",
+                "context_size": "32768",
                 "max_tokens": "8192",
                 "vision_support": "false",
-                "function_call_support": "false",
+                "function_call_support": "true",
             },
         )
         # Embedding
@@ -904,36 +1009,24 @@ def main():
                 },
             )
 
-        # Set defaults
-        default_settings = [
-            {
-                "model_type": "llm",
-                "provider": args.model_provider,
-                "model": args.model,
-            },
-            {
-                "model_type": "text-embedding",
-                "provider": args.embedding_provider,
-                "model": args.embedding,
-            },
-        ]
+        # --- Step 12: Set defaults (one call per model type) ---
+        client.set_default_model("llm", args.model_provider, args.model)
+        client.set_default_model(
+            "text-embedding", args.embedding_provider, args.embedding
+        )
         if args.rerank_model:
-            default_settings.append({
-                "model_type": "rerank",
-                "provider": args.rerank_provider,
-                "model": args.rerank_model,
-            })
-        client.set_default_models(default_settings)
+            client.set_default_model(
+                "rerank", args.rerank_provider, args.rerank_model
+            )
+
         models_ok = True
     except Exception as e:
-        print(f"\n  \u26a0 Plugin/model setup failed: {e}", file=sys.stderr)
+        print(f"\n  ⚠ Plugin/model setup failed: {e}", file=sys.stderr)
         print("  Models must be configured manually in Dify Settings > Model Provider",
               file=sys.stderr)
-        print("  Continuing with workflow import...\n", file=sys.stderr)
 
     # --- Step 13-19: KB + Workflow + API key ---
     # Requires models to be configured (create_dataset needs default embedding).
-    # If models failed, skip entirely — user must configure manually.
     if not models_ok:
         print("\n--- Knowledge Base ---")
         print("  ⚠ Skipped: default text-embedding model not configured",
