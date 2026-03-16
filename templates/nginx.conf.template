@@ -115,7 +115,7 @@ http {
         # =============================================
         # Block old-style hex token URLs (security)
         # =============================================
-        location ~ ^/[a-f0-9]{24,}/ {
+        location ~ "^/[a-f0-9]{24,}/" {
             return 404;
         }
 
@@ -275,7 +275,7 @@ http {
     #__TLS__    }
     #__TLS__
     #__TLS__    # Block old-style hex token URLs
-    #__TLS__    location ~ ^/[a-f0-9]{24,}/ { return 404; }
+    #__TLS__    location ~ "^/[a-f0-9]{24,}/" { return 404; }
     #__TLS__
     #__TLS__    # Dify Console Web UI
     #__TLS__    location /dify/ {
