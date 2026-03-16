@@ -833,9 +833,8 @@ phase_start() {
     # Final safety net: fix any remaining directory artifacts before compose up
     ensure_bind_mount_files
 
-    # Enable signup temporarily so we can create the first admin via API
-    sed -i.bak "s|^ENABLE_SIGNUP=.*|ENABLE_SIGNUP=true|g" "${INSTALL_DIR}/docker/.env"
-    rm -f "${INSTALL_DIR}/docker/.env.bak"
+    # NOTE: ENABLE_SIGNUP stays false in .env — admin is created via docker exec
+    # to avoid exposing signup endpoint through nginx (race condition fix)
 
     # Nuclear cleanup: find and remove ANY .yml/.conf that is a directory
     find "${INSTALL_DIR}/docker" -name "*.yml" -type d -exec rm -rf {} + 2>/dev/null || true
@@ -877,7 +876,10 @@ phase_start() {
     echo ""
 }
 
-# Create admin user in Open WebUI via API, then disable public signups
+# Create admin user in Open WebUI via internal API (no public exposure)
+# Eliminates race condition: nginx is stopped during signup window,
+# and admin is created via docker exec (container-internal), not through
+# the public nginx port.
 create_openwebui_admin() {
     local admin_email="${ADMIN_EMAIL:-admin@admin.com}"
     local admin_password="${ADMIN_PASSWORD:-}"
@@ -885,10 +887,19 @@ create_openwebui_admin() {
 
     echo -e "${YELLOW}Создание администратора Open WebUI...${NC}"
 
-    # Wait for Open WebUI to be healthy (up to 120 sec)
+    cd "${INSTALL_DIR}/docker"
+
+    # Step 1: Stop nginx to prevent external access during signup window
+    docker compose stop nginx >/dev/null 2>&1 || true
+
+    # Step 2: Temporarily restart open-webui with signup enabled
+    # Shell env overrides .env file (ENABLE_SIGNUP=false stays in .env)
+    ENABLE_SIGNUP=true docker compose up -d open-webui >/dev/null 2>&1 || true
+
+    # Step 3: Wait for Open WebUI to be healthy (up to 120 sec)
     local attempts=0
     while [[ $attempts -lt 24 ]]; do
-        if curl -sf http://localhost:80/health >/dev/null 2>&1; then
+        if docker exec agmind-open-webui wget -q --spider http://localhost:8080/health 2>/dev/null; then
             break
         fi
         sleep 5
@@ -896,14 +907,23 @@ create_openwebui_admin() {
     done
     if [[ $attempts -ge 24 ]]; then
         echo -e "${RED}Open WebUI не ответил за 120 сек, пропускаем создание админа${NC}"
+        # Restore nginx even on failure
+        docker compose up -d nginx >/dev/null 2>&1 || true
         return 0
     fi
 
-    # Create admin account (first signup becomes admin in Open WebUI)
+    # Step 4: Create admin via container-internal API (NOT through nginx)
+    # Sanitize inputs: escape double quotes in JSON values
+    local safe_name safe_email safe_password
+    safe_name=$(printf '%s' "$admin_name" | sed 's/"/\\"/g')
+    safe_email=$(printf '%s' "$admin_email" | sed 's/"/\\"/g')
+    safe_password=$(printf '%s' "$admin_password" | sed 's/"/\\"/g')
+
     local resp
-    resp=$(curl -sf -X POST http://localhost:80/api/v1/auths/signup \
-        -H "Content-Type: application/json" \
-        -d "{\"name\":\"${admin_name}\",\"email\":\"${admin_email}\",\"password\":\"${admin_password}\"}" 2>&1) || true
+    resp=$(docker exec agmind-open-webui wget -q -O- \
+        --header="Content-Type: application/json" \
+        --post-data="{\"name\":\"${safe_name}\",\"email\":\"${safe_email}\",\"password\":\"${safe_password}\"}" \
+        http://localhost:8080/api/v1/auths/signup 2>&1) || true
 
     if echo "$resp" | grep -q '"token"'; then
         echo -e "${GREEN}✓ Админ Open WebUI создан (${admin_email})${NC}"
@@ -913,14 +933,11 @@ create_openwebui_admin() {
         echo -e "${YELLOW}Open WebUI signup: ${resp}${NC}"
     fi
 
-    # Lock down signups after admin is created
-    sed -i.bak "s|^ENABLE_SIGNUP=.*|ENABLE_SIGNUP=false|g" "${INSTALL_DIR}/docker/.env"
-    sed -i.bak "s|^DEFAULT_USER_ROLE=.*|DEFAULT_USER_ROLE=user|g" "${INSTALL_DIR}/docker/.env"
-    rm -f "${INSTALL_DIR}/docker/.env.bak"
-
-    # Recreate open-webui with locked-down env
-    cd "${INSTALL_DIR}/docker"
+    # Step 5: Restart open-webui with signup locked (reads .env: ENABLE_SIGNUP=false)
     docker compose up -d open-webui >/dev/null 2>&1 || true
+
+    # Step 6: Start nginx (public access begins AFTER signup is locked)
+    docker compose up -d nginx >/dev/null 2>&1 || true
     echo -e "${GREEN}✓ Регистрация закрыта (ENABLE_SIGNUP=false)${NC}"
 }
 
