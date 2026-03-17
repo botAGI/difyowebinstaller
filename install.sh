@@ -735,6 +735,15 @@ acl Safe_ports port 777
 
 acl CONNECT method CONNECT
 
+# SSRF protection: block cloud metadata and private networks
+acl metadata dst 169.254.169.254
+acl link_local dst 169.254.0.0/16
+acl rfc1918_192 dst 192.168.0.0/16
+
+http_access deny metadata
+http_access deny link_local
+http_access deny rfc1918_192
+
 http_access deny !Safe_ports
 http_access deny CONNECT !SSL_ports
 http_access allow localhost manager
@@ -1169,20 +1178,15 @@ phase_complete() {
     local W=54  # inner width
     local summary=""
     summary+="$(printf '╔%s╗\n' "$(printf '═%.0s' $(seq 1 $W))")"
-    summary+="$(printf '║%*s%-*s║\n' 12 '' $((W-12)) 'CREDENTIALS & URLS')"
+    summary+="$(printf '║%*s%-*s║\n' 16 '' $((W-16)) 'URLS & STATUS')"
     summary+="$(printf '╠%s╣\n' "$(printf '═%.0s' $(seq 1 $W))")"
     summary+="$(printf '║%*s║\n' $W '')"
     summary+="$(printf '║  Open WebUI:    %-*s║\n' $((W-18)) "$access_url")"
-    summary+="$(printf '║  WebUI pass:    %-*s║\n' $((W-18)) "${owui_pass:-N/A}")"
     summary+="$(printf '║  Dify Console:  %-*s║\n' $((W-18)) "$dify_url")"
-    summary+="$(printf '║  Dify init pwd: %-*s║\n' $((W-18)) "${init_password:-N/A}")"
     if [[ "$MONITORING_MODE" == "local" ]]; then
         local mon_ip; mon_ip=$(get_local_ip)
         summary+="$(printf '║  Grafana:       %-*s║\n' $((W-18)) "http://${mon_ip}:3001")"
         summary+="$(printf '║  Portainer:     %-*s║\n' $((W-18)) "https://${mon_ip}:9443")"
-    fi
-    if [[ -n "$grafana_pass" ]]; then
-        summary+="$(printf '║  Grafana pass:  %-*s║\n' $((W-18)) "$grafana_pass")"
     fi
     summary+="$(printf '║%*s║\n' $W '')"
     summary+="$(printf '║  LLM:           %-*s║\n' $((W-18)) "${LLM_MODEL} (Ollama)")"
@@ -1207,6 +1211,9 @@ phase_complete() {
 
     echo ""
     echo -e "${GREEN}${summary}${NC}"
+    echo ""
+    echo -e "${YELLOW}Credentials saved to: ${INSTALL_DIR}/credentials.txt (chmod 600)${NC}"
+    echo -e "${CYAN}View: cat ${INSTALL_DIR}/credentials.txt${NC}"
 
     # Save credentials to file (root-only)
     {
@@ -1228,7 +1235,6 @@ phase_complete() {
         echo "Containers:    ${healthy_containers}/${total_containers} healthy"
     } > "${INSTALL_DIR}/credentials.txt"
     chmod 600 "${INSTALL_DIR}/credentials.txt"
-    echo -e "${YELLOW}Credentials saved to: ${INSTALL_DIR}/credentials.txt${NC}"
 
     # Mark as installed
     date -u +"%Y-%m-%dT%H:%M:%SZ" > "${INSTALL_DIR}/.agmind_installed"
