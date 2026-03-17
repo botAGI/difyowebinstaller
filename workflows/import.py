@@ -1020,6 +1020,7 @@ def main():
             "text-embedding",
             {
                 "base_url": args.ollama_url,
+                "context_size": "8192",
             },
         ), label="add embedding model")
 
@@ -1032,6 +1033,7 @@ def main():
                 {
                     "server_url": args.xinference_url,
                     "model_uid": args.rerank_model,
+                    "invoke_timeout": "60",
                 },
             ), label="add rerank model")
 
