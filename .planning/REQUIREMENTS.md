@@ -12,7 +12,7 @@ Requirements for v2.0 MVP release. Each maps to roadmap phases.
 - [x] **SURG-01**: Remove import.py and all Dify API automation (setup_account, login, CSRF, save_api_key, add_model)
 - [ ] **SURG-02**: Remove live plugin download from GitHub (build_difypkg_from_github)
 - [x] **SURG-03**: Remove wizard fields no longer needed (ADMIN_EMAIL, ADMIN_PASSWORD, COMPANY_NAME)
-- [ ] **SURG-04**: Keep rag-assistant.json as template + README with import instructions
+- [x] **SURG-04**: Keep rag-assistant.json as template + README with import instructions
 - [x] **SURG-05**: Installation reduced from 11 to 9 phases
 
 ### Security
@@ -101,7 +101,7 @@ Deferred to future. Tracked for planning.
 | SURG-01 | Phase 1 | Pending |
 | SURG-02 | Phase 1 | Pending |
 | SURG-03 | Phase 1 | Pending |
-| SURG-04 | Phase 1 | Pending |
+| SURG-04 | Phase 1 | Complete |
 | SURG-05 | Phase 1 | Pending |
 | SECV-01 | Phase 2 | Pending |
 | SECV-02 | Phase 2 | Pending |

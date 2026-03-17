@@ -15,7 +15,7 @@
 
 Plans:
 - [x] 01-01-PLAN.md — Delete files, restructure install.sh to 9 phases, remove wizard fields, clean downstream configs
-- [ ] 01-02-PLAN.md — Create workflows/README.md with import instructions, final stale-reference sweep
+- [x] 01-02-PLAN.md — Create workflows/README.md with import instructions, final stale-reference sweep
 
 **Key deliverables:**
 - import.py deleted
@@ -153,4 +153,4 @@ Phases 2 and 3 can run in parallel after Phase 1 (no mutual dependency), but seq
 
 ---
 *Roadmap created: 2026-03-17*
-*Last updated: 2026-03-17 after Phase 1 Plan 01 completion*
+*Last updated: 2026-03-18 after Phase 1 Plan 02 completion — Phase 1 Surgery complete*
