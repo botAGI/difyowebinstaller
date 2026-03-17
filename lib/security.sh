@@ -59,28 +59,13 @@ configure_fail2ban() {
         fi
     fi
 
-    # Create AGMind nginx filter
-    cat > /etc/fail2ban/filter.d/agmind-nginx.conf << 'EOF'
-[Definition]
-failregex = ^<HOST> .* "(POST|GET) /(api|login|console|install).* HTTP.* (401|403|429)
-ignoreregex =
-EOF
-
-    # Create jail config
+    # Create jail config — SSH only (nginx jail removed: Docker logpath mismatch makes it non-functional)
     cat > /etc/fail2ban/jail.d/agmind.conf << 'EOF'
 [sshd]
 enabled = true
 maxretry = 3
 bantime = 864000
 findtime = 600
-
-[agmind-nginx]
-enabled = true
-filter = agmind-nginx
-logpath = /opt/agmind/docker/volumes/nginx/logs/access.log
-maxretry = 10
-bantime = 3600
-findtime = 300
 EOF
 
     systemctl enable fail2ban >/dev/null 2>&1
