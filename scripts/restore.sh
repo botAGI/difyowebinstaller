@@ -27,20 +27,40 @@ INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
 
 COMPOSE_FILE="${INSTALL_DIR}/docker/docker-compose.yml"
 BACKUP_BASE="${BACKUP_DIR:-/var/backups/agmind}"
+RESTORE_TMP="${INSTALL_DIR}/.restore_tmp"
 
-# R-03: Trap to restart services on failure
+# R-03: Trap to restart services on failure and clean up restore tmpdir
 SERVICES_DOWN=false
 cleanup_restore() {
     if [[ "$SERVICES_DOWN" == "true" ]]; then
         echo -e "${YELLOW}Restore interrupted — restarting services...${NC}"
         cd "${INSTALL_DIR}/docker" && docker compose up -d 2>/dev/null || true
     fi
+    # Clean up restore tmpdir
+    if [[ -d "${RESTORE_TMP:-}" ]]; then
+        rm -rf "$RESTORE_TMP"
+    fi
 }
 trap cleanup_restore EXIT INT TERM
 
+# Parse flags
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --auto-confirm) AUTO_CONFIRM=true; shift; continue ;;
+        --help|-h)
+            echo "Usage: restore.sh [BACKUP_DIR] [--auto-confirm]"
+            echo "  BACKUP_DIR     Path to backup directory under ${BACKUP_BASE}"
+            echo "  --auto-confirm Skip confirmation prompts"
+            exit 0
+            ;;
+        --*) echo -e "${RED}Unknown option: $1${NC}"; exit 1 ;;
+        *) break ;;
+    esac
+done
+
 # R-01/R-02: Validate RESTORE_DIR path
 if [[ -n "${1:-}" ]]; then
-    RESTORE_DIR="$(realpath -m "$1" 2>/dev/null)" || { echo "Invalid path"; exit 1; }
+    RESTORE_DIR="$(realpath -m "$1" 2>/dev/null || readlink -f "$1" 2>/dev/null || echo "$1")"
     [[ "$RESTORE_DIR" == "$BACKUP_BASE"/* ]] || { echo -e "${RED}Error: path must be under ${BACKUP_BASE}${NC}"; exit 1; }
 else
     echo -e "${YELLOW}Доступные бэкапы:${NC}"
@@ -131,6 +151,9 @@ if [[ -f "${RESTORE_DIR}/sha256sums.txt" ]]; then
     cd - >/dev/null
 fi
 
+# Create restore tmpdir on same filesystem as data volumes (no cross-device issues)
+mkdir -p "$RESTORE_TMP"
+
 # Stop services
 echo -e "${YELLOW}Остановка контейнеров...${NC}"
 SERVICES_DOWN=true
@@ -160,6 +183,7 @@ if [[ -f "${RESTORE_DIR}/dify_db.sql.gz" ]]; then
     docker compose -f "$COMPOSE_FILE" exec -T db psql -U postgres -c "CREATE DATABASE dify;" 2>/dev/null || true
 
     # R-04: Check psql exit codes
+    # set -o pipefail ensures gunzip|psql pipe failures are caught
     if ! gunzip -c "${RESTORE_DIR}/dify_db.sql.gz" | \
         docker compose -f "$COMPOSE_FILE" exec -T db psql -U postgres -d dify 2>/dev/null; then
         echo -e "${RED}PostgreSQL restore failed for dify DB${NC}"
@@ -188,7 +212,8 @@ if [[ -f "${RESTORE_DIR}/qdrant.tar.gz" ]]; then
     mkdir -p "${data_dir}"
 
     # R-06: Safe restore — move old data to temp before replacing
-    temp_old=$(mktemp -d "${data_dir}.old.XXXXXX")
+    temp_old="${RESTORE_TMP}/$(basename "$data_dir").old"
+    mkdir -p "$temp_old"
     mv "${data_dir}" "${temp_old}/" 2>/dev/null || true
     mkdir -p "${data_dir}"
     if tar xzf "${RESTORE_DIR}/qdrant.tar.gz" -C "${data_dir}/"; then
@@ -208,7 +233,8 @@ elif [[ -f "${RESTORE_DIR}/weaviate.tar.gz" ]]; then
     data_dir="${INSTALL_DIR}/docker/volumes/weaviate"
 
     # R-06: Safe restore for Weaviate
-    temp_old=$(mktemp -d "${data_dir}.old.XXXXXX")
+    temp_old="${RESTORE_TMP}/$(basename "$data_dir").old"
+    mkdir -p "$temp_old"
     if [[ -d "${data_dir}" ]]; then
         mv "${data_dir}" "${temp_old}/" 2>/dev/null || true
     fi
@@ -231,7 +257,8 @@ if [[ -f "${RESTORE_DIR}/dify-storage.tar.gz" ]]; then
     data_dir="${INSTALL_DIR}/docker/volumes/app/storage"
 
     # R-06: Safe restore for Dify storage
-    temp_old=$(mktemp -d "${data_dir}.old.XXXXXX")
+    temp_old="${RESTORE_TMP}/$(basename "$data_dir").old"
+    mkdir -p "$temp_old"
     if [[ -d "${data_dir}" ]]; then
         mv "${data_dir}" "${temp_old}/" 2>/dev/null || true
     fi
@@ -306,6 +333,9 @@ if [[ -f "${RESTORE_DIR}/env.backup" ]]; then
         echo -e "${GREEN}Конфигурация восстановлена${NC}"
     fi
 fi
+
+# Clean up restore tmpdir after successful restore
+rm -rf "$RESTORE_TMP" 2>/dev/null || true
 
 # Start all services (rebuild COMPOSE_PROFILES from .env settings)
 echo -e "${YELLOW}Запуск контейнеров...${NC}"

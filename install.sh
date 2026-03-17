@@ -96,6 +96,7 @@ ALERT_WEBHOOK_URL=""
 ALERT_TELEGRAM_TOKEN=""
 ALERT_TELEGRAM_CHAT_ID=""
 NON_INTERACTIVE=false
+ADMIN_UI_OPEN=false
 ENABLE_UFW="false"
 
 # --- Input validation functions ---
@@ -232,6 +233,26 @@ phase_wizard() {
         esac
     fi
     echo ""
+
+    # --- Admin UI access (Portainer/Grafana) ---
+    if [[ "$DEPLOY_PROFILE" != "vps" ]]; then
+        if [[ "$NON_INTERACTIVE" != "true" ]]; then
+            echo "Portainer и Grafana доступны только с localhost (127.0.0.1)."
+            read -rp "Открыть доступ из локальной сети? [no/yes] (default: no): " admin_ui_choice
+            admin_ui_choice="${admin_ui_choice:-no}"
+        else
+            admin_ui_choice="${ADMIN_UI_BIND_ADDR:+yes}"
+            admin_ui_choice="${admin_ui_choice:-no}"
+        fi
+        if [[ "$admin_ui_choice" == "yes" ]]; then
+            ADMIN_UI_OPEN=true
+        else
+            ADMIN_UI_OPEN=false
+        fi
+        echo ""
+    else
+        ADMIN_UI_OPEN=false
+    fi
 
     # --- Domain (VPS only) ---
     if [[ "$DEPLOY_PROFILE" == "vps" ]]; then
@@ -636,6 +657,16 @@ phase_config() {
     export ENABLE_UFW ENABLE_FAIL2BAN ENABLE_SOPS ENABLE_SECRET_ROTATION ENABLE_AUTHELIA
 
     generate_config "$DEPLOY_PROFILE" "$TEMPLATE_DIR"
+
+    # Override admin UI bind address if user opted in
+    if [[ "${ADMIN_UI_OPEN:-false}" == "true" ]]; then
+        local env_file="${INSTALL_DIR}/docker/.env"
+        sed -i.bak \
+            -e "s|GRAFANA_BIND_ADDR=127.0.0.1|GRAFANA_BIND_ADDR=0.0.0.0|g" \
+            -e "s|PORTAINER_BIND_ADDR=127.0.0.1|PORTAINER_BIND_ADDR=0.0.0.0|g" \
+            "$env_file"
+        rm -f "${env_file}.bak"
+    fi
 
     # Ensure .admin_password has restrictive permissions
     if [[ -f "${INSTALL_DIR}/.admin_password" ]]; then
