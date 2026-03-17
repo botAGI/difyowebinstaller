@@ -269,4 +269,47 @@ TASK-002/003/004/005/007/008/009, BUG-009–BUG-018 — закрыты в деп
 
 ---
 
-_Обновлено: 2026-03-17 08:55 PDT — Gbot (TASK-014 добавлен)_
+## 🟡 TASK-015: import.py — рестарт pipeline + openwebui после записи DIFY_API_KEY
+
+**Приоритет:** 🟡 Важный — без этого Open WebUI не видит RAG-ассистента
+
+### Проблема
+
+`save_api_key()` (строка 853) правильно записывает ключ в `.dify_service_api_key` и патчит `DIFY_API_KEY=` в `.env`. Но **pipeline и openwebui** уже запущены с пустым `DIFY_API_KEY` — они не перечитывают `.env` автоматически.
+
+Результат: Open WebUI → Pipeline → Dify цепочка сломана. RAG-ассистент не появляется в списке моделей Open WebUI. Пользователь думает что установка сломана.
+
+### Требуемый фикс
+
+После `save_api_key()` в `main()` (после строки 1114) добавить рестарт двух контейнеров:
+
+```python
+# --- Step 20: Restart pipeline + openwebui to pick up DIFY_API_KEY ---
+print("  Restarting pipeline + openwebui...")
+compose_dir = os.path.join(args.install_dir, "docker")
+subprocess.run(
+    ["docker", "compose", "-f", f"{compose_dir}/docker-compose.yml",
+     "restart", "pipeline", "openwebui"],
+    capture_output=True, timeout=120
+)
+print("  Pipeline + OpenWebUI restarted with DIFY_API_KEY")
+```
+
+### Как проверить
+
+После установки:
+```bash
+grep DIFY_API_KEY /opt/agmind/docker/.env
+# → DIFY_API_KEY=app-xxxxxxxxxxxxxxxx
+
+curl -s http://localhost:9099/v1/models | python3 -m json.tool
+# → должен содержать модель "Ассистент AGMind" (или как назван app)
+```
+
+### Заметка
+
+Код `save_api_key()` и `create_service_api_key()` уже реализован и выглядит корректно. В последнем деплое файл `.dify_service_api_key` НЕ создался — вероятно import.py упал раньше (до TASK-012 фикса). После деплоя с новым кодом (TASK-012 + TASK-013) нужно проверить, доходит ли до шага 18.
+
+---
+
+_Обновлено: 2026-03-17 09:55 PDT — Gbot (TASK-015 добавлен)_
