@@ -41,6 +41,13 @@ Plans:
 
 **Requirements:** SECV-01, SECV-02, SECV-03, SECV-04, SECV-05, SECV-06, SECV-07
 
+**Plans:** 3 plans
+
+Plans:
+- [ ] 02-01-PLAN.md — Nginx rate limiting extension + fail2ban nginx jail removal (SECV-05, SECV-07)
+- [ ] 02-02-PLAN.md — Wizard admin-UI opt-in, credential suppression, Squid ACL, Authelia policy (SECV-01, SECV-02, SECV-03, SECV-04)
+- [ ] 02-03-PLAN.md — Backup/restore fixes + BATS test (SECV-06)
+
 **Key deliverables:**
 - Portainer/Grafana on 127.0.0.1 by default, wizard opt-in to open
 - Authelia covers /console/api/, /api/, /v1/, /files/
@@ -153,4 +160,4 @@ Phases 2 and 3 can run in parallel after Phase 1 (no mutual dependency), but seq
 
 ---
 *Roadmap created: 2026-03-17*
-*Last updated: 2026-03-18 after Phase 1 Plan 02 completion — Phase 1 Surgery complete*
+*Last updated: 2026-03-18 after Phase 2 planning — 3 plans created*
