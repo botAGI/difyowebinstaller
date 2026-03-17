@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: milestone
 status: planning
-last_updated: "2026-03-17T21:32:00.014Z"
+last_updated: "2026-03-17T23:23:54.936Z"
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 5
+  completed_plans: 3
 ---
 
 # State: AGmind Installer v2.0
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-03-17)
 | Phase | Name | Status | Plans | Completed |
 |-------|------|--------|-------|-----------|
 | 1 | Surgery | Complete | 2/2 | 2026-03-18 |
-| 2 | Security Hardening v2 | Not Started | 0/0 | -- |
+| 2 | Security Hardening v2 | In Progress | 1/3 | -- |
 | 3 | Provider Architecture | Not Started | 0/0 | -- |
 | 4 | Installer Redesign | Not Started | 0/0 | -- |
 | 5 | DevOps & UX | Not Started | 0/0 | -- |
@@ -48,6 +48,8 @@ Last deploy: #10, 2026-03-17, 23/23 containers healthy.
 - Phase 1 Plan 01: Open WebUI talks directly to Ollama (pipeline proxy removed); ENABLE_OPENAI_API=false
 - Phase 1 Plan 01: lib/tunnel.sh and lib/dokploy.sh kept on disk for Phase 5 (only source lines removed from install.sh)
 - Phase 1 Plan 02: WEBUI_NAME hardcoded to AGMind in docker-compose.yml (COMPANY_NAME removed as wizard field in Plan 01); pipeline reconnect folded into workflows/README.md
+- [Phase 02]: Phase 2 Plan 01: Login rate at 1r/10s burst=3 blocks dictionary attacks, burst allows typos
+- [Phase 02]: Phase 2 Plan 01: Fail2ban nginx jail removed entirely — Docker logpath mismatch makes it non-functional; nginx rate limiting replaces it
 
 ## Performance Metrics
 
@@ -55,6 +57,8 @@ Last deploy: #10, 2026-03-17, 23/23 containers healthy.
 |-------|------|----------|-------|-------|
 | 1 | 01 | 7min | 2 | 13 |
 | 1 | 02 | 4min | 2 | 2 |
+| 2 | 01 | 2min | 2 | 2 |
 
 ---
-*Last updated: 2026-03-18 after Phase 1 Plan 02 completion — Phase 1 Surgery complete*
+*Last updated: 2026-03-18 after Phase 2 Plan 01 completion — nginx rate limiting + fail2ban cleanup*
+
