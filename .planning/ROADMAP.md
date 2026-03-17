@@ -41,16 +41,17 @@ Plans:
 
 **Requirements:** SECV-01, SECV-02, SECV-03, SECV-04, SECV-05, SECV-06, SECV-07
 
-**Plans:** 2/3 plans complete
+**Plans:** 4 plans
 
 Plans:
 - [x] 02-01-PLAN.md — Nginx rate limiting extension + fail2ban nginx jail removal (SECV-05, SECV-07)
 - [x] 02-02-PLAN.md — Wizard admin-UI opt-in, credential suppression, Squid ACL, Authelia policy (SECV-01, SECV-02, SECV-03, SECV-04)
-- [ ] 02-03-PLAN.md — Backup/restore fixes + BATS test (SECV-06)
+- [x] 02-03-PLAN.md — Backup/restore fixes + BATS test (SECV-06)
+- [x] 02-04-PLAN.md — Gap closure: SECV-02 documentation drift fix (SECV-02)
 
 **Key deliverables:**
 - Portainer/Grafana on 127.0.0.1 by default, wizard opt-in to open
-- Authelia covers /console/api/, /api/, /v1/, /files/
+- Authelia 2FA on /console/* (human login); API routes bypass Authelia (Dify API key auth + rate limiting)
 - credentials.txt (chmod 600) — terminal shows path only
 - Squid ACL denies RFC1918 + link-local + 169.254.169.254
 - Fail2ban reads Docker nginx logs (or replaced with limit_req_zone)
@@ -159,4 +160,4 @@ Phases 2 and 3 can run in parallel after Phase 1 (no mutual dependency), but seq
 
 ---
 *Roadmap created: 2026-03-17*
-*Last updated: 2026-03-18 after Phase 2 Plan 02 completion — admin UI lock, credential suppression, Squid SSRF ACLs, Authelia bypass*
+*Last updated: 2026-03-18 after Phase 2 gap closure plan — SECV-02 documentation fix*

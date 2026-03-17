@@ -18,7 +18,7 @@ Requirements for v2.0 MVP release. Each maps to roadmap phases.
 ### Security
 
 - [x] **SECV-01**: Portainer/Grafana bind 127.0.0.1 by default, opt-in to open
-- [x] **SECV-02**: Authelia 2FA covers all Dify routes (/console/api/, /api/, /v1/, /files/)
+- [x] **SECV-02**: Authelia 2FA on /console/* (human login). API routes (/api/, /v1/, /files/) bypass Authelia — protected by Dify API key auth + nginx rate limiting (10r/s).
 - [x] **SECV-03**: Credentials written only to credentials.txt (chmod 600), not printed to stdout
 - [x] **SECV-04**: SSRF sandbox blocks RFC1918 + link-local + cloud metadata (169.254.169.254)
 - [x] **SECV-05**: Fail2ban fixed (mount nginx access.log to host) or replaced with nginx rate limiting
@@ -130,4 +130,4 @@ Deferred to future. Tracked for planning.
 
 ---
 *Requirements defined: 2026-03-17*
-*Last updated: 2026-03-17 after v2.0 milestone initialization*
+*Last updated: 2026-03-18 after Phase 2 gap closure — SECV-02 text aligned with Authelia bypass design*
