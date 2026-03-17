@@ -1,9 +1,22 @@
+---
+gsd_state_version: 1.0
+milestone: v2.0
+milestone_name: milestone
+status: planning
+last_updated: "2026-03-17T21:32:00.014Z"
+progress:
+  total_phases: 5
+  completed_phases: 1
+  total_plans: 2
+  completed_plans: 2
+---
+
 # State: AGmind Installer v2.0
 
 ## Current Phase
 
 **Phase:** 1 — Surgery
-**Status:** Complete
+**Status:** Ready to plan
 **Plans:** 2/2 complete
 
 ## Project Reference
