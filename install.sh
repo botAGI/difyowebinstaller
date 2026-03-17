@@ -1252,59 +1252,101 @@ phase_complete() {
             ;;
     esac
 
-    echo ""
-    echo -e "${GREEN}"
-    echo "╔════════════════════════════════════════════════╗"
-    echo "║              AGMind установлен!                ║"
-    echo "╠════════════════════════════════════════════════╣"
-    echo "║                                                ║"
-    printf "║  Профиль:   %-35s║\n" "$DEPLOY_PROFILE"
-    printf "║  URL:       %-35s║\n" "$access_url"
-    printf "║  Логин:     %-35s║\n" "$ADMIN_EMAIL"
-    printf "║  Пароль:    %-35s║\n" "(см. ${INSTALL_DIR}/.admin_password)"
-    echo "║                                                ║"
-    printf "║  Модель:    %-35s║\n" "$LLM_MODEL"
-    printf "║  Embedding: %-35s║\n" "$EMBEDDING_MODEL"
-    echo "║  KB:        Documents (пустая)                 ║"
-    echo "║                                                ║"
-    printf "║  Бэкап:     %-35s║\n" "$BACKUP_SCHEDULE"
-    echo "║              /var/backups/agmind/              ║"
-    echo "║                                                ║"
-    if [[ -n "$DOKPLOY_ENABLED" ]]; then
-        echo "║  Dokploy:   нода подготовлена                  ║"
+    # Gather credentials
+    local admin_pass=""
+    if [[ -f "${INSTALL_DIR}/.admin_password" ]]; then
+        admin_pass=$(cat "${INSTALL_DIR}/.admin_password" 2>/dev/null)
     fi
-    if [[ -n "$TUNNEL_VPS_HOST" ]]; then
-        printf "║  Tunnel:    %-35s║\n" "${TUNNEL_VPS_HOST}:${TUNNEL_REMOTE_PORT} -> local:${TUNNEL_LOCAL_PORT}"
+    local grafana_pass=""
+    if [[ -f "${INSTALL_DIR}/docker/.env" ]]; then
+        grafana_pass=$(grep '^GRAFANA_ADMIN_PASSWORD=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d= -f2-)
     fi
-    echo "║                                                ║"
-    printf "║  Вектор:    %-35s║\n" "$VECTOR_STORE"
-    [[ "$ETL_ENHANCED" == "yes" ]] && echo "║  ETL:       Docling + Xinference reranker       ║"
-    [[ "$TLS_MODE" != "none" ]] && printf "║  TLS:       %-35s║\n" "$TLS_MODE"
+    local dify_api_key=""
+    if [[ -f "${INSTALL_DIR}/.dify_service_api_key" ]]; then
+        dify_api_key=$(cat "${INSTALL_DIR}/.dify_service_api_key" 2>/dev/null)
+    fi
+
+    # Container status
+    local total_containers healthy_containers
+    total_containers=$(docker ps -a --filter "name=agmind-" --format '{{.Names}}' 2>/dev/null | wc -l | tr -d ' ')
+    healthy_containers=$(docker ps --filter "name=agmind-" --filter "health=healthy" --format '{{.Names}}' 2>/dev/null | wc -l | tr -d ' ')
+
+    # Reranker info
+    local rerank_info=""
+    if [[ "$ETL_ENHANCED" == "yes" ]]; then
+        rerank_info="${RERANK_MODEL:-bce-reranker-base_v1} (Xinference)"
+    fi
+
+    # Build the summary block (plain text for both terminal and file)
+    local W=54  # inner width
+    local summary=""
+    summary+="$(printf '╔%s╗\n' "$(printf '═%.0s' $(seq 1 $W))")"
+    summary+="$(printf '║%*s%-*s║\n' 12 '' $((W-12)) 'CREDENTIALS & URLS')"
+    summary+="$(printf '╠%s╣\n' "$(printf '═%.0s' $(seq 1 $W))")"
+    summary+="$(printf '║%*s║\n' $W '')"
+    summary+="$(printf '║  Open WebUI:    %-*s║\n' $((W-18)) "$access_url")"
+    summary+="$(printf '║  Dify Console:  %-*s║\n' $((W-18)) "$dify_url")"
     if [[ "$MONITORING_MODE" == "local" ]]; then
-        local lan_ip_mon
-        lan_ip_mon=$(get_local_ip)
-        printf "║  Grafana:   %-35s║\n" "http://${lan_ip_mon}:3001"
-        printf "║  Gr.пароль: %-35s║\n" "(см. GRAFANA_ADMIN_PASSWORD в .env)"
-        printf "║  Portainer: %-35s║\n" "https://${lan_ip_mon}:9443"
+        local mon_ip; mon_ip=$(get_local_ip)
+        summary+="$(printf '║  Grafana:       %-*s║\n' $((W-18)) "http://${mon_ip}:3001")"
+        summary+="$(printf '║  Portainer:     %-*s║\n' $((W-18)) "https://${mon_ip}:9443")"
     fi
-    [[ "$ENABLE_UFW" == "true" ]] && echo "║  UFW:       включён                             ║"
-    [[ "$ENABLE_FAIL2BAN" == "true" ]] && echo "║  Fail2ban:  включён                             ║"
-    [[ "$ENABLE_AUTHELIA" == "true" ]] && echo "║  Authelia:  2FA включена                         ║"
-    [[ "$ALERT_MODE" != "none" ]] && printf "║  Алерты:    %-35s║\n" "$ALERT_MODE"
-    echo "║                                                ║"
-    echo "║  Dify Console:                                 ║"
-    printf "║  %-47s║\n" "${dify_url}"
-    echo "║                                                ║"
-    echo "║  Логи:      cd /opt/agmind/docker &&           ║"
-    echo "║             docker compose logs -f             ║"
-    echo "║  Бэкап:     /opt/agmind/scripts/backup.sh     ║"
-    echo "║  Статус:    /opt/agmind/scripts/health.sh     ║"
-    echo "║  Обновить:  /opt/agmind/scripts/update.sh     ║"
-    echo "║  Мульти:    /opt/agmind/scripts/multi-instance.sh ║"
-    echo "║  Удаление:  /opt/agmind/scripts/uninstall.sh  ║"
-    echo "║                                                ║"
-    echo "╚════════════════════════════════════════════════╝"
-    echo -e "${NC}"
+    summary+="$(printf '║%*s║\n' $W '')"
+    summary+="$(printf '║  Admin email:   %-*s║\n' $((W-18)) "${ADMIN_EMAIL}")"
+    summary+="$(printf '║  Admin pass:    %-*s║\n' $((W-18)) "${admin_pass:-N/A}")"
+    if [[ -n "$grafana_pass" ]]; then
+        summary+="$(printf '║  Grafana pass:  %-*s║\n' $((W-18)) "$grafana_pass")"
+    fi
+    if [[ -n "$dify_api_key" ]]; then
+        summary+="$(printf '║  Dify API key:  %-*s║\n' $((W-18)) "$dify_api_key")"
+    fi
+    summary+="$(printf '║%*s║\n' $W '')"
+    summary+="$(printf '║  LLM:           %-*s║\n' $((W-18)) "${LLM_MODEL} (Ollama)")"
+    summary+="$(printf '║  Embedding:     %-*s║\n' $((W-18)) "${EMBEDDING_MODEL} (Ollama)")"
+    if [[ -n "$rerank_info" ]]; then
+        summary+="$(printf '║  Reranker:      %-*s║\n' $((W-18)) "$rerank_info")"
+    fi
+    summary+="$(printf '║  Vector DB:     %-*s║\n' $((W-18)) "${VECTOR_STORE}")"
+    summary+="$(printf '║%*s║\n' $W '')"
+    summary+="$(printf '║  Containers:    %-*s║\n' $((W-18)) "${healthy_containers}/${total_containers} healthy")"
+    summary+="$(printf '║  Backup:        %-*s║\n' $((W-18)) "${BACKUP_SCHEDULE}")"
+    [[ "$ENABLE_UFW" == "true" ]] && summary+="$(printf '║  UFW:           %-*s║\n' $((W-18)) "enabled")"
+    [[ "$ENABLE_FAIL2BAN" == "true" ]] && summary+="$(printf '║  Fail2ban:      %-*s║\n' $((W-18)) "enabled")"
+    [[ "$ENABLE_AUTHELIA" == "true" ]] && summary+="$(printf '║  Authelia:      %-*s║\n' $((W-18)) "2FA enabled")"
+    summary+="$(printf '║%*s║\n' $W '')"
+    summary+="$(printf '║  Логи:   cd %s/docker && ║\n' "${INSTALL_DIR}")"
+    summary+="$(printf '║          docker compose logs -f              ║\n')"
+    summary+="$(printf '║  Бэкап:  %s/scripts/backup.sh  ║\n' "${INSTALL_DIR}")"
+    summary+="$(printf '║  Статус: %s/scripts/health.sh  ║\n' "${INSTALL_DIR}")"
+    summary+="$(printf '║%*s║\n' $W '')"
+    summary+="$(printf '╚%s╝\n' "$(printf '═%.0s' $(seq 1 $W))")"
+
+    echo ""
+    echo -e "${GREEN}${summary}${NC}"
+
+    # Save credentials to file (root-only)
+    {
+        echo "# AGMind Credentials — $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+        echo "# chmod 600 — only root can read"
+        echo ""
+        echo "Open WebUI:    $access_url"
+        echo "Dify Console:  $dify_url"
+        [[ "$MONITORING_MODE" == "local" ]] && echo "Grafana:       http://$(get_local_ip):3001"
+        [[ "$MONITORING_MODE" == "local" ]] && echo "Portainer:     https://$(get_local_ip):9443"
+        echo ""
+        echo "Admin email:   $ADMIN_EMAIL"
+        echo "Admin pass:    ${admin_pass:-N/A}"
+        [[ -n "$grafana_pass" ]] && echo "Grafana pass:  $grafana_pass"
+        [[ -n "$dify_api_key" ]] && echo "Dify API key:  $dify_api_key"
+        echo ""
+        echo "LLM:           $LLM_MODEL (Ollama)"
+        echo "Embedding:     $EMBEDDING_MODEL (Ollama)"
+        [[ -n "$rerank_info" ]] && echo "Reranker:      $rerank_info"
+        echo "Vector DB:     $VECTOR_STORE"
+        echo "Containers:    ${healthy_containers}/${total_containers} healthy"
+    } > "${INSTALL_DIR}/credentials.txt"
+    chmod 600 "${INSTALL_DIR}/credentials.txt"
+    echo -e "${YELLOW}Credentials saved to: ${INSTALL_DIR}/credentials.txt${NC}"
 
     # Mark as installed
     date -u +"%Y-%m-%dT%H:%M:%SZ" > "${INSTALL_DIR}/.agmind_installed"
