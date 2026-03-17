@@ -36,7 +36,7 @@ http {
 
     # --- Rate Limiting ---
     limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
-    limit_req_zone $binary_remote_addr zone=login:10m rate=3r/s;
+    limit_req_zone $binary_remote_addr zone=login:10m rate=1r/10s;
     limit_conn_zone $binary_remote_addr zone=ws:10m;
 
     # Logging
@@ -154,6 +154,19 @@ http {
             proxy_set_header X-Forwarded-Proto $scheme;
         }
 
+        # Dify Console Login — tighter rate limit (1r/10s, burst=3)
+        location /console/api/login {
+            limit_req zone=login burst=3 nodelay;
+            proxy_pass http://dify_api;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 3600s;
+            proxy_send_timeout 3600s;
+        }
+
         # Dify Console API
         location /console/api {
             limit_req zone=api burst=20 nodelay;
@@ -182,6 +195,7 @@ http {
 
         # Dify Service API (/v1)
         location /v1 {
+            limit_req zone=api burst=20 nodelay;
             proxy_pass http://dify_api;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
@@ -194,6 +208,7 @@ http {
 
         # Dify Files
         location /files {
+            limit_req zone=api burst=20 nodelay;
             proxy_pass http://dify_api;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
