@@ -28,6 +28,15 @@ authentication_backend:
 access_control:
   default_policy: one_factor
   rules:
+    # API routes bypass Authelia — Dify handles its own API key auth
+    # Compensated by nginx rate limiting (10r/s on /api, /v1, /files)
+    - domain: '__DOMAIN__'
+      resources:
+        - '^/api/.*$'
+        - '^/v1/.*$'
+        - '^/files/.*$'
+      policy: bypass
+    # Console routes require 2FA (human login)
     - domain: '__DOMAIN__'
       resources:
         - '^/console.*$'
