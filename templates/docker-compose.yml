@@ -213,30 +213,6 @@ services:
     networks:
       - agmind-backend
 
-  # ==================== Pipeline (OpenAI-compatible proxy to Dify) ====================
-  pipeline:
-    <<: *security-defaults
-    build:
-      context: ./pipeline
-      dockerfile: Dockerfile
-    container_name: agmind-pipeline
-    restart: always
-    expose:
-      - "9099"
-    environment:
-      DIFY_BASE_URL: http://api:5001
-      DIFY_API_KEY: ${DIFY_API_KEY:-}
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9099/health')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    depends_on:
-      api:
-        condition: service_healthy
-    networks:
-      - agmind-backend
-
   # ==================== Open WebUI ====================
   # WARNING: Version pinned for white-label/re-branding compatibility.
   # Do NOT change to :main or :latest without verifying branding features still work.
@@ -253,10 +229,8 @@ services:
       - DEFAULT_USER_ROLE=${DEFAULT_USER_ROLE:-user}
       - WEBUI_AUTH=true
       - OLLAMA_BASE_URL=http://ollama:11434
-      - OPENAI_API_BASE_URLS=http://pipeline:9099/v1
-      - OPENAI_API_KEYS=${DIFY_API_KEY:-sk-placeholder}
       - ENABLE_OLLAMA_API=${ENABLE_OLLAMA_API:-true}
-      - ENABLE_OPENAI_API=true
+      - ENABLE_OPENAI_API=false
     volumes:
       - openwebui_data:/app/backend/data
     healthcheck:
@@ -266,8 +240,6 @@ services:
       retries: ${HEALTHCHECK_RETRIES:-5}
       start_period: 30s
     depends_on:
-      pipeline:
-        condition: service_healthy
       ollama:
         condition: service_healthy
     networks:
@@ -655,8 +627,6 @@ services:
       web:
         condition: service_healthy
       open-webui:
-        condition: service_healthy
-      pipeline:
         condition: service_healthy
     networks:
       - agmind-frontend
