@@ -64,10 +64,7 @@ source "${INSTALLER_DIR}/lib/detect.sh"
 source "${INSTALLER_DIR}/lib/docker.sh"
 source "${INSTALLER_DIR}/lib/config.sh"
 source "${INSTALLER_DIR}/lib/models.sh"
-source "${INSTALLER_DIR}/lib/workflow.sh"
-source "${INSTALLER_DIR}/lib/tunnel.sh"
 source "${INSTALLER_DIR}/lib/backup.sh"
-source "${INSTALLER_DIR}/lib/dokploy.sh"
 source "${INSTALLER_DIR}/lib/health.sh"
 source "${INSTALLER_DIR}/lib/security.sh"
 source "${INSTALLER_DIR}/lib/authelia.sh"
@@ -76,12 +73,9 @@ source "${INSTALLER_DIR}/lib/authelia.sh"
 DEPLOY_PROFILE=""
 DOMAIN=""
 CERTBOT_EMAIL=""
-COMPANY_NAME=""
 LOGO_PATH=""
 LLM_MODEL=""
 EMBEDDING_MODEL="bge-m3"
-ADMIN_EMAIL=""
-ADMIN_PASSWORD=""
 BACKUP_TARGET=""
 BACKUP_SCHEDULE=""
 REMOTE_BACKUP_HOST=""
@@ -89,12 +83,6 @@ REMOTE_BACKUP_PORT="22"
 REMOTE_BACKUP_USER=""
 REMOTE_BACKUP_KEY=""
 REMOTE_BACKUP_PATH="/var/backups/agmind-remote"
-DOKPLOY_ENABLED=""
-TUNNEL_VPS_HOST=""
-TUNNEL_VPS_PORT="22"
-TUNNEL_REMOTE_PORT="8080"
-TUNNEL_LOCAL_PORT="80"
-TUNNEL_SSH_REMOTE_PORT="8022"
 VECTOR_STORE="weaviate"
 ETL_ENHANCED="no"
 TLS_MODE="none"
@@ -172,7 +160,7 @@ show_banner() {
 # PHASE 1: Diagnostics
 # ============================================================================
 phase_diagnostics() {
-    echo -e "${BOLD}[1/11] Диагностика системы${NC}"
+    echo -e "${BOLD}[1/9] Диагностика системы${NC}"
     echo ""
     run_diagnostics || {
         echo ""
@@ -205,7 +193,7 @@ phase_diagnostics() {
 # PHASE 2: Interactive Wizard
 # ============================================================================
 phase_wizard() {
-    echo -e "${BOLD}[2/11] Настройка установки${NC}"
+    echo -e "${BOLD}[2/9] Настройка установки${NC}"
     echo ""
 
     # --- Profile ---
@@ -255,22 +243,6 @@ phase_wizard() {
         fi
         echo ""
     fi
-
-    # --- Branding ---
-    if [[ "$NON_INTERACTIVE" != "true" ]]; then
-        read -rp "Название компании [AGMind]: " COMPANY_NAME
-        COMPANY_NAME="${COMPANY_NAME:-AGMind}"
-        read -rp "Путь к логотипу (Enter = дефолтный): " LOGO_PATH
-        if [[ -n "$LOGO_PATH" ]]; then
-            LOGO_PATH="$(realpath "$LOGO_PATH" 2>/dev/null)" || { echo -e "${RED}Invalid logo path${NC}"; LOGO_PATH=""; }
-            if [[ -n "$LOGO_PATH" ]]; then
-                [[ "$LOGO_PATH" == /tmp/* || "$LOGO_PATH" == /home/* || "$LOGO_PATH" == /root/* ]] || { echo -e "${RED}Logo must be in /tmp, /home, or /root${NC}"; LOGO_PATH=""; }
-            fi
-        fi
-    else
-        COMPANY_NAME="${COMPANY_NAME:-AGMind}"
-    fi
-    echo ""
 
     # --- Vector Store ---
     echo "Выберите векторное хранилище:"
@@ -440,25 +412,6 @@ phase_wizard() {
         TLS_MODE="letsencrypt"
     fi
 
-    # --- Admin ---
-    if [[ "$NON_INTERACTIVE" != "true" ]]; then
-        read -rp "Email администратора: " ADMIN_EMAIL
-        validate_email "$ADMIN_EMAIL" || { echo -e "${RED}Некорректный email, установка прервана${NC}"; exit 1; }
-        read -rsp "Пароль (Enter для авто-генерации): " ADMIN_PASSWORD
-        echo ""
-        if [[ -z "$ADMIN_PASSWORD" ]]; then
-            ADMIN_PASSWORD=$(set +o pipefail; head -c 256 /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z0-9' | head -c 16)
-            echo -e "  Пароль сгенерирован и сохранён в ${INSTALL_DIR}/.admin_password"
-        fi
-    else
-        ADMIN_EMAIL="${ADMIN_EMAIL:-admin@admin.com}"
-        validate_email "$ADMIN_EMAIL" || { echo -e "${RED}Invalid ADMIN_EMAIL env var${NC}"; exit 1; }
-        if [[ -z "$ADMIN_PASSWORD" ]]; then
-            ADMIN_PASSWORD=$(set +o pipefail; head -c 256 /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z0-9' | head -c 16)
-        fi
-    fi
-    echo ""
-
     # --- Monitoring ---
     echo "Мониторинг:"
     echo "  1) Отключен (по умолчанию)"
@@ -626,67 +579,18 @@ phase_wizard() {
         echo ""
     fi
 
-    # --- Dokploy (not for offline) ---
-    if [[ "$DEPLOY_PROFILE" != "offline" ]]; then
-        echo "Подготовить ноду для Dokploy (центральный мониторинг)?"
-        echo "  1) Да (сгенерировать SSH ключ + инструкция)"
-        echo "  2) Нет (по умолчанию)"
-        echo ""
-        if [[ "$NON_INTERACTIVE" != "true" ]]; then
-            read -rp "Dokploy [1-2, Enter=2]: " choice
-            choice="${choice:-2}"
-        else
-            choice="${DOKPLOY_CHOICE:-2}"
-        fi
-        if [[ "$choice" == "1" ]]; then
-            DOKPLOY_ENABLED="yes"
-        fi
-        echo ""
-    fi
-
-    # --- Reverse SSH (LAN only) ---
-    if [[ "$DEPLOY_PROFILE" == "lan" ]]; then
-        echo "Настроить удалённый доступ для обслуживания?"
-        echo "  1) Да (SSH tunnel к VPS)"
-        echo "  2) Нет (по умолчанию)"
-        echo ""
-        if [[ "$NON_INTERACTIVE" != "true" ]]; then
-            read -rp "Tunnel [1-2, Enter=2]: " choice
-            choice="${choice:-2}"
-        else
-            choice="${TUNNEL_CHOICE:-2}"
-        fi
-        if [[ "$choice" == "1" ]]; then
-            if [[ "$NON_INTERACTIVE" != "true" ]]; then
-                read -rp "VPS хост: " TUNNEL_VPS_HOST
-                validate_hostname "$TUNNEL_VPS_HOST" || { echo -e "${RED}Некорректный хост, tunnel отключён${NC}"; TUNNEL_VPS_HOST=""; }
-                read -rp "VPS порт SSH [22]: " TUNNEL_VPS_PORT
-                TUNNEL_VPS_PORT="${TUNNEL_VPS_PORT:-22}"
-                validate_port "$TUNNEL_VPS_PORT" || { TUNNEL_VPS_PORT="22"; echo "Using default port 22"; }
-                read -rp "Порт на VPS для проброса [8080]: " TUNNEL_REMOTE_PORT
-                TUNNEL_REMOTE_PORT="${TUNNEL_REMOTE_PORT:-8080}"
-                validate_port "$TUNNEL_REMOTE_PORT" || { TUNNEL_REMOTE_PORT="8080"; echo "Using default port 8080"; }
-            fi
-        fi
-        echo ""
-    fi
-
     # --- Summary ---
     echo -e "${CYAN}=== Параметры установки ===${NC}"
     echo "  Профиль:      ${DEPLOY_PROFILE}"
     [[ -n "$DOMAIN" ]] && echo "  Домен:        ${DOMAIN}"
-    echo "  Компания:     ${COMPANY_NAME}"
     echo "  Векторное БД: ${VECTOR_STORE}"
     [[ "$ETL_ENHANCED" == "yes" ]] && echo "  ETL:          Docling + Xinference"
     echo "  LLM:          ${LLM_MODEL}"
     echo "  Embedding:    ${EMBEDDING_MODEL}"
-    echo "  Админ:        ${ADMIN_EMAIL}"
     [[ "$TLS_MODE" != "none" ]] && echo "  TLS:          ${TLS_MODE}"
     [[ "$MONITORING_MODE" != "none" ]] && echo "  Мониторинг:   ${MONITORING_MODE}"
     [[ "$ALERT_MODE" != "none" ]] && echo "  Алерты:       ${ALERT_MODE}"
     echo "  Бэкап:        ${BACKUP_TARGET} (${BACKUP_SCHEDULE})"
-    [[ -n "$DOKPLOY_ENABLED" ]] && echo "  Dokploy:      да"
-    [[ -n "$TUNNEL_VPS_HOST" ]] && echo "  Tunnel:       ${TUNNEL_VPS_HOST}:${TUNNEL_REMOTE_PORT}"
     echo ""
 
     if [[ "$NON_INTERACTIVE" != "true" ]]; then
@@ -703,7 +607,7 @@ phase_wizard() {
 # PHASE 3: Install Docker
 # ============================================================================
 phase_docker() {
-    echo -e "${BOLD}[3/11] Docker${NC}"
+    echo -e "${BOLD}[3/9] Docker${NC}"
     setup_docker
     echo ""
 }
@@ -712,16 +616,14 @@ phase_docker() {
 # PHASE 4: Generate Configuration
 # ============================================================================
 phase_config() {
-    echo -e "${BOLD}[4/11] Генерация конфигурации${NC}"
+    echo -e "${BOLD}[4/9] Генерация конфигурации${NC}"
 
     # FIRST: clean directory artifacts left by previous failed installs.
     # Must run BEFORE generate_config — otherwise cat/cp into a directory path fails.
     ensure_bind_mount_files
 
     # Export variables for config.sh
-    # Note: ADMIN_PASSWORD intentionally NOT exported (visible in /proc/environ)
-    # config.sh reads it from global scope (same process via source)
-    export INSTALL_DIR ADMIN_EMAIL COMPANY_NAME
+    export INSTALL_DIR
     export LLM_MODEL EMBEDDING_MODEL DOMAIN CERTBOT_EMAIL
     export DEPLOY_PROFILE VECTOR_STORE ETL_ENHANCED
     export TLS_MODE TLS_CERT_PATH TLS_KEY_PATH
@@ -755,7 +657,6 @@ phase_config() {
     # Copy workflow files
     cp "${INSTALLER_DIR}/workflows/rag-assistant.json" "${INSTALL_DIR}/workflows/" 2>/dev/null || \
         cp "${INSTALLER_DIR}/references/rag-assistant-mvp-workflow.json" "${INSTALL_DIR}/workflows/rag-assistant.json"
-    cp "${INSTALLER_DIR}/workflows/import.py" "${INSTALL_DIR}/workflows/"
 
     # Copy scripts
     cp "${INSTALLER_DIR}/scripts/backup.sh" "${INSTALL_DIR}/scripts/"
@@ -828,7 +729,7 @@ SQUIDEOF
 # PHASE 5: Start Stack
 # ============================================================================
 phase_start() {
-    echo -e "${BOLD}[5/11] Запуск контейнеров${NC}"
+    echo -e "${BOLD}[5/9] Запуск контейнеров${NC}"
 
     cd "${INSTALL_DIR}/docker"
 
@@ -934,9 +835,10 @@ phase_start() {
 # and admin is created via docker exec (container-internal), not through
 # the public nginx port.
 create_openwebui_admin() {
-    local admin_email="${ADMIN_EMAIL:-admin@admin.com}"
-    local admin_password="${ADMIN_PASSWORD:-}"
-    local admin_name="${COMPANY_NAME:-AGMind} Admin"
+    local admin_email="admin@localhost"
+    local admin_password
+    admin_password=$(grep '^INIT_PASSWORD=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- | base64 -d 2>/dev/null || head -c 256 /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z0-9' | head -c 16)
+    local admin_name="AGMind Admin"
 
     echo -e "${YELLOW}Создание администратора Open WebUI...${NC}"
 
@@ -1104,7 +1006,7 @@ post_launch_status() {
 # PHASE 6: Wait for healthy
 # ============================================================================
 phase_health() {
-    echo -e "${BOLD}[6/11] Проверка здоровья${NC}"
+    echo -e "${BOLD}[6/9] Проверка здоровья${NC}"
     export INSTALL_DIR
     wait_healthy 300 || true
 
@@ -1135,68 +1037,21 @@ phase_health() {
 # PHASE 7: Download Models
 # ============================================================================
 phase_models() {
-    echo -e "${BOLD}[7/11] Загрузка моделей${NC}"
+    echo -e "${BOLD}[7/9] Загрузка моделей${NC}"
     export INSTALL_DIR LLM_MODEL EMBEDDING_MODEL DEPLOY_PROFILE
     download_models
     echo ""
 }
 
 # ============================================================================
-# PHASE 8: Import Workflow
-# ============================================================================
-phase_workflow() {
-    echo -e "${BOLD}[8/11] Импорт workflow${NC}"
-    # ADMIN_PASSWORD passed via global scope, not exported to /proc/environ
-    export INSTALL_DIR ADMIN_EMAIL LLM_MODEL EMBEDDING_MODEL COMPANY_NAME
-
-    # Dify Console served on port 3000 (no sub-path prefix needed)
-    export DIFY_INTERNAL_URL="http://localhost:3000"
-    export DIFY_CONSOLE_PREFIX=""
-
-    # import_workflow may fail if marketplace is down or plugins can't install.
-    # Don't let it kill the entire installation — phases 9-11 must still run.
-    if import_workflow; then
-        # import.py now patches .env with DIFY_API_KEY directly (BUG-6)
-        # Restart pipeline and Open WebUI to pick up the new API key
-        if [[ -f "${INSTALL_DIR}/.dify_service_api_key" ]]; then
-            docker compose -f "${INSTALL_DIR}/docker/docker-compose.yml" restart pipeline open-webui
-        fi
-    else
-        echo -e "${YELLOW}⚠ Workflow import failed — configure models manually in Dify UI${NC}"
-        echo -e "${YELLOW}  Settings > Model Provider > Add Ollama (http://ollama:11434)${NC}"
-    fi
-    echo ""
-}
-
-# ============================================================================
-# PHASE 9: Setup Backups
+# PHASE 8: Setup Backups
 # ============================================================================
 phase_backups() {
-    echo -e "${BOLD}[9/11] Настройка бэкапов${NC}"
+    echo -e "${BOLD}[8/9] Настройка бэкапов${NC}"
     export INSTALL_DIR BACKUP_TARGET BACKUP_SCHEDULE
     export REMOTE_BACKUP_HOST REMOTE_BACKUP_PORT REMOTE_BACKUP_USER
     export REMOTE_BACKUP_KEY REMOTE_BACKUP_PATH
     setup_backups
-    echo ""
-}
-
-# ============================================================================
-# PHASE 10: Dokploy + Tunnel
-# ============================================================================
-phase_connectivity() {
-    echo -e "${BOLD}[10/11] Подключения${NC}"
-
-    # Dokploy
-    export DEPLOY_PROFILE DOKPLOY_ENABLED
-    export TUNNEL_REMOTE_PORT TUNNEL_SSH_REMOTE_PORT TUNNEL_VPS_HOST
-    setup_dokploy
-
-    # Reverse SSH tunnel (LAN only)
-    if [[ "$DEPLOY_PROFILE" == "lan" && -n "$TUNNEL_VPS_HOST" ]]; then
-        export INSTALL_DIR TUNNEL_VPS_HOST TUNNEL_VPS_PORT TUNNEL_REMOTE_PORT TUNNEL_LOCAL_PORT
-        export TUNNEL_SSH_REMOTE_PORT
-        setup_tunnel
-    fi
     echo ""
 }
 
@@ -1210,9 +1065,11 @@ get_local_ip() {
 }
 
 # ============================================================================
-# PHASE 11: Final Output
+# PHASE 9: Final Output
 # ============================================================================
 phase_complete() {
+    echo -e "${BOLD}[9/9] Завершение установки${NC}"
+    echo ""
     # Determine access URL
     local access_url=""
     case "$DEPLOY_PROFILE" in
@@ -1253,17 +1110,17 @@ phase_complete() {
     esac
 
     # Gather credentials
-    local admin_pass=""
+    local init_password=""
+    if [[ -f "${INSTALL_DIR}/docker/.env" ]]; then
+        init_password=$(grep '^INIT_PASSWORD=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2-)
+    fi
+    local owui_pass=""
     if [[ -f "${INSTALL_DIR}/.admin_password" ]]; then
-        admin_pass=$(cat "${INSTALL_DIR}/.admin_password" 2>/dev/null)
+        owui_pass=$(cat "${INSTALL_DIR}/.admin_password" 2>/dev/null)
     fi
     local grafana_pass=""
     if [[ -f "${INSTALL_DIR}/docker/.env" ]]; then
         grafana_pass=$(grep '^GRAFANA_ADMIN_PASSWORD=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d= -f2-)
-    fi
-    local dify_api_key=""
-    if [[ -f "${INSTALL_DIR}/.dify_service_api_key" ]]; then
-        dify_api_key=$(cat "${INSTALL_DIR}/.dify_service_api_key" 2>/dev/null)
     fi
 
     # Container status
@@ -1285,20 +1142,16 @@ phase_complete() {
     summary+="$(printf '╠%s╣\n' "$(printf '═%.0s' $(seq 1 $W))")"
     summary+="$(printf '║%*s║\n' $W '')"
     summary+="$(printf '║  Open WebUI:    %-*s║\n' $((W-18)) "$access_url")"
+    summary+="$(printf '║  WebUI pass:    %-*s║\n' $((W-18)) "${owui_pass:-N/A}")"
     summary+="$(printf '║  Dify Console:  %-*s║\n' $((W-18)) "$dify_url")"
+    summary+="$(printf '║  Dify init pwd: %-*s║\n' $((W-18)) "${init_password:-N/A}")"
     if [[ "$MONITORING_MODE" == "local" ]]; then
         local mon_ip; mon_ip=$(get_local_ip)
         summary+="$(printf '║  Grafana:       %-*s║\n' $((W-18)) "http://${mon_ip}:3001")"
         summary+="$(printf '║  Portainer:     %-*s║\n' $((W-18)) "https://${mon_ip}:9443")"
     fi
-    summary+="$(printf '║%*s║\n' $W '')"
-    summary+="$(printf '║  Admin email:   %-*s║\n' $((W-18)) "${ADMIN_EMAIL}")"
-    summary+="$(printf '║  Admin pass:    %-*s║\n' $((W-18)) "${admin_pass:-N/A}")"
     if [[ -n "$grafana_pass" ]]; then
         summary+="$(printf '║  Grafana pass:  %-*s║\n' $((W-18)) "$grafana_pass")"
-    fi
-    if [[ -n "$dify_api_key" ]]; then
-        summary+="$(printf '║  Dify API key:  %-*s║\n' $((W-18)) "$dify_api_key")"
     fi
     summary+="$(printf '║%*s║\n' $W '')"
     summary+="$(printf '║  LLM:           %-*s║\n' $((W-18)) "${LLM_MODEL} (Ollama)")"
@@ -1330,14 +1183,12 @@ phase_complete() {
         echo "# chmod 600 — only root can read"
         echo ""
         echo "Open WebUI:    $access_url"
+        echo "WebUI pass:    ${owui_pass:-N/A}"
         echo "Dify Console:  $dify_url"
+        echo "Dify init pwd: ${init_password:-N/A}"
         [[ "$MONITORING_MODE" == "local" ]] && echo "Grafana:       http://$(get_local_ip):3001"
         [[ "$MONITORING_MODE" == "local" ]] && echo "Portainer:     https://$(get_local_ip):9443"
-        echo ""
-        echo "Admin email:   $ADMIN_EMAIL"
-        echo "Admin pass:    ${admin_pass:-N/A}"
         [[ -n "$grafana_pass" ]] && echo "Grafana pass:  $grafana_pass"
-        [[ -n "$dify_api_key" ]] && echo "Dify API key:  $dify_api_key"
         echo ""
         echo "LLM:           $LLM_MODEL (Ollama)"
         echo "Embedding:     $EMBEDDING_MODEL (Ollama)"
@@ -1372,10 +1223,6 @@ main() {
             --etl=*) ETL_TYPE="${ETL_TYPE:-${1#*=}}" ;;
             --vector-store) VECTOR_STORE="${VECTOR_STORE:-$2}"; shift ;;
             --vector-store=*) VECTOR_STORE="${VECTOR_STORE:-${1#*=}}" ;;
-            --company) COMPANY_NAME="${COMPANY_NAME:-$2}"; shift ;;
-            --company=*) COMPANY_NAME="${COMPANY_NAME:-${1#*=}}" ;;
-            --admin-email) ADMIN_EMAIL="${ADMIN_EMAIL:-$2}"; shift ;;
-            --admin-email=*) ADMIN_EMAIL="${ADMIN_EMAIL:-${1#*=}}" ;;
             --domain) DOMAIN="${DOMAIN:-$2}"; shift ;;
             --domain=*) DOMAIN="${DOMAIN:-${1#*=}}" ;;
             --help|-h)
@@ -1389,8 +1236,6 @@ main() {
                 echo "  --monitoring MODE    Monitoring: local, none"
                 echo "  --etl TYPE           ETL: dify, unstructured_api"
                 echo "  --vector-store TYPE  Vector store: weaviate, qdrant"
-                echo "  --company NAME       Company name for branding"
-                echo "  --admin-email EMAIL  Admin email"
                 echo "  --domain DOMAIN      Domain for TLS"
                 echo ""
                 echo "Env vars take precedence over CLI args."
@@ -1426,17 +1271,15 @@ main() {
         fi
     fi
 
-    phase_diagnostics  # [1/11]
-    phase_wizard       # [2/11]
-    phase_docker       # [3/11]
-    phase_config       # [4/11]
-    phase_start        # [5/11]
-    phase_health       # [6/11]
-    phase_models       # [7/11]
-    phase_workflow     # [8/11]
-    phase_backups      # [9/11]
-    phase_connectivity # [10/11]
-    phase_complete     # [11/11]
+    phase_diagnostics  # [1/9]
+    phase_wizard       # [2/9]
+    phase_docker       # [3/9]
+    phase_config       # [4/9]
+    phase_start        # [5/9]
+    phase_health       # [6/9]
+    phase_models       # [7/9]
+    phase_backups      # [8/9]
+    phase_complete     # [9/9]
 }
 
 main "$@"
