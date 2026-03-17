@@ -12,6 +12,70 @@
 
 ---
 
+## 🔴 TASK-013: BUG-017 не починен — ollama pull падает на IPv6
+
+**Приоритет:** 🔴 Критический — блокирует скачивание моделей на любом хосте без IPv6 маршрута
+
+### Проблема
+
+`lib/models.sh:43` в `pull_model()` перезаписывает `/etc/resolv.conf` внутри контейнера Ollama на `8.8.8.8`. Google DNS возвращает AAAA-записи для `registry.ollama.ai`. Go runtime в Ollama использует свой DNS resolver и **игнорирует** `sysctl net.ipv6.conf.all.disable_ipv6=1` — пытается коннект на IPv6 адрес → `connect: cannot assign requested address`.
+
+Текущий "фикс" BUG-017 (sysctls в docker-compose) **не работает** — Go не использует ядерный сетевой стек для DNS resolution, у него свой userspace resolver.
+
+### Воспроизведение
+
+Любой хост без IPv6 маршрута (большинство домашних/офисных сетей):
+```
+docker exec agmind-ollama ollama pull qwen2.5:7b
+→ dial tcp [2606:4700:3034::ac43:b6e5]:443: connect: cannot assign requested address
+```
+
+### Требуемый фикс
+
+Убрать хак с перезаписью resolv.conf. Вместо этого — **одно из двух** (оба надёжные, можно комбинировать):
+
+**Вариант A (рекомендуемый): переменная окружения Go**
+
+Добавить в docker-compose секцию ollama:
+```yaml
+environment:
+  GODEBUG: "netdns=cgo"
+```
+Это заставляет Go использовать системный (cgo) DNS resolver, который **уважает** sysctl `disable_ipv6`. В связке с уже стоящим `sysctls: net.ipv6.conf.all.disable_ipv6=1` — решает проблему полностью.
+
+**Вариант B (belt-and-suspenders): force IPv4 в pull_model()**
+
+В `lib/models.sh` функция `pull_model()` — вместо перезаписи resolv.conf, резолвить адрес на хосте и прокидывать через `extra_hosts`:
+```bash
+# В pull_model() — заменить текущий docker exec с перезаписью resolv.conf на:
+docker exec agmind-ollama ollama pull "$1"
+```
+А в шаблоне docker-compose для ollama добавить:
+```yaml
+extra_hosts:
+  - "registry.ollama.ai:$(dig +short A registry.ollama.ai | head -1)"
+```
+Или статически (Cloudflare стабилен):
+```yaml
+extra_hosts:
+  - "registry.ollama.ai:104.21.75.227"
+```
+
+### Что убрать
+
+1. `lib/models.sh:43` — удалить `echo "nameserver ..." > /etc/resolv.conf` из `pull_model()`. Просто `docker exec agmind-ollama ollama pull "$1"`.
+2. `lib/docker.sh:205` — DOCKER_DNS хак для resolv.conf больше не нужен (если выбран вариант A).
+
+### Как проверить
+
+```bash
+# На хосте без IPv6:
+docker exec agmind-ollama ollama pull qwen2.5:7b
+# Должно скачать без ошибок
+```
+
+---
+
 ## 🔴 TASK-012: import.py — add_model missing required fields
 
 **Приоритет:** 🔴 Критический — блокирует автоматическую настройку
@@ -138,4 +202,4 @@ TASK-002/003/004/005/007/008/009, BUG-009–BUG-018 — закрыты в деп
 
 ---
 
-_Обновлено: 2026-03-17 04:55 PDT — Gbot (деплой #10, коммит 999dc94)_
+_Обновлено: 2026-03-17 06:20 PDT — Gbot (TASK-013 добавлен после деплоя #13 Сэра)_
