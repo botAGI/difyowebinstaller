@@ -202,4 +202,71 @@ TASK-002/003/004/005/007/008/009, BUG-009–BUG-018 — закрыты в деп
 
 ---
 
-_Обновлено: 2026-03-17 06:20 PDT — Gbot (TASK-013 добавлен после деплоя #13 Сэра)_
+## 🟡 TASK-014: Post-install summary — показывать ВСЕ credentials и ссылки
+
+**Приоритет:** 🟡 Важный — UX, безопасность
+
+### Проблема
+
+После установки `phase_complete()` показывает баннер, но:
+1. **Пароль скрыт** — написано `(см. /opt/agmind/.admin_password)`, а файл root-only. Пользователь уже root в момент установки — нет причин скрывать.
+2. **Grafana пароль скрыт** — написано `(см. GRAFANA_ADMIN_PASSWORD в .env)`. Опять grep.
+3. **DIFY_API_KEY не показан** — и вообще не записан в .env (отдельный баг, см. ниже).
+4. **Нет сводки по безопасности** — какие порты открыты, что доступно извне, UFW статус.
+5. **Нет сводки по контейнерам** — сколько up, сколько failed.
+
+### Что нужно
+
+`phase_complete()` должна после баннера выводить **полный блок credentials и ссылок** — всё в одном месте, copy-paste ready:
+
+```
+╔══════════════════════════════════════════════════════╗
+║                 CREDENTIALS & URLS                   ║
+╠══════════════════════════════════════════════════════╣
+║                                                      ║
+║  Open WebUI:    http://192.168.50.26                 ║
+║  Dify Console:  http://192.168.50.26:3000            ║
+║  Grafana:       http://192.168.50.26:3001            ║
+║  Portainer:     https://192.168.50.26:9443           ║
+║                                                      ║
+║  Admin email:   admin@admin.com                      ║
+║  Admin pass:    dQgucxIDBbDr0Ilz                     ║
+║  Grafana pass:  HPhvCxTMbSXPwK2x                    ║
+║  Dify API key:  app-xxxxxxxxxxxxxxxx                 ║
+║                                                      ║
+║  LLM:           qwen2.5:7b (Ollama)                  ║
+║  Embedding:     bge-m3 (Ollama)                      ║
+║  Reranker:      bce-reranker-base_v1 (Xinference)    ║
+║  Vector DB:     Weaviate                             ║
+║                                                      ║
+║  Containers:    23/23 healthy                        ║
+║  Plugins:       ollama ✅ xinference ✅ docling ✅      ║
+║                                                      ║
+╚══════════════════════════════════════════════════════╝
+```
+
+Дополнительно — **записать эту же сводку в файл** `${INSTALL_DIR}/credentials.txt` (chmod 600) для будущего доступа.
+
+### Связанный баг: DIFY_API_KEY не записывается в .env
+
+`import.py` создаёт API key для приложения, но **не пишет его** в `/opt/agmind/docker/.env` (поле `DIFY_API_KEY=` остаётся пустым). Из-за этого:
+- Pipeline контейнер не может подключиться к Dify
+- Open WebUI не видит RAG-ассистента как модель
+- Вся цепочка Open WebUI → Pipeline → Dify сломана
+
+**Фикс:** `import.py` после создания API key должен:
+1. Записать ключ в `.env`: `sed -i "s/^DIFY_API_KEY=.*/DIFY_API_KEY=${api_key}/" /opt/agmind/docker/.env`
+2. Перезапустить pipeline + openwebui: `docker compose restart pipeline openwebui`
+3. Вернуть ключ в stdout для `phase_complete()`
+
+### Как проверить
+
+После установки:
+1. В терминале видны ВСЕ credentials и ссылки
+2. `cat /opt/agmind/credentials.txt` содержит то же самое
+3. `grep DIFY_API_KEY /opt/agmind/docker/.env` → непустое значение
+4. `curl http://localhost:9099/v1/models` → список содержит RAG-ассистента
+
+---
+
+_Обновлено: 2026-03-17 08:55 PDT — Gbot (TASK-014 добавлен)_
