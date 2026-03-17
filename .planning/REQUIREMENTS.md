@@ -17,10 +17,10 @@ Requirements for v2.0 MVP release. Each maps to roadmap phases.
 
 ### Security
 
-- [ ] **SECV-01**: Portainer/Grafana bind 127.0.0.1 by default, opt-in to open
-- [ ] **SECV-02**: Authelia 2FA covers all Dify routes (/console/api/, /api/, /v1/, /files/)
-- [ ] **SECV-03**: Credentials written only to credentials.txt (chmod 600), not printed to stdout
-- [ ] **SECV-04**: SSRF sandbox blocks RFC1918 + link-local + cloud metadata (169.254.169.254)
+- [x] **SECV-01**: Portainer/Grafana bind 127.0.0.1 by default, opt-in to open
+- [x] **SECV-02**: Authelia 2FA covers all Dify routes (/console/api/, /api/, /v1/, /files/)
+- [x] **SECV-03**: Credentials written only to credentials.txt (chmod 600), not printed to stdout
+- [x] **SECV-04**: SSRF sandbox blocks RFC1918 + link-local + cloud metadata (169.254.169.254)
 - [x] **SECV-05**: Fail2ban fixed (mount nginx access.log to host) or replaced with nginx rate limiting
 - [x] **SECV-06**: Backup/restore fixed (restore via tmpdir copy, parser flags corrected)
 - [x] **SECV-07**: Rate limiting on nginx API routes (/v1/chat/completions, /console/api/)
@@ -103,10 +103,10 @@ Deferred to future. Tracked for planning.
 | SURG-03 | Phase 1 | Pending |
 | SURG-04 | Phase 1 | Complete |
 | SURG-05 | Phase 1 | Pending |
-| SECV-01 | Phase 2 | Pending |
-| SECV-02 | Phase 2 | Pending |
-| SECV-03 | Phase 2 | Pending |
-| SECV-04 | Phase 2 | Pending |
+| SECV-01 | Phase 2 | Complete |
+| SECV-02 | Phase 2 | Complete |
+| SECV-03 | Phase 2 | Complete |
+| SECV-04 | Phase 2 | Complete |
 | SECV-05 | Phase 2 | Complete |
 | SECV-06 | Phase 2 | Complete |
 | SECV-07 | Phase 2 | Complete |

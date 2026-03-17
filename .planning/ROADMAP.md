@@ -41,11 +41,11 @@ Plans:
 
 **Requirements:** SECV-01, SECV-02, SECV-03, SECV-04, SECV-05, SECV-06, SECV-07
 
-**Plans:** 2/3 plans executed
+**Plans:** 2/3 plans complete
 
 Plans:
-- [ ] 02-01-PLAN.md — Nginx rate limiting extension + fail2ban nginx jail removal (SECV-05, SECV-07)
-- [ ] 02-02-PLAN.md — Wizard admin-UI opt-in, credential suppression, Squid ACL, Authelia policy (SECV-01, SECV-02, SECV-03, SECV-04)
+- [x] 02-01-PLAN.md — Nginx rate limiting extension + fail2ban nginx jail removal (SECV-05, SECV-07)
+- [x] 02-02-PLAN.md — Wizard admin-UI opt-in, credential suppression, Squid ACL, Authelia policy (SECV-01, SECV-02, SECV-03, SECV-04)
 - [ ] 02-03-PLAN.md — Backup/restore fixes + BATS test (SECV-06)
 
 **Key deliverables:**
@@ -153,10 +153,10 @@ Phases 2 and 3 can run in parallel after Phase 1 (no mutual dependency), but seq
 | Checkpoint | After Phase | What to verify |
 |------------|-------------|----------------|
 | Clean slate | 1 | Stack works without import.py, no Dify API calls |
-| Secure | 2 | 2/3 | In Progress|  | 3 | Wizard works, profiles start correct containers |
+| Secure | 2 (2/3 done) | In Progress | 3 | Wizard works, profiles start correct containers |
 | Professional installer | 4 | Resume, logs, timeouts all working |
 | v2.0 release | 5 | Full stack with CLI tools, ready for users |
 
 ---
 *Roadmap created: 2026-03-17*
-*Last updated: 2026-03-18 after Phase 2 planning — 3 plans created*
+*Last updated: 2026-03-18 after Phase 2 Plan 02 completion — admin UI lock, credential suppression, Squid SSRF ACLs, Authelia bypass*
