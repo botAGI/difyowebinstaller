@@ -41,7 +41,7 @@ Plans:
 
 **Requirements:** SECV-01, SECV-02, SECV-03, SECV-04, SECV-05, SECV-06, SECV-07
 
-**Plans:** 4 plans
+**Plans:** 4/4 plans complete
 
 Plans:
 - [x] 02-01-PLAN.md — Nginx rate limiting extension + fail2ban nginx jail removal (SECV-05, SECV-07)
@@ -154,7 +154,7 @@ Phases 2 and 3 can run in parallel after Phase 1 (no mutual dependency), but seq
 | Checkpoint | After Phase | What to verify |
 |------------|-------------|----------------|
 | Clean slate | 1 | Stack works without import.py, no Dify API calls |
-| Secure | 2 (2/3 done) | In Progress | 3 | Wizard works, profiles start correct containers |
+| Secure | 2 (2/3 done) | 4/4 | Complete   | 2026-03-17 |
 | Professional installer | 4 | Resume, logs, timeouts all working |
 | v2.0 release | 5 | Full stack with CLI tools, ready for users |
 

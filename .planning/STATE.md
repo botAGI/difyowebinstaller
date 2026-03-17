@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: milestone
 status: planning
-last_updated: "2026-03-17T23:25:19.086Z"
+last_updated: "2026-03-17T23:56:02.738Z"
 progress:
   total_phases: 5
-  completed_phases: 1
-  total_plans: 5
-  completed_plans: 5
+  completed_phases: 2
+  total_plans: 6
+  completed_plans: 6
 ---
 
 # State: AGmind Installer v2.0
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-17)
 
 **Core value:** One command installs, secures, and monitors a production-ready AI stack
-**Current focus:** Phase 1 — Remove Dify API automation
+**Current focus:** Phase 3 — Provider Architecture (Phase 2 complete)
 
 ## Phase History
 
 | Phase | Name | Status | Plans | Completed |
 |-------|------|--------|-------|-----------|
 | 1 | Surgery | Complete | 2/2 | 2026-03-18 |
-| 2 | Security Hardening v2 | In Progress | 2/3 | -- |
+| 2 | Security Hardening v2 | Complete | 4/4 | 2026-03-18 |
 | 3 | Provider Architecture | Not Started | 0/0 | -- |
 | 4 | Installer Redesign | Not Started | 0/0 | -- |
 | 5 | DevOps & UX | Not Started | 0/0 | -- |
@@ -55,6 +55,7 @@ Last deploy: #10, 2026-03-17, 23/23 containers healthy.
 - [Phase 02 Plan 02]: ADMIN_UI_OPEN defaults to false; VPS always locked; ADMIN_UI_BIND_ADDR env triggers yes in non-interactive mode
 - [Phase 02 Plan 02]: Credentials suppressed from terminal stdout; credentials.txt (chmod 600) is single source of truth for passwords
 - [Phase 02 Plan 02]: Authelia bypass for /api,/v1,/files placed before two_factor rule (first-match wins in Authelia)
+- [Phase 02]: SECV-02 documentation updated with (10r/s) rate precision — bypass rationale self-contained without cross-referencing CONTEXT.md
 
 ## Performance Metrics
 
@@ -64,7 +65,9 @@ Last deploy: #10, 2026-03-17, 23/23 containers healthy.
 | 1 | 02 | 4min | 2 | 2 |
 | 2 | 01 | 2min | 2 | 2 |
 | 2 | 02 | 4min | 3 | 5 |
+| 2 | 03 | -- | -- | -- |
+| 2 | 04 | 2min | 1 | 2 |
 
 ---
-*Last updated: 2026-03-18 after Phase 2 Plan 02 completion — admin UI lock, credential suppression, Squid SSRF, Authelia bypass*
+*Last updated: 2026-03-18 after Phase 2 Plan 04 completion — SECV-02 documentation drift fix, Phase 2 fully complete*
 
