@@ -43,9 +43,18 @@ setup_dify_account() {
 }
 
 import_workflow() {
+    # Read from .env if env vars not set (install.sh exports them,
+    # but they may be empty if user ran workflow.sh standalone)
+    if [[ -z "${LLM_MODEL:-}" && -f "${INSTALL_DIR}/docker/.env" ]]; then
+        LLM_MODEL=$(grep '^LLM_MODEL=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d= -f2-)
+    fi
+    if [[ -z "${EMBEDDING_MODEL:-}" && -f "${INSTALL_DIR}/docker/.env" ]]; then
+        EMBEDDING_MODEL=$(grep '^EMBEDDING_MODEL=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d= -f2-)
+    fi
+
     local admin_email="${ADMIN_EMAIL:-admin@admin.com}"
     local admin_password="${ADMIN_PASSWORD:-}"
-    local llm_model="${LLM_MODEL:-qwen2.5:14b}"
+    local llm_model="${LLM_MODEL:-qwen2.5:7b}"
     local embedding_model="${EMBEDDING_MODEL:-bge-m3}"
     local company_name="${COMPANY_NAME:-AGMind}"
     local dify_port="${DIFY_PORT:-3000}"

@@ -728,7 +728,8 @@ def install_plugins_from_github(client, plugin_specs, timeout=300):
 # ======================================================================
 
 def patch_workflow(workflow_data, kb_id, api_key, model_name, company_name,
-                   model_provider="langgenius/ollama/ollama"):
+                   model_provider="langgenius/ollama/ollama",
+                   rerank_model="", rerank_provider=""):
     """Patch workflow JSON with deployment-specific values."""
     graph = workflow_data.get("graph", workflow_data)
     nodes = graph.get("nodes", [])
@@ -741,6 +742,14 @@ def patch_workflow(workflow_data, kb_id, api_key, model_name, company_name,
         if node_type == "knowledge-retrieval":
             data["dataset_ids"] = [kb_id]
             print(f"  Patched: {data.get('title', node['id'])} → KB {kb_id}")
+            # Enable reranking if rerank model is configured
+            if rerank_model and rerank_provider:
+                data["reranking_enable"] = True
+                data["reranking_model"] = {
+                    "provider": rerank_provider,
+                    "model": rerank_model,
+                }
+                print(f"  Patched: reranking → {rerank_model}")
 
         # Patch HTTP request nodes — URLs and API keys
         elif node_type == "http-request":
@@ -971,10 +980,27 @@ def main():
             print("  ⚠ Some plugins not installed — provider/model config may fail",
                   file=sys.stderr)
 
-        # --- Step 11: Add models ---
+        # Wait for plugin runtimes to initialize (docling compiles Python deps)
+        if plugins_ok and plugin_specs:
+            print("  Waiting for plugin runtimes to initialize...")
+            time.sleep(30)
+
+        # --- Step 11: Add models (with retry — plugin runtime may still be loading) ---
         print("\n--- \u041c\u043e\u0434\u0435\u043b\u0438 ---")
+
+        def _retry(fn, retries=3, delay=15, label=""):
+            for attempt in range(retries):
+                try:
+                    return fn()
+                except Exception as e:
+                    if attempt < retries - 1:
+                        print(f"  Retry {attempt+1}/{retries} for {label}: {e}")
+                        time.sleep(delay)
+                    else:
+                        raise
+
         # LLM
-        client.add_model(
+        _retry(lambda: client.add_model(
             args.model_provider,
             args.model,
             "llm",
@@ -986,20 +1012,20 @@ def main():
                 "vision_support": "false",
                 "function_call_support": "true",
             },
-        )
+        ), label="add LLM model")
         # Embedding
-        client.add_model(
+        _retry(lambda: client.add_model(
             args.embedding_provider,
             args.embedding,
             "text-embedding",
             {
                 "base_url": args.ollama_url,
             },
-        )
+        ), label="add embedding model")
 
         # Reranker (Xinference)
         if args.rerank_model:
-            client.add_model(
+            _retry(lambda: client.add_model(
                 args.rerank_provider,
                 args.rerank_model,
                 "rerank",
@@ -1007,17 +1033,19 @@ def main():
                     "server_url": args.xinference_url,
                     "model_uid": args.rerank_model,
                 },
-            )
+            ), label="add rerank model")
 
         # --- Step 12: Set defaults (one call per model type) ---
-        client.set_default_model("llm", args.model_provider, args.model)
-        client.set_default_model(
+        _retry(lambda: client.set_default_model(
+            "llm", args.model_provider, args.model
+        ), label="set default LLM")
+        _retry(lambda: client.set_default_model(
             "text-embedding", args.embedding_provider, args.embedding
-        )
+        ), label="set default embedding")
         if args.rerank_model:
-            client.set_default_model(
+            _retry(lambda: client.set_default_model(
                 "rerank", args.rerank_provider, args.rerank_model
-            )
+            ), label="set default rerank")
 
         models_ok = True
     except Exception as e:
@@ -1069,6 +1097,8 @@ def main():
     graph = patch_workflow(
         workflow_data, kb_id, dataset_api_key,
         args.model, args.company, args.model_provider,
+        rerank_model=args.rerank_model,
+        rerank_provider=args.rerank_provider,
     )
     features = patch_features(
         workflow_data.get("features", {}), args.company
