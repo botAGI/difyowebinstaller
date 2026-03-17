@@ -20,10 +20,11 @@ configure_authelia() {
     # Copy configuration template
     cp "${template_dir}/authelia/configuration.yml.template" "${authelia_dir}/configuration.yml"
 
-    # Generate argon2 hash for admin password
-    local admin_password="${ADMIN_PASSWORD:-}"
+    # Generate argon2 hash for admin password (read from INIT_PASSWORD in .env)
+    local admin_password
+    admin_password=$(grep '^INIT_PASSWORD=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- | base64 -d 2>/dev/null || echo "")
     if [[ -z "$admin_password" ]]; then
-        admin_password=$(cat "${INSTALL_DIR}/.admin_password" 2>/dev/null || head -c 256 /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z0-9' | head -c 16)
+        admin_password=$(head -c 256 /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z0-9' | head -c 16)
     fi
 
     local admin_hash
@@ -43,7 +44,7 @@ configure_authelia() {
     # Escape user-controlled values for safe sed substitution
     local safe_domain safe_company
     safe_domain=$(printf '%s' "${DOMAIN:-localhost}" | sed 's/[&/|\]/\\&/g')
-    safe_company=$(printf '%s' "${COMPANY_NAME:-AGMind}" | sed 's/[&/|\]/\\&/g')
+    safe_company=$(printf '%s' "AGMind" | sed 's/[&/|\]/\\&/g')
 
     # Replace placeholders in configuration.yml
     sed -i.bak \
@@ -56,7 +57,7 @@ configure_authelia() {
     # Replace placeholders in users_database.yml
     sed -i.bak \
         -e "s|__AUTHELIA_ADMIN_HASH__|${admin_hash}|g" \
-        -e "s|__ADMIN_EMAIL__|${ADMIN_EMAIL:-admin@${DOMAIN:-localhost}}|g" \
+        -e "s|__ADMIN_EMAIL__|admin@${DOMAIN:-localhost}|g" \
         -e "s|__COMPANY_NAME__|${safe_company}|g" \
         "${authelia_dir}/users_database.yml"
     rm -f "${authelia_dir}/users_database.yml.bak"

@@ -210,13 +210,10 @@ generate_config() {
     mkdir -p "${INSTALL_DIR}/workflows"
     mkdir -p /var/backups/agmind
 
-    # Copy docker-compose.yml and pipeline build context
+    # Copy docker-compose.yml
     cp "${template_dir}/docker-compose.yml" "${INSTALL_DIR}/docker/docker-compose.yml"
     local installer_root
     installer_root="$(dirname "$template_dir")"
-    if [[ -d "${installer_root}/pipeline" ]]; then
-        cp -r "${installer_root}/pipeline" "${INSTALL_DIR}/docker/pipeline"
-    fi
 
     # Generate secrets
     local secret_key
@@ -239,11 +236,9 @@ generate_config() {
     local grafana_admin_password
     grafana_admin_password=$(generate_random 16)
 
-    # Admin password (Base64 encoded for Dify)
-    local admin_password_plain="${ADMIN_PASSWORD:-}"
-    if [[ -z "$admin_password_plain" ]]; then
-        admin_password_plain=$(generate_random 16)
-    fi
+    # Admin password (auto-generated, Base64 encoded for Dify INIT_PASSWORD)
+    local admin_password_plain
+    admin_password_plain=$(generate_random 16)
     local admin_password_b64
     admin_password_b64=$(echo -n "$admin_password_plain" | base64)
 
@@ -263,12 +258,10 @@ generate_config() {
     chmod 600 "$env_file"
 
     # Escape user-input values for safe sed replacement (& | / \ chars)
-    local safe_admin_email safe_company safe_domain safe_certbot_email
+    local safe_domain safe_certbot_email
     local safe_monitoring_endpoint safe_webhook_url
     local safe_llm_model safe_embedding_model
     local safe_monitoring_token safe_telegram_token safe_telegram_chat_id
-    safe_admin_email=$(escape_sed "${ADMIN_EMAIL:-admin@admin.com}")
-    safe_company=$(escape_sed "${COMPANY_NAME:-AGMind}")
     safe_domain=$(escape_sed "${DOMAIN:-localhost}")
     safe_certbot_email=$(escape_sed "${CERTBOT_EMAIL:-}")
     safe_monitoring_endpoint=$(escape_sed "${MONITORING_ENDPOINT:-}")
@@ -287,9 +280,7 @@ generate_config() {
         -e "s|__SANDBOX_API_KEY__|${sandbox_api_key}|g" \
         -e "s|__PLUGIN_DAEMON_KEY__|${plugin_daemon_key}|g" \
         -e "s|__PLUGIN_INNER_API_KEY__|${plugin_inner_api_key}|g" \
-        -e "s|__ADMIN_EMAIL__|${safe_admin_email}|g" \
         -e "s|__ADMIN_PASSWORD_B64__|${admin_password_b64}|g" \
-        -e "s|__COMPANY_NAME__|${safe_company}|g" \
         -e "s|__LLM_MODEL__|${safe_llm_model}|g" \
         -e "s|__EMBEDDING_MODEL__|${safe_embedding_model}|g" \
         -e "s|__DOMAIN__|${safe_domain}|g" \
