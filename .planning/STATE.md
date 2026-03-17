@@ -8,7 +8,7 @@ progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 5
-  completed_plans: 4
+  completed_plans: 5
 ---
 
 # State: AGmind Installer v2.0
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-03-17)
 | Phase | Name | Status | Plans | Completed |
 |-------|------|--------|-------|-----------|
 | 1 | Surgery | Complete | 2/2 | 2026-03-18 |
-| 2 | Security Hardening v2 | In Progress | 1/3 | -- |
+| 2 | Security Hardening v2 | In Progress | 2/3 | -- |
 | 3 | Provider Architecture | Not Started | 0/0 | -- |
 | 4 | Installer Redesign | Not Started | 0/0 | -- |
 | 5 | DevOps & UX | Not Started | 0/0 | -- |
@@ -52,6 +52,9 @@ Last deploy: #10, 2026-03-17, 23/23 containers healthy.
 - [Phase 02]: Phase 2 Plan 01: Fail2ban nginx jail removed entirely — Docker logpath mismatch makes it non-functional; nginx rate limiting replaces it
 - [Phase 02]: RESTORE_TMP at /opt/agmind/.restore_tmp (INSTALL_DIR-relative) avoids cross-device mv failures
 - [Phase 02]: BATS backup tests use grep/head pattern validation — no Docker required for CI
+- [Phase 02 Plan 02]: ADMIN_UI_OPEN defaults to false; VPS always locked; ADMIN_UI_BIND_ADDR env triggers yes in non-interactive mode
+- [Phase 02 Plan 02]: Credentials suppressed from terminal stdout; credentials.txt (chmod 600) is single source of truth for passwords
+- [Phase 02 Plan 02]: Authelia bypass for /api,/v1,/files placed before two_factor rule (first-match wins in Authelia)
 
 ## Performance Metrics
 
@@ -60,8 +63,8 @@ Last deploy: #10, 2026-03-17, 23/23 containers healthy.
 | 1 | 01 | 7min | 2 | 13 |
 | 1 | 02 | 4min | 2 | 2 |
 | 2 | 01 | 2min | 2 | 2 |
+| 2 | 02 | 4min | 3 | 5 |
 
 ---
-*Last updated: 2026-03-18 after Phase 2 Plan 01 completion — nginx rate limiting + fail2ban cleanup*
-| Phase 02 P03 | 15min | 2 tasks | 2 files |
+*Last updated: 2026-03-18 after Phase 2 Plan 02 completion — admin UI lock, credential suppression, Squid SSRF, Authelia bypass*
 
