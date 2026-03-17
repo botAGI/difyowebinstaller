@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: milestone
 status: planning
-last_updated: "2026-03-17T23:23:54.936Z"
+last_updated: "2026-03-17T23:25:19.086Z"
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 5
-  completed_plans: 3
+  completed_plans: 4
 ---
 
 # State: AGmind Installer v2.0
@@ -50,6 +50,8 @@ Last deploy: #10, 2026-03-17, 23/23 containers healthy.
 - Phase 1 Plan 02: WEBUI_NAME hardcoded to AGMind in docker-compose.yml (COMPANY_NAME removed as wizard field in Plan 01); pipeline reconnect folded into workflows/README.md
 - [Phase 02]: Phase 2 Plan 01: Login rate at 1r/10s burst=3 blocks dictionary attacks, burst allows typos
 - [Phase 02]: Phase 2 Plan 01: Fail2ban nginx jail removed entirely — Docker logpath mismatch makes it non-functional; nginx rate limiting replaces it
+- [Phase 02]: RESTORE_TMP at /opt/agmind/.restore_tmp (INSTALL_DIR-relative) avoids cross-device mv failures
+- [Phase 02]: BATS backup tests use grep/head pattern validation — no Docker required for CI
 
 ## Performance Metrics
 
@@ -61,4 +63,5 @@ Last deploy: #10, 2026-03-17, 23/23 containers healthy.
 
 ---
 *Last updated: 2026-03-18 after Phase 2 Plan 01 completion — nginx rate limiting + fail2ban cleanup*
+| Phase 02 P03 | 15min | 2 tasks | 2 files |
 

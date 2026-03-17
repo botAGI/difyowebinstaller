@@ -22,7 +22,7 @@ Requirements for v2.0 MVP release. Each maps to roadmap phases.
 - [ ] **SECV-03**: Credentials written only to credentials.txt (chmod 600), not printed to stdout
 - [ ] **SECV-04**: SSRF sandbox blocks RFC1918 + link-local + cloud metadata (169.254.169.254)
 - [x] **SECV-05**: Fail2ban fixed (mount nginx access.log to host) or replaced with nginx rate limiting
-- [ ] **SECV-06**: Backup/restore fixed (restore via tmpdir copy, parser flags corrected)
+- [x] **SECV-06**: Backup/restore fixed (restore via tmpdir copy, parser flags corrected)
 - [x] **SECV-07**: Rate limiting on nginx API routes (/v1/chat/completions, /console/api/)
 
 ### Provider Architecture
@@ -108,7 +108,7 @@ Deferred to future. Tracked for planning.
 | SECV-03 | Phase 2 | Pending |
 | SECV-04 | Phase 2 | Pending |
 | SECV-05 | Phase 2 | Complete |
-| SECV-06 | Phase 2 | Pending |
+| SECV-06 | Phase 2 | Complete |
 | SECV-07 | Phase 2 | Complete |
 | PROV-01 | Phase 3 | Pending |
 | PROV-02 | Phase 3 | Pending |
