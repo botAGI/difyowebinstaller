@@ -223,7 +223,7 @@ services:
     container_name: agmind-openwebui
     restart: always
     environment:
-      - WEBUI_NAME=${COMPANY_NAME:-AGMind}
+      - WEBUI_NAME=AGMind
       - ENABLE_SIGNUP=${ENABLE_SIGNUP:-false}
       - ENABLE_LOGIN_FORM=true
       - DEFAULT_USER_ROLE=${DEFAULT_USER_ROLE:-user}
