@@ -15,16 +15,16 @@ progress:
 
 ## Current Phase
 
-**Phase:** 4 — Installer Redesign
+**Phase:** 5 — DevOps & UX
 **Status:** Milestone complete
-**Plans:** 0/0 complete
+**Plans:** 2/2 complete
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-03-17)
 
 **Core value:** One command installs, secures, and monitors a production-ready AI stack
-**Current focus:** Phase 4 — Installer Redesign (Phase 3 complete)
+**Current focus:** All 5 phases complete — v2.0 MVP delivered
 
 ## Phase History
 
@@ -33,8 +33,8 @@ See: .planning/PROJECT.md (updated 2026-03-17)
 | 1 | Surgery | Complete | 2/2 | 2026-03-18 |
 | 2 | Security Hardening v2 | Complete | 4/4 | 2026-03-18 |
 | 3 | Provider Architecture | Complete | 3/3 | 2026-03-18 |
-| 4 | Installer Redesign | Not Started | 0/0 | -- |
-| 5 | DevOps & UX | Not Started | 0/0 | -- |
+| 4 | Installer Redesign | Complete | 2/2 | 2026-03-18 |
+| 5 | DevOps & UX | Complete | 2/2 | 2026-03-18 |
 
 ## Context from v1
 
@@ -86,6 +86,13 @@ Last deploy: #10, 2026-03-17, 23/23 containers healthy.
 | 2 | 02 | 4min | 3 | 5 |
 | 2 | 03 | -- | -- | -- |
 | 2 | 04 | 2min | 1 | 2 |
+| 3 | 01 | 15min | 2 | 6 |
+| 3 | 02 | 4min | 2 | 5 |
+| 3 | 03 | 8min | 2 | 2 |
+| 4 | 01 | 12min | 1 | 1 |
+| 4 | 02 | 8min | 2 | 2 |
+| 5 | 01 | 2min | 2 | 1 |
+| 5 | 02 | 15min | 3 | 5 |
 
 ### Quick Tasks Completed
 
@@ -94,12 +101,5 @@ Last deploy: #10, 2026-03-17, 23/23 containers healthy.
 | 260318-e1f | Fix remaining bugs: atomic sed, BUG-015, restart policies, plugin pool, logrotate | 2026-03-18 | [260318-e1f](./quick/260318-e1f-fix-remaining-bugs-atomic-sed-bug-015-re/) |
 
 ---
-*Last updated: 2026-03-18 — Completed quick task 260318-e1f: Fix remaining bugs*
-| Phase 03 P01 | 15min | 2 tasks | 6 files |
-| Phase 03 P02 | 4min | 2 tasks | 5 files |
-| Phase 03 P03 | 8min | 2 tasks | 2 files |
-| Phase 04 P01 | 12min | 1 tasks | 1 files |
-| Phase 04 P02 | 8min | 2 tasks | 2 files |
-| Phase 05 P01 | 2min | 2 tasks | 1 files |
-| Phase 05 P02 | 15min | 3 tasks | 5 files |
+*Last updated: 2026-03-18 — Synced Phase History table with frontmatter (all 5 phases complete)*
 

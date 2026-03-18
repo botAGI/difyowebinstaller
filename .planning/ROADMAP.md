@@ -140,8 +140,8 @@ Plans:
 **Plans:** 2/2 plans complete
 
 Plans:
-- [ ] 05-01-PLAN.md — agmind CLI entry point with status dashboard, --json output, doctor diagnostics (DEVX-01, DEVX-02, DEVX-04)
-- [ ] 05-02-PLAN.md — health-gen.sh + nginx /health endpoint + install.sh integration + BATS tests (DEVX-03)
+- [x] 05-01-PLAN.md — agmind CLI entry point with status dashboard, --json output, doctor diagnostics (DEVX-01, DEVX-02, DEVX-04)
+- [x] 05-02-PLAN.md — health-gen.sh + nginx /health endpoint + install.sh integration + BATS tests (DEVX-03)
 
 **Key deliverables:**
 - `agmind status`: containers, GPU, models, endpoints, credentials path
@@ -187,4 +187,4 @@ Phases 2 and 3 can run in parallel after Phase 1 (no mutual dependency), but seq
 
 ---
 *Roadmap created: 2026-03-17*
-*Last updated: 2026-03-18 after Phase 5 planning — 2 plans created for DevOps & UX*
+*Last updated: 2026-03-18 — All 5 phases complete, v2.0 MVP delivered*
