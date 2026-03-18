@@ -27,8 +27,8 @@ Requirements for v2.0 MVP release. Each maps to roadmap phases.
 
 ### Provider Architecture
 
-- [ ] **PROV-01**: LLM provider wizard (Ollama / vLLM / External API / Skip)
-- [ ] **PROV-02**: Embedding provider wizard (Ollama / TEI / External / Same as LLM)
+- [x] **PROV-01**: LLM provider wizard (Ollama / vLLM / External API / Skip)
+- [x] **PROV-02**: Embedding provider wizard (Ollama / TEI / External / Same as LLM)
 - [x] **PROV-03**: Compose profiles per provider choice (ollama, vllm, external)
 - [ ] **PROV-04**: Plugin documentation per provider (README with install commands)
 
@@ -110,8 +110,8 @@ Deferred to future. Tracked for planning.
 | SECV-05 | Phase 2 | Complete |
 | SECV-06 | Phase 2 | Complete |
 | SECV-07 | Phase 2 | Complete |
-| PROV-01 | Phase 3 | Pending |
-| PROV-02 | Phase 3 | Pending |
+| PROV-01 | Phase 3 | Complete |
+| PROV-02 | Phase 3 | Complete |
 | PROV-03 | Phase 3 | Complete |
 | PROV-04 | Phase 3 | Pending |
 | INST-01 | Phase 4 | Pending |

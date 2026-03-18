@@ -75,7 +75,7 @@ Plans:
 
 **Requirements:** PROV-01, PROV-02, PROV-03, PROV-04
 
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 
 Plans:
 - [ ] 03-01-PLAN.md — Compose profiles: Ollama to profile, add vLLM + TEI services, versions.env, env templates (PROV-03)
@@ -162,7 +162,7 @@ Phases 2 and 3 can run in parallel after Phase 1 (no mutual dependency), but seq
 |------------|-------------|----------------|
 | Clean slate | 1 | Stack works without import.py, no Dify API calls |
 | Secure | 2 | All security gaps closed, credentials protected |
-| Provider choice | 3 | 1/3 | In Progress|  | 4 | Resume, logs, timeouts all working |
+| Provider choice | 3 | 2/3 | In Progress|  | 4 | Resume, logs, timeouts all working |
 | v2.0 release | 5 | Full stack with CLI tools, ready for users |
 
 ---
