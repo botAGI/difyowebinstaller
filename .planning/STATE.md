@@ -3,28 +3,28 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: milestone
 status: planning
-last_updated: "2026-03-18T01:23:41.670Z"
+last_updated: "2026-03-18T01:27:21.793Z"
 progress:
   total_phases: 5
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 9
-  completed_plans: 8
+  completed_plans: 9
 ---
 
 # State: AGmind Installer v2.0
 
 ## Current Phase
 
-**Phase:** 1 — Surgery
-**Status:** Ready to plan
-**Plans:** 2/2 complete
+**Phase:** 4 — Installer Redesign
+**Status:** Not Started
+**Plans:** 0/0 complete
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-03-17)
 
 **Core value:** One command installs, secures, and monitors a production-ready AI stack
-**Current focus:** Phase 3 — Provider Architecture (Phase 2 complete)
+**Current focus:** Phase 4 — Installer Redesign (Phase 3 complete)
 
 ## Phase History
 
@@ -32,7 +32,7 @@ See: .planning/PROJECT.md (updated 2026-03-17)
 |-------|------|--------|-------|-----------|
 | 1 | Surgery | Complete | 2/2 | 2026-03-18 |
 | 2 | Security Hardening v2 | Complete | 4/4 | 2026-03-18 |
-| 3 | Provider Architecture | Not Started | 0/0 | -- |
+| 3 | Provider Architecture | Complete | 3/3 | 2026-03-18 |
 | 4 | Installer Redesign | Not Started | 0/0 | -- |
 | 5 | DevOps & UX | Not Started | 0/0 | -- |
 
@@ -61,6 +61,8 @@ Last deploy: #10, 2026-03-17, 23/23 containers healthy.
 - [Phase 03]: LLM provider question precedes model selection; Ollama model list shown only when LLM_PROVIDER=ollama
 - [Phase 03]: need_ollama unified flag: single wait_for_ollama call when LLM or embed provider uses Ollama
 - [Phase 03]: config.sh appends provider WebUI vars after template sed to avoid duplication across profiles
+- [Phase 03]: plugin_hint variable set to empty after inline vLLM print to avoid duplicate echo via common guard
+- [Phase 03]: llm_display/embed_display declared at top of phase_complete() — reused in both terminal summary box and credentials.txt
 
 ## Performance Metrics
 
@@ -74,7 +76,8 @@ Last deploy: #10, 2026-03-17, 23/23 containers healthy.
 | 2 | 04 | 2min | 1 | 2 |
 
 ---
-*Last updated: 2026-03-18 after Phase 2 Plan 04 completion — SECV-02 documentation drift fix, Phase 2 fully complete*
+*Last updated: 2026-03-18 after Phase 3 Plan 03 completion — provider UX completion screen and plugin docs, Phase 3 fully complete*
 | Phase 03 P01 | 15min | 2 tasks | 6 files |
 | Phase 03 P02 | 4min | 2 tasks | 5 files |
+| Phase 03 P03 | 8min | 2 tasks | 2 files |
 
