@@ -19,34 +19,68 @@ The `rag-assistant.json` file is a Dify DSL (Domain Specific Language) workflow 
 5. Upload `rag-assistant.json` from `/opt/agmind/workflows/`
 6. The workflow will appear in your app list
 
-## Required Plugins
+## Plugin Setup by Provider
 
-After importing, install the plugins your provider needs. Go to **Plugins** in Dify and search for:
+After installation, install the Dify plugins for your chosen provider. Go to **Plugins** in Dify and search for the plugin name.
 
-### Ollama (default)
-- `langgenius/ollama` — Ollama model provider
+### Ollama
 
-### vLLM / External OpenAI-compatible API
-- `langgenius/openai_api_compatible` — OpenAI-compatible model provider
+If you chose **Ollama** as your LLM or Embedding provider:
 
-### Enhanced ETL (if enabled during install)
-- `s20ss/docling` — Advanced document parsing
+1. Install plugin: `langgenius/ollama`
+2. Go to **Settings > Model Providers > Ollama**
+3. Set Base URL: `http://ollama:11434`
+4. Your models (e.g., `qwen2.5:14b`, `bge-m3`) will be auto-detected
+
+### vLLM
+
+If you chose **vLLM** as your LLM provider:
+
+1. Install plugin: `langgenius/openai_api_compatible`
+2. Go to **Settings > Model Providers > OpenAI-API-compatible**
+3. Set API Endpoint URL: `http://vllm:8000/v1`
+4. Set API Key: any non-empty value (e.g., `token-abc123`) — vLLM does not validate keys by default
+5. Add your model name manually (must match the model running in vLLM, e.g., `Qwen/Qwen2.5-14B-Instruct`)
+
+### TEI (Text Embeddings Inference)
+
+If you chose **TEI** as your Embedding provider:
+
+1. Install plugin: `langgenius/openai_api_compatible`
+2. Go to **Settings > Model Providers > OpenAI-API-compatible**
+3. Set API Endpoint URL: `http://tei:80/v1`
+4. Set API Key: any non-empty value (e.g., `token-abc123`)
+5. Add model name: `BAAI/bge-m3`
+6. Set model type to **Text Embedding**
+
+> **Note:** If you use both vLLM and TEI, add two separate OpenAI-API-compatible providers in Dify — one for LLM (vLLM endpoint) and one for Embedding (TEI endpoint).
+
+### External API
+
+If you chose **External API** as your provider:
+
+1. Install plugin: `langgenius/openai_api_compatible`
+2. Go to **Settings > Model Providers > OpenAI-API-compatible**
+3. Set your external provider's API Endpoint URL and API Key
+4. Add your model names manually
+
+Compatible external providers: OpenAI, Azure OpenAI, Anthropic, Google AI, Groq, Together AI, and any OpenAI-compatible API.
+
+### Enhanced ETL (Docling)
+
+If you enabled Enhanced ETL during installation:
+
+1. Install plugin: `s20ss/docling`
+2. The Docling service is pre-configured at `http://docling:8765`
+3. Go to **Settings > Document Processing** to select Docling as the parser
 
 ## Post-Import Configuration
 
 After importing the workflow, configure these nodes:
 
-1. **LLM Node** — Select your model (e.g., `qwen2.5:14b` for Ollama)
-2. **Knowledge Base Node** — Create a Knowledge Base first, then select it in this node
-3. **Embedding Node** — Select your embedding model (e.g., `bge-m3` for Ollama)
-
-### Setting Up Model Providers
-
-1. Go to **Settings > Model Providers**
-2. Add your provider:
-   - **Ollama**: Base URL = `http://ollama:11434`
-   - **vLLM**: Base URL = `http://vllm:8000/v1`
-   - **External API**: Enter your provider's URL and API key
+1. **LLM Node** — Select your model from the configured provider
+2. **Knowledge Base Node** — Create a Knowledge Base first, then select it
+3. **Embedding Node** — Select your embedding model from the configured provider
 
 ## Connecting Open WebUI to Dify (Optional)
 
