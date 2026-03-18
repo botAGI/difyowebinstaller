@@ -1241,6 +1241,24 @@ get_local_ip() {
 phase_complete() {
     echo -e "${BOLD}[9/9] Завершение установки${NC}"
     echo ""
+
+    # Provider-aware display labels
+    local llm_display
+    case "${LLM_PROVIDER:-ollama}" in
+        ollama)   llm_display="${LLM_MODEL:-qwen2.5:14b} (Ollama)";;
+        vllm)     llm_display="${VLLM_MODEL:-Qwen/Qwen2.5-14B-Instruct} (vLLM)";;
+        external) llm_display="External API";;
+        skip)     llm_display="Не настроен";;
+    esac
+
+    local embed_display
+    case "${EMBED_PROVIDER:-ollama}" in
+        ollama)   embed_display="${EMBEDDING_MODEL:-bge-m3} (Ollama)";;
+        tei)      embed_display="BAAI/bge-m3 (TEI)";;
+        external) embed_display="External API";;
+        skip)     embed_display="Не настроен";;
+    esac
+
     # Determine access URL
     local access_url=""
     case "$DEPLOY_PROFILE" in
@@ -1320,8 +1338,8 @@ phase_complete() {
         summary+="$(printf '║  Portainer:     %-*s║\n' $((W-18)) "https://${mon_ip}:9443")"
     fi
     summary+="$(printf '║%*s║\n' $W '')"
-    summary+="$(printf '║  LLM:           %-*s║\n' $((W-18)) "${LLM_MODEL} (Ollama)")"
-    summary+="$(printf '║  Embedding:     %-*s║\n' $((W-18)) "${EMBEDDING_MODEL} (Ollama)")"
+    summary+="$(printf '║  LLM:           %-*s║\n' $((W-18)) "$llm_display")"
+    summary+="$(printf '║  Embedding:     %-*s║\n' $((W-18)) "$embed_display")"
     if [[ -n "$rerank_info" ]]; then
         summary+="$(printf '║  Reranker:      %-*s║\n' $((W-18)) "$rerank_info")"
     fi
@@ -1346,6 +1364,31 @@ phase_complete() {
     echo -e "${YELLOW}Credentials saved to: ${INSTALL_DIR}/credentials.txt (chmod 600)${NC}"
     echo -e "${CYAN}View: cat ${INSTALL_DIR}/credentials.txt${NC}"
 
+    # Provider-specific plugin hint
+    echo ""
+    local plugin_hint
+    case "${LLM_PROVIDER:-ollama}" in
+        ollama)
+            plugin_hint="Установите плагин langgenius/ollama в Dify -> Plugins"
+            ;;
+        vllm)
+            plugin_hint="Установите плагин langgenius/openai_api_compatible в Dify -> Plugins"
+            echo -e "${CYAN}${plugin_hint}${NC}"
+            echo -e "${CYAN}  Endpoint: http://vllm:8000/v1${NC}"
+            plugin_hint=""  # already printed
+            ;;
+        external)
+            plugin_hint="Установите плагин langgenius/openai_api_compatible в Dify -> Plugins"
+            ;;
+        skip)
+            plugin_hint="Настройте модель в Dify -> Settings -> Model Providers"
+            ;;
+    esac
+    if [[ -n "$plugin_hint" ]]; then
+        echo -e "${CYAN}${plugin_hint}${NC}"
+    fi
+    echo -e "${CYAN}Подробно: ${INSTALL_DIR}/workflows/README.md${NC}"
+
     # Save credentials to file (root-only)
     {
         echo "# AGMind Credentials — $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
@@ -1359,8 +1402,8 @@ phase_complete() {
         [[ "$MONITORING_MODE" == "local" ]] && echo "Portainer:     https://$(get_local_ip):9443"
         [[ -n "$grafana_pass" ]] && echo "Grafana pass:  $grafana_pass"
         echo ""
-        echo "LLM:           $LLM_MODEL (Ollama)"
-        echo "Embedding:     $EMBEDDING_MODEL (Ollama)"
+        echo "LLM:           $llm_display"
+        echo "Embedding:     $embed_display"
         [[ -n "$rerank_info" ]] && echo "Reranker:      $rerank_info"
         echo "Vector DB:     $VECTOR_STORE"
         echo "Containers:    ${healthy_containers}/${total_containers} healthy"
