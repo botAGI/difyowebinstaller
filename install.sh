@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-# AGMind Installer v1.0
+# AGMind Installer v2.0
 # Full RAG stack: Dify + Open WebUI + Ollama + Weaviate + PostgreSQL + Redis
 # Usage: curl -sSL https://install.aillmsystems.com | bash
 # ============================================================================
@@ -8,7 +8,7 @@ set -euo pipefail
 trap 'echo "ERROR at line $LINENO: $BASH_COMMAND" >&2' ERR
 
 # --- Constants ---
-VERSION="1.0.0"
+VERSION="2.0.0"
 INSTALLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -z "${BASH_SOURCE[0]:-}" || ! -f "${INSTALLER_DIR}/lib/detect.sh" ]]; then
     echo -e "\033[0;31mОшибка: запустите инсталлер из директории проекта: bash install.sh\033[0m"
@@ -51,6 +51,11 @@ cleanup_on_failure() {
         echo -e "${RED}Установка прервана (код: ${exit_code}).${NC}"
         echo -e "${YELLOW}Частично созданные файлы могут остаться в ${INSTALL_DIR}${NC}"
         echo -e "${YELLOW}Для очистки: rm -rf ${INSTALL_DIR}${NC}"
+        if [[ -f "${INSTALL_DIR}/.install_phase" ]]; then
+            local failed_phase
+            failed_phase=$(cat "${INSTALL_DIR}/.install_phase" 2>/dev/null)
+            echo -e "${YELLOW}Установка прервана на фазе ${failed_phase}/9. Перезапустите: sudo bash install.sh${NC}"
+        fi
     fi
 }
 if [[ "$(uname)" == "Darwin" ]]; then
@@ -96,6 +101,7 @@ ALERT_WEBHOOK_URL=""
 ALERT_TELEGRAM_TOKEN=""
 ALERT_TELEGRAM_CHAT_ID=""
 NON_INTERACTIVE=false
+FORCE_RESTART=false
 ADMIN_UI_OPEN=false
 ENABLE_UFW="false"
 
@@ -161,7 +167,6 @@ show_banner() {
 # PHASE 1: Diagnostics
 # ============================================================================
 phase_diagnostics() {
-    echo -e "${BOLD}[1/9] Диагностика системы${NC}"
     echo ""
     run_diagnostics || {
         echo ""
@@ -194,7 +199,6 @@ phase_diagnostics() {
 # PHASE 2: Interactive Wizard
 # ============================================================================
 phase_wizard() {
-    echo -e "${BOLD}[2/9] Настройка установки${NC}"
     echo ""
 
     # --- Profile ---
@@ -755,7 +759,6 @@ phase_wizard() {
 # PHASE 3: Install Docker
 # ============================================================================
 phase_docker() {
-    echo -e "${BOLD}[3/9] Docker${NC}"
     setup_docker
     echo ""
 }
@@ -764,7 +767,6 @@ phase_docker() {
 # PHASE 4: Generate Configuration
 # ============================================================================
 phase_config() {
-    echo -e "${BOLD}[4/9] Генерация конфигурации${NC}"
 
     # FIRST: clean directory artifacts left by previous failed installs.
     # Must run BEFORE generate_config — otherwise cat/cp into a directory path fails.
@@ -896,8 +898,6 @@ SQUIDEOF
 # PHASE 5: Start Stack
 # ============================================================================
 phase_start() {
-    echo -e "${BOLD}[5/9] Запуск контейнеров${NC}"
-
     cd "${INSTALL_DIR}/docker"
 
     # Build compose profiles dynamically
@@ -1177,7 +1177,6 @@ post_launch_status() {
 # PHASE 6: Wait for healthy
 # ============================================================================
 phase_health() {
-    echo -e "${BOLD}[6/9] Проверка здоровья${NC}"
     export INSTALL_DIR
     wait_healthy 300 || true
 
@@ -1208,7 +1207,6 @@ phase_health() {
 # PHASE 7: Download Models
 # ============================================================================
 phase_models() {
-    echo -e "${BOLD}[7/9] Загрузка моделей${NC}"
     export INSTALL_DIR LLM_MODEL EMBEDDING_MODEL DEPLOY_PROFILE LLM_PROVIDER EMBED_PROVIDER
     download_models
     echo ""
@@ -1218,7 +1216,6 @@ phase_models() {
 # PHASE 8: Setup Backups
 # ============================================================================
 phase_backups() {
-    echo -e "${BOLD}[8/9] Настройка бэкапов${NC}"
     export INSTALL_DIR BACKUP_TARGET BACKUP_SCHEDULE
     export REMOTE_BACKUP_HOST REMOTE_BACKUP_PORT REMOTE_BACKUP_USER
     export REMOTE_BACKUP_KEY REMOTE_BACKUP_PATH
@@ -1239,7 +1236,6 @@ get_local_ip() {
 # PHASE 9: Final Output
 # ============================================================================
 phase_complete() {
-    echo -e "${BOLD}[9/9] Завершение установки${NC}"
     echo ""
 
     # Provider-aware display labels
@@ -1415,6 +1411,32 @@ phase_complete() {
 }
 
 # ============================================================================
+# PHASE RUNNER: checkpoint tracking + timestamp logging
+# ============================================================================
+# Run a single installation phase with checkpoint tracking and timestamp logging.
+# Usage: run_phase <phase_number> <total_phases> <phase_name> <phase_function>
+run_phase() {
+    local phase_num="$1"
+    local total="$2"
+    local phase_name="$3"
+    local phase_func="$4"
+
+    # Write checkpoint BEFORE phase starts — crash mid-phase retries this phase
+    echo "$phase_num" > "${INSTALL_DIR}/.install_phase"
+
+    local start_ts
+    start_ts=$(date +%H:%M:%S)
+    echo ""
+    echo -e "${BOLD}[${start_ts}] === PHASE ${phase_num}/${total}: ${phase_name} ===${NC}"
+
+    "$phase_func"
+
+    local end_ts
+    end_ts=$(date +%H:%M:%S)
+    echo -e "${GREEN}[${end_ts}] === PHASE ${phase_num}/${total}: ${phase_name} DONE ===${NC}"
+}
+
+# ============================================================================
 # MAIN
 # ============================================================================
 main() {
@@ -1422,6 +1444,7 @@ main() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --non-interactive) NON_INTERACTIVE=true ;;
+            --force-restart) FORCE_RESTART=true ;;
             --profile) DEPLOY_PROFILE="${DEPLOY_PROFILE:-$2}"; shift ;;
             --profile=*) DEPLOY_PROFILE="${DEPLOY_PROFILE:-${1#*=}}" ;;
             --llm) LLM_MODEL="${LLM_MODEL:-$2}"; shift ;;
@@ -1441,6 +1464,7 @@ main() {
                 echo ""
                 echo "Options:"
                 echo "  --non-interactive    Run without prompts (use env vars or CLI args)"
+                echo "  --force-restart      Delete checkpoint, start from phase 1"
                 echo "  --profile PROFILE    Deploy profile: vps, lan, vpn, offline"
                 echo "  --llm MODEL          LLM model (e.g. qwen2.5:7b)"
                 echo "  --embedding MODEL    Embedding model (e.g. bge-m3)"
@@ -1462,10 +1486,62 @@ main() {
         exit 1
     fi
 
+    # Ensure INSTALL_DIR exists for logging and checkpoint
+    mkdir -p "${INSTALL_DIR}"
+
+    # Setup logging: all stdout+stderr goes to screen AND install.log
+    local LOG_FILE="${INSTALL_DIR}/install.log"
+    exec > >(tee -a "$LOG_FILE") 2>&1
+    chmod 600 "$LOG_FILE"
+
     show_banner
 
-    # Check if already installed
-    if [[ -f "${INSTALL_DIR}/.agmind_installed" ]]; then
+    # Handle --force-restart: delete checkpoint, proceed as fresh install
+    if [[ "$FORCE_RESTART" == "true" ]]; then
+        rm -f "${INSTALL_DIR}/.install_phase"
+        echo -e "${YELLOW}--force-restart: checkpoint removed, starting from phase 1${NC}"
+    fi
+
+    # Determine start phase (checkpoint resume)
+    local start_phase=1
+    local checkpoint_file="${INSTALL_DIR}/.install_phase"
+
+    if [[ -f "$checkpoint_file" ]]; then
+        local saved_phase
+        saved_phase=$(cat "$checkpoint_file" 2>/dev/null)
+        # Validate: must be integer 1-9
+        if [[ "$saved_phase" =~ ^[1-9]$ ]]; then
+            if [[ "$NON_INTERACTIVE" == "true" ]]; then
+                # Non-interactive: auto-resume
+                echo -e "${YELLOW}Checkpoint found: resuming from phase ${saved_phase}/9${NC}"
+                start_phase="$saved_phase"
+            else
+                echo ""
+                echo -e "${YELLOW}Найдена незавершённая установка (фаза ${saved_phase}/9).${NC}"
+                echo -e "${YELLOW}Продолжить? [yes/no/restart]${NC}"
+                local resume_choice
+                read -rp "> " resume_choice
+                case "$resume_choice" in
+                    yes|y)
+                        start_phase="$saved_phase"
+                        echo -e "${GREEN}Продолжение с фазы ${start_phase}...${NC}"
+                        ;;
+                    restart)
+                        rm -f "$checkpoint_file"
+                        echo -e "${YELLOW}Checkpoint удалён, начинаем с фазы 1${NC}"
+                        start_phase=1
+                        ;;
+                    *)
+                        echo "Выход."
+                        exit 0
+                        ;;
+                esac
+            fi
+        fi
+    fi
+
+    # Check if already installed (only on fresh install, not resume)
+    if [[ "$start_phase" -eq 1 && -f "${INSTALL_DIR}/.agmind_installed" ]]; then
         echo -e "${YELLOW}AGMind уже установлен в ${INSTALL_DIR}${NC}"
         echo "  Для обновления: ${INSTALL_DIR}/scripts/update.sh"
         echo "  Для переустановки: ${INSTALL_DIR}/scripts/uninstall.sh && bash install.sh"
@@ -1482,15 +1558,29 @@ main() {
         fi
     fi
 
-    phase_diagnostics  # [1/9]
-    phase_wizard       # [2/9]
-    phase_docker       # [3/9]
-    phase_config       # [4/9]
-    phase_start        # [5/9]
-    phase_health       # [6/9]
-    phase_models       # [7/9]
-    phase_backups      # [8/9]
-    phase_complete     # [9/9]
+    # On resume: skip wizard, source existing .env for variables
+    if [[ "$start_phase" -gt 2 && -f "${INSTALL_DIR}/docker/.env" ]]; then
+        echo -e "${CYAN}Загрузка переменных из существующего .env...${NC}"
+        # shellcheck disable=SC1091
+        set +u  # .env may have empty values
+        source "${INSTALL_DIR}/docker/.env"
+        set -u
+    fi
+
+    # Phase table: number, name, function
+    local total=9
+    [[ "$start_phase" -le 1 ]] && run_phase 1 $total "Diagnostika sistemy"        phase_diagnostics
+    [[ "$start_phase" -le 2 ]] && run_phase 2 $total "Nastroika ustanovki"        phase_wizard
+    [[ "$start_phase" -le 3 ]] && run_phase 3 $total "Docker"                     phase_docker
+    [[ "$start_phase" -le 4 ]] && run_phase 4 $total "Generatsiya konfiguratsii"  phase_config
+    [[ "$start_phase" -le 5 ]] && run_phase 5 $total "Zapusk konteinerov"         phase_start
+    [[ "$start_phase" -le 6 ]] && run_phase 6 $total "Proverka zdorovya"          phase_health
+    [[ "$start_phase" -le 7 ]] && run_phase 7 $total "Zagruzka modelej"           phase_models
+    [[ "$start_phase" -le 8 ]] && run_phase 8 $total "Nastroika bekapov"          phase_backups
+    [[ "$start_phase" -le 9 ]] && run_phase 9 $total "Zavershenie"                phase_complete
+
+    # Installation complete — remove checkpoint
+    rm -f "${INSTALL_DIR}/.install_phase"
 }
 
 main "$@"
