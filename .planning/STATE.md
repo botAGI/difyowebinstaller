@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: milestone
 status: planning
-last_updated: "2026-03-18T04:39:37.926Z"
+last_updated: "2026-03-18T04:44:23.323Z"
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 13
-  completed_plans: 12
+  completed_plans: 13
 ---
 
 # State: AGmind Installer v2.0
@@ -72,6 +72,9 @@ Last deploy: #10, 2026-03-17, 23/23 containers healthy.
 - [Phase 05]: [Phase 05 Plan 01]: INSTALL_DIR exported before sourcing health.sh to prevent COMPOSE_DIR scoping issue at source time
 - [Phase 05]: [Phase 05 Plan 01]: _status_as_json() does NOT call check_all() — avoids ANSI escapes in JSON output (Pitfall 6)
 - [Phase 05]: [Phase 05 Plan 01]: GPU checks skipped in doctor when both LLM_PROVIDER=external AND EMBED_PROVIDER=external
+- [Phase 05]: health-gen.sh uses atomic write (mktemp+mv) to prevent nginx serving partial JSON during update
+- [Phase 05]: nginx /health uses auth_request off via #__AUTHELIA__ pattern — explicit Authelia bypass for VPN profiles
+- [Phase 05]: cron.d/agmind-health logs to INSTALL_DIR/health-gen.log; initial health.json placeholder created in phase_config() before nginx start
 
 ## Performance Metrics
 
@@ -92,4 +95,5 @@ Last deploy: #10, 2026-03-17, 23/23 containers healthy.
 | Phase 04 P01 | 12min | 1 tasks | 1 files |
 | Phase 04 P02 | 8min | 2 tasks | 2 files |
 | Phase 05 P01 | 2min | 2 tasks | 1 files |
+| Phase 05 P02 | 15min | 3 tasks | 5 files |
 
