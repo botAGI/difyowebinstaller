@@ -43,7 +43,7 @@ Requirements for v2.0 MVP release. Each maps to roadmap phases.
 
 - [x] **DEVX-01**: agmind status — containers, GPU, models, endpoints, credentials path
 - [x] **DEVX-02**: agmind doctor — DNS, GPU driver, Docker version, port conflicts, disk, network
-- [ ] **DEVX-03**: Health endpoint /health — JSON with status of all services
+- [x] **DEVX-03**: Health endpoint /health — JSON with status of all services
 - [x] **DEVX-04**: Named volumes with agmind_ prefix
 
 ## v2 Requirements
@@ -120,7 +120,7 @@ Deferred to future. Tracked for planning.
 | INST-04 | Phase 4 | Complete |
 | DEVX-01 | Phase 5 | Complete |
 | DEVX-02 | Phase 5 | Complete |
-| DEVX-03 | Phase 5 | Pending |
+| DEVX-03 | Phase 5 | Complete |
 | DEVX-04 | Phase 5 | Complete |
 
 **Coverage:**
