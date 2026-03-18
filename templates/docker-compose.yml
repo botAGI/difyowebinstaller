@@ -233,7 +233,7 @@ services:
       - ENABLE_OPENAI_API=${ENABLE_OPENAI_API:-false}
       - OPENAI_API_BASE_URL=${OPENAI_API_BASE_URL:-}
     volumes:
-      - openwebui_data:/app/backend/data
+      - agmind_openwebui_data:/app/backend/data
     healthcheck:
       test: ["CMD-SHELL", "unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY && curl -sf http://localhost:8080/health 2>/dev/null || wget -qO- http://localhost:8080/health 2>/dev/null || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
@@ -259,7 +259,7 @@ services:
     environment:
       - GODEBUG=netdns=cgo
     volumes:
-      - ollama_data:/root/.ollama
+      - agmind_ollama_data:/root/.ollama
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
@@ -288,7 +288,7 @@ services:
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
     command: --model ${VLLM_MODEL:-Qwen/Qwen2.5-14B-Instruct} --host 0.0.0.0 --port 8000
     volumes:
-      - vllm_cache:/root/.cache/huggingface
+      - agmind_vllm_cache:/root/.cache/huggingface
     ipc: host
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
@@ -318,7 +318,7 @@ services:
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
     command: --model-id BAAI/bge-m3 --port 80
     volumes:
-      - tei_cache:/data
+      - agmind_tei_cache:/data
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:80/health || exit 1"]
       interval: 30s
@@ -484,7 +484,7 @@ services:
       - "9997"
     command: ["xinference-local", "--host", "0.0.0.0", "--port", "9997"]
     volumes:
-      - xinference_data:/root/.xinference
+      - agmind_xinference_data:/root/.xinference
     #__GPU__deploy:
     #__GPU__  resources:
     #__GPU__    reservations:
@@ -702,7 +702,7 @@ services:
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
-      - prometheus_data:/prometheus
+      - agmind_prometheus_data:/prometheus
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
@@ -744,7 +744,7 @@ services:
     profiles:
       - monitoring
     volumes:
-      - loki_data:/loki
+      - agmind_loki_data:/loki
       - ./monitoring/loki-config.yml:/etc/loki/local-config.yaml:ro
     command: -config.file=/etc/loki/local-config.yaml
     healthcheck:
@@ -767,7 +767,7 @@ services:
     volumes:
       - ./monitoring/promtail-config.yml:/etc/promtail/config.yml:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - promtail_positions:/promtail
+      - agmind_promtail_positions:/promtail
     command: -config.file=/etc/promtail/config.yml
     healthcheck:
       # promtail image has no wget/curl; use promtail's built-in check
@@ -865,7 +865,7 @@ services:
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
     volumes:
-      - grafana_data:/var/lib/grafana
+      - agmind_grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     healthcheck:
@@ -899,7 +899,7 @@ services:
       - /tmp
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - portainer_data:/data
+      - agmind_portainer_data:/data
     # portainer-ce is built on scratch — no shell, no wget, no curl.
     # In-container healthcheck is impossible. Use NONE and rely on restart policy.
     healthcheck:
@@ -955,14 +955,14 @@ networks:
     internal: true
 
 volumes:
-  openwebui_data:
-  ollama_data:
-  xinference_data:
-  grafana_data:
-  portainer_data:
-  prometheus_data:
-  authelia_data:
-  loki_data:
-  promtail_positions:
-  vllm_cache:
-  tei_cache:
+  agmind_openwebui_data:
+  agmind_ollama_data:
+  agmind_xinference_data:
+  agmind_grafana_data:
+  agmind_portainer_data:
+  agmind_prometheus_data:
+  agmind_authelia_data:
+  agmind_loki_data:
+  agmind_promtail_positions:
+  agmind_vllm_cache:
+  agmind_tei_cache:
