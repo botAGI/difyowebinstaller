@@ -78,9 +78,9 @@ Plans:
 **Plans:** 3/3 plans complete
 
 Plans:
-- [ ] 03-01-PLAN.md — Compose profiles: Ollama to profile, add vLLM + TEI services, versions.env, env templates (PROV-03)
-- [ ] 03-02-PLAN.md — Wizard provider selection, config.sh, models.sh dispatcher, BATS tests (PROV-01, PROV-02, PROV-03)
-- [ ] 03-03-PLAN.md — Provider-aware phase_complete() hints + workflows/README.md docs (PROV-04)
+- [x] 03-01-PLAN.md — Compose profiles: Ollama to profile, add vLLM + TEI services, versions.env, env templates (PROV-03)
+- [x] 03-02-PLAN.md — Wizard provider selection, config.sh, models.sh dispatcher, BATS tests (PROV-01, PROV-02, PROV-03)
+- [x] 03-03-PLAN.md — Provider-aware phase_complete() hints + workflows/README.md docs (PROV-04)
 
 **Key deliverables:**
 - Wizard: LLM provider selection (Ollama/vLLM/External/Skip)
@@ -106,6 +106,12 @@ Plans:
 **Goal:** 9-phase installation with resume, logging, timeouts. Professional installer that never leaves user blind.
 
 **Requirements:** INST-01, INST-02, INST-03, INST-04
+
+**Plans:** 1/2 plans executed
+
+Plans:
+- [ ] 04-01-PLAN.md — run_phase() wrapper, checkpoint/resume, tee logging, --force-restart flag (INST-01, INST-02, INST-03)
+- [ ] 04-02-PLAN.md — Timeout/retry for phases 5/6/7, named volumes agmind_ prefix, v1 migration (INST-04, INST-01)
 
 **Key deliverables:**
 - 9 phases: diagnostics -> wizard -> docker -> config -> start -> health -> models -> backups -> complete
@@ -162,9 +168,9 @@ Phases 2 and 3 can run in parallel after Phase 1 (no mutual dependency), but seq
 |------------|-------------|----------------|
 | Clean slate | 1 | Stack works without import.py, no Dify API calls |
 | Secure | 2 | All security gaps closed, credentials protected |
-| Provider choice | 3 | 3/3 | Complete   | 2026-03-18 | 4 | Resume, logs, timeouts all working |
-| v2.0 release | 5 | Full stack with CLI tools, ready for users |
+| Provider choice | 3 | Each provider starts correct containers |
+| Reliable install | 4 | 1/2 | In Progress|  | 5 | Full stack with CLI tools, ready for users |
 
 ---
 *Roadmap created: 2026-03-17*
-*Last updated: 2026-03-18 after Phase 3 planning — 3 plans created for provider architecture*
+*Last updated: 2026-03-18 after Phase 4 planning — 2 plans created for installer redesign*

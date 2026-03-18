@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: milestone
 status: planning
-last_updated: "2026-03-18T01:32:11.107Z"
+last_updated: "2026-03-18T02:19:31.939Z"
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 9
-  completed_plans: 9
+  total_plans: 11
+  completed_plans: 10
 ---
 
 # State: AGmind Installer v2.0
@@ -63,6 +63,9 @@ Last deploy: #10, 2026-03-17, 23/23 containers healthy.
 - [Phase 03]: config.sh appends provider WebUI vars after template sed to avoid duplication across profiles
 - [Phase 03]: plugin_hint variable set to empty after inline vLLM print to avoid duplicate echo via common guard
 - [Phase 03]: llm_display/embed_display declared at top of phase_complete() — reused in both terminal summary box and credentials.txt
+- [Phase 04]: run_phase() checkpoint written BEFORE phase starts — crash mid-phase retries that phase on resume
+- [Phase 04]: tee logging: exec > >(tee -a LOG) 2>&1 at start of main() — all output captured without modifying existing echo statements
+- [Phase 04]: install.log chmod 600: no credential scrubbing needed since Phase 2 already removed creds from stdout
 
 ## Performance Metrics
 
@@ -80,4 +83,5 @@ Last deploy: #10, 2026-03-17, 23/23 containers healthy.
 | Phase 03 P01 | 15min | 2 tasks | 6 files |
 | Phase 03 P02 | 4min | 2 tasks | 5 files |
 | Phase 03 P03 | 8min | 2 tasks | 2 files |
+| Phase 04 P01 | 12min | 1 tasks | 1 files |
 
