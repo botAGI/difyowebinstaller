@@ -301,94 +301,221 @@ phase_wizard() {
         echo ""
     fi
 
-    # --- LLM Model (expanded list) ---
-
-    # Determine recommended model marker (rec_idx = menu item number)
-    local rec_idx=6  # default: qwen2.5:14b (item 6)
-    if [[ "${RECOMMENDED_MODEL:-}" == "gemma3:4b" ]]; then
-        rec_idx=1
-    elif [[ "${RECOMMENDED_MODEL:-}" == "qwen2.5:7b" ]]; then
-        rec_idx=2
-    elif [[ "${RECOMMENDED_MODEL:-}" == "qwen2.5:32b" ]]; then
-        rec_idx=10
-    elif [[ "${RECOMMENDED_MODEL:-}" == "qwen2.5:72b-instruct-q4_K_M" ]]; then
-        rec_idx=13
+    # --- LLM Provider ---
+    local default_llm_provider="vllm"
+    local default_llm_idx=2
+    local gpu_warning=""
+    if [[ "${DETECTED_GPU:-none}" != "nvidia" ]]; then
+        default_llm_provider="ollama"
+        default_llm_idx=1
+        gpu_warning="  (GPU NVIDIA не обнаружен — умолчание: Ollama)"
     fi
 
-    echo "Выберите LLM модель:"
-    echo ""
-    echo " ── 4-8B [быстро, 8GB+ RAM, 6GB+ VRAM] ──"
-    echo "  1) gemma3:4b            — компактная, Google$([ $rec_idx -eq 1 ] && echo '  [рекомендуется]')"
-    echo "  2) qwen2.5:7b           — быстрая, Alibaba$([ $rec_idx -eq 2 ] && echo '  [рекомендуется]')"
-    echo "  3) qwen3:8b             — нов. поколение, Alibaba"
-    echo "  4) llama3.1:8b          — универсальная, Meta"
-    echo "  5) mistral:7b           — европейская, Mistral"
-    echo ""
-    echo " ── 12-14B [баланс, 16GB+ RAM, 10GB+ VRAM] ──"
-    echo "  6) qwen2.5:14b          — сбалансированная, Alibaba$([ $rec_idx -eq 6 ] && echo '  [рекомендуется]')"
-    echo "  7) phi-4:14b            — Microsoft"
-    echo "  8) mistral-nemo:12b     — компактная, Mistral"
-    echo "  9) gemma3:12b           — средняя, Google"
-    echo ""
-    echo " ── 27-32B [качество, 32GB+ RAM, 16GB+ VRAM] ──"
-    echo "  10) qwen2.5:32b         — качественная, Alibaba$([ $rec_idx -eq 10 ] && echo '  [рекомендуется]')"
-    echo "  11) gemma3:27b          — большая, Google"
-    echo "  12) command-r:35b       — RAG-оптимизированная, Cohere"
-    echo ""
-    echo " ── 60B+ [макс. качество, 64GB+ RAM, 24GB+ VRAM] ──"
-    echo "  13) qwen2.5:72b-instruct-q4_K_M  — топ, квантизация$([ $rec_idx -eq 13 ] && echo '  [рекомендуется]')"
-    echo "  14) llama3.1:70b-instruct-q4_K_M  — Meta, квантизация"
-    echo "  15) qwen3:32b           — нов. поколение, Alibaba"
-    echo ""
-    echo " ── Своя модель ──"
-    echo "  16) Указать вручную (название из Ollama registry)"
+    echo "Выберите LLM провайдер:${gpu_warning}"
+    echo "  1) Ollama"
+    echo "  2) vLLM"
+    echo "  3) External API"
+    echo "  4) Skip"
     echo ""
     if [[ "$NON_INTERACTIVE" != "true" ]]; then
-        while true; do
-            read -rp "Модель [1-16, Enter=6]: " choice
-            choice="${choice:-6}"
+        read -rp "Выбор [1-4, Enter=${default_llm_idx}]: " choice
+        choice="${choice:-${default_llm_idx}}"
+    else
+        case "${LLM_PROVIDER:-$default_llm_provider}" in
+            ollama)   choice=1;; vllm) choice=2;; external) choice=3;; skip) choice=4;; *) choice="${default_llm_idx}";;
+        esac
+    fi
+    case "$choice" in
+        1) LLM_PROVIDER="ollama";;
+        2) LLM_PROVIDER="vllm";;
+        3) LLM_PROVIDER="external";;
+        4) LLM_PROVIDER="skip";;
+        *) LLM_PROVIDER="$default_llm_provider";;
+    esac
+    echo ""
+
+    # --- LLM Model (provider-dependent) ---
+    if [[ "$LLM_PROVIDER" == "ollama" ]]; then
+        # Determine recommended model marker (rec_idx = menu item number)
+        local rec_idx=6  # default: qwen2.5:14b (item 6)
+        if [[ "${RECOMMENDED_MODEL:-}" == "gemma3:4b" ]]; then
+            rec_idx=1
+        elif [[ "${RECOMMENDED_MODEL:-}" == "qwen2.5:7b" ]]; then
+            rec_idx=2
+        elif [[ "${RECOMMENDED_MODEL:-}" == "qwen2.5:32b" ]]; then
+            rec_idx=10
+        elif [[ "${RECOMMENDED_MODEL:-}" == "qwen2.5:72b-instruct-q4_K_M" ]]; then
+            rec_idx=13
+        fi
+
+        echo "Выберите LLM модель:"
+        echo ""
+        echo " ── 4-8B [быстро, 8GB+ RAM, 6GB+ VRAM] ──"
+        echo "  1) gemma3:4b            — компактная, Google$([ $rec_idx -eq 1 ] && echo '  [рекомендуется]')"
+        echo "  2) qwen2.5:7b           — быстрая, Alibaba$([ $rec_idx -eq 2 ] && echo '  [рекомендуется]')"
+        echo "  3) qwen3:8b             — нов. поколение, Alibaba"
+        echo "  4) llama3.1:8b          — универсальная, Meta"
+        echo "  5) mistral:7b           — европейская, Mistral"
+        echo ""
+        echo " ── 12-14B [баланс, 16GB+ RAM, 10GB+ VRAM] ──"
+        echo "  6) qwen2.5:14b          — сбалансированная, Alibaba$([ $rec_idx -eq 6 ] && echo '  [рекомендуется]')"
+        echo "  7) phi-4:14b            — Microsoft"
+        echo "  8) mistral-nemo:12b     — компактная, Mistral"
+        echo "  9) gemma3:12b           — средняя, Google"
+        echo ""
+        echo " ── 27-32B [качество, 32GB+ RAM, 16GB+ VRAM] ──"
+        echo "  10) qwen2.5:32b         — качественная, Alibaba$([ $rec_idx -eq 10 ] && echo '  [рекомендуется]')"
+        echo "  11) gemma3:27b          — большая, Google"
+        echo "  12) command-r:35b       — RAG-оптимизированная, Cohere"
+        echo ""
+        echo " ── 60B+ [макс. качество, 64GB+ RAM, 24GB+ VRAM] ──"
+        echo "  13) qwen2.5:72b-instruct-q4_K_M  — топ, квантизация$([ $rec_idx -eq 13 ] && echo '  [рекомендуется]')"
+        echo "  14) llama3.1:70b-instruct-q4_K_M  — Meta, квантизация"
+        echo "  15) qwen3:32b           — нов. поколение, Alibaba"
+        echo ""
+        echo " ── Своя модель ──"
+        echo "  16) Указать вручную (название из Ollama registry)"
+        echo ""
+        if [[ "$NON_INTERACTIVE" != "true" ]]; then
+            while true; do
+                read -rp "Модель [1-16, Enter=6]: " choice
+                choice="${choice:-6}"
+                case "$choice" in
+                    1)  LLM_MODEL="gemma3:4b"; break;;
+                    2)  LLM_MODEL="qwen2.5:7b"; break;;
+                    3)  LLM_MODEL="qwen3:8b"; break;;
+                    4)  LLM_MODEL="llama3.1:8b"; break;;
+                    5)  LLM_MODEL="mistral:7b"; break;;
+                    6)  LLM_MODEL="qwen2.5:14b"; break;;
+                    7)  LLM_MODEL="phi-4:14b"; break;;
+                    8)  LLM_MODEL="mistral-nemo:12b"; break;;
+                    9)  LLM_MODEL="gemma3:12b"; break;;
+                    10) LLM_MODEL="qwen2.5:32b"; break;;
+                    11) LLM_MODEL="gemma3:27b"; break;;
+                    12) LLM_MODEL="command-r:35b"; break;;
+                    13) LLM_MODEL="qwen2.5:72b-instruct-q4_K_M"; break;;
+                    14) LLM_MODEL="llama3.1:70b-instruct-q4_K_M"; break;;
+                    15) LLM_MODEL="qwen3:32b"; break;;
+                    16) read -rp "Название модели: " LLM_MODEL
+                        validate_model_name "$LLM_MODEL" || { LLM_MODEL="qwen2.5:14b"; echo "Using default model"; }
+                        break;;
+                    *)  echo "Введите число от 1 до 16";;
+                esac
+            done
+        else
+            LLM_MODEL="${LLM_MODEL:-qwen2.5:14b}"
+            validate_model_name "$LLM_MODEL" || { LLM_MODEL="qwen2.5:14b"; echo "Invalid LLM_MODEL, using default"; }
+        fi
+        echo ""
+    elif [[ "$LLM_PROVIDER" == "vllm" ]]; then
+        echo "Выберите модель для vLLM:"
+        echo ""
+        echo " ── 7-8B [14GB+ VRAM] ──"
+        echo "  1) Qwen/Qwen2.5-7B-Instruct"
+        echo "  2) mistralai/Mistral-7B-Instruct-v0.3"
+        echo "  3) meta-llama/Llama-3.1-8B-Instruct  (требует HF_TOKEN)"
+        echo ""
+        echo " ── 14B [24GB+ VRAM] ──"
+        echo "  4) Qwen/Qwen2.5-14B-Instruct           [рекомендуется]"
+        echo "  5) Qwen/Qwen3-14B"
+        echo "  6) microsoft/phi-4"
+        echo ""
+        echo " ── 32B+ [48GB+ VRAM] ──"
+        echo "  7) Qwen/Qwen2.5-32B-Instruct"
+        echo "  8) meta-llama/Llama-3.3-70B-Instruct  (требует HF_TOKEN)"
+        echo ""
+        echo " ── Своя модель ──"
+        echo "  9) Указать HuggingFace repo (org/model-name)"
+        echo ""
+        if [[ "$NON_INTERACTIVE" != "true" ]]; then
+            read -rp "Модель [1-9, Enter=4]: " choice
+            choice="${choice:-4}"
             case "$choice" in
-                1)  LLM_MODEL="gemma3:4b"; break;;
-                2)  LLM_MODEL="qwen2.5:7b"; break;;
-                3)  LLM_MODEL="qwen3:8b"; break;;
-                4)  LLM_MODEL="llama3.1:8b"; break;;
-                5)  LLM_MODEL="mistral:7b"; break;;
-                6)  LLM_MODEL="qwen2.5:14b"; break;;
-                7)  LLM_MODEL="phi-4:14b"; break;;
-                8)  LLM_MODEL="mistral-nemo:12b"; break;;
-                9)  LLM_MODEL="gemma3:12b"; break;;
-                10) LLM_MODEL="qwen2.5:32b"; break;;
-                11) LLM_MODEL="gemma3:27b"; break;;
-                12) LLM_MODEL="command-r:35b"; break;;
-                13) LLM_MODEL="qwen2.5:72b-instruct-q4_K_M"; break;;
-                14) LLM_MODEL="llama3.1:70b-instruct-q4_K_M"; break;;
-                15) LLM_MODEL="qwen3:32b"; break;;
-                16) read -rp "Название модели: " LLM_MODEL
-                    validate_model_name "$LLM_MODEL" || { LLM_MODEL="qwen2.5:14b"; echo "Using default model"; }
-                    break;;
-                *)  echo "Введите число от 1 до 16";;
+                1) VLLM_MODEL="Qwen/Qwen2.5-7B-Instruct";;
+                2) VLLM_MODEL="mistralai/Mistral-7B-Instruct-v0.3";;
+                3) VLLM_MODEL="meta-llama/Llama-3.1-8B-Instruct";;
+                4) VLLM_MODEL="Qwen/Qwen2.5-14B-Instruct";;
+                5) VLLM_MODEL="Qwen/Qwen3-14B";;
+                6) VLLM_MODEL="microsoft/phi-4";;
+                7) VLLM_MODEL="Qwen/Qwen2.5-32B-Instruct";;
+                8) VLLM_MODEL="meta-llama/Llama-3.3-70B-Instruct";;
+                9) read -rp "HuggingFace repo (org/model): " VLLM_MODEL
+                   [[ -z "$VLLM_MODEL" ]] && VLLM_MODEL="Qwen/Qwen2.5-14B-Instruct";;
+                *) VLLM_MODEL="Qwen/Qwen2.5-14B-Instruct";;
             esac
-        done
-    else
-        LLM_MODEL="${LLM_MODEL:-qwen2.5:14b}"
-        validate_model_name "$LLM_MODEL" || { LLM_MODEL="qwen2.5:14b"; echo "Invalid LLM_MODEL, using default"; }
+        else
+            VLLM_MODEL="${VLLM_MODEL:-Qwen/Qwen2.5-14B-Instruct}"
+        fi
+        echo ""
     fi
+    # external/skip: no model selection needed
+
+    # --- Embedding Provider ---
+    echo "Выберите Embedding провайдер:"
+    echo "  1) Тот же, что LLM"
+    echo "  2) TEI (Text Embeddings Inference)"
+    echo "  3) External API"
+    echo "  4) Skip"
+    echo ""
+    if [[ "$NON_INTERACTIVE" != "true" ]]; then
+        read -rp "Выбор [1-4, Enter=1]: " choice
+        choice="${choice:-1}"
+    else
+        case "${EMBED_PROVIDER:-same}" in
+            same|"") choice=1;; tei) choice=2;; external) choice=3;; skip) choice=4;;
+            ollama) choice=1;; # backwards compat
+            *) choice=1;;
+        esac
+    fi
+    case "$choice" in
+        1) # "Same as LLM" mapping
+           case "$LLM_PROVIDER" in
+               ollama)   EMBED_PROVIDER="ollama";;
+               vllm)     EMBED_PROVIDER="tei";;
+               external) EMBED_PROVIDER="external";;
+               skip)     EMBED_PROVIDER="skip";;
+           esac
+           ;;
+        2) EMBED_PROVIDER="tei";;
+        3) EMBED_PROVIDER="external";;
+        4) EMBED_PROVIDER="skip";;
+        *) EMBED_PROVIDER="ollama";;  # fallback
+    esac
     echo ""
 
-    if [[ "$NON_INTERACTIVE" != "true" ]]; then
-        read -rp "Embedding модель [bge-m3]: " EMBEDDING_MODEL
-        EMBEDDING_MODEL="${EMBEDDING_MODEL:-bge-m3}"
-        validate_model_name "$EMBEDDING_MODEL" || { EMBEDDING_MODEL="bge-m3"; echo "Using default embedding model"; }
-    else
-        EMBEDDING_MODEL="${EMBEDDING_MODEL:-bge-m3}"
+    # --- Embedding Model (only for Ollama provider) ---
+    if [[ "$EMBED_PROVIDER" == "ollama" ]]; then
+        if [[ "$NON_INTERACTIVE" != "true" ]]; then
+            read -rp "Embedding модель [bge-m3]: " EMBEDDING_MODEL
+            EMBEDDING_MODEL="${EMBEDDING_MODEL:-bge-m3}"
+            validate_model_name "$EMBEDDING_MODEL" || { EMBEDDING_MODEL="bge-m3"; echo "Using default embedding model"; }
+        else
+            EMBEDDING_MODEL="${EMBEDDING_MODEL:-bge-m3}"
+        fi
+        echo ""
     fi
-    echo ""
+
+    # --- HuggingFace Token (optional, only for vLLM/TEI) ---
+    HF_TOKEN="${HF_TOKEN:-}"
+    if [[ "$LLM_PROVIDER" == "vllm" || "$EMBED_PROVIDER" == "tei" ]]; then
+        if [[ "$NON_INTERACTIVE" != "true" ]]; then
+            read -rp "HuggingFace token (Enter для пропуска): " HF_TOKEN
+            HF_TOKEN="${HF_TOKEN:-}"
+        fi
+    fi
 
     # --- Offline model warning ---
     if [[ "$DEPLOY_PROFILE" == "offline" ]]; then
         echo -e "${YELLOW}⚠ Профиль Offline: модели не будут скачиваться.${NC}"
-        echo "  Убедитесь, что ${LLM_MODEL} и ${EMBEDDING_MODEL}"
-        echo "  предзагружены в ollama_data volume."
+        if [[ "$LLM_PROVIDER" == "ollama" || "$EMBED_PROVIDER" == "ollama" ]]; then
+            echo "  Убедитесь, что модели предзагружены в ollama_data volume."
+        fi
+        if [[ "$LLM_PROVIDER" == "vllm" ]]; then
+            echo "  Убедитесь, что образ vLLM и модель ${VLLM_MODEL:-} предзагружены."
+        fi
+        if [[ "$EMBED_PROVIDER" == "tei" ]]; then
+            echo "  Убедитесь, что образ TEI и модель BAAI/bge-m3 предзагружены."
+        fi
         echo ""
     fi
 
@@ -781,12 +908,16 @@ phase_start() {
     [[ "$ETL_ENHANCED" == "yes" ]] && profiles="${profiles:+$profiles,}etl"
     [[ "$MONITORING_MODE" == "local" ]] && profiles="${profiles:+$profiles,}monitoring"
     [[ "$ENABLE_AUTHELIA" == "true" ]] && profiles="${profiles:+$profiles,}authelia"
+    [[ "$LLM_PROVIDER" == "ollama" || "$EMBED_PROVIDER" == "ollama" ]] && \
+        profiles="${profiles:+$profiles,}ollama"
+    [[ "$LLM_PROVIDER" == "vllm" ]] && profiles="${profiles:+$profiles,}vllm"
+    [[ "$EMBED_PROVIDER" == "tei" ]] && profiles="${profiles:+$profiles,}tei"
 
     # Stop and remove ALL stale containers from previous failed installs.
     # Must use ALL profiles — docker compose down without profiles won't touch
     # services that have profiles: [monitoring], etc. Without this, Docker
     # reuses old containers whose bind mounts were cached as directories.
-    COMPOSE_PROFILES=vps,monitoring,qdrant,weaviate,etl,authelia \
+    COMPOSE_PROFILES=vps,monitoring,qdrant,weaviate,etl,authelia,ollama,vllm,tei \
         docker compose down --remove-orphans 2>/dev/null || true
     # Belt-and-suspenders: force-remove any agmind containers docker compose missed
     docker ps -a --filter "name=agmind-" -q | while read -r id; do docker rm -f "$id" 2>/dev/null; done
@@ -1078,7 +1209,7 @@ phase_health() {
 # ============================================================================
 phase_models() {
     echo -e "${BOLD}[7/9] Загрузка моделей${NC}"
-    export INSTALL_DIR LLM_MODEL EMBEDDING_MODEL DEPLOY_PROFILE
+    export INSTALL_DIR LLM_MODEL EMBEDDING_MODEL DEPLOY_PROFILE LLM_PROVIDER EMBED_PROVIDER
     download_models
     echo ""
 }

@@ -268,6 +268,11 @@ generate_config() {
     safe_webhook_url=$(escape_sed "${ALERT_WEBHOOK_URL:-}")
     safe_llm_model=$(escape_sed "${LLM_MODEL:-qwen2.5:14b}")
     safe_embedding_model=$(escape_sed "${EMBEDDING_MODEL:-bge-m3}")
+    local safe_vllm_model safe_hf_token safe_llm_provider safe_embed_provider
+    safe_llm_provider=$(escape_sed "${LLM_PROVIDER:-ollama}")
+    safe_embed_provider=$(escape_sed "${EMBED_PROVIDER:-ollama}")
+    safe_vllm_model=$(escape_sed "${VLLM_MODEL:-Qwen/Qwen2.5-14B-Instruct}")
+    safe_hf_token=$(escape_sed "${HF_TOKEN:-}")
     safe_monitoring_token=$(escape_sed "${MONITORING_TOKEN:-}")
     safe_telegram_token=$(escape_sed "${ALERT_TELEGRAM_TOKEN:-}")
     safe_telegram_chat_id=$(escape_sed "${ALERT_TELEGRAM_CHAT_ID:-}")
@@ -298,6 +303,10 @@ generate_config() {
         -e "s|__ALERT_WEBHOOK_URL__|${safe_webhook_url}|g" \
         -e "s|__ALERT_TELEGRAM_TOKEN__|${safe_telegram_token}|g" \
         -e "s|__ALERT_TELEGRAM_CHAT_ID__|${safe_telegram_chat_id}|g" \
+        -e "s|__LLM_PROVIDER__|${safe_llm_provider}|g" \
+        -e "s|__EMBED_PROVIDER__|${safe_embed_provider}|g" \
+        -e "s|__VLLM_MODEL__|${safe_vllm_model}|g" \
+        -e "s|__HF_TOKEN__|${safe_hf_token}|g" \
         "$env_file"
     rm -f "${env_file}.bak"
 
@@ -308,6 +317,32 @@ generate_config() {
         -e "s|__AUTHELIA_JWT_SECRET__|${authelia_jwt_secret}|g" \
         "$env_file"
     rm -f "${env_file}.bak"
+
+    # Provider-specific Open WebUI env vars
+    {
+        echo ""
+        echo "# --- Provider-specific WebUI vars ---"
+        case "${LLM_PROVIDER:-ollama}" in
+            ollama)
+                echo "OLLAMA_BASE_URL=http://ollama:11434"
+                echo "ENABLE_OLLAMA_API=true"
+                echo "ENABLE_OPENAI_API=false"
+                echo "OPENAI_API_BASE_URL="
+                ;;
+            vllm)
+                echo "OLLAMA_BASE_URL="
+                echo "ENABLE_OLLAMA_API=false"
+                echo "ENABLE_OPENAI_API=true"
+                echo "OPENAI_API_BASE_URL=http://vllm:8000/v1"
+                ;;
+            external|skip)
+                echo "OLLAMA_BASE_URL="
+                echo "ENABLE_OLLAMA_API=false"
+                echo "ENABLE_OPENAI_API=false"
+                echo "OPENAI_API_BASE_URL="
+                ;;
+        esac
+    } >> "$env_file"
 
     # Copy release manifest
     local manifest_file="${template_dir}/release-manifest.json"
