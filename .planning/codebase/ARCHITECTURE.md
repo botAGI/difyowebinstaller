@@ -4,231 +4,201 @@
 
 ## Pattern Overview
 
-**Overall:** Modular bash-based installer with phased deployment orchestration and multi-container Docker stack.
+**Overall:** Three-layer modular Bash architecture with clear separation of concerns.
 
 **Key Characteristics:**
-- Sequential 9-phase installation with rollback support (diagnostics → wizard → docker → config → start → health → models → backups → complete)
-- Pluggable library modules (detect, docker, config, health, security, backup, etc.) sourced by main installer
-- Template-driven configuration generation (profile-aware .env and compose files)
-- Health-check driven startup verification before proceeding to next phase
-- Immutable installation profiles (vps, lan, vpn, offline) that determine defaults and security hardening
+- Single-node Docker Compose orchestration (no clustering)
+- Modular library system for code reuse and separation of concerns
+- 9-phase installation pipeline with checkpoint/resume capability
+- Profile-based container activation (Ollama/vLLM/TEI/Weaviate/Qdrant)
+- Event-driven health checking and operational monitoring
 
 ## Layers
 
-**Phase Orchestration (install.sh):**
-- Purpose: Central conductor that sequences all installation phases and manages global state
-- Location: `/d/Agmind/difyowebinstaller/install.sh`
-- Contains: Phase functions, banner/UI, main() entry point, global variables
-- Depends on: All library modules in `lib/`, templates in `templates/`
-- Used by: System admin via `sudo bash install.sh`
+**Infrastructure Layer:**
+- Purpose: Operating system detection, Docker setup, firewall/security configuration
+- Location: `lib/detect.sh`, `lib/docker.sh`, `lib/security.sh`
+- Contains: OS detection, GPU detection, port/disk/RAM checks, firewall rules, fail2ban setup
+- Depends on: Host system capabilities, package managers (apt/dnf/yum)
+- Used by: `install.sh` phases 1-3
 
-**System Detection & Diagnostics (lib/detect.sh):**
-- Purpose: Identify OS, CPU, GPU, RAM, disk, Docker, ports, network connectivity — abort if requirements not met
-- Location: `/d/Agmind/difyowebinstaller/lib/detect.sh`
-- Contains: detect_os(), detect_gpu(), detect_ram(), detect_disk(), detect_ports(), detect_docker()
-- Depends on: /etc/os-release, lspci, nvidia-smi, rocminfo, curl, docker commands
-- Used by: phase_diagnostics() → preflight_checks()
+**Configuration Layer:**
+- Purpose: Generate and manage runtime configuration from templates
+- Location: `lib/config.sh`, `templates/`
+- Contains: Template rendering, environment file generation, bind mount validation, service discovery
+- Depends on: Detected system state, user inputs from wizard
+- Used by: `install.sh` phase 4, daily operations via environment files
 
-**Docker Installation & Setup (lib/docker.sh):**
-- Purpose: Install Docker/Compose via OS-specific package managers; GPU toolkit support
-- Location: `/d/Agmind/difyowebinstaller/lib/docker.sh`
-- Contains: install_docker(), install_docker_debian(), install_docker_rhel(), install_docker_macos(), nvidia-smi integration
-- Depends on: OS detection, apt/yum/brew commands
-- Used by: phase_docker() → setup_docker()
+**Docker Compose Layer:**
+- Purpose: Orchestrate and manage containerized services
+- Location: `templates/docker-compose.yml`, `templates/env.*.template`
+- Contains: Service definitions (23+ containers), volume management, networking, health checks
+- Depends on: Configuration layer (environment files)
+- Used by: Docker runtime, `agmind.sh` operations CLI
 
-**Configuration Generation (lib/config.sh):**
-- Purpose: Generate .env, docker-compose.yml, nginx.conf, redis.conf from templates using environment variables; bind-mount safety checks
-- Location: `/d/Agmind/difyowebinstaller/lib/config.sh`
-- Contains: generate_config(), safe_write_file(), ensure_bind_mount_files(), preflight_bind_mount_check(), enable_gpu_compose()
-- Depends on: Templates in `templates/`, detected variables from phase_wizard()
-- Used by: phase_config() → generate_config()
+**Health & Monitoring Layer:**
+- Purpose: Service health validation, operational status dashboards, alerts
+- Location: `lib/health.sh`, `scripts/agmind.sh`, `templates/nginx.conf.template`
+- Contains: Container status checks, health endpoints, GPU monitoring, model availability checks
+- Depends on: Docker runtime, exposed service ports
+- Used by: Installation phases 6-8, day-2 operations
 
-**Health Monitoring (lib/health.sh):**
-- Purpose: Wait for all containers to reach healthy state, handle timeout and retry logic
-- Location: `/d/Agmind/difyowebinstaller/lib/health.sh`
-- Contains: wait_healthy(), check_container(), get_service_list(), run_checks()
-- Depends on: docker compose ps, Docker healthcheck definitions
-- Used by: phase_health() → wait_healthy()
-
-**Model Initialization (lib/models.sh):**
-- Purpose: Pull LLM and embedding models into Ollama, handle multi-architecture support
-- Location: `/d/Agmind/difyowebinstaller/lib/models.sh`
-- Contains: pull_models(), verify_ollama_models()
-- Depends on: Ollama container, OLLAMA_API_BASE
-- Used by: phase_models() → pull_models()
-
-**Backup & Disaster Recovery (lib/backup.sh):**
-- Purpose: Cron-based backup scheduling, local/remote backup targets
-- Location: `/d/Agmind/difyowebinstaller/lib/backup.sh`
-- Contains: setup_backup_cron(), configure_remote_backup()
-- Depends on: cron, ssh, rsync
-- Used by: phase_backups()
-
-**Security Hardening (lib/security.sh):**
-- Purpose: UFW firewall, fail2ban, secret rotation, Docker capability dropping
-- Location: `/d/Agmind/difyowebinstaller/lib/security.sh`
-- Contains: setup_security(), enable_ufw(), setup_fail2ban(), setup_sops()
-- Depends on: ufw, fail2ban, sops binaries
-- Used by: phase_config() → setup_security()
-
-**Authelia 2FA (lib/authelia.sh):**
-- Purpose: Configure Authelia reverse proxy for authentication gate-keeping
-- Location: `/d/Agmind/difyowebinstaller/lib/authelia.sh`
-- Contains: configure_authelia(), generate_authelia_config()
-- Depends on: Authelia service in docker-compose
-- Used by: phase_config() → configure_authelia()
-
-**Interactive Wizard (install.sh, phase_wizard):**
-- Purpose: Capture user choices via prompts: profile, domain, models, TLS, monitoring, backups
-- Location: install.sh lines 195–607
-- Contains: Input validation functions, choice-to-variable mapping
-- Depends on: read command, validation regex patterns
-- Used by: main() → phase_wizard()
+**Operations Layer:**
+- Purpose: Day-2 lifecycle and troubleshooting
+- Location: `scripts/agmind.sh`, `scripts/backup.sh`, `scripts/restore.sh`, `scripts/update.sh`
+- Contains: CLI commands (status, doctor, backup, restore), diagnostics
+- Depends on: All lower layers
+- Used by: End users for operational tasks
 
 ## Data Flow
 
-**Installation Sequence:**
+**Installation Flow:**
 
-1. **phase_diagnostics:** `run_diagnostics()` + `preflight_checks()`
-   - Exports: DETECTED_OS, DETECTED_GPU, DETECTED_RAM, DETECTED_DISK, DETECTED_DOCKER_INSTALLED
-   - Aborts if critical failures (no Docker, insufficient RAM)
+1. **Phase 1: Diagnostics**
+   - `detect.sh` probes: OS, GPU, RAM, disk, Docker, ports
+   - Outputs: DETECTED_* environment variables exported globally
+   - Validates: Minimum 4GB RAM, 20GB disk, ports 80/443/5001/3000 free
 
-2. **phase_wizard:** Interactive prompts capture user intent
-   - Exports: DEPLOY_PROFILE, DOMAIN, LLM_MODEL, EMBEDDING_MODEL, VECTOR_STORE, MONITORING_MODE, TLS_MODE
-   - Variables stored in global scope for phase_config()
+2. **Phase 2: Wizard**
+   - Interactive prompts for: deployment profile, vector store, LLM provider, domain (if VPS)
+   - Inputs stored in variables: DEPLOY_PROFILE, VECTOR_STORE, LLM_PROVIDER, etc.
+   - Outputs: Global variables ready for configuration
 
-3. **phase_docker:** `setup_docker()` installs Docker/Compose if needed
-   - Installs nvidia-container-toolkit if DETECTED_GPU == nvidia
-   - Exports: None (idempotent, verifies existing install)
+3. **Phase 3: Docker Setup**
+   - Calls `docker.sh` functions: install_docker, install_nvidia_runtime (if NVIDIA GPU detected)
+   - Outputs: Docker daemon running with compose plugin
 
-4. **phase_config:** `generate_config()` renders templates with wizard variables
-   - Reads: `templates/env.${DEPLOY_PROFILE}.template`, `templates/docker-compose.yml`
-   - Substitutes: __SECRET_KEY__, __DOMAIN__, __LLM_MODEL__, etc. with environment variables
-   - Writes: `/opt/agmind/.env`, `/opt/agmind/docker/docker-compose.yml`, nginx.conf, redis.conf
-   - Safety: `safe_write_file()` prevents directory artifacts from blocking file creation
-   - GPU: `enable_gpu_compose()` adds nvidia runtime to api/worker services if GPU detected
+4. **Phase 4: Configuration**
+   - `config.sh` reads: templates + global variables + user inputs
+   - Generates: `.env` file, nginx.conf, monitoring configs, Authelia configs
+   - Validates: All bind mount sources exist as files (not directories)
+   - Creates: `/opt/agmind/docker/` directory structure with all config files
 
-5. **phase_start:** `docker compose up` with depends_on ordering
-   - Starts all services: db (postgres) → redis → dify api/worker → ollama → nginx
-   - Creates Dify admin user via API calls
-   - Exports: None (containers are live)
+5. **Phase 5: Start Services**
+   - Executes: `docker compose up -d --profile <provider-choice>`
+   - Profiles activate based on: LLM_PROVIDER, VECTOR_STORE, MONITORING_MODE selections
+   - Outputs: 23-34 containers running
 
-6. **phase_health:** `wait_healthy()` polls all containers
-   - Reads: `.env` to determine active services (vector_store: weaviate vs qdrant, monitoring_mode, etl_type)
-   - Polls: docker compose ps Status field every 5 seconds, max 300 seconds
-   - Aborts: If any critical service fails health check
+6. **Phase 6: Health Checks**
+   - `health.sh` waits for: all containers in service list to reach healthy state
+   - Timeout: TIMEOUT_HEALTH (default 300s, configurable)
+   - Retry: on failure, reads service list again and retries
+   - Outputs: [OK]/[..]/[!!] status per container
 
-7. **phase_models:** `pull_models()` downloads LLM + embedding into Ollama
-   - Calls: ollama pull ${LLM_MODEL}, ollama pull ${EMBEDDING_MODEL}
-   - Blocks: Until models available in ollama container
+7. **Phase 7: Model Download**
+   - `models.sh` waits for Ollama/vLLM to be healthy
+   - Pulls: LLM_MODEL, EMBEDDING_MODEL from provider
+   - Timeout: TIMEOUT_MODELS (default 1200s, configurable per model)
+   - Outputs: Model availability verified
 
-8. **phase_backups:** `setup_backup_cron()` installs cron job
-   - Creates: /etc/cron.d/agmind-backup with BACKUP_SCHEDULE cron expression
-   - Calls: /opt/agmind/scripts/backup.sh on schedule
+8. **Phase 8: Backups**
+   - Creates initial: PostgreSQL dump, Redis snapshot (if enabled)
+   - Stores: `/opt/agmind/backups/` directory
+   - Outputs: First backup timestamp logged
 
-9. **phase_complete:** Prints URLs and admin password location
+9. **Phase 9: Complete**
+   - Displays: Endpoints, credentials file path, next-steps documentation
+   - Outputs: SUCCESS or FAILURE status
 
 **State Management:**
-
-- Global bash variables set by phase_wizard, persisted across phases via `export`
-- Secrets generated once: SECRET_KEY, DB_PASSWORD, REDIS_PASSWORD, SANDBOX_API_KEY (22+ random chars)
-- Stored: All runtime config in `/opt/agmind/.env` (sourced by docker-compose)
-- Immutable: Once DEPLOY_PROFILE chosen, security defaults locked in (UFW, fail2ban rules)
-- Idempotent: Subsequent phases can re-run without corrupting state (safe_write_file() pattern)
+- Checkpoint file: `/opt/agmind/.install_phase` stores current phase number
+- Installation log: `/opt/agmind/install.log` tees all output with timestamps
+- Environment state: `/opt/agmind/docker/.env` persists configuration
+- Service state: Docker Compose maintains container state via volumes
 
 ## Key Abstractions
 
-**Deploy Profile:**
-- Purpose: Template selection and security defaults (vps → UFW+fail2ban+sops, lan → fail2ban, offline → none)
-- Examples: `vps`, `lan`, `vpn`, `offline` as bash string, maps to template file
-- Pattern: `templates/env.${DEPLOY_PROFILE}.template` → `/opt/agmind/.env`
+**Validation Functions:**
+- Purpose: Consistent input validation across wizard and CLI
+- Examples: `validate_domain()`, `validate_port()`, `validate_email()`, `validate_model_name()`
+- Pattern: Regex-based validation with error messages in Russian
 
-**Vector Store Abstraction:**
-- Purpose: Allow Weaviate or Qdrant as pluggable backend
-- Examples: `VECTOR_STORE=weaviate` → WEAVIATE_ENDPOINT, `VECTOR_STORE=qdrant` → QDRANT_HOST
-- Pattern: health.sh dynamically adds weaviate or qdrant service to health checks based on .env
+**Library Modules:**
+- `detect.sh`: System probing functions (detect_os, detect_gpu, detect_disk_space, etc.)
+- `docker.sh`: OS-specific Docker installation (install_docker_debian, install_docker_rhel, etc.)
+- `config.sh`: Template rendering and file management (safe_write_file, ensure_bind_mount_files)
+- `health.sh`: Service status checks (check_container, wait_healthy, check_all)
+- `models.sh`: Model pulling and validation (wait_for_ollama, pull_model, check_ollama_models)
+- `security.sh`: Firewall and access control (configure_ufw, configure_fail2ban, encrypt_secrets)
+- `authelia.sh`: Single sign-on configuration (generate_authelia_config)
+- `backup.sh`: Backup scheduling (setup_backup_cron, backup_database)
 
-**ETL Type:**
-- Purpose: Toggle between Dify native ETL vs Unstructured API + Docling + Xinference
-- Examples: `ETL_TYPE=dify`, `ETL_TYPE=unstructured_api`
-- Pattern: config.sh includes/excludes docling and xinference services in docker-compose based on env var
+**Service Lists:**
+- Purpose: Dynamically determine which services to monitor based on configuration
+- Location: `health.sh:get_service_list()` function
+- Logic: Reads .env to determine active profiles (Weaviate vs Qdrant, local monitoring, ETL enhancement)
+- Outputs: Array of container names for validation
 
-**Service Enablement:**
-- Purpose: Conditionally include monitoring stack (prometheus, alertmanager, grafana) without bloating compose
-- Pattern: docker-compose.yml lists all services but config.sh comments/uncomments based on MONITORING_MODE
+**Profile System:**
+- Purpose: Enable/disable service groups based on user choices
+- Docker Compose profiles: `ollama`, `vllm`, `tei`, `monitoring`, `etl`
+- Activation: `docker compose --profile <profile>` selects which containers start
+- Rationale: Keep resource usage minimal, user enables only what's needed
 
 ## Entry Points
 
-**Primary Entry Point:**
-- Location: `/d/Agmind/difyowebinstaller/install.sh:1285` — `main "$@"`
-- Triggers: `sudo bash install.sh` (interactive) or `sudo bash install.sh --non-interactive` (automated)
-- Responsibilities: Parse CLI arguments, run 9 phases in sequence
+**Installation Entry Point:**
+- Location: `install.sh`
+- Triggers: User runs `sudo bash install.sh`
+- Responsibilities: Execute 9-phase pipeline, handle errors, log all output, manage checkpoint file
 
-**CLI Arguments:**
-```bash
---profile {vps|lan|vpn|offline}
---llm MODEL_NAME
---embedding MODEL_NAME
---domain DOMAIN
---non-interactive
---help
-```
+**Operations Entry Point:**
+- Location: `scripts/agmind.sh` (symlinked to `/usr/local/bin/agmind`)
+- Triggers: User runs `agmind <command>`
+- Responsibilities: Expose day-2 operations (status, doctor, backup, restore, update, help)
+- Subcommands: status, doctor, backup, restore, update, logs, uninstall, rotate-secrets
 
-**Environment Variables (override CLI):**
-```bash
-DEPLOY_PROFILE, DOMAIN, LLM_MODEL, EMBEDDING_MODEL, MONITORING_MODE, VECTOR_STORE
-TLS_MODE, TLS_CERT_PATH, TLS_KEY_PATH, ENABLE_UFW, ENABLE_FAIL2BAN, ENABLE_SOPS
-NON_INTERACTIVE, FORCE_REINSTALL, SKIP_GPU_DETECT, SKIP_PREFLIGHT
-```
-
-**Post-Installation Scripts (in `/opt/agmind/scripts/`):**
-- `update.sh` — Upgrade Dify version, re-pull models
-- `backup.sh` — Manual backup trigger (also runs via cron)
-- `restore.sh` — Restore from backup
-- `uninstall.sh` — Remove AGMind stack
-- `health.sh` — Check container status
-- `multi-instance.sh` — Deploy multiple AGMind instances on one host
+**Health Endpoint Entry Point:**
+- Location: `templates/nginx.conf.template` → nginx service
+- Triggers: User runs `curl http://localhost/health`
+- Responsibilities: Serve static JSON status of all services (cron-updated)
+- Output: JSON with per-service status, updated every 60 seconds
 
 ## Error Handling
 
-**Strategy:** Fail-fast with `set -euo pipefail` (exit on error, undefined vars, pipe failures); trap ERR handler logs error line
+**Strategy:** Fail-fast with clear recovery steps.
 
 **Patterns:**
-- **Pre-flight validation:** Each phase checks preconditions; abort with helpful message if violated
-- **Diagnostic fallback:** phase_diagnostics warns but continues if non-critical (can force with --yes)
-- **Docker health-check:** phase_start waits 300s for containers; if timeout, logs which services failed and exits
-- **Bind-mount safety:** config.sh calls `safe_write_file()` before writing, ensures parent dir exists, removes stale directory artifacts
-- **Rollback:** phase_cleanup() on EXIT trap removes /var/lock/agmind-install.lock; user manually runs `uninstall.sh` if full rollback needed
+- `set -euo pipefail` in all scripts: exit on error, undefined variables, pipe failures
+- `trap 'echo "ERROR at line $LINENO: $BASH_COMMAND" >&2' ERR` at script start: log error context
+- Validation before action: all inputs validated before use
+- Checkpoint files: store progress to allow resume on failure
+- Cleanup trap: remove lock file, display partial install summary on exit
 
-**Color-Coded Output:**
-- RED=error, YELLOW=warning, GREEN=success, CYAN=info
-- Helps admin quickly spot failures in logs
+**Recovery:**
+- Restart same script: `sudo bash install.sh` resumes from last checkpoint
+- Clean restart: `rm -rf /opt/agmind && sudo bash install.sh` fresh install
+- Emergency exit: all traps trigger cleanup (lock removal, phase logging)
 
 ## Cross-Cutting Concerns
 
 **Logging:**
-- Pattern: `echo -e "${COLOR}Message${NC}"` throughout (inline logging)
-- Storage: Installation logs not centralized; runtime logs in docker logs (docker logs agmind-api)
-- Monitoring: Optional Loki + Promtail stack for log aggregation (MONITORING_MODE=local)
+- Method: `tee` to `/opt/agmind/install.log` with `script` timestamp prepend
+- Colors in terminal, plain text in log file
+- All phases log their start/end with timestamps
 
 **Validation:**
-- Input: validate_domain(), validate_email(), validate_port(), validate_model_name() regex checks in phase_wizard()
-- System: preflight_checks() verifies ≥4GB RAM, ≥2 cores, ≥20GB disk, ports 80/443 free
-- Docker: Healthcheck probes in compose (e.g., api service: curl /health)
+- Early in wizard: all user inputs validated before storing in globals
+- Pre-flight checks in phase 1: OS, Docker, ports, disk, RAM verified
+- Bind mount validation: all config files checked to exist as files (not directories)
 
 **Authentication:**
-- Default: Generated admin password stored in `/opt/agmind/.admin_password` (600 perms)
-- Optional: Authelia 2FA gate (ENABLE_AUTHELIA=true) for nginx upstream
-- Secrets: All passwords/keys generated once with 22+ random chars, stored in .env
+- Dify: via INIT_PASSWORD (set once, never changes)
+- Authelia: via LDAP (optional, OTP setup)
+- Portainer/Grafana: localhost-only by default, opt-in to open
 
-**Port Management:**
-- nginx: 80 (http), 443 (https, for vps profile)
-- Dify API: 5001, Web: 3000
-- Open WebUI: 8080
-- Ollama: 11434
-- PostgreSQL: 5432 (localhost only, not exposed)
-- Redis: 6379 (localhost only)
-- All internal service-to-service via docker network (no host port exposure for internal APIs)
+**Security Defaults:**
+- Profile-based: VPS profile → UFW + Fail2ban enabled by default
+- LAN/VPN profiles → Fail2ban enabled, firewall optional
+- All credentials: stored in credentials.txt (chmod 600), never logged
+- Container capabilities: dropped except for required ones (CHOWN, SETUID, SETGID for db/api)
+
+**Timeouts:**
+- Configurable environment variables: TIMEOUT_START, TIMEOUT_HEALTH, TIMEOUT_MODELS
+- Phase 5 (start): 300s default to wait for containers to become healthy
+- Phase 6 (health): 300s default to validate all services
+- Phase 7 (models): 1200s default per model to download
+- Stuck operations show helpful message: "Model pull timeout. Load manually: docker compose exec ollama ollama pull..."
 
 ---
 
