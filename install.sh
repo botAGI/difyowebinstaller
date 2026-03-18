@@ -103,6 +103,11 @@ ALERT_TELEGRAM_CHAT_ID=""
 NON_INTERACTIVE=false
 FORCE_RESTART=false
 ADMIN_UI_OPEN=false
+
+# Timeout defaults (seconds) — overridable via env vars
+TIMEOUT_START="${TIMEOUT_START:-300}"
+TIMEOUT_HEALTH="${TIMEOUT_HEALTH:-300}"
+TIMEOUT_MODELS="${TIMEOUT_MODELS:-1200}"
 ENABLE_UFW="false"
 
 # --- Input validation functions ---
@@ -772,6 +777,21 @@ phase_config() {
     # Must run BEFORE generate_config — otherwise cat/cp into a directory path fails.
     ensure_bind_mount_files
 
+    # v1 → v2 migration: auto-inject provider variables if missing from existing .env
+    if [[ -f "${INSTALL_DIR}/docker/.env" ]]; then
+        local existing_env="${INSTALL_DIR}/docker/.env"
+        if ! grep -q '^LLM_PROVIDER=' "$existing_env" 2>/dev/null; then
+            echo -e "${YELLOW}v1 миграция: добавляю LLM_PROVIDER=ollama в .env${NC}"
+            echo "LLM_PROVIDER=ollama" >> "$existing_env"
+            LLM_PROVIDER="ollama"
+        fi
+        if ! grep -q '^EMBED_PROVIDER=' "$existing_env" 2>/dev/null; then
+            echo -e "${YELLOW}v1 миграция: добавляю EMBED_PROVIDER=ollama в .env${NC}"
+            echo "EMBED_PROVIDER=ollama" >> "$existing_env"
+            EMBED_PROVIDER="ollama"
+        fi
+    fi
+
     # Export variables for config.sh
     export INSTALL_DIR
     export LLM_MODEL EMBEDDING_MODEL DOMAIN CERTBOT_EMAIL
@@ -1436,6 +1456,118 @@ run_phase() {
     echo -e "${GREEN}[${end_ts}] === PHASE ${phase_num}/${total}: ${phase_name} DONE ===${NC}"
 }
 
+# Run a single installation phase with timeout and one retry (doubled timeout on retry).
+# Returns 1 after retry exhaustion with diagnostic; returns function exit code on non-timeout failure.
+# Usage: run_phase_with_timeout <phase_num> <total> <phase_name> <phase_func> <timeout_sec>
+run_phase_with_timeout() {
+    local phase_num="$1"
+    local total="$2"
+    local phase_name="$3"
+    local phase_func="$4"
+    local timeout_sec="$5"
+
+    # Write checkpoint BEFORE phase starts
+    echo "$phase_num" > "${INSTALL_DIR}/.install_phase"
+
+    local start_ts
+    start_ts=$(date +%H:%M:%S)
+    echo ""
+    echo -e "${BOLD}[${start_ts}] === PHASE ${phase_num}/${total}: ${phase_name} (таймаут: ${timeout_sec}с) ===${NC}"
+
+    # First attempt
+    if _run_with_timeout "$phase_func" "$timeout_sec"; then
+        local end_ts
+        end_ts=$(date +%H:%M:%S)
+        echo -e "${GREEN}[${end_ts}] === PHASE ${phase_num}/${total}: ${phase_name} DONE ===${NC}"
+        return 0
+    fi
+
+    local result=$?
+    if [[ $result -eq 124 ]]; then
+        # Timeout — retry with doubled value
+        local retry_timeout=$((timeout_sec * 2))
+        echo ""
+        echo -e "${YELLOW}Фаза ${phase_name} не завершилась за ${timeout_sec}с. Повтор (таймаут: ${retry_timeout}с)...${NC}"
+
+        if _run_with_timeout "$phase_func" "$retry_timeout"; then
+            local end_ts
+            end_ts=$(date +%H:%M:%S)
+            echo -e "${GREEN}[${end_ts}] === PHASE ${phase_num}/${total}: ${phase_name} DONE (повтор) ===${NC}"
+            return 0
+        fi
+        result=$?
+        if [[ $result -eq 124 ]]; then
+            echo ""
+            echo -e "${RED}Фаза ${phase_name} не завершилась за ${retry_timeout}с.${NC}"
+            _show_timeout_diagnostic "$phase_num" "$timeout_sec"
+            return 1
+        fi
+    fi
+
+    # Non-timeout failure
+    echo -e "${RED}Фаза ${phase_name} завершилась с ошибкой (код: ${result})${NC}"
+    return "$result"
+}
+
+# Internal: run a shell function in background with a timer.
+# Returns 124 on timeout, otherwise returns the function's exit code.
+_run_with_timeout() {
+    local func="$1"
+    local secs="$2"
+
+    "$func" &
+    local pid=$!
+    local elapsed=0
+
+    while kill -0 "$pid" 2>/dev/null; do
+        if [[ $elapsed -ge $secs ]]; then
+            kill -TERM "$pid" 2>/dev/null
+            wait "$pid" 2>/dev/null || true
+            return 124
+        fi
+        sleep 1
+        elapsed=$((elapsed + 1))
+    done
+
+    wait "$pid"
+    return $?
+}
+
+# Internal: print diagnostic after timeout exhaustion.
+# Usage: _show_timeout_diagnostic <phase_num> <base_timeout_sec>
+_show_timeout_diagnostic() {
+    local phase_num="$1"
+    local base_timeout="$2"
+    local timeout_var=""
+
+    case "$phase_num" in
+        5)
+            timeout_var="TIMEOUT_START"
+            echo -e "${RED}Контейнеры не запустились вовремя.${NC}"
+            echo -e "${CYAN}Проверьте: docker compose -f ${INSTALL_DIR}/docker/docker-compose.yml ps${NC}"
+            echo -e "${CYAN}Логи: docker compose -f ${INSTALL_DIR}/docker/docker-compose.yml logs --tail 50${NC}"
+            ;;
+        6)
+            timeout_var="TIMEOUT_HEALTH"
+            echo -e "${RED}Контейнеры не прошли проверку здоровья.${NC}"
+            echo -e "${CYAN}Проверьте: docker ps --filter 'name=agmind-' --format '{{.Names}}\t{{.Status}}'${NC}"
+            echo -e "${CYAN}Логи проблемного сервиса: docker logs agmind-<service>${NC}"
+            ;;
+        7)
+            timeout_var="TIMEOUT_MODELS"
+            echo -e "${RED}Загрузка моделей не завершилась за отведённое время.${NC}"
+            echo -e "${CYAN}Проверьте сеть: curl -s https://registry.ollama.ai >/dev/null && echo OK${NC}"
+            echo -e "${CYAN}Статус загрузки: docker exec agmind-ollama ollama list${NC}"
+            ;;
+    esac
+
+    echo ""
+    echo -e "${YELLOW}Перезапустите: sudo bash install.sh${NC}"
+    if [[ -n "$timeout_var" ]]; then
+        echo -e "${YELLOW}Увеличить таймаут: ${timeout_var}=$((base_timeout * 4)) sudo bash install.sh${NC}"
+    fi
+}
+
 # ============================================================================
 # MAIN
 # ============================================================================
@@ -1573,9 +1705,9 @@ main() {
     [[ "$start_phase" -le 2 ]] && run_phase 2 $total "Nastroika ustanovki"        phase_wizard
     [[ "$start_phase" -le 3 ]] && run_phase 3 $total "Docker"                     phase_docker
     [[ "$start_phase" -le 4 ]] && run_phase 4 $total "Generatsiya konfiguratsii"  phase_config
-    [[ "$start_phase" -le 5 ]] && run_phase 5 $total "Zapusk konteinerov"         phase_start
-    [[ "$start_phase" -le 6 ]] && run_phase 6 $total "Proverka zdorovya"          phase_health
-    [[ "$start_phase" -le 7 ]] && run_phase 7 $total "Zagruzka modelej"           phase_models
+    [[ "$start_phase" -le 5 ]] && run_phase_with_timeout 5 $total "Zapusk konteinerov"         phase_start  "$TIMEOUT_START"
+    [[ "$start_phase" -le 6 ]] && run_phase_with_timeout 6 $total "Proverka zdorovya"          phase_health "$TIMEOUT_HEALTH"
+    [[ "$start_phase" -le 7 ]] && run_phase_with_timeout 7 $total "Zagruzka modelej"           phase_models "$TIMEOUT_MODELS"
     [[ "$start_phase" -le 8 ]] && run_phase 8 $total "Nastroika bekapov"          phase_backups
     [[ "$start_phase" -le 9 ]] && run_phase 9 $total "Zavershenie"                phase_complete
 
