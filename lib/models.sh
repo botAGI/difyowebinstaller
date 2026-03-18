@@ -125,35 +125,49 @@ download_models() {
     local llm_model="${LLM_MODEL:-qwen2.5:14b}"
     local embedding_model="${EMBEDDING_MODEL:-bge-m3}"
     local profile="${DEPLOY_PROFILE:-lan}"
+    local llm_provider="${LLM_PROVIDER:-ollama}"
+    local embed_provider="${EMBED_PROVIDER:-ollama}"
 
     # Skip for offline profile
     if [[ "$profile" == "offline" ]]; then
         echo -e "${YELLOW}Профиль offline: пропуск загрузки моделей${NC}"
-        echo "Проверка предзагруженных моделей..."
-        check_ollama_models
+        if [[ "$llm_provider" == "ollama" || "$embed_provider" == "ollama" ]]; then
+            echo "Проверка предзагруженных моделей..."
+            check_ollama_models
+        fi
         load_reranker
         return 0
     fi
 
-    wait_for_ollama || return 1
+    local need_ollama=false
+    [[ "$llm_provider" == "ollama" ]] && need_ollama=true
+    [[ "$embed_provider" == "ollama" ]] && need_ollama=true
 
-    echo ""
-    echo -e "${YELLOW}=== Загрузка моделей ===${NC}"
-    echo ""
+    if [[ "$need_ollama" == "true" ]]; then
+        wait_for_ollama || return 1
+        echo ""
+        echo -e "${YELLOW}=== Загрузка моделей ===${NC}"
+        echo ""
+        [[ "$llm_provider" == "ollama" ]] && pull_model "$llm_model" "LLM ($llm_model)"
+        [[ "$embed_provider" == "ollama" ]] && pull_model "$embedding_model" "Embedding ($embedding_model)"
+    fi
 
-    # Pull LLM model
-    pull_model "$llm_model" "LLM ($llm_model)" || return 1
+    # vLLM/TEI download models at container start — skip
+    if [[ "$llm_provider" == "vllm" ]]; then
+        echo -e "${YELLOW}vLLM: модель загружается при старте контейнера${NC}"
+    fi
+    if [[ "$embed_provider" == "tei" ]]; then
+        echo -e "${YELLOW}TEI: модель загружается при старте контейнера${NC}"
+    fi
+    if [[ "$llm_provider" == "external" || "$llm_provider" == "skip" ]]; then
+        [[ "$need_ollama" != "true" ]] && echo -e "${YELLOW}Провайдер ${llm_provider}: загрузка моделей не требуется${NC}"
+    fi
 
-    echo ""
-
-    # Pull embedding model
-    pull_model "$embedding_model" "Embedding ($embedding_model)" || return 1
-
-    # Load reranker if ETL enhanced
+    # Load reranker (depends on ETL_ENHANCED, not on provider)
     load_reranker
 
     echo ""
-    echo -e "${GREEN}Все модели загружены${NC}"
+    echo -e "${GREEN}Фаза моделей завершена${NC}"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
