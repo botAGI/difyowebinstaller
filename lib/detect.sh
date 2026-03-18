@@ -99,7 +99,7 @@ detect_gpu() {
 persist_gpu_profile() {
     local profile_file="${INSTALL_DIR:-.}/.agmind_gpu_profile"
     cat > "$profile_file" <<EOF
-GPU_TYPE="${DETECTED_GPU}"
+GPU_TYPE="${DETECTED_GPU:-none}"
 GPU_NAME="${DETECTED_GPU_NAME:-unknown}"
 GPU_VRAM="${DETECTED_GPU_VRAM:-0}"
 DOCKER_PLATFORM="${DOCKER_PLATFORM:-linux/amd64}"
@@ -125,10 +125,10 @@ detect_ram() {
         DETECTED_RAM_TOTAL_MB=$(( $(sysctl -n hw.memsize) / 1024 / 1024 ))
         # macOS doesn't have a simple "available" memory metric
         local pages_free pages_inactive page_size
-        page_size=$(sysctl -n hw.pagesize)
-        pages_free=$(vm_stat | awk '/Pages free/ {gsub(/\./,"",$3); print $3}')
-        pages_inactive=$(vm_stat | awk '/Pages inactive/ {gsub(/\./,"",$3); print $3}')
-        DETECTED_RAM_AVAILABLE_MB=$(( (pages_free + pages_inactive) * page_size / 1024 / 1024 ))
+        page_size=$(sysctl -n hw.pagesize 2>/dev/null || echo 4096)
+        pages_free=$(vm_stat 2>/dev/null | awk '/Pages free/ {gsub(/\./,"",$3); print $3}')
+        pages_inactive=$(vm_stat 2>/dev/null | awk '/Pages inactive/ {gsub(/\./,"",$3); print $3}')
+        DETECTED_RAM_AVAILABLE_MB=$(( (${pages_free:-0} + ${pages_inactive:-0}) * page_size / 1024 / 1024 ))
     else
         DETECTED_RAM_TOTAL_MB=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
         DETECTED_RAM_AVAILABLE_MB=$(awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo)
@@ -230,13 +230,13 @@ run_diagnostics() {
 
     detect_os
     detect_arch
-    echo -e "  Система:      ${GREEN}${DETECTED_OS_NAME}, ${DETECTED_ARCH}${NC}"
-    echo -e "  Платформа:    ${GREEN}${DOCKER_PLATFORM}${NC}"
+    echo -e "  Система:      ${GREEN}${DETECTED_OS_NAME:-Unknown}, ${DETECTED_ARCH:-unknown}${NC}"
+    echo -e "  Платформа:    ${GREEN}${DOCKER_PLATFORM:-unknown}${NC}"
 
     detect_gpu
-    case "$DETECTED_GPU" in
+    case "${DETECTED_GPU:-none}" in
         nvidia)
-            echo -e "  GPU:          ${GREEN}NVIDIA ${DETECTED_GPU_NAME} (${DETECTED_GPU_VRAM} MB VRAM)${NC}" ;;
+            echo -e "  GPU:          ${GREEN}NVIDIA ${DETECTED_GPU_NAME:-GPU} (${DETECTED_GPU_VRAM:-0} MB VRAM)${NC}" ;;
         amd)
             echo -e "  GPU:          ${GREEN}AMD ${DETECTED_GPU_NAME:-ROCm} ${DETECTED_GPU_VRAM:+(${DETECTED_GPU_VRAM} MB VRAM)}${NC}" ;;
         intel)
@@ -248,16 +248,16 @@ run_diagnostics() {
     esac
 
     detect_ram
-    echo -e "  RAM:          ${GREEN}${DETECTED_RAM_TOTAL_GB}GB (${DETECTED_RAM_AVAILABLE_GB}GB доступно)${NC}"
-    if [[ "$DETECTED_RAM_TOTAL_GB" -lt 4 ]]; then
+    echo -e "  RAM:          ${GREEN}${DETECTED_RAM_TOTAL_GB:-0}GB (${DETECTED_RAM_AVAILABLE_GB:-0}GB доступно)${NC}"
+    if [[ "${DETECTED_RAM_TOTAL_GB:-0}" -lt 4 ]]; then
         echo -e "                ${RED}ВНИМАНИЕ: минимум 4GB RAM, рекомендуется 16GB+${NC}"
-    elif [[ "$DETECTED_RAM_TOTAL_GB" -lt 16 ]]; then
+    elif [[ "${DETECTED_RAM_TOTAL_GB:-0}" -lt 16 ]]; then
         echo -e "                ${YELLOW}Рекомендуется 16GB+ для оптимальной работы${NC}"
     fi
 
     detect_disk
-    echo -e "  Диск:         ${GREEN}${DETECTED_DISK_FREE_GB}GB свободно${NC}"
-    if [[ "$DETECTED_DISK_FREE_GB" -lt 30 ]]; then
+    echo -e "  Диск:         ${GREEN}${DETECTED_DISK_FREE_GB:-0}GB свободно${NC}"
+    if [[ "${DETECTED_DISK_FREE_GB:-0}" -lt 30 ]]; then
         echo -e "                ${RED}ВНИМАНИЕ: минимум 30GB, рекомендуется 50GB+${NC}"
     fi
 
@@ -269,9 +269,9 @@ run_diagnostics() {
     fi
 
     detect_docker
-    if [[ "$DETECTED_DOCKER_INSTALLED" == "true" ]]; then
-        echo -e "  Docker:       ${GREEN}${DETECTED_DOCKER_VERSION}${NC}"
-        if [[ "$DETECTED_DOCKER_COMPOSE" == "true" ]]; then
+    if [[ "${DETECTED_DOCKER_INSTALLED:-false}" == "true" ]]; then
+        echo -e "  Docker:       ${GREEN}${DETECTED_DOCKER_VERSION:-unknown}${NC}"
+        if [[ "${DETECTED_DOCKER_COMPOSE:-false}" == "true" ]]; then
             echo -e "  Compose:      ${GREEN}установлен${NC}"
         else
             echo -e "  Compose:      ${YELLOW}не установлен${NC}"
@@ -281,7 +281,7 @@ run_diagnostics() {
     fi
 
     detect_network
-    if [[ "$DETECTED_NETWORK" == "true" ]]; then
+    if [[ "${DETECTED_NETWORK:-false}" == "true" ]]; then
         echo -e "  Сеть:         ${GREEN}доступна${NC}"
     else
         echo -e "  Сеть:         ${YELLOW}недоступна${NC}"
@@ -292,11 +292,11 @@ run_diagnostics() {
 
     # Validate minimum requirements
     local errors=0
-    if [[ "$DETECTED_RAM_TOTAL_GB" -lt 4 ]]; then
+    if [[ "${DETECTED_RAM_TOTAL_GB:-0}" -lt 4 ]]; then
         echo -e "${RED}ОШИБКА: Недостаточно RAM (минимум 4GB)${NC}"
         errors=$((errors + 1))
     fi
-    if [[ "$DETECTED_DISK_FREE_GB" -lt 30 ]]; then
+    if [[ "${DETECTED_DISK_FREE_GB:-0}" -lt 30 ]]; then
         echo -e "${RED}ОШИБКА: Недостаточно места на диске (минимум 30GB)${NC}"
         errors=$((errors + 1))
     fi

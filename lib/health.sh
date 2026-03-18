@@ -116,13 +116,13 @@ check_all() {
         echo -e "${GREEN}Все сервисы работают${NC}"
     else
         echo -e "${YELLOW}${failed} сервис(ов) не запущен(о)${NC}"
-        local server_ip
+        local server_ip="unknown"
         if [[ "$(uname)" == "Darwin" ]]; then
             server_ip=$(ipconfig getifaddr en0 2>/dev/null || echo "unknown")
         else
-            server_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+            server_ip=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "unknown")
         fi
-        [[ -z "$server_ip" ]] && server_ip=$(hostname 2>/dev/null || echo 'unknown')
+        [[ -z "${server_ip:-}" ]] && server_ip=$(hostname 2>/dev/null || echo 'unknown')
         send_alert "⚠️ AGMind: ${failed} сервис(ов) не работает. Проверьте: ${server_ip}"
         echo "Проверьте логи: docker compose -f ${COMPOSE_FILE} logs <service>"
     fi
@@ -171,13 +171,14 @@ CURL_CFG
 check_gpu_status() {
     echo -e "${BOLD}GPU Status:${NC}"
     local gpu_profile="${INSTALL_DIR}/.agmind_gpu_profile"
+    local GPU_TYPE="none" GPU_NAME="unknown" GPU_VRAM="0"
     if [[ -f "$gpu_profile" ]]; then
-        GPU_TYPE=$(grep '^GPU_TYPE=' "$gpu_profile" | cut -d= -f2 | head -1)
-        GPU_NAME=$(grep '^GPU_NAME=' "$gpu_profile" | cut -d= -f2- | head -1)
-        GPU_VRAM=$(grep '^GPU_VRAM=' "$gpu_profile" | cut -d= -f2 | head -1)
+        GPU_TYPE=$(grep '^GPU_TYPE=' "$gpu_profile" | cut -d= -f2 | tr -d '"' | head -1)
+        GPU_NAME=$(grep '^GPU_NAME=' "$gpu_profile" | cut -d= -f2- | tr -d '"' | head -1)
+        GPU_VRAM=$(grep '^GPU_VRAM=' "$gpu_profile" | cut -d= -f2 | tr -d '"' | head -1)
     fi
 
-    case "${GPU_TYPE:-none}" in
+    case "${GPU_TYPE}" in
         nvidia)
             if command -v nvidia-smi &>/dev/null; then
                 nvidia-smi --query-gpu=name,memory.used,memory.free,temperature.gpu,utilization.gpu \

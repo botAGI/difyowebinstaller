@@ -121,14 +121,15 @@ encrypt_secrets() {
         fi
     fi
 
-    # Generate age keypair
-    mkdir -p "$age_dir"
-    chmod 700 "$age_dir"
-    if [[ ! -f "$age_key" ]]; then
-        age-keygen -o "$age_key" 2>/dev/null
-        chmod 600 "$age_key"
-        chown root:root "$age_key" 2>/dev/null || true
-    fi
+    # Generate age keypair (umask prevents TOCTOU: files created with correct perms)
+    (
+        umask 077
+        mkdir -p "$age_dir"
+        if [[ ! -f "$age_key" ]]; then
+            age-keygen -o "$age_key" 2>/dev/null
+            chown root:root "$age_key" 2>/dev/null || true
+        fi
+    )
 
     local pub_key
     pub_key=$(grep 'public key:' "$age_key" | cut -d: -f2- | tr -d ' ')
@@ -143,7 +144,7 @@ EOF
     # Encrypt .env
     local env_file="${install_dir}/docker/.env"
     if [[ -f "$env_file" ]]; then
-        SOPS_AGE_KEY_FILE="$age_key" sops --encrypt --age "$pub_key" "$env_file" > "${env_file}.enc"
+        (umask 077; SOPS_AGE_KEY_FILE="$age_key" sops --encrypt --age "$pub_key" "$env_file" > "${env_file}.enc")
         echo -e "${GREEN}✓ encrypt_secrets: .env зашифрован → .env.enc${NC}"
         echo -e "${YELLOW}⚠ ВАЖНО: Сохраните ключ ${age_key} в безопасное место!${NC}"
         echo -e "${YELLOW}  Без него невозможно расшифровать секреты.${NC}"

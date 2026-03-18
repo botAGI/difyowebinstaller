@@ -810,11 +810,12 @@ phase_config() {
     # Override admin UI bind address if user opted in
     if [[ "${ADMIN_UI_OPEN:-false}" == "true" ]]; then
         local env_file="${INSTALL_DIR}/docker/.env"
-        sed -i.bak \
+        local env_tmp="${env_file}.tmp.$$"
+        sed \
             -e "s|GRAFANA_BIND_ADDR=127.0.0.1|GRAFANA_BIND_ADDR=0.0.0.0|g" \
             -e "s|PORTAINER_BIND_ADDR=127.0.0.1|PORTAINER_BIND_ADDR=0.0.0.0|g" \
-            "$env_file"
-        rm -f "${env_file}.bak"
+            "$env_file" > "$env_tmp" && mv "$env_tmp" "$env_file" || rm -f "$env_tmp"
+        chmod 600 "$env_file"
     fi
 
     # Ensure .admin_password has restrictive permissions
@@ -993,21 +994,27 @@ phase_start() {
     # resolves — containers with condition: service_healthy deps stay in "Created".
     # Re-run compose up to kick any containers whose dependencies are now healthy.
     echo -e "${YELLOW}Ожидание каскада зависимостей...${NC}"
-    local retry
+    local retry created=0
     for retry in 1 2 3; do
-        local created
-        created=$(docker ps -a --filter "name=agmind-" --filter "status=created" -q 2>/dev/null | wc -l | tr -d ' ')
-        if [[ "$created" -eq 0 ]]; then
+        created=$(docker ps -a --filter "name=agmind-" --filter "status=created" --format '{{.ID}}' 2>/dev/null | wc -l | tr -d ' ')
+        if [[ "${created:-0}" -eq 0 ]]; then
             break
         fi
         echo "  Попытка ${retry}/3: ${created} контейнеров в Created, перезапуск..."
         sleep 10
         if [[ -n "$profiles" ]]; then
-            COMPOSE_PROFILES="${profiles}" docker compose up -d 2>/dev/null || true
+            COMPOSE_PROFILES="${profiles}" docker compose up -d 2>&1 | tail -5
         else
-            docker compose up -d 2>/dev/null || true
+            docker compose up -d 2>&1 | tail -5
         fi
     done
+    # Fail loudly if containers still stuck after all retries
+    if [[ "${created:-0}" -gt 0 ]]; then
+        local stuck_names
+        stuck_names=$(docker ps -a --filter "name=agmind-" --filter "status=created" --format '{{.Names}}' 2>/dev/null | tr '\n' ', ')
+        echo -e "${RED}ОШИБКА: ${created} контейнеров не запустились после 3 попыток: ${stuck_names}${NC}"
+        echo -e "${YELLOW}Проверьте логи: docker compose logs <service>${NC}"
+    fi
 
     # Fix Dify API storage permissions (container runs as user "dify")
     docker exec -u root agmind-api chown -R dify:dify /app/api/storage 2>/dev/null || true
@@ -1022,12 +1029,12 @@ phase_start() {
     # (create_openwebui_admin restarts open-webui and nginx individually)
     local final_created
     final_created=$(docker ps -a --filter "name=agmind-" --filter "status=created" -q 2>/dev/null | wc -l | tr -d ' ')
-    if [[ "$final_created" -gt 0 ]]; then
+    if [[ "${final_created:-0}" -gt 0 ]]; then
         echo -e "${YELLOW}Запуск ${final_created} оставшихся контейнеров...${NC}"
         if [[ -n "$profiles" ]]; then
-            COMPOSE_PROFILES="${profiles}" docker compose up -d 2>/dev/null || true
+            COMPOSE_PROFILES="${profiles}" docker compose up -d 2>&1 | tail -5
         else
-            docker compose up -d 2>/dev/null || true
+            docker compose up -d 2>&1 | tail -5
         fi
     fi
 
@@ -1453,6 +1460,14 @@ phase_complete() {
 * * * * * root ${INSTALL_DIR}/scripts/health-gen.sh >> ${INSTALL_DIR}/health-gen.log 2>&1
 CRON_EOF
     chmod 644 /etc/cron.d/agmind-health
+
+    # Install logrotate config for AGMind logs (prevents /var partition fill)
+    if [[ -d /etc/logrotate.d ]]; then
+        sed "s|__INSTALL_DIR__|${INSTALL_DIR}|g" \
+            "${INSTALLER_DIR}/templates/logrotate-agmind.conf" \
+            > /etc/logrotate.d/agmind
+        chmod 644 /etc/logrotate.d/agmind
+    fi
 
     # Generate initial health.json with real data (replaces placeholder from phase_config)
     "${INSTALL_DIR}/scripts/health-gen.sh" 2>/dev/null || true

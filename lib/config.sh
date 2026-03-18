@@ -136,6 +136,16 @@ generate_random() {
     head -c 256 /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z0-9' | head -c "$length"
 }
 
+# Atomic sed: write to temp file, then mv. Prevents TOCTOU and partial writes.
+# Usage: _atomic_sed "file" -e 's|old|new|g' -e 's|old2|new2|g'
+#   or:  _atomic_sed "file" '/pattern/d'
+_atomic_sed() {
+    local file="$1"; shift
+    local tmp="${file}.tmp.$$"
+    sed "$@" "$file" > "$tmp" || { rm -f "$tmp"; return 1; }
+    mv "$tmp" "$file"
+}
+
 # Escape special characters for sed replacement strings (& | \ /)
 escape_sed() {
     printf '%s' "$1" | sed 's/[&/|\]/\\&/g'
@@ -215,25 +225,18 @@ generate_config() {
     local installer_root
     installer_root="$(dirname "$template_dir")"
 
-    # Generate secrets
-    local secret_key
+    # Generate secrets (validate non-empty — /dev/urandom failure is fatal)
+    local secret_key db_password redis_password sandbox_api_key
+    local plugin_daemon_key plugin_inner_api_key
+    local weaviate_api_key qdrant_api_key grafana_admin_password
     secret_key=$(generate_random 64)
-    local db_password
     db_password=$(generate_random 32)
-    local redis_password
     redis_password=$(generate_random 32)
-    local sandbox_api_key
     sandbox_api_key="dify-sandbox-$(generate_random 16)"
-    local plugin_daemon_key
     plugin_daemon_key=$(generate_random 48)
-    local plugin_inner_api_key
     plugin_inner_api_key=$(generate_random 48)
-
-    local weaviate_api_key
     weaviate_api_key=$(generate_random 32)
-    local qdrant_api_key
     qdrant_api_key=$(generate_random 32)
-    local grafana_admin_password
     grafana_admin_password=$(generate_random 16)
 
     # Admin password (auto-generated, Base64 encoded for Dify INIT_PASSWORD)
@@ -241,6 +244,12 @@ generate_config() {
     admin_password_plain=$(generate_random 16)
     local admin_password_b64
     admin_password_b64=$(echo -n "$admin_password_plain" | base64)
+
+    # Fatal check: if any critical secret is empty, /dev/urandom failed
+    if [[ -z "$secret_key" || -z "$db_password" || -z "$redis_password" || -z "$admin_password_plain" ]]; then
+        echo -e "${RED}FATAL: не удалось сгенерировать секреты (проблема с /dev/urandom)${NC}"
+        return 1
+    fi
 
     # Generate .env from template
     local template_file="${template_dir}/env.${profile}.template"
@@ -277,8 +286,11 @@ generate_config() {
     safe_telegram_token=$(escape_sed "${ALERT_TELEGRAM_TOKEN:-}")
     safe_telegram_chat_id=$(escape_sed "${ALERT_TELEGRAM_CHAT_ID:-}")
 
-    # Replace placeholders in .env
-    sed -i.bak \
+    # Replace placeholders in .env (atomic: write to temp, then mv)
+    local authelia_jwt_secret
+    authelia_jwt_secret=$(generate_random 64)
+    local env_tmp="${env_file}.tmp.$$"
+    sed \
         -e "s|__SECRET_KEY__|${secret_key}|g" \
         -e "s|__DB_PASSWORD__|${db_password}|g" \
         -e "s|__REDIS_PASSWORD__|${redis_password}|g" \
@@ -307,16 +319,10 @@ generate_config() {
         -e "s|__EMBED_PROVIDER__|${safe_embed_provider}|g" \
         -e "s|__VLLM_MODEL__|${safe_vllm_model}|g" \
         -e "s|__HF_TOKEN__|${safe_hf_token}|g" \
-        "$env_file"
-    rm -f "${env_file}.bak"
-
-    # Authelia placeholders
-    local authelia_jwt_secret
-    authelia_jwt_secret=$(generate_random 64)
-    sed -i.bak \
         -e "s|__AUTHELIA_JWT_SECRET__|${authelia_jwt_secret}|g" \
-        "$env_file"
-    rm -f "${env_file}.bak"
+        "$env_file" > "$env_tmp" || { rm -f "$env_tmp"; return 1; }
+    mv "$env_tmp" "$env_file"
+    chmod 600 "$env_file"
 
     # Provider-specific Open WebUI env vars
     {
@@ -400,9 +406,9 @@ generate_config() {
         chown root:root "$env_file"
     fi
 
-    # Store admin credentials for final output
+    # Store admin credentials for final output (atomic: install -m creates with correct perms)
+    install -m 600 /dev/null "${INSTALL_DIR}/.admin_password"
     echo "$admin_password_plain" > "${INSTALL_DIR}/.admin_password"
-    chmod 600 "${INSTALL_DIR}/.admin_password"
     if [[ $(id -u) -eq 0 ]]; then
         chown root:root "${INSTALL_DIR}/.admin_password"
     fi
@@ -427,26 +433,16 @@ generate_nginx_config() {
         server_name="${DOMAIN}"
     fi
 
-    # Replace all placeholders
-    sed -i.bak \
-        -e "s|__SERVER_NAME__|${server_name}|g" \
-        "$nginx_conf"
-    rm -f "${nginx_conf}.bak"
+    # Replace all placeholders (atomic writes via _atomic_sed)
+    _atomic_sed "$nginx_conf" -e "s|__SERVER_NAME__|${server_name}|g"
 
     # Handle TLS markers based on TLS_MODE
     if [[ "${TLS_MODE:-none}" != "none" ]]; then
-        # Enable TLS: strip #__TLS__ markers to activate HTTPS block
-        sed -i.bak 's|#__TLS__||g' "$nginx_conf"
-        rm -f "${nginx_conf}.bak"
-        # Enable HTTP→HTTPS redirect: strip #__TLS_REDIRECT__ markers
-        sed -i.bak 's|#__TLS_REDIRECT__||g' "$nginx_conf"
-        rm -f "${nginx_conf}.bak"
+        _atomic_sed "$nginx_conf" 's|#__TLS__||g'
+        _atomic_sed "$nginx_conf" 's|#__TLS_REDIRECT__||g'
     else
-        # No TLS: remove all #__TLS__ lines entirely, and #__TLS_REDIRECT__ lines
-        sed -i.bak '/#__TLS__/d' "$nginx_conf"
-        rm -f "${nginx_conf}.bak"
-        sed -i.bak '/#__TLS_REDIRECT__/d' "$nginx_conf"
-        rm -f "${nginx_conf}.bak"
+        _atomic_sed "$nginx_conf" '/#__TLS__/d'
+        _atomic_sed "$nginx_conf" '/#__TLS_REDIRECT__/d'
     fi
 
     # Replace TLS cert/key paths
@@ -456,11 +452,7 @@ generate_nginx_config() {
         cert_path="/etc/letsencrypt/live/${DOMAIN:-localhost}/fullchain.pem"
         key_path="/etc/letsencrypt/live/${DOMAIN:-localhost}/privkey.pem"
     fi
-    sed -i.bak \
-        -e "s|__TLS_CERT_PATH__|${cert_path}|g" \
-        -e "s|__TLS_KEY_PATH__|${key_path}|g" \
-        "$nginx_conf"
-    rm -f "${nginx_conf}.bak"
+    _atomic_sed "$nginx_conf" -e "s|__TLS_CERT_PATH__|${cert_path}|g" -e "s|__TLS_KEY_PATH__|${key_path}|g"
 }
 
 generate_redis_config() {
@@ -469,6 +461,10 @@ generate_redis_config() {
 
     local redis_pass
     redis_pass=$(grep '^REDIS_PASSWORD=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "")
+    if [[ -z "$redis_pass" ]]; then
+        echo -e "${RED}FATAL: REDIS_PASSWORD пуст в .env — Redis будет без аутентификации${NC}" >&2
+        return 1
+    fi
     cat > "$redis_conf" << REDISEOF
 # AGMind Redis Configuration — Hardened
 # bind 0.0.0.0 — container networking requires this; access controlled by Docker network + requirepass
@@ -580,13 +576,11 @@ AMEOF
         webhook)
             local webhook_url="${ALERT_WEBHOOK_URL:-}"
             if [[ -n "$webhook_url" ]]; then
-                # Enable webhook markers
-                sed -i.bak 's|#__WEBHOOK__||g' "$alertmanager_conf"
-                rm -f "${alertmanager_conf}.bak"
+                # Enable webhook markers (atomic writes)
+                _atomic_sed "$alertmanager_conf" 's|#__WEBHOOK__||g'
                 local safe_webhook
                 safe_webhook=$(escape_sed "$webhook_url")
-                sed -i.bak "s|__ALERT_WEBHOOK_URL__|${safe_webhook}|g" "$alertmanager_conf"
-                rm -f "${alertmanager_conf}.bak"
+                _atomic_sed "$alertmanager_conf" "s|__ALERT_WEBHOOK_URL__|${safe_webhook}|g"
             fi
             ;;
     esac
@@ -622,8 +616,7 @@ SANDBOXEOF
     # Replace sandbox key from .env
     local sandbox_key
     sandbox_key=$(grep '^SANDBOX_API_KEY=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "dify-sandbox")
-    sed -i.bak "s|__will_be_replaced__|${sandbox_key}|g" "$sandbox_conf"
-    rm -f "${sandbox_conf}.bak"
+    _atomic_sed "$sandbox_conf" "s|__will_be_replaced__|${sandbox_key}|g"
 }
 
 # ============================================================================
@@ -637,45 +630,29 @@ enable_gpu_compose() {
     case "${DETECTED_GPU:-none}" in
         none)
             echo -e "${YELLOW}GPU не обнаружен — режим CPU${NC}"
-            # Remove all GPU-marked lines entirely
-            sed -i.bak '/#__GPU__/d' "$compose_file"
-            rm -f "${compose_file}.bak"
+            _atomic_sed "$compose_file" '/#__GPU__/d'
             ;;
         nvidia)
             echo -e "${YELLOW}Включение GPU поддержки (NVIDIA)...${NC}"
-            # Strip markers, keep nvidia deploy block as-is
-            sed -i.bak 's|#__GPU__||g' "$compose_file"
-            rm -f "${compose_file}.bak"
+            _atomic_sed "$compose_file" 's|#__GPU__||g'
             echo -e "${GREEN}NVIDIA GPU → deploy.resources.reservations.devices${NC}"
             ;;
         amd)
             echo -e "${YELLOW}Включение GPU поддержки (AMD ROCm)...${NC}"
-            # Strip markers first
-            sed -i.bak 's|#__GPU__||g' "$compose_file"
-            rm -f "${compose_file}.bak"
-            # Replace nvidia driver block with AMD ROCm device mounts
-            sed -i.bak '/driver: nvidia/,/capabilities: \[gpu\]/c\      # AMD ROCm GPU\n    devices:\n      - /dev/kfd:/dev/kfd\n      - /dev/dri:/dev/dri\n    group_add:\n      - video\n      - render' "$compose_file"
-            rm -f "${compose_file}.bak"
-            # Add OLLAMA_ROCM env var
-            sed -i.bak '/OLLAMA_API_BASE/a\      OLLAMA_ROCM: "1"' "$compose_file" 2>/dev/null || true
-            rm -f "${compose_file}.bak"
+            _atomic_sed "$compose_file" 's|#__GPU__||g'
+            _atomic_sed "$compose_file" '/driver: nvidia/,/capabilities: \[gpu\]/c\      # AMD ROCm GPU\n    devices:\n      - /dev/kfd:/dev/kfd\n      - /dev/dri:/dev/dri\n    group_add:\n      - video\n      - render'
+            _atomic_sed "$compose_file" '/OLLAMA_API_BASE/a\      OLLAMA_ROCM: "1"' 2>/dev/null || true
             echo -e "${GREEN}AMD ROCm GPU → device passthrough${NC}"
             ;;
         intel)
             echo -e "${YELLOW}Включение GPU поддержки (Intel)...${NC}"
-            # Strip markers first
-            sed -i.bak 's|#__GPU__||g' "$compose_file"
-            rm -f "${compose_file}.bak"
-            # Replace nvidia driver block with Intel device mounts
-            sed -i.bak '/driver: nvidia/,/capabilities: \[gpu\]/c\      # Intel GPU\n    devices:\n      - /dev/dri:/dev/dri\n    group_add:\n      - video\n      - render' "$compose_file"
-            rm -f "${compose_file}.bak"
+            _atomic_sed "$compose_file" 's|#__GPU__||g'
+            _atomic_sed "$compose_file" '/driver: nvidia/,/capabilities: \[gpu\]/c\      # Intel GPU\n    devices:\n      - /dev/dri:/dev/dri\n    group_add:\n      - video\n      - render'
             echo -e "${GREEN}Intel GPU → /dev/dri passthrough${NC}"
             ;;
         apple)
             echo -e "${YELLOW}Apple Silicon — GPU обрабатывается нативно через Metal${NC}"
-            # Remove GPU blocks — Metal handled natively by Ollama
-            sed -i.bak '/#__GPU__/d' "$compose_file"
-            rm -f "${compose_file}.bak"
+            _atomic_sed "$compose_file" '/#__GPU__/d'
             echo -e "${GREEN}Apple Silicon — Docker GPU passthrough не требуется${NC}"
             ;;
     esac
@@ -758,9 +735,7 @@ enable_authelia_nginx() {
     fi
 
     echo -e "${YELLOW}Активация Authelia в nginx...${NC}"
-    # Strip #__AUTHELIA__ markers to enable Authelia location blocks
-    sed -i.bak 's|#__AUTHELIA__||g' "$nginx_conf"
-    rm -f "${nginx_conf}.bak"
+    _atomic_sed "$nginx_conf" 's|#__AUTHELIA__||g'
     echo -e "${GREEN}Authelia блоки активированы в nginx.conf${NC}"
 }
 

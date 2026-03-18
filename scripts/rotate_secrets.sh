@@ -71,15 +71,17 @@ rotate_secrets() {
 
     ROTATION_STARTED=true
 
-    sed -i.bak \
+    # Atomic sed: write to temp, then mv (umask 077 already set at script top)
+    local env_tmp="${ENV_FILE}.tmp.$$"
+    sed \
         -e "s|^SECRET_KEY=.*|SECRET_KEY=${new_secret_key}|" \
         -e "s|^REDIS_PASSWORD=.*|REDIS_PASSWORD=${new_redis_pass}|" \
         -e "s|^GRAFANA_ADMIN_PASSWORD=.*|GRAFANA_ADMIN_PASSWORD=${new_grafana_pass}|" \
         -e "s|^SANDBOX_API_KEY=.*|SANDBOX_API_KEY=${new_sandbox_key}|" \
         -e "s|^PLUGIN_DAEMON_KEY=.*|PLUGIN_DAEMON_KEY=${new_plugin_daemon_key}|" \
         -e "s|^PLUGIN_INNER_API_KEY=.*|PLUGIN_INNER_API_KEY=${new_plugin_inner_key}|" \
-        "$ENV_FILE"
-    rm -f "${ENV_FILE}.bak"
+        "$ENV_FILE" > "$env_tmp" || { rm -f "$env_tmp"; return 1; }
+    mv "$env_tmp" "$ENV_FILE"
 
     echo -e "${GREEN}Секреты обновлены:${NC}"
     echo -e "  ${GREEN}✓${NC} SECRET_KEY rotated"
@@ -100,8 +102,10 @@ rotate_secrets() {
     # Update Redis config file BEFORE restart (so Redis loads new password)
     local redis_conf="${INSTALL_DIR}/docker/volumes/redis/redis.conf"
     if [[ -f "$redis_conf" ]]; then
-        sed -i.bak "s|^requirepass .*|requirepass ${new_redis_pass}|" "$redis_conf"
-        rm -f "${redis_conf}.bak"
+        local redis_tmp="${redis_conf}.tmp.$$"
+        sed "s|^requirepass .*|requirepass ${new_redis_pass}|" "$redis_conf" > "$redis_tmp" \
+            && mv "$redis_tmp" "$redis_conf" \
+            || rm -f "$redis_tmp"
     fi
 
     # Restart affected services

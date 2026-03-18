@@ -87,8 +87,14 @@ Last deploy: #10, 2026-03-17, 23/23 containers healthy.
 | 2 | 03 | -- | -- | -- |
 | 2 | 04 | 2min | 1 | 2 |
 
+### Quick Tasks Completed
+
+| # | Description | Date | Directory |
+|---|-------------|------|-----------|
+| 260318-e1f | Fix remaining bugs: atomic sed, BUG-015, restart policies, plugin pool, logrotate | 2026-03-18 | [260318-e1f](./quick/260318-e1f-fix-remaining-bugs-atomic-sed-bug-015-re/) |
+
 ---
-*Last updated: 2026-03-18 after Phase 3 Plan 03 completion — provider UX completion screen and plugin docs, Phase 3 fully complete*
+*Last updated: 2026-03-18 — Completed quick task 260318-e1f: Fix remaining bugs*
 | Phase 03 P01 | 15min | 2 tasks | 6 files |
 | Phase 03 P02 | 4min | 2 tasks | 5 files |
 | Phase 03 P03 | 8min | 2 tasks | 2 files |

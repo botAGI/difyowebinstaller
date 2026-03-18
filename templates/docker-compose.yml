@@ -130,6 +130,7 @@ services:
     image: langgenius/dify-api:${DIFY_VERSION:-1.13.0}
     container_name: agmind-api
     restart: always
+    mem_limit: ${API_MEM_LIMIT:-2g}
     cap_add:
       - CHOWN
       - SETUID
@@ -163,6 +164,7 @@ services:
     image: langgenius/dify-api:${DIFY_VERSION:-1.13.0}
     container_name: agmind-worker
     restart: always
+    mem_limit: ${WORKER_MEM_LIMIT:-2g}
     cap_add:
       - CHOWN
       - SETUID
@@ -196,6 +198,10 @@ services:
     image: langgenius/dify-web:${DIFY_VERSION:-1.13.0}
     container_name: agmind-web
     restart: always
+    mem_limit: ${WEB_MEM_LIMIT:-512m}
+    depends_on:
+      api:
+        condition: service_healthy
     environment:
       CONSOLE_API_URL: ${CONSOLE_API_URL:-}
       APP_API_URL: ${APP_API_URL:-}
@@ -222,6 +228,7 @@ services:
     image: ghcr.io/open-webui/open-webui:${OPENWEBUI_VERSION:-v0.5.20}
     container_name: agmind-openwebui
     restart: always
+    mem_limit: ${OPENWEBUI_MEM_LIMIT:-2g}
     environment:
       - WEBUI_NAME=AGMind
       - ENABLE_SIGNUP=${ENABLE_SIGNUP:-false}
@@ -341,6 +348,7 @@ services:
     image: postgres:${POSTGRES_VERSION:-15.10-alpine}
     container_name: agmind-db
     restart: always
+    mem_limit: ${DB_MEM_LIMIT:-2g}
     cap_add:
       - CHOWN
       - SETUID
@@ -380,6 +388,7 @@ services:
     image: redis:${REDIS_VERSION:-7.4.1-alpine}
     container_name: agmind-redis
     restart: always
+    mem_limit: ${REDIS_MEM_LIMIT:-1g}
     read_only: true
     cap_add:
       - CHOWN
@@ -387,7 +396,7 @@ services:
       - SETGID
       - DAC_OVERRIDE
     tmpfs:
-      - /tmp
+      - /tmp:size=64m
     command: redis-server /etc/redis/redis.conf
     volumes:
       - ./volumes/redis/data:/data
@@ -407,6 +416,7 @@ services:
     image: semitechnologies/weaviate:${WEAVIATE_VERSION:-1.27.6}
     container_name: agmind-weaviate
     restart: always
+    mem_limit: ${WEAVIATE_MEM_LIMIT:-4g}
     profiles:
       - weaviate
     environment:
@@ -437,6 +447,7 @@ services:
     image: qdrant/qdrant:${QDRANT_VERSION:-v1.12.1}
     container_name: agmind-qdrant
     restart: always
+    mem_limit: ${QDRANT_MEM_LIMIT:-2g}
     profiles:
       - qdrant
     environment:
@@ -458,6 +469,7 @@ services:
     image: ghcr.io/docling-project/docling-serve:${DOCLING_SERVE_VERSION:-v1.14.3}
     container_name: agmind-docling
     restart: always
+    mem_limit: ${DOCLING_MEM_LIMIT:-4g}
     profiles:
       - etl
     expose:
@@ -478,6 +490,7 @@ services:
     image: xprobe/xinference:${XINFERENCE_VERSION:-v0.16.3}
     container_name: agmind-xinference
     restart: always
+    mem_limit: ${XINFERENCE_MEM_LIMIT:-4g}
     profiles:
       - etl
     expose:
@@ -509,6 +522,7 @@ services:
     image: langgenius/dify-sandbox:${SANDBOX_VERSION:-0.2.12}
     container_name: agmind-sandbox
     restart: always
+    mem_limit: ${SANDBOX_MEM_LIMIT:-1g}
     logging:
       driver: "json-file"
       options:
@@ -546,6 +560,7 @@ services:
     image: ubuntu/squid:${SQUID_VERSION:-6.6-24.04_edge}
     container_name: agmind-ssrf-proxy
     restart: always
+    mem_limit: ${SSRF_MEM_LIMIT:-256m}
     cap_add:
       - CHOWN
       - SETUID
@@ -569,6 +584,7 @@ services:
     image: langgenius/dify-plugin-daemon:${PLUGIN_DAEMON_VERSION:-0.5.3-local}
     container_name: agmind-plugin-daemon
     restart: always
+    mem_limit: ${PLUGIN_MEM_LIMIT:-2g}
     cap_add:
       - CHOWN
       - SETUID
@@ -620,7 +636,8 @@ services:
       MAX_PLUGIN_PACKAGE_SIZE: ${MAX_PLUGIN_PACKAGE_SIZE:-52428800}
       MAX_BUNDLE_PACKAGE_SIZE: ${MAX_BUNDLE_PACKAGE_SIZE:-52428800}
       # --- Pool / lifetime ---
-      ROUTINE_POOL_SIZE: ${ROUTINE_POOL_SIZE:-100}
+      # Capped at 10 to fit within 2g mem_limit (10 workers × ~100MB each)
+      ROUTINE_POOL_SIZE: ${ROUTINE_POOL_SIZE:-10}
       LIFETIME_COLLECTION_HEARTBEAT_INTERVAL: ${LIFETIME_COLLECTION_HEARTBEAT_INTERVAL:-30}
       LIFETIME_COLLECTION_GC_INTERVAL: ${LIFETIME_COLLECTION_GC_INTERVAL:-60}
       LIFETIME_STATE_GC_INTERVAL: ${LIFETIME_STATE_GC_INTERVAL:-60}
@@ -650,6 +667,7 @@ services:
     image: nginx:${NGINX_VERSION:-1.27.3-alpine}
     container_name: agmind-nginx
     restart: always
+    mem_limit: ${NGINX_MEM_LIMIT:-256m}
     cap_add:
       - CHOWN
       - SETUID
@@ -657,9 +675,9 @@ services:
       - NET_BIND_SERVICE
     read_only: true
     tmpfs:
-      - /tmp
-      - /var/cache/nginx
-      - /var/run
+      - /tmp:size=64m
+      - /var/cache/nginx:size=128m
+      - /var/run:size=16m
     ports:
       - "${EXPOSE_NGINX_PORT:-80}:80"
       - "${EXPOSE_NGINX_SSL_PORT:-443}:443"
@@ -697,7 +715,8 @@ services:
     <<: *security-defaults
     image: prom/prometheus:${PROMETHEUS_VERSION:-v2.54.1}
     container_name: agmind-prometheus
-    restart: always
+    restart: on-failure:5
+    mem_limit: ${PROMETHEUS_MEM_LIMIT:-1g}
     profiles:
       - monitoring
     volumes:
@@ -718,7 +737,8 @@ services:
     <<: *security-defaults
     image: prom/alertmanager:${ALERTMANAGER_VERSION:-v0.27.0}
     container_name: agmind-alertmanager
-    restart: always
+    restart: on-failure:5
+    mem_limit: ${ALERTMANAGER_MEM_LIMIT:-256m}
     profiles:
       - monitoring
     volumes:
@@ -741,7 +761,8 @@ services:
       - SETUID
       - SETGID
     container_name: agmind-loki
-    restart: always
+    restart: on-failure:5
+    mem_limit: ${LOKI_MEM_LIMIT:-1g}
     profiles:
       - monitoring
     volumes:
@@ -762,7 +783,8 @@ services:
     <<: *security-defaults
     image: grafana/promtail:${PROMTAIL_VERSION:-3.3.2}
     container_name: agmind-promtail
-    restart: always
+    restart: on-failure:5
+    mem_limit: ${PROMTAIL_MEM_LIMIT:-256m}
     profiles:
       - monitoring
     volumes:
@@ -788,7 +810,8 @@ services:
     <<: *security-defaults
     image: prom/node-exporter:${NODE_EXPORTER_VERSION:-v1.8.2}
     container_name: agmind-node-exporter
-    restart: always
+    restart: on-failure:5
+    mem_limit: ${NODE_EXPORTER_MEM_LIMIT:-128m}
     profiles:
       - monitoring
     pid: host
@@ -819,7 +842,8 @@ services:
     <<: *logging-defaults
     image: gcr.io/cadvisor/cadvisor:${CADVISOR_VERSION:-v0.55.1}
     container_name: agmind-cadvisor
-    restart: always
+    restart: on-failure:5
+    mem_limit: ${CADVISOR_MEM_LIMIT:-512m}
     privileged: true
     profiles:
       - monitoring
@@ -854,7 +878,8 @@ services:
     <<: *security-defaults
     image: grafana/grafana:${GRAFANA_VERSION:-11.4.0}
     container_name: agmind-grafana
-    restart: always
+    restart: on-failure:5
+    mem_limit: ${GRAFANA_MEM_LIMIT:-512m}
     cap_add:
       - CHOWN
       - SETUID
@@ -890,7 +915,8 @@ services:
     <<: *security-defaults
     image: portainer/portainer-ce:${PORTAINER_VERSION:-2.21.4}
     container_name: agmind-portainer
-    restart: always
+    restart: on-failure:5
+    mem_limit: ${PORTAINER_MEM_LIMIT:-256m}
     profiles:
       - monitoring
     ports:
@@ -916,6 +942,7 @@ services:
     container_name: agmind-authelia
     profiles: ["authelia"]
     restart: always
+    mem_limit: ${AUTHELIA_MEM_LIMIT:-256m}
     volumes:
       - ./authelia:/config:ro
     environment:
@@ -937,6 +964,9 @@ services:
     restart: always
     profiles:
       - vps
+    depends_on:
+      nginx:
+        condition: service_healthy
     volumes:
       - ./volumes/certbot/conf:/etc/letsencrypt
       - ./volumes/certbot/www:/var/www/certbot

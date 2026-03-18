@@ -5,14 +5,14 @@ set -euo pipefail
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 
 install_docker() {
-    if [[ "$DETECTED_DOCKER_INSTALLED" == "true" && "$DETECTED_DOCKER_COMPOSE" == "true" ]]; then
+    if [[ "${DETECTED_DOCKER_INSTALLED:-false}" == "true" && "${DETECTED_DOCKER_COMPOSE:-false}" == "true" ]]; then
         echo -e "${GREEN}Docker и Compose уже установлены${NC}"
         return 0
     fi
 
     echo -e "${YELLOW}Установка Docker...${NC}"
 
-    case "$DETECTED_OS" in
+    case "${DETECTED_OS:-unknown}" in
         ubuntu|debian)
             install_docker_debian
             ;;
@@ -23,7 +23,7 @@ install_docker() {
             install_docker_macos
             ;;
         *)
-            echo -e "${RED}Неподдерживаемая ОС: $DETECTED_OS${NC}"
+            echo -e "${RED}Неподдерживаемая ОС: ${DETECTED_OS:-unknown}${NC}"
             echo "Установите Docker вручную: https://docs.docker.com/engine/install/"
             return 1
             ;;
@@ -53,12 +53,11 @@ install_docker_debian() {
     apt-get update -qq
     apt-get install -y -qq ca-certificates curl gnupg lsb-release
 
-    # Add Docker GPG key
+    # Add Docker GPG key (umask ensures correct perms from creation)
     install -m 0755 -d /etc/apt/keyrings
     rm -f /etc/apt/keyrings/docker.gpg
-    curl -fsSL "https://download.docker.com/linux/$DETECTED_OS/gpg" | \
-        gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-    chmod a+r /etc/apt/keyrings/docker.gpg
+    (umask 022; curl -fsSL "https://download.docker.com/linux/${DETECTED_OS:-ubuntu}/gpg" | \
+        gpg --dearmor -o /etc/apt/keyrings/docker.gpg)
 
     # Add Docker repository
     local arch
@@ -67,7 +66,7 @@ install_docker_debian() {
     codename=$(. /etc/os-release && echo "$VERSION_CODENAME")
 
     echo "deb [arch=$arch signed-by=/etc/apt/keyrings/docker.gpg] \
-https://download.docker.com/linux/$DETECTED_OS $codename stable" | \
+https://download.docker.com/linux/${DETECTED_OS:-ubuntu} $codename stable" | \
         tee /etc/apt/sources.list.d/docker.list >/dev/null
 
     # Install Docker
@@ -122,7 +121,7 @@ install_docker_macos() {
 }
 
 install_nvidia_toolkit() {
-    if [[ "$DETECTED_GPU" != "nvidia" ]]; then
+    if [[ "${DETECTED_GPU:-none}" != "nvidia" ]]; then
         return 0
     fi
 
@@ -135,7 +134,7 @@ install_nvidia_toolkit() {
         return 0
     fi
 
-    case "$DETECTED_OS" in
+    case "${DETECTED_OS:-unknown}" in
         ubuntu|debian)
             curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
                 gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
@@ -216,8 +215,9 @@ DNS=${dns_servers}
 DNSStubListener=no
 DNSEOF
 
-    # Switch resolv.conf to the real resolver file (no more 127.0.0.53)
-    ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+    # Switch resolv.conf to the real resolver file (atomic symlink via temp+mv)
+    ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf.tmp.$$ \
+        && mv -f /etc/resolv.conf.tmp.$$ /etc/resolv.conf
 
     # Restart resolved first (creates new resolv.conf), then Docker
     systemctl restart systemd-resolved 2>/dev/null || true

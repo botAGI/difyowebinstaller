@@ -46,21 +46,23 @@ configure_authelia() {
     safe_domain=$(printf '%s' "${DOMAIN:-localhost}" | sed 's/[&/|\]/\\&/g')
     safe_company=$(printf '%s' "AGMind" | sed 's/[&/|\]/\\&/g')
 
-    # Replace placeholders in configuration.yml
-    sed -i.bak \
+    # Replace placeholders in configuration.yml (atomic: temp+mv)
+    local conf_tmp="${authelia_dir}/configuration.yml.tmp.$$"
+    sed \
         -e "s|__AUTHELIA_JWT_SECRET__|${jwt_secret}|g" \
         -e "s|__DOMAIN__|${safe_domain}|g" \
         -e "s|__COMPANY_NAME__|${safe_company}|g" \
-        "${authelia_dir}/configuration.yml"
-    rm -f "${authelia_dir}/configuration.yml.bak"
+        "${authelia_dir}/configuration.yml" > "$conf_tmp" || { rm -f "$conf_tmp"; return 1; }
+    mv "$conf_tmp" "${authelia_dir}/configuration.yml"
 
-    # Replace placeholders in users_database.yml
-    sed -i.bak \
+    # Replace placeholders in users_database.yml (atomic: temp+mv)
+    local users_tmp="${authelia_dir}/users_database.yml.tmp.$$"
+    sed \
         -e "s|__AUTHELIA_ADMIN_HASH__|${admin_hash}|g" \
         -e "s|__ADMIN_EMAIL__|admin@${DOMAIN:-localhost}|g" \
         -e "s|__COMPANY_NAME__|${safe_company}|g" \
-        "${authelia_dir}/users_database.yml"
-    rm -f "${authelia_dir}/users_database.yml.bak"
+        "${authelia_dir}/users_database.yml" > "$users_tmp" || { rm -f "$users_tmp"; return 1; }
+    mv "$users_tmp" "${authelia_dir}/users_database.yml"
 
     # Set restrictive permissions on config files
     chmod 600 "${authelia_dir}/configuration.yml" "${authelia_dir}/users_database.yml"
@@ -68,8 +70,10 @@ configure_authelia() {
     # Also update .env with the generated JWT secret
     local env_file="${INSTALL_DIR}/docker/.env"
     if [[ -f "$env_file" ]]; then
-        sed -i.bak "s|AUTHELIA_JWT_SECRET=.*|AUTHELIA_JWT_SECRET=${jwt_secret}|" "$env_file"
-        rm -f "${env_file}.bak"
+        local env_tmp="${env_file}.tmp.$$"
+        sed "s|AUTHELIA_JWT_SECRET=.*|AUTHELIA_JWT_SECRET=${jwt_secret}|" "$env_file" > "$env_tmp" \
+            && mv "$env_tmp" "$env_file" \
+            || rm -f "$env_tmp"
     fi
 
     echo -e "${GREEN}Authelia 2FA настроена: ${authelia_dir}${NC}"
@@ -77,13 +81,13 @@ configure_authelia() {
 
 generate_argon2_hash() {
     local password="$1"
+    local hash=""
 
     # Use docker to generate argon2 hash via authelia container (pass password via stdin)
     if command -v docker &>/dev/null; then
-        local hash
-        hash=$(echo -n "$password" | docker run --rm -i authelia/authelia:${AUTHELIA_VERSION:-4.38} \
+        hash=$(echo -n "$password" | docker run --rm -i "authelia/authelia:${AUTHELIA_VERSION:-4.38}" \
             authelia crypto hash generate argon2 --stdin 2>/dev/null | tail -1) || true
-        if [[ -n "$hash" ]]; then
+        if [[ -n "${hash:-}" ]]; then
             echo "$hash"
             return 0
         fi
@@ -92,6 +96,7 @@ generate_argon2_hash() {
     # Degraded fallback: use python3 scrypt-based hash if available.
     # NOTE: This produces a scrypt hash, NOT argon2id. It may not work with all
     # Authelia versions. The docker method above is strongly preferred.
+    hash=""
     if command -v python3 &>/dev/null; then
         hash=$(AUTHELIA_PW="$password" python3 -c "
 import os, hashlib, base64
@@ -99,8 +104,8 @@ password = os.environ['AUTHELIA_PW'].encode()
 salt = os.urandom(16)
 h = hashlib.scrypt(password, salt=salt, n=65536, r=8, p=1, dklen=32)
 print(base64.b64encode(salt).decode() + '\$' + base64.b64encode(h).decode())
-" 2>/dev/null)
-        if [[ -n "$hash" ]]; then
+" 2>/dev/null) || true
+        if [[ -n "${hash:-}" ]]; then
             echo "$hash"
             return 0
         fi
