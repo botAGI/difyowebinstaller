@@ -846,7 +846,20 @@ phase_config() {
     cp "${INSTALLER_DIR}/lib/health.sh" "${INSTALL_DIR}/scripts/health.sh"
     cp "${INSTALLER_DIR}/scripts/rotate_secrets.sh" "${INSTALL_DIR}/scripts/"
     cp "${INSTALLER_DIR}/scripts/multi-instance.sh" "${INSTALL_DIR}/scripts/"
+    cp "${INSTALLER_DIR}/scripts/agmind.sh" "${INSTALL_DIR}/scripts/"
+    cp "${INSTALLER_DIR}/scripts/health-gen.sh" "${INSTALL_DIR}/scripts/"
+    cp "${INSTALLER_DIR}/lib/detect.sh" "${INSTALL_DIR}/scripts/detect.sh"
     chmod +x "${INSTALL_DIR}/scripts/"*.sh
+
+    # Create initial health.json for nginx (prevents 404 before first cron tick)
+    mkdir -p "${INSTALL_DIR}/docker/nginx"
+    cat > "${INSTALL_DIR}/docker/nginx/health.json" <<ENDJSON
+{
+  "status": "starting",
+  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "services": {"total": 0, "running": 0, "details": {}}
+}
+ENDJSON
 
     # Copy branding
     if [[ -n "$LOGO_PATH" && -f "$LOGO_PATH" ]]; then
@@ -1367,10 +1380,9 @@ phase_complete() {
     [[ "$ENABLE_FAIL2BAN" == "true" ]] && summary+="$(printf '║  Fail2ban:      %-*s║\n' $((W-18)) "enabled")"
     [[ "$ENABLE_AUTHELIA" == "true" ]] && summary+="$(printf '║  Authelia:      %-*s║\n' $((W-18)) "2FA enabled")"
     summary+="$(printf '║%*s║\n' $W '')"
-    summary+="$(printf '║  Логи:   cd %s/docker && ║\n' "${INSTALL_DIR}")"
-    summary+="$(printf '║          docker compose logs -f              ║\n')"
+    summary+="$(printf '║  Логи:   agmind logs -f                      ║\n')"
     summary+="$(printf '║  Бэкап:  %s/scripts/backup.sh  ║\n' "${INSTALL_DIR}")"
-    summary+="$(printf '║  Статус: %s/scripts/health.sh  ║\n' "${INSTALL_DIR}")"
+    summary+="$(printf '║  Статус: agmind status                       ║\n')"
     summary+="$(printf '║%*s║\n' $W '')"
     summary+="$(printf '╚%s╝\n' "$(printf '═%.0s' $(seq 1 $W))")"
 
@@ -1428,6 +1440,22 @@ phase_complete() {
 
     # Mark as installed
     date -u +"%Y-%m-%dT%H:%M:%SZ" > "${INSTALL_DIR}/.agmind_installed"
+
+    # Create agmind CLI symlink (idempotent)
+    if [[ -d /usr/local/bin ]]; then
+        ln -sf "${INSTALL_DIR}/scripts/agmind.sh" /usr/local/bin/agmind
+        echo -e "${GREEN}Команда 'agmind' доступна глобально${NC}"
+    fi
+
+    # Install health-gen cron (every minute, as root)
+    cat > /etc/cron.d/agmind-health <<CRON_EOF
+# AGMind health.json generator — runs every minute
+* * * * * root ${INSTALL_DIR}/scripts/health-gen.sh >> ${INSTALL_DIR}/health-gen.log 2>&1
+CRON_EOF
+    chmod 644 /etc/cron.d/agmind-health
+
+    # Generate initial health.json with real data (replaces placeholder from phase_config)
+    "${INSTALL_DIR}/scripts/health-gen.sh" 2>/dev/null || true
 }
 
 # ============================================================================
