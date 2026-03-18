@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: milestone
 status: planning
-last_updated: "2026-03-18T02:19:31.939Z"
+last_updated: "2026-03-18T02:23:29.680Z"
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 11
-  completed_plans: 10
+  completed_plans: 11
 ---
 
 # State: AGmind Installer v2.0
@@ -66,6 +66,9 @@ Last deploy: #10, 2026-03-17, 23/23 containers healthy.
 - [Phase 04]: run_phase() checkpoint written BEFORE phase starts — crash mid-phase retries that phase on resume
 - [Phase 04]: tee logging: exec > >(tee -a LOG) 2>&1 at start of main() — all output captured without modifying existing echo statements
 - [Phase 04]: install.log chmod 600: no credential scrubbing needed since Phase 2 already removed creds from stdout
+- [Phase 04]: Background process approach for _run_with_timeout(): preserves sourced lib functions unlike timeout subshell
+- [Phase 04]: agmind_ volume prefix for new installs only — v1 volumes unchanged to prevent data loss
+- [Phase 04]: v1 migration in phase_config() top: auto-injects LLM_PROVIDER/EMBED_PROVIDER=ollama before compose profile build
 
 ## Performance Metrics
 
@@ -84,4 +87,5 @@ Last deploy: #10, 2026-03-17, 23/23 containers healthy.
 | Phase 03 P02 | 4min | 2 tasks | 5 files |
 | Phase 03 P03 | 8min | 2 tasks | 2 files |
 | Phase 04 P01 | 12min | 1 tasks | 1 files |
+| Phase 04 P02 | 8min | 2 tasks | 2 files |
 

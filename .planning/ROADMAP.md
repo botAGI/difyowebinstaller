@@ -107,7 +107,7 @@ Plans:
 
 **Requirements:** INST-01, INST-02, INST-03, INST-04
 
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 04-01-PLAN.md — run_phase() wrapper, checkpoint/resume, tee logging, --force-restart flag (INST-01, INST-02, INST-03)
@@ -169,7 +169,7 @@ Phases 2 and 3 can run in parallel after Phase 1 (no mutual dependency), but seq
 | Clean slate | 1 | Stack works without import.py, no Dify API calls |
 | Secure | 2 | All security gaps closed, credentials protected |
 | Provider choice | 3 | Each provider starts correct containers |
-| Reliable install | 4 | 1/2 | In Progress|  | 5 | Full stack with CLI tools, ready for users |
+| Reliable install | 4 | 2/2 | Complete   | 2026-03-18 | 5 | Full stack with CLI tools, ready for users |
 
 ---
 *Roadmap created: 2026-03-17*

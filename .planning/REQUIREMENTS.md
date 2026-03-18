@@ -34,10 +34,10 @@ Requirements for v2.0 MVP release. Each maps to roadmap phases.
 
 ### Installer
 
-- [ ] **INST-01**: 9-phase installation structure (diagnostics → wizard → docker → config → start → health → models → backups → complete)
-- [ ] **INST-02**: Resume from checkpoint on failure (/opt/agmind/.install_phase)
-- [ ] **INST-03**: Installation log with timestamps (/opt/agmind/install.log)
-- [ ] **INST-04**: Timeout + retry on each installation phase with fallback messages
+- [x] **INST-01**: 9-phase installation structure (diagnostics → wizard → docker → config → start → health → models → backups → complete)
+- [x] **INST-02**: Resume from checkpoint on failure (/opt/agmind/.install_phase)
+- [x] **INST-03**: Installation log with timestamps (/opt/agmind/install.log)
+- [x] **INST-04**: Timeout + retry on each installation phase with fallback messages
 
 ### DevOps
 
@@ -114,10 +114,10 @@ Deferred to future. Tracked for planning.
 | PROV-02 | Phase 3 | Complete |
 | PROV-03 | Phase 3 | Complete |
 | PROV-04 | Phase 3 | Complete |
-| INST-01 | Phase 4 | Pending |
-| INST-02 | Phase 4 | Pending |
-| INST-03 | Phase 4 | Pending |
-| INST-04 | Phase 4 | Pending |
+| INST-01 | Phase 4 | Complete |
+| INST-02 | Phase 4 | Complete |
+| INST-03 | Phase 4 | Complete |
+| INST-04 | Phase 4 | Complete |
 | DEVX-01 | Phase 5 | Pending |
 | DEVX-02 | Phase 5 | Pending |
 | DEVX-03 | Phase 5 | Pending |
