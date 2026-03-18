@@ -110,8 +110,8 @@ Plans:
 **Plans:** 2/2 plans complete
 
 Plans:
-- [ ] 04-01-PLAN.md — run_phase() wrapper, checkpoint/resume, tee logging, --force-restart flag (INST-01, INST-02, INST-03)
-- [ ] 04-02-PLAN.md — Timeout/retry for phases 5/6/7, named volumes agmind_ prefix, v1 migration (INST-04, INST-01)
+- [x] 04-01-PLAN.md — run_phase() wrapper, checkpoint/resume, tee logging, --force-restart flag (INST-01, INST-02, INST-03)
+- [x] 04-02-PLAN.md — Timeout/retry for phases 5/6/7, named volumes agmind_ prefix, v1 migration (INST-04, INST-01)
 
 **Key deliverables:**
 - 9 phases: diagnostics -> wizard -> docker -> config -> start -> health -> models -> backups -> complete
@@ -137,17 +137,30 @@ Plans:
 
 **Requirements:** DEVX-01, DEVX-02, DEVX-03, DEVX-04
 
+**Plans:** 1/2 plans executed
+
+Plans:
+- [ ] 05-01-PLAN.md — agmind CLI entry point with status dashboard, --json output, doctor diagnostics (DEVX-01, DEVX-02, DEVX-04)
+- [ ] 05-02-PLAN.md — health-gen.sh + nginx /health endpoint + install.sh integration + BATS tests (DEVX-03)
+
 **Key deliverables:**
 - `agmind status`: containers, GPU, models, endpoints, credentials path
-- `agmind doctor`: DNS, GPU driver, Docker version, ports, disk, network
-- Health endpoint /health: JSON with all service statuses
-- Integration with existing health.sh checks
+- `agmind status --json`: machine-parseable JSON (same schema as /health)
+- `agmind doctor`: DNS, GPU driver, Docker version, ports, disk, network with [OK]/[WARN]/[FAIL]
+- `agmind doctor --json`: machine-parseable diagnostics
+- Health endpoint /health: nginx serves static JSON, cron-updated every minute
+- Full CLI hub: status, doctor, backup, restore, update, uninstall, rotate-secrets, logs, help
+- `/usr/local/bin/agmind` symlink created during install
+- Integration with existing health.sh and detect.sh checks
 
 **Success criteria:**
 - `agmind status` shows all containers, GPU util, loaded models, HTTP status of each endpoint
+- `agmind status --json` outputs valid JSON with services/gpu/endpoints/backup fields
 - `agmind doctor` catches: wrong Docker version, port conflict, DNS failure, low disk
+- `agmind doctor --json` outputs valid JSON with checks array
 - `curl localhost/health` returns JSON with per-service status
-- Non-zero exit code from doctor when issues found
+- Non-zero exit code from doctor when issues found (exit 1 for warnings, exit 2 for failures)
+- BATS tests pass for CLI syntax and structural validation
 
 **Depends on:** Phase 4
 
@@ -169,8 +182,9 @@ Phases 2 and 3 can run in parallel after Phase 1 (no mutual dependency), but seq
 | Clean slate | 1 | Stack works without import.py, no Dify API calls |
 | Secure | 2 | All security gaps closed, credentials protected |
 | Provider choice | 3 | Each provider starts correct containers |
-| Reliable install | 4 | 2/2 | Complete   | 2026-03-18 | 5 | Full stack with CLI tools, ready for users |
+| Reliable install | 4 | Resume, logging, timeouts all working |
+| v2.0 MVP | 5 | Full stack with CLI tools, ready for users |
 
 ---
 *Roadmap created: 2026-03-17*
-*Last updated: 2026-03-18 after Phase 4 planning — 2 plans created for installer redesign*
+*Last updated: 2026-03-18 after Phase 5 planning — 2 plans created for DevOps & UX*

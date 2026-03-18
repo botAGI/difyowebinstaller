@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: milestone
 status: planning
-last_updated: "2026-03-18T02:27:49.754Z"
+last_updated: "2026-03-18T04:39:37.926Z"
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 11
-  completed_plans: 11
+  total_plans: 13
+  completed_plans: 12
 ---
 
 # State: AGmind Installer v2.0
@@ -69,6 +69,9 @@ Last deploy: #10, 2026-03-17, 23/23 containers healthy.
 - [Phase 04]: Background process approach for _run_with_timeout(): preserves sourced lib functions unlike timeout subshell
 - [Phase 04]: agmind_ volume prefix for new installs only — v1 volumes unchanged to prevent data loss
 - [Phase 04]: v1 migration in phase_config() top: auto-injects LLM_PROVIDER/EMBED_PROVIDER=ollama before compose profile build
+- [Phase 05]: [Phase 05 Plan 01]: INSTALL_DIR exported before sourcing health.sh to prevent COMPOSE_DIR scoping issue at source time
+- [Phase 05]: [Phase 05 Plan 01]: _status_as_json() does NOT call check_all() — avoids ANSI escapes in JSON output (Pitfall 6)
+- [Phase 05]: [Phase 05 Plan 01]: GPU checks skipped in doctor when both LLM_PROVIDER=external AND EMBED_PROVIDER=external
 
 ## Performance Metrics
 
@@ -88,4 +91,5 @@ Last deploy: #10, 2026-03-17, 23/23 containers healthy.
 | Phase 03 P03 | 8min | 2 tasks | 2 files |
 | Phase 04 P01 | 12min | 1 tasks | 1 files |
 | Phase 04 P02 | 8min | 2 tasks | 2 files |
+| Phase 05 P01 | 2min | 2 tasks | 1 files |
 
