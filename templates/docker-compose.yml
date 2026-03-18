@@ -227,7 +227,7 @@ services:
     # WARNING: open-webui version pinned for white-label compatibility
     image: ghcr.io/open-webui/open-webui:${OPENWEBUI_VERSION:-v0.5.20}
     container_name: agmind-openwebui
-    restart: always
+    restart: on-failure:5
     mem_limit: ${OPENWEBUI_MEM_LIMIT:-2g}
     environment:
       - WEBUI_NAME=AGMind
@@ -255,7 +255,8 @@ services:
     <<: *logging-defaults
     image: ollama/ollama:${OLLAMA_VERSION:-0.6.2}
     container_name: agmind-ollama
-    restart: always
+    restart: on-failure:5
+    mem_limit: ${OLLAMA_MEM_LIMIT:-8g}
     profiles:
       - ollama
     # BUG-017: Go runtime has its own DNS resolver that ignores kernel sysctl.
@@ -288,7 +289,8 @@ services:
     <<: *logging-defaults
     image: vllm/vllm-openai:${VLLM_VERSION:-v0.8.4}
     container_name: agmind-vllm
-    restart: always
+    restart: on-failure:5
+    mem_limit: ${VLLM_MEM_LIMIT:-16g}
     profiles:
       - vllm
     environment:
@@ -318,7 +320,8 @@ services:
     <<: *logging-defaults
     image: ghcr.io/huggingface/text-embeddings-inference:${TEI_VERSION:-cuda-1.9.2}
     container_name: agmind-tei
-    restart: always
+    restart: on-failure:5
+    mem_limit: ${TEI_MEM_LIMIT:-4g}
     profiles:
       - tei
     environment:
@@ -468,7 +471,7 @@ services:
     <<: *logging-defaults
     image: ghcr.io/docling-project/docling-serve:${DOCLING_SERVE_VERSION:-v1.14.3}
     container_name: agmind-docling
-    restart: always
+    restart: on-failure:5
     mem_limit: ${DOCLING_MEM_LIMIT:-4g}
     profiles:
       - etl
@@ -489,7 +492,7 @@ services:
     <<: *logging-defaults
     image: xprobe/xinference:${XINFERENCE_VERSION:-v0.16.3}
     container_name: agmind-xinference
-    restart: always
+    restart: on-failure:5
     mem_limit: ${XINFERENCE_MEM_LIMIT:-4g}
     profiles:
       - etl
@@ -961,7 +964,8 @@ services:
     <<: *security-defaults
     image: certbot/certbot:${CERTBOT_VERSION:-v3.1.0}
     container_name: agmind-certbot
-    restart: always
+    restart: on-failure:5
+    mem_limit: ${CERTBOT_MEM_LIMIT:-128m}
     profiles:
       - vps
     depends_on:

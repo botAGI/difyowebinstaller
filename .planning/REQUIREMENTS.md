@@ -83,6 +83,7 @@ Deferred to future. Tracked for planning.
 - **ADVX-04**: LLM request logging / billing (structured log via Loki)
 - **ADVX-05**: Documentation: limits and recommendations (file size, KB count, VRAM per user)
 - **ADVX-06**: Resource limits on all containers (memory limits on API, worker, nginx)
+- **INSE-05**: RAM validation in wizard — sum default mem_limits vs DETECTED_RAM, warn if >80%, optional auto-downscale
 
 ## Out of Scope
 

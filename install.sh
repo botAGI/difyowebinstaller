@@ -1666,8 +1666,10 @@ main() {
 
     # Setup logging: all stdout+stderr goes to screen AND install.log
     local LOG_FILE="${INSTALL_DIR}/install.log"
-    exec > >(tee -a "$LOG_FILE") 2>&1
+    # Create log file with restricted perms BEFORE tee opens it (avoids TOCTOU race)
+    touch "$LOG_FILE"
     chmod 600 "$LOG_FILE"
+    exec > >(tee -a "$LOG_FILE") 2>&1
 
     show_banner
 
