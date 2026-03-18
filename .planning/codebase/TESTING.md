@@ -2,349 +2,342 @@
 
 **Analysis Date:** 2026-03-18
 
-## Test Framework
+## Test Framework Status
 
-**Runner:**
-- BATS (Bash Automated Testing System) [version detected in workflow]
-- Config: `.github/workflows/test.yml` defines CI pipeline
+**Current State:**
+- **No automated test framework detected** (Jest, Vitest, Mocha, etc.)
+- **No unit test files** (.test.js, .spec.js, etc.)
+- **No E2E test suite** (Cypress, Playwright, etc.)
+- **No test configuration** (jest.config.js, vitest.config.js, etc.)
 
-**Assertion Library:**
-- BATS built-in assertions: `[ condition ]`, `[[ condition ]]`, `run` command capture
-- No external assertion library; uses bash conditionals and BATS run wrapper
+**Implication:**
+Testing is currently **manual and operational**. All validation happens at deployment time through health checks and integration verification rather than code-level unit tests.
 
-**Run Commands:**
-```bash
-bats tests/                        # Run all tests
-bats tests/test_config.bats        # Run single test file
-bats tests/ --tap                  # TAP (Test Anything Protocol) output
-bash -n *.sh                       # Syntax validation (used in tests)
-python3 -m py_compile script.py    # Python syntax check
-```
+## Manual Testing Patterns
 
-**CI Pipeline:**
-- GitHub Actions workflow: `.github/workflows/test.yml`
-- Runs on: `push` to `main`/`develop`, `pull_request` to `main`
-- Two parallel jobs:
-  1. `bats`: Install BATS, run `bats tests/`
-  2. `trivy`: Security scan on config files (CRITICAL/HIGH severity)
+**Pre-flight Validation (Code-level checks):**
 
-## Test File Organization
+**Script validation:**
+- Bash scripts checked against `shellcheck` compliance implicitly via `set -euo pipefail`
+- No formal CI/CD linting pipeline detected, but strict mode catches:
+  - Undefined variables
+  - Unset array expansions
+  - Pipe failures (all stages, not just last)
 
-**Location:**
-- Separate directory: `tests/` (co-located with source, not embedded)
-- Test files do NOT mirror source tree; flat structure in `tests/`
+**Health Check Patterns (`lib/health.sh`, `scripts/health-gen.sh`):**
 
-**Naming:**
-- Pattern: `test_*.bats` (BATS convention)
-- Files: `test_config.bats`, `test_lifecycle.bats`, `test_manifest.bats`
-- Each file focuses on single domain (config, lifecycle, manifest)
-
-**Structure:**
-```
-tests/
-├── test_config.bats              # Config.sh function tests + template validation
-├── test_lifecycle.bats           # Syntax checks + integration scenarios
-└── test_manifest.bats            # Release manifest JSON + image list validation
-```
-
-## Test Structure
-
-**Suite Organization:**
+Located: `lib/health.sh`
 
 ```bash
-#!/usr/bin/env bats
+check_container() {
+    local name="$1"
+    local status
+    status=$(docker compose -f "$COMPOSE_FILE" ps --format '{{.Status}}' "$name" 2>/dev/null || echo "not found")
 
-# Comment line documenting test purpose
-
-setup() {
-    # Run before EACH test
-    export INSTALL_DIR="$(mktemp -d)"
-    mkdir -p "${INSTALL_DIR}/docker"
-    source "$(dirname "$BATS_TEST_FILENAME")/../lib/config.sh" 2>/dev/null || true
+    if echo "$status" | grep -qi "up\|healthy"; then
+        echo -e "  ${GREEN}[OK]${NC}  $name"
+        return 0
+    elif echo "$status" | grep -qi "starting"; then
+        echo -e "  ${YELLOW}[..]${NC}  $name (starting)"
+        return 1
+    else
+        echo -e "  ${RED}[!!]${NC}  $name ($status)"
+        return 1
+    fi
 }
 
-teardown() {
-    # Run after EACH test
-    rm -rf "$INSTALL_DIR"
-}
+wait_healthy() {
+    local timeout="${1:-300}"
+    [[ "$timeout" =~ ^[0-9]+$ ]] || timeout=300
+    local interval=5
+    local elapsed=0
 
-@test "test description" {
-    # Single test assertion
-    [ ${#result} -eq 16 ]
-}
+    local services
+    read -ra services <<< "$(get_service_list)"
 
-@test "another test" {
-    run bash -n "${ROOT_DIR}/install.sh"
-    [ "$status" -eq 0 ]
+    while [[ $elapsed -lt $timeout ]]; do
+        local all_ok=true
+
+        for svc in "${services[@]}"; do
+            local status
+            status=$(docker compose -f "$COMPOSE_FILE" ps --format '{{.Status}}' "$svc" 2>/dev/null || echo "")
+            if ! echo "$status" | grep -qi "up\|healthy"; then
+                all_ok=false
+                break
+            fi
+        done
+
+        if [[ "$all_ok" == "true" ]]; then
+            echo -e "${GREEN}All containers started!${NC}"
+            check_all
+            return 0
+        fi
+
+        sleep "$interval"
+        elapsed=$((elapsed + interval))
+        echo -ne "\r  Waiting... ${elapsed}/${timeout}s"
+    done
+
+    return 1
 }
 ```
 
-**Patterns:**
-
-**Setup Pattern:**
-- Create temporary directory: `export INSTALL_DIR="$(mktemp -d)"`
-- Source module being tested: `source "$(dirname "$BATS_TEST_FILENAME")/../lib/config.sh"`
-- Suppress errors on missing modules: `2>/dev/null || true`
-- Pre-create directory structures needed by tests: `mkdir -p "${INSTALL_DIR}/docker"`
-
-**Teardown Pattern:**
-- Remove temporary directories: `rm -rf "$INSTALL_DIR"`
-- Clean up lock files if created during test
-- No cleanup needed for environment variables (BATS resets per-test)
-
-**Assertion Pattern:**
+**Service List Detection (dynamic):**
 ```bash
-# Simple exit code test
-[ $status -eq 0 ]
+get_service_list() {
+    local services=(db redis sandbox ssrf_proxy api worker web plugin_daemon ollama pipeline nginx open-webui)
 
-# String comparison
-[ "$result" = "expected_value" ]
+    # Read .env to determine which optional services are active
+    if [[ -f "$env_file" ]]; then
+        local vector_store
+        vector_store=$(grep '^VECTOR_STORE=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "weaviate")
+        if [[ "$vector_store" == "qdrant" ]]; then
+            services+=(qdrant)
+        else
+            services+=(weaviate)
+        fi
+        # ... additional optional services ...
+    fi
 
-# Numeric comparison
-[ ${#result} -eq 16 ]
-
-# Regex match (bash extended glob)
-[[ "$result" =~ ^[a-zA-Z0-9]+$ ]]
-
-# Negative assertion (grep fails = test passes)
-run grep -i "latest" "$versions_file"
-[ "$status" -ne 0 ]  # Non-zero status means test passes
-```
-
-**Using `run` Wrapper:**
-```bash
-@test "command must succeed" {
-    run bash -n "${ROOT_DIR}/install.sh"
-    # $status: exit code of command
-    # $output: combined stdout/stderr
-    # $lines: array of output lines
-    [ "$status" -eq 0 ]
-    [[ "$output" =~ "success message" ]]
+    echo "${services[@]}"
 }
 ```
 
-## Mocking
+## Deployment Validation Scripts
 
-**Framework:** Manual shell simulation (no mocking library)
+**Scripts with validation:**
 
-**Patterns:**
+**`scripts/update.sh`** (Rolling update with validation):
+- Located: `/d/Agmind/difyowebinstaller/scripts/update.sh`
+- Validates:
+  - Version file exists and parses correctly
+  - `.env` file intact before/after update
+  - Rollback capability maintained
+  - Service health post-update
+- Pattern: Backup `.env` before update, diff after to detect corruption
 
-**Temporary Environment:**
+**`scripts/backup.sh`** (Pre-backup checks):
+- Located: `scripts/backup.sh` (also executable standalone)
+- Validates:
+  - PostgreSQL connectivity: `pg_isready` check
+  - Database dump succeeds (captures `pg_dump` return code to log file)
+  - Required databases exist
+  - Backup directory writable
+  - Target disk space sufficient (implicit — fails if disk full)
+
+**`scripts/test-upgrade-rollback.sh`** (Test harness):
+- Purpose: Full end-to-end upgrade simulation
+- Validates: Update process, rollback capability
+- Pattern: Creates test environment, applies update, verifies functionality, performs rollback
+
+**`scripts/dr-drill.sh`** (Disaster recovery test):
+- Simulates: Backup and recovery without actually restoring
+- Validates: Backup integrity, recovery process, time to recovery
+
+## Configuration Validation
+
+**Pre-flight Validation Pattern (from `lib/config.sh`):**
+
 ```bash
-@test "function with isolated env" {
-    local env_file="${INSTALL_DIR}/docker/.env"
-    echo "DB_PASSWORD=changeme" > "$env_file"
+preflight_bind_mount_check() {
+    local docker_dir="${INSTALL_DIR}/docker"
 
-    run validate_no_default_secrets "$env_file"
-    [ "$status" -ne 0 ]
+    # 1. Find .yml/.yaml files that are actually directories
+    local yml_dirs
+    yml_dirs=$(find "$docker_dir" -name "*.yml" -type d 2>/dev/null || true)
+
+    # 2. Find .conf files that are actually directories
+    local conf_dirs
+    conf_dirs=$(find "$docker_dir" -name "*.conf" -type d 2>/dev/null || true)
+
+    # 3. Verify ALL bind-mount source files exist
+    local all_bind_files=(
+        "nginx/nginx.conf"
+        "volumes/redis/redis.conf"
+        "volumes/ssrf_proxy/squid.conf"
+        "monitoring/prometheus.yml"
+        # ... more files
+    )
+
+    for f in "${all_bind_files[@]}"; do
+        local full="${docker_dir}/${f}"
+        if [[ ! -f "$full" ]]; then
+            echo -e "${RED}✗ Missing: ${f}${NC}"
+            errors=$((errors + 1))
+        fi
+    done
+
+    return $errors
 }
 ```
 
-**Function Isolation:**
+**Safe Config Parsing (minimal trust):**
+Located: `scripts/backup.sh` lines 32-40
+
 ```bash
-@test "bash syntax validation" {
-    run bash -n "${ROOT_DIR}/install.sh"
-    [ "$status" -eq 0 ]
+# B-08: Safe config parsing (no source)
+while IFS='=' read -r key value; do
+    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    case "$key" in
+        BACKUP_RETENTION_COUNT|BACKUP_RETENTION_DAYS|ENABLE_S3_BACKUP|...)
+            declare "$key=$value" ;;
+    esac
+done < <(grep -E '^[A-Za-z_]' "${INSTALL_DIR}/scripts/backup.conf")
+```
+
+- **Pattern:** Whitelist allowed variables, skip invalid keys, parse only expected keys
+- **Reason:** Avoid code injection from malformed config files
+- **Never source untrusted files:** Uses `declare` instead of `source`
+
+## Integration Testing
+
+**Docker Compose Health Checks:**
+- Each service defines healthcheck in `templates/docker-compose.yml`
+- Example pattern: HTTP GET to health endpoint with timeout and retry
+- Validated by: `docker compose ps --format '{{.Status}}'` grep for "healthy"
+
+**Environment Variable Validation:**
+
+**Version Pinning Test (implicit):**
+- Located: `templates/versions.env`
+- Validates: All critical services have explicit versions (no `:latest`)
+- Test: `install.sh` fails if any `_VERSION` variable is empty or uses `:latest`
+
+**Required Env Vars Validation:**
+```bash
+validate_no_default_secrets() {
+    local env_file="$1"
+    local has_errors=false
+
+    # Check for placeholder values that should be configured
+    grep -E '(TODO|CHANGEME|changeme|placeholder)' "$env_file" && {
+        echo "ERROR: Config contains unconfigured placeholders"
+        has_errors=true
+    }
+
+    return $([ "$has_errors" = true ] && echo 1 || echo 0)
 }
 ```
 
-**What to Mock:**
-- Temporary directories for config files (always done: `mktemp -d`)
-- Environment variables for test scope (exported at setup)
-- File states (create files for "file exists" tests, omit for "file missing" tests)
+## Operational Testing Patterns
 
-**What NOT to Mock:**
-- Docker commands (tests run on CI without Docker, so tests check syntax only)
-- External services (Weaviate, Qdrant, Ollama) — never invoked in tests
-- Real system calls — tests validate file generation, not actual system changes
+**Rollback Testing (`scripts/test-upgrade-rollback.sh`):**
+- Purpose: Validate update → rollback cycle without data loss
+- Validates:
+  - State backup before update
+  - Update application succeeds
+  - Rollback to previous state succeeds
+  - Data integrity post-rollback
 
-## Fixtures and Factories
+**Multi-instance Testing (`scripts/multi-instance.sh`):**
+- Purpose: Test parallel installations on same host
+- Validates: Isolation, port conflicts, resource limits
+- Test: Multiple `INSTALL_DIR` variants don't interfere
 
-**Test Data:**
+**Security Validation (implicit):**
+- UFW rules: `configure_ufw()` in `lib/security.sh`
+- Fail2ban: `configure_fail2ban()` with email alerts
+- Secrets encryption: `encrypt_secrets()` with age
 
-**Password/Key Generation:**
-```bash
-@test "generate_random produces correct length" {
-    result=$(generate_random 16)
-    [ ${#result} -eq 16 ]
-}
-```
+## Test Data and Fixtures
 
-**Environment Files:**
-```bash
-@test "validate_no_default_secrets rejects 'changeme'" {
-    local env_file="${INSTALL_DIR}/docker/.env"
-    echo "DB_PASSWORD=changeme" > "$env_file"
-    run validate_no_default_secrets "$env_file"
-    [ "$status" -ne 0 ]
-}
-```
+**Configuration Templates:**
+Located: `templates/` directory
 
-**Location:**
-- No separate fixtures directory
-- Test data created inline in test functions
-- Template files sourced from `templates/` directory (actual project files, not test-specific)
+- `docker-compose.yml` — Full stack template
+- `versions.env` — Version pinning (changes tested via update cycle)
+- `release-manifest.json` — Version manifest for releases
+- Nginx, Redis, Prometheus, Loki configs — Validated by preflight checks
+
+**Mock Data:**
+- Test models: Ollama pulls small models (`qwen2.5:7b` for quick tests, `qwen2.5:14b` for production)
+- Test data: None persistent — uses live PostgreSQL in containers
 
 ## Coverage
 
-**Requirements:** No explicit coverage target enforced; CI passes if all BATS tests pass
+**Requirements:** Not formally enforced
 
-**View Coverage:**
-- Not measured by BATS natively
-- `bash -n` provides syntax coverage verification
-- Manual visual inspection of test files to identify untested code paths
+**What IS Tested (operationally):**
+- Docker Compose stack brings up (health checks pass)
+- PostgreSQL backup/restore cycle
+- Update and rollback capability
+- Service isolation and networking
 
-**Current Coverage (by domain):**
-1. **Config (test_config.bats):** 13 tests
-   - Random generation (length, uniqueness, character set)
-   - Password validation (reject known defaults, placeholders)
-   - YAML syntax validation
-   - Template compliance (no "latest" tags, no unresolved variables)
-   - Service defaults in docker-compose.yml
+**What is NOT Tested:**
+- Unit tests for individual functions
+- Integration tests for API endpoints
+- UI/UX functionality
+- Performance/load testing
+- Chaos engineering / failure injection
 
-2. **Lifecycle (test_lifecycle.bats):** 11 tests
-   - Bash syntax for all shell scripts
-   - Deprecated endpoint removal (localhost:6333)
-   - Rollback function presence and correctness
-   - Image digest capture mechanism
+**Gaps Identified:**
+1. No automated unit tests — all functions tested only through deployment
+2. No API integration tests — endpoints tested manually or through UI
+3. No database migration tests — tested only during rolling update
+4. No load testing — capacity unknown until production
 
-3. **Manifest (test_manifest.bats):** 11 tests
-   - JSON structure validation
-   - Required fields presence
-   - Image count verification
-   - Version consistency between manifest and versions.env
-   - Python script compilation
+## How to Test Locally
 
-## Test Types
-
-**Unit Tests:**
-- Scope: Individual functions from `lib/` modules
-- Approach: Call function with known inputs, verify output and exit code
-- Examples: `generate_random()`, `escape_sed()`, `validate_no_default_secrets()`
-- These are the core of test_config.bats
-
-**Integration Tests:**
-- Scope: Multi-step workflows (install → backup → restore)
-- Approach: Verify script syntax and function presence; don't execute
-- Examples: "backup.sh has valid bash syntax", "rollback_service restores .env before compose up"
-- These are the core of test_lifecycle.bats
-
-**E2E Tests:**
-- Framework: Not used (no full container orchestration in CI)
-- Manual tests: `scripts/dr-drill.sh` is local disaster recovery test (not automated in CI)
-- Real-world validation: `health.sh` run post-install to verify containers (manual invocation)
-
-## Common Patterns
-
-**Async Testing:**
+**Full Stack Test:**
 ```bash
-# Wait for condition to become true (example from health.sh invocation pattern)
-while [[ $elapsed -lt $timeout ]]; do
-    status=$(docker compose ps --format '{{.Status}}' "$svc" 2>/dev/null || echo "")
-    if echo "$status" | grep -qi "up\|healthy"; then
-        break
-    fi
-    sleep 5
-    elapsed=$((elapsed + 5))
+# Start fresh installation in test environment
+export INSTALL_DIR="/opt/agmind-test"
+sudo bash install.sh
+# Runs diagnostics, health checks automatically
+```
+
+**Update/Rollback Test:**
+```bash
+cd /opt/agmind
+sudo bash scripts/test-upgrade-rollback.sh
+# Applies available updates, verifies health, rolls back
+```
+
+**Backup/Restore Test:**
+```bash
+# Create backup
+sudo bash /opt/agmind/scripts/backup.sh
+
+# Run DR drill (backup-only, no restore)
+sudo bash /opt/agmind/scripts/dr-drill.sh --skip-restore
+
+# Test full restore
+sudo bash /opt/agmind/scripts/restore.sh /var/backups/agmind/YYYY-MM-DD_HHMM
+```
+
+**Health Check Only:**
+```bash
+# Verify running services
+bash lib/health.sh
+# or generate HTML report
+bash scripts/health-gen.sh > /tmp/health.html
+```
+
+**Shellcheck Compliance:**
+```bash
+# Check all scripts for bash compliance
+for script in install.sh lib/*.sh scripts/*.sh; do
+    shellcheck "$script"
 done
 ```
-- Not directly tested in BATS (would require real Docker containers)
-- Health check logic tested manually by running `scripts/health.sh` after install
 
-**Error Testing:**
-```bash
-@test "validate_no_default_secrets rejects 'changeme'" {
-    local env_file="${INSTALL_DIR}/docker/.env"
-    echo "DB_PASSWORD=changeme" > "$env_file"
-    run validate_no_default_secrets "$env_file"
-    [ "$status" -ne 0 ]  # Assert function returns failure
-}
+## Continuous Testing Strategy
 
-@test "validate_no_default_secrets accepts random passwords" {
-    local env_file="${INSTALL_DIR}/docker/.env"
-    echo "DB_PASSWORD=$(generate_random 32)" > "$env_file"
-    run validate_no_default_secrets "$env_file"
-    [ "$status" -eq 0 ]  # Assert function succeeds
-}
-```
+**Currently Implemented:**
+- Pre-deployment validation in `install.sh`
+- Health checks after container startup
+- Backup integrity checks in `scripts/backup.sh`
 
-**Conditional Execution (Skipping):**
-- BATS has no native skip mechanism
-- Tests use grep with `$status -ne 0` pattern (test passes if command NOT found):
-  ```bash
-  @test "nginx template has no __ADMIN_TOKEN__" {
-      run grep "__ADMIN_TOKEN__" "${nginx_template}"
-      [ "$status" -ne 0 ]  # Test passes if grep finds nothing
-  }
-  ```
+**Missing:**
+- No CI/CD pipeline detected (no GitHub Actions, GitLab CI, etc.)
+- No automated regression testing
+- No version compatibility matrix
 
-## Test Execution in CI
-
-**Workflow File:** `.github/workflows/test.yml`
-
-**BATS Job:**
-```yaml
-bats:
-  name: BATS Unit Tests
-  runs-on: ubuntu-latest
-  steps:
-    - uses: actions/checkout@v4
-    - name: Install BATS
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y bats
-    - name: Run BATS tests
-      run: bats tests/
-```
-
-**Trivy Security Job:**
-```yaml
-trivy:
-  name: Trivy Security Scan
-  runs-on: ubuntu-latest
-  steps:
-    - uses: actions/checkout@v4
-    - name: Run Trivy config scan
-      uses: aquasecurity/trivy-action@master
-      with:
-        scan-type: 'config'
-        scan-ref: '.'
-        severity: 'CRITICAL,HIGH'
-        exit-code: '1'  # Fail on CRITICAL/HIGH issues
-```
-
-## Test Data Files
-
-**Real Templates Used in Tests:**
-- `templates/versions.env`: Checked for "latest" tags and version consistency
-- `templates/docker-compose.yml`: Validated as YAML, checked for service defaults
-- `templates/nginx.conf.template`: Checked for placeholders that should be resolved
-- `scripts/backup.sh`, `scripts/restore.sh`: Checked for deprecated endpoints and rollback logic
-
-## Testing Guidelines for Future Work
-
-**When Adding New Functions:**
-1. Add unit test to appropriate test file (config → test_config.bats, etc.)
-2. Test success path with valid inputs
-3. Test failure path with invalid inputs
-4. Use temporary `INSTALL_DIR` for file-based tests
-
-**When Adding New Scripts:**
-1. Add `bash -n` syntax check to test_lifecycle.bats "all .sh files pass bash -n"
-2. If script has critical functions, add specific tests (e.g., rollback functions in update.sh)
-3. If script processes files, add integration test validating template usage
-
-**Debugging Failed Tests:**
-```bash
-# Run single test with verbose output
-bats tests/test_config.bats -f "generate_random"
-
-# Run test with bash debug output
-bash -x /path/to/test_file.bats
-
-# Check BATS temp files
-cat /tmp/bats-*
-```
+**Recommendation for Future:**
+- Add GitHub Actions workflow to run `shellcheck` on all `.sh` files
+- Add automated backup verification in CI
+- Create integration tests for critical update paths
+- Add security scanning (SOPS config, no hardcoded secrets)
 
 ---
 
