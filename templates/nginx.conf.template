@@ -37,6 +37,7 @@ http {
     # --- Rate Limiting ---
     limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
     limit_req_zone $binary_remote_addr zone=login:10m rate=1r/10s;
+    limit_req_zone $binary_remote_addr zone=health:1m rate=1r/s;
     limit_conn_zone $binary_remote_addr zone=ws:10m;
 
     # Logging
@@ -93,6 +94,19 @@ http {
     #__AUTHELIA__    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     #__AUTHELIA__    proxy_set_header X-Forwarded-Proto $scheme;
     #__AUTHELIA__}
+
+        # =============================================
+        # Health endpoint — static JSON, no auth, rate limited
+        # Per user decision: /health bypasses Authelia (05-CONTEXT.md)
+        # =============================================
+        location = /health {
+    #__AUTHELIA__    auth_request off;
+            default_type application/json;
+            add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+            add_header X-Content-Type-Options "nosniff" always;
+            limit_req zone=health burst=5 nodelay;
+            alias /etc/nginx/health/health.json;
+        }
 
         # =============================================
         # Open WebUI — default frontend (/)
@@ -266,6 +280,16 @@ http {
     #__TLS__    #__AUTHELIA__    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     #__TLS__    #__AUTHELIA__    proxy_set_header X-Forwarded-Proto $scheme;
     #__TLS__    #__AUTHELIA__}
+    #__TLS__
+    #__TLS__    # Health endpoint — no auth, rate limited
+    #__TLS__    location = /health {
+    #__TLS__    #__AUTHELIA__    auth_request off;
+    #__TLS__        default_type application/json;
+    #__TLS__        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+    #__TLS__        add_header X-Content-Type-Options "nosniff" always;
+    #__TLS__        limit_req zone=health burst=5 nodelay;
+    #__TLS__        alias /etc/nginx/health/health.json;
+    #__TLS__    }
     #__TLS__
     #__TLS__    # Open WebUI — default frontend
     #__TLS__    location / {
