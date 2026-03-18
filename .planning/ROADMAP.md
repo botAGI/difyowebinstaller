@@ -75,10 +75,17 @@ Plans:
 
 **Requirements:** PROV-01, PROV-02, PROV-03, PROV-04
 
+**Plans:** 1/3 plans executed
+
+Plans:
+- [ ] 03-01-PLAN.md — Compose profiles: Ollama to profile, add vLLM + TEI services, versions.env, env templates (PROV-03)
+- [ ] 03-02-PLAN.md — Wizard provider selection, config.sh, models.sh dispatcher, BATS tests (PROV-01, PROV-02, PROV-03)
+- [ ] 03-03-PLAN.md — Provider-aware phase_complete() hints + workflows/README.md docs (PROV-04)
+
 **Key deliverables:**
 - Wizard: LLM provider selection (Ollama/vLLM/External/Skip)
 - Wizard: Embedding provider selection (Ollama/TEI/External/Same)
-- docker-compose profiles: `--profile ollama`, `--profile vllm`, `--profile monitoring`, `--profile etl-enhanced`
+- docker-compose profiles: `--profile ollama`, `--profile vllm`, `--profile tei`
 - Plugin documentation README per provider
 - vLLM container with GPU passthrough + model preload
 - TEI container for production embeddings
@@ -101,7 +108,7 @@ Plans:
 **Requirements:** INST-01, INST-02, INST-03, INST-04
 
 **Key deliverables:**
-- 9 phases: diagnostics → wizard → docker → config → start → health → models → backups → complete
+- 9 phases: diagnostics -> wizard -> docker -> config -> start -> health -> models -> backups -> complete
 - Checkpoint file /opt/agmind/.install_phase — resume on failure
 - Full log /opt/agmind/install.log with timestamps
 - Timeout per phase (configurable) + retry + fallback message
@@ -109,7 +116,7 @@ Plans:
 - Named volumes with agmind_ prefix
 
 **Success criteria:**
-- Kill install at phase 5, restart → resumes from phase 5
+- Kill install at phase 5, restart -> resumes from phase 5
 - install.log contains every phase with timestamps
 - Stuck model pull times out after configured duration with helpful message
 - `docker volume ls | grep agmind_` shows all volumes with prefix
@@ -143,7 +150,7 @@ Plans:
 ## Execution Order
 
 ```
-Phase 1 ──→ Phase 2 ──→ Phase 3 ──→ Phase 4 ──→ Phase 5
+Phase 1 --> Phase 2 --> Phase 3 --> Phase 4 --> Phase 5
 (surgery)   (security)   (providers)  (installer)  (devops)
 ```
 
@@ -154,10 +161,10 @@ Phases 2 and 3 can run in parallel after Phase 1 (no mutual dependency), but seq
 | Checkpoint | After Phase | What to verify |
 |------------|-------------|----------------|
 | Clean slate | 1 | Stack works without import.py, no Dify API calls |
-| Secure | 2 (2/3 done) | 4/4 | Complete   | 2026-03-17 |
-| Professional installer | 4 | Resume, logs, timeouts all working |
+| Secure | 2 | All security gaps closed, credentials protected |
+| Provider choice | 3 | 1/3 | In Progress|  | 4 | Resume, logs, timeouts all working |
 | v2.0 release | 5 | Full stack with CLI tools, ready for users |
 
 ---
 *Roadmap created: 2026-03-17*
-*Last updated: 2026-03-18 after Phase 2 gap closure plan — SECV-02 documentation fix*
+*Last updated: 2026-03-18 after Phase 3 planning — 3 plans created for provider architecture*
