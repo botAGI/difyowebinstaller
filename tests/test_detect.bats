@@ -111,6 +111,19 @@ teardown() {
     [[ "$DETECTED_GPU_VRAM" =~ ^[0-9]+$ ]]
 }
 
+@test "detect_gpu: DETECTED_GPU_COMPUTE is empty or valid format" {
+    detect_gpu
+    # Either empty (no nvidia-smi support) or X.Y format
+    [[ -z "$DETECTED_GPU_COMPUTE" ]] || [[ "$DETECTED_GPU_COMPUTE" =~ ^[0-9]+\.[0-9]+$ ]]
+}
+
+@test "detect_gpu: FORCE_GPU_COMPUTE overrides compute capability" {
+    export FORCE_GPU_TYPE="nvidia"
+    export FORCE_GPU_COMPUTE="12.0"
+    detect_gpu
+    [ "$DETECTED_GPU_COMPUTE" = "12.0" ]
+}
+
 # ============================================================================
 # DETECT RAM
 # ============================================================================

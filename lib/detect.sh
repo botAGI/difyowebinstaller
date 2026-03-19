@@ -2,7 +2,7 @@
 # detect.sh — System diagnostics: OS, GPU, RAM, disk, ports, Docker, network.
 # Dependencies: common.sh (colors, log_*, init_detected_defaults)
 # Exports: DETECTED_OS, DETECTED_OS_VERSION, DETECTED_OS_NAME, DETECTED_ARCH,
-#          DETECTED_GPU, DETECTED_GPU_NAME, DETECTED_GPU_VRAM,
+#          DETECTED_GPU, DETECTED_GPU_NAME, DETECTED_GPU_VRAM, DETECTED_GPU_COMPUTE,
 #          DETECTED_RAM_TOTAL_MB, DETECTED_RAM_AVAILABLE_MB,
 #          DETECTED_RAM_TOTAL_GB, DETECTED_RAM_AVAILABLE_GB,
 #          DETECTED_DISK_FREE_GB,
@@ -62,6 +62,7 @@ detect_gpu() {
     DETECTED_GPU="none"
     DETECTED_GPU_NAME=""
     DETECTED_GPU_VRAM="0"
+    DETECTED_GPU_COMPUTE=""
 
     # ENV override: force a specific GPU type
     if [[ -n "${FORCE_GPU_TYPE:-}" ]]; then
@@ -73,13 +74,14 @@ detect_gpu() {
                 log_warn "Unknown FORCE_GPU_TYPE '${FORCE_GPU_TYPE}', ignoring (valid: nvidia, amd, intel, apple, none)"
                 ;;
         esac
-        export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM
+        DETECTED_GPU_COMPUTE="${FORCE_GPU_COMPUTE:-}"
+        export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM DETECTED_GPU_COMPUTE DETECTED_GPU_COMPUTE
         return 0
     fi
 
     # ENV override: skip detection entirely
     if [[ "${SKIP_GPU_DETECT:-false}" == "true" ]]; then
-        export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM
+        export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM DETECTED_GPU_COMPUTE DETECTED_GPU_COMPUTE
         return 0
     fi
 
@@ -92,7 +94,10 @@ detect_gpu() {
             DETECTED_GPU_NAME="$(echo "$gpu_info" | head -1 | cut -d',' -f1 | xargs)"
             DETECTED_GPU_VRAM="$(echo "$gpu_info" | head -1 | cut -d',' -f2 | xargs)"
             [[ "${DETECTED_GPU_VRAM}" =~ ^[0-9]+$ ]] || DETECTED_GPU_VRAM="0"
-            export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM
+            # Compute capability (e.g. "8.9", "12.0") — not all nvidia-smi versions support this
+            DETECTED_GPU_COMPUTE="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 | xargs || true)"
+            [[ "${DETECTED_GPU_COMPUTE}" =~ ^[0-9]+\.[0-9]+$ ]] || DETECTED_GPU_COMPUTE=""
+            export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM DETECTED_GPU_COMPUTE DETECTED_GPU_COMPUTE
             return 0
         fi
     fi
@@ -103,7 +108,7 @@ detect_gpu() {
         DETECTED_GPU_NAME="$(rocminfo 2>/dev/null | grep 'Marketing Name' | head -1 | cut -d: -f2- | xargs 2>/dev/null || echo "")"
         DETECTED_GPU_VRAM="$(rocm-smi --showmeminfo vram 2>/dev/null | grep 'Total' | awk '{print $NF}' || echo "0")"
         [[ "${DETECTED_GPU_VRAM}" =~ ^[0-9]+$ ]] || DETECTED_GPU_VRAM="0"
-        export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM
+        export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM DETECTED_GPU_COMPUTE
         return 0
     fi
 
@@ -112,7 +117,7 @@ detect_gpu() {
         if lspci 2>/dev/null | grep -qi 'vga.*intel'; then
             DETECTED_GPU="intel"
             DETECTED_GPU_NAME="$(lspci 2>/dev/null | grep -i 'vga.*intel' | head -1 | sed 's/.*: //' || echo "")"
-            export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM
+            export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM DETECTED_GPU_COMPUTE
             return 0
         fi
     fi
@@ -122,12 +127,12 @@ detect_gpu() {
         DETECTED_GPU="apple"
         DETECTED_GPU_NAME="Apple Silicon ($(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'M-series'))"
         log_warn "Apple Silicon uses Metal natively, Docker GPU passthrough not supported"
-        export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM
+        export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM DETECTED_GPU_COMPUTE
         return 0
     fi
 
     # 5. CPU fallback — defaults already set
-    export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM
+    export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM DETECTED_GPU_COMPUTE
 }
 
 # ============================================================================
@@ -270,7 +275,7 @@ run_diagnostics() {
 
     detect_gpu
     case "${DETECTED_GPU}" in
-        nvidia) echo -e "  GPU:          ${GREEN}NVIDIA ${DETECTED_GPU_NAME} (${DETECTED_GPU_VRAM} MB VRAM)${NC}" ;;
+        nvidia) echo -e "  GPU:          ${GREEN}NVIDIA ${DETECTED_GPU_NAME} (${DETECTED_GPU_VRAM} MB VRAM${DETECTED_GPU_COMPUTE:+, sm ${DETECTED_GPU_COMPUTE}})${NC}" ;;
         amd)    echo -e "  GPU:          ${GREEN}AMD ${DETECTED_GPU_NAME} ${DETECTED_GPU_VRAM:+(${DETECTED_GPU_VRAM} MB VRAM)}${NC}" ;;
         intel)  echo -e "  GPU:          ${GREEN}Intel ${DETECTED_GPU_NAME}${NC}" ;;
         apple)  echo -e "  GPU:          ${GREEN}${DETECTED_GPU_NAME} (Metal)${NC}" ;;
