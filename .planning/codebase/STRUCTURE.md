@@ -1,313 +1,279 @@
 # Codebase Structure
 
-**Analysis Date:** 2026-03-18
+**Analysis Date:** 2026-03-20
 
 ## Directory Layout
 
 ```
-project-root/
-├── install.sh                  # Main 9-phase installation pipeline (75KB)
-├── lib/                        # Reusable library modules (sourced by install.sh)
-│   ├── detect.sh              # System diagnostics (OS, GPU, RAM, disk, ports, Docker)
-│   ├── docker.sh              # OS-specific Docker installation (Debian/RHEL/macOS)
-│   ├── config.sh              # Template rendering, config file generation, validation
-│   ├── health.sh              # Service health checks, container status monitoring
-│   ├── models.sh              # Model download/validation (Ollama, vLLM, TEI)
-│   ├── security.sh            # Firewall, fail2ban, SOPS encryption setup
-│   ├── authelia.sh            # Authelia SSO configuration and LDAP setup
-│   ├── backup.sh              # Backup scheduling (PostgreSQL, Redis snapshots)
-│   ├── dokploy.sh             # Dokploy deployment integration
-│   └── tunnel.sh              # SSH tunnel setup for VPN/Offline profiles
-├── scripts/                    # Post-install operational scripts
-│   ├── agmind.sh              # Day-2 CLI hub (status, doctor, backup, restore, update)
-│   ├── backup.sh              # Manual backup execution script
-│   ├── restore.sh             # Restore from backup with validation
-│   ├── update.sh              # Stack upgrade (pulls new image versions)
-│   ├── uninstall.sh           # Complete removal of AGMind
-│   ├── health-gen.sh          # Generate /health endpoint JSON (cron-called)
-│   ├── build-offline-bundle.sh # Package all images/configs for air-gapped deployment
-│   ├── generate-manifest.sh   # Create release-manifest.json for version pinning
-│   ├── multi-instance.sh      # Deploy multiple isolated AGMind stacks
-│   ├── dr-drill.sh            # Disaster recovery drill (backup → destroy → restore)
-│   ├── rotate_secrets.sh      # Rotate database passwords, Redis secrets
-│   ├── test-upgrade-rollback.sh # Test upgrade path with automatic rollback
-│   ├── restore-runbook.sh     # Step-by-step manual restore instructions
-│   └── check-manifest-versions.py # Python helper for manifest validation
-├── templates/                 # Configuration file templates (rendered to /opt/agmind/docker/)
-│   ├── docker-compose.yml    # Service definitions, volumes, networks, health checks (32KB)
-│   ├── nginx.conf.template   # Reverse proxy, rate limiting, security headers (12KB)
-│   ├── env.vps.template      # VPS profile: public domain, HTTPS via Certbot
-│   ├── env.lan.template      # LAN profile: private network, self-signed TLS optional
-│   ├── env.vpn.template      # VPN profile: tunnel-only access
-│   ├── env.offline.template  # Offline profile: no internet connectivity
-│   ├── versions.env          # Docker image versions and version constraints
-│   ├── release-manifest.json # Pinned versions for specific release
-│   ├── autossh.service.template # Systemd unit for persistent SSH tunnels
-│   ├── backup-cron.template  # Cron job configuration for automated backups
-│   └── authelia/             # Authelia 2FA SSO configuration
-│       ├── configuration.yml # SSO/LDAP settings, session management
-│       └── users_database.yml # User and password storage
-├── monitoring/               # Observability stack configuration
-│   ├── prometheus.yml        # Metrics scraping configuration
-│   ├── alert_rules.yml       # Alert rule definitions (CPU, memory, connectivity)
-│   ├── alertmanager.yml      # Alert routing, webhook/Telegram integration
-│   ├── loki-config.yml       # Log aggregation (Docker logs from all containers)
-│   ├── promtail-config.yml   # Log shipping configuration
-│   └── grafana/              # Grafana dashboards and datasources
-│       ├── dashboards/       # 4 dashboards: overview, containers, alerts, logs
-│       └── provisioning/     # Datasource config (Prometheus, Loki)
-├── branding/                 # Custom branding assets
-│   └── theme.json           # AGMind white-label configuration
-├── docs/                     # Docusaurus documentation site
-│   ├── docs/
-│   │   ├── installation/    # Deployment guides per profile
-│   │   ├── migration/       # Upgrade and migration runbooks
-│   │   ├── operations/      # Day-2 CLI and troubleshooting
-│   │   └── security/        # Security configuration and hardening
-│   ├── src/                 # Docusaurus source (MDX)
-│   └── package.json         # Docs build configuration
-├── tests/                    # BATS (Bash Automated Testing System) tests
-│   ├── test_agmind_cli.bats # CLI commands: status, doctor, backup, restore
-│   ├── test_compose_profiles.bats # Provider profile activation
-│   ├── test_backup.bats     # Backup/restore cycle validation
-│   ├── test_config.bats     # Configuration file generation
-│   ├── test_lifecycle.bats  # Full install → health → uninstall
-│   ├── test_manifest.bats   # Version pinning and manifest validation
-│   └── test_wizard_provider.bats # Provider selection in wizard
-├── workflows/               # Dify workflow templates (not managed by installer)
-│   └── README.md           # Manual import instructions for users
-├── references/             # Reference documents and examples
-│   └── rag-assistant-mvp-workflow.json # Example Dify workflow
-├── .github/                # GitHub Actions CI/CD
-│   └── workflows/
-│       ├── lint.yml        # shellcheck, yamllint, hadolint
-│       ├── test.yml        # BATS tests, compose validation
-│       └── lifecycle.yml   # Full install/uninstall cycle test
-├── .planning/              # Planning documents (generated by GSD)
-│   ├── PROJECT.md          # Project scope and constraints
-│   ├── ROADMAP.md          # Phase-based roadmap (v2.0 MVP)
-│   ├── STATE.md            # Current execution state (phases completed)
-│   ├── config.json         # GSD orchestrator configuration
-│   └── codebase/           # Architecture analysis documents
-│       ├── ARCHITECTURE.md # Layer analysis and data flow
-│       └── STRUCTURE.md    # Directory layout and file purposes
-├── ROADMAP.md              # Public roadmap (2026)
-├── TASKS.md                # Task backlog with priorities
-├── README.md               # User-facing documentation (28KB)
-├── CLAUDE.md               # Agent working instructions (Russian)
-└── CHANGELOG.md            # Release history
-
+difyowebinstaller/
+├── install.sh                  # Main entry point: 9-phase orchestrator
+├── lib/                        # Library modules (sourced by install.sh)
+│   ├── common.sh              # Shared utilities: colors, logging, validation, atomics
+│   ├── detect.sh              # OS, GPU, RAM, disk, Docker detection
+│   ├── wizard.sh              # Interactive user prompts (30+ config choices)
+│   ├── docker.sh              # Docker/Compose installation and version checks
+│   ├── config.sh              # Config generation: .env, nginx, redis, sandbox, Authelia
+│   ├── compose.sh             # Docker Compose lifecycle: up, down, cleanup, post-launch
+│   ├── health.sh              # Health checks, service discovery, status reporting
+│   ├── models.sh              # Ollama pull, Xinference reranker setup
+│   ├── openwebui.sh           # Open WebUI admin creation
+│   ├── backup.sh              # Backup cron setup, validation
+│   ├── security.sh            # UFW, Fail2Ban configuration
+│   ├── authelia.sh            # Authelia configuration and nginx integration
+│   └── tunnel.sh              # SSH reverse tunnel setup
+├── scripts/                    # Day-2 operations scripts
+│   ├── agmind.sh              # Main CLI: status, health, logs, backup, restore, etc.
+│   ├── health-gen.sh          # Cron health monitor: generates health.json
+│   ├── backup.sh              # Backup execution
+│   ├── restore.sh             # Restore from backup
+│   ├── update.sh              # Update checker and upgrade orchestration
+│   ├── uninstall.sh           # Clean removal
+│   ├── build-offline-bundle.sh # Package models for offline deployment
+│   ├── generate-manifest.sh   # Release manifest generator
+│   ├── dr-drill.sh            # Disaster recovery test runner
+│   └── rotate_secrets.sh      # In-place secret rotation
+├── templates/                  # Configuration and compose file templates
+│   ├── docker-compose.yml     # Master Docker Compose (services, profiles, defaults)
+│   ├── env.lan.template       # LAN profile env template
+│   ├── env.vpn.template       # VPN profile env template
+│   ├── env.vps.template       # VPS profile env template
+│   ├── env.offline.template   # Offline profile env template
+│   ├── nginx.conf.template    # Nginx reverse proxy config
+│   ├── versions.env           # Pinned image versions (single source of truth)
+│   ├── release-manifest.json  # Release metadata
+│   ├── logrotate-agmind.conf  # Logrotate config template
+│   ├── backup-cron.template   # Cron job template
+│   ├── autossh.service.template   # Systemd service for reverse tunnel
+│   └── authelia/              # Authelia sub-templates
+│       ├── configuration.yml.template
+│       └── users_database.yml.template
+├── monitoring/                 # Monitoring configuration defaults
+│   └── (Prometheus, Grafana, Loki, Alertmanager templates copied to docker/monitoring/)
+├── workflows/                  # Dify workflow templates
+│   └── rag-assistant.json     # RAG workflow template
+├── tests/                      # Test suite
+│   └── (Bats/shell testing framework)
+├── docs/                       # User documentation
+├── references/                 # Reference configs and docs
+├── branding/                   # Branding assets
+├── .planning/                  # Project planning artifacts
+│   ├── PROJECT.md             # Project overview
+│   ├── REQUIREMENTS.md        # Feature requirements
+│   ├── STATE.md               # Current implementation state
+│   ├── ROADMAP.md             # Upcoming phases
+│   └── codebase/              # Codebase analysis (generated by /gsd:map-codebase)
+│       ├── ARCHITECTURE.md
+│       ├── STRUCTURE.md
+│       ├── CONVENTIONS.md
+│       ├── TESTING.md
+│       ├── STACK.md
+│       ├── INTEGRATIONS.md
+│       └── CONCERNS.md
+├── .git/                       # Git repository
+├── .github/                    # GitHub workflows
+├── README.md                   # Public documentation
+├── SPEC.md                     # Technical specification
+├── CHANGELOG.md                # Version history
+├── COMPATIBILITY.md            # Platform/version compatibility
+├── DR-POLICY.md                # Disaster recovery policy
+└── CLAUDE.md                   # Codebase guidelines (this project)
 ```
 
 ## Directory Purposes
 
-**Root Directory:**
-- Purpose: Entry point and configuration center
-- Key files: `install.sh` (main), `.gitignore`, `.planning/` (planning artifacts)
-- Project metadata: `README.md`, `ROADMAP.md`, `TASKS.md`, `CHANGELOG.md`
+**`lib/`:**
+- Purpose: Reusable Bash modules, each with clear responsibility
+- Contains: Functions for detection, configuration, orchestration, health, models, security
+- Key pattern: Each module sources `lib/common.sh` first; modules may source each other
+- Startup: All sourced early in `install.sh` (lines 21-33)
+- Size: ~200 lines per module (smallest: tunnel.sh ~100 lines, largest: config.sh ~600 lines)
 
-**lib/ (Installation Libraries):**
-- Purpose: Reusable Bash functions sourced by install.sh
-- Responsibility: Divide concerns (detect, docker, config, health, models, security)
-- Called by: `install.sh` during each phase and by `scripts/agmind.sh` during operations
-- Isolation: Each module imports its own dependencies, minimal cross-module calls
+**`scripts/`:**
+- Purpose: Post-installation operations and automation
+- Contains: CLI commands, cron jobs, backup/restore, updates, utilities
+- Runtime: Copied to `$INSTALL_DIR/scripts/` during phase 9 (Complete)
+- Usage: Invoked manually or via cron, always after installation complete
+- Example: `agmind status` reads `$INSTALL_DIR/docker/.env` and Docker Compose state
 
-**scripts/ (Operational CLI):**
-- Purpose: Day-2 operations after initial installation
-- Responsibility: Manual operations (backup, restore, update), diagnostics, emergency recovery
-- Called by: End users via `/usr/local/bin/agmind` symlink
-- Isolation: Most scripts source `health.sh` but operate independently
+**`templates/`:**
+- Purpose: Configuration templates rendered at install-time
+- Contains: Environment templates, Docker Compose, Nginx, Authelia, Prometheus, etc.
+- Rendering: `lib/config.sh` substitutes Bash variables into templates
+- Output: Placed in `$INSTALL_DIR/docker/` directory tree
+- Profiles: Different `env.*.template` for LAN/VPN/VPS/Offline (profile-specific behavior)
 
-**templates/ (Configuration Templates):**
-- Purpose: Generate runtime configurations from template files
-- Variable injection: Replace `${VAR_NAME}` placeholders during `config.sh` phase
-- Outputs: Written to `/opt/agmind/docker/` during installation
-- Profiles: Separate env templates for VPS/LAN/VPN/Offline profiles
+**`tests/`:**
+- Purpose: Test suite for shell scripts
+- Contains: Bats (Bash Automated Testing System) test files
+- Run: `bats tests/*.bats` (manually or in CI)
+- Scope: Unit tests for validation functions, compose profiles, health checks
 
-**monitoring/ (Observability Stack):**
-- Purpose: Prometheus + Grafana + Loki stack for monitoring and alerting
-- Files: YAML configs for scraping, dashboards, alert rules, log aggregation
-- Activation: Via Docker Compose profile `--profile monitoring` (default for VPS)
-- Output: Grafana UI at localhost:3001, Prometheus at localhost:9090
+**`monitoring/`:**
+- Purpose: Monitoring defaults (Prometheus, Grafana, Loki, Alertmanager configs)
+- Output: Copied to `$INSTALL_DIR/docker/monitoring/` if `MONITORING_MODE=local`
+- Templates: YAML files with substitution points for alerting endpoints, retention, etc.
 
-**branding/ (White-Label Assets):**
-- Purpose: Customize Open WebUI appearance (logo, theme colors)
-- File: `theme.json` defines colors, logos, site name
-- Applied: By Open WebUI container on startup
-- Scope: AGMind-specific branding, not user customizable during install
-
-**docs/ (Documentation Site):**
-- Purpose: User-facing guides for installation, operation, troubleshooting
-- Framework: Docusaurus (React-based static site generator)
-- Content: Markdown files organized by topic (install, migrate, operate, secure)
-- Build: `npm run build` generates static HTML in `build/`
-
-**tests/ (Automated Test Suite):**
-- Purpose: Validate all critical paths (install, backup, restore, CLI)
-- Framework: BATS (Bash Automated Testing System)
-- Execution: GitHub Actions CI on every push
-- Coverage: Happy path + error cases for each major feature
-
-**workflows/ (Dify AI Workflows):**
-- Purpose: Example and template Dify workflows (user-imported, not auto-installed)
-- Scope: Not managed by installer after Phase 1 surgery
-- Instructions: `README.md` documents how to manually import into Dify UI
-
-**references/ (Reference Documents):**
-- Purpose: Examples and reference material (not part of deployment)
-- Content: Sample Dify workflows, API request examples, architecture diagrams
-- Not deployed: Stays in git, not copied to production
-
-**.planning/ (GSD Planning Artifacts):**
-- Purpose: Structural documentation consumed by `/gsd:*` commands
-- Files: `PROJECT.md` (scope), `ROADMAP.md` (phases), `STATE.md` (progress)
-- Updated: After each phase completion
-- Not deployed: Stays in git, guides future development
+**`.planning/`:**
+- Purpose: Project planning and documentation
+- Artifacts: Requirements, roadmap, phase plans, verification checklists
+- Generated: `.planning/codebase/` created by `/gsd:map-codebase` command
+- Maintained: `STATE.md` tracks current implementation progress
 
 ## Key File Locations
 
 **Entry Points:**
-- `install.sh`: Main installation script, run once per system
-- `scripts/agmind.sh`: Symlinked to `/usr/local/bin/agmind` for CLI access
+- `install.sh`: Main installation orchestrator (310 lines, strict mode, no deps on $CWD changing)
+- `scripts/agmind.sh`: Day-2 CLI entry point (600+ lines, symlinked to `/usr/local/bin/agmind`)
+- `scripts/health-gen.sh`: Cron job that generates health status JSON
 
 **Configuration:**
-- `templates/docker-compose.yml`: Master service definition (23+ containers)
-- `templates/versions.env`: Pinned Docker image versions
-- `lib/config.sh`: Configuration generation logic
-- `.env` (generated): Runtime environment variables at `/opt/agmind/docker/.env`
+- `templates/versions.env`: Single source of truth for all image versions (pinned)
+- `$INSTALL_DIR/docker/.env`: Runtime environment file (generated from templates, contains secrets)
+- `$INSTALL_DIR/docker/docker-compose.yml`: Active Docker Compose file
+- `$INSTALL_DIR/credentials.txt`: Operator credentials (chmod 600)
 
 **Core Logic:**
-- `lib/detect.sh`: System probing (320+ lines)
-- `lib/docker.sh`: Docker installation per OS (200+ lines)
-- `lib/config.sh`: Template rendering and validation (1000+ lines)
-- `lib/health.sh`: Service health checking (400+ lines)
-- `lib/models.sh`: Model downloading and validation (200+ lines)
+- `lib/config.sh`: All `.env` generation, secret creation, sub-config rendering (24KB)
+- `lib/compose.sh`: Docker Compose management, bind mount safety, container lifecycle (11KB)
+- `lib/health.sh`: Service discovery, health polling, status reporting (15KB)
+- `lib/wizard.sh`: Interactive prompts, defaults, non-interactive mode (28KB)
 
 **Testing:**
-- `tests/test_*.bats`: BATS test suites (6 files)
-- `.github/workflows/test.yml`: CI test execution
-- `.github/workflows/lint.yml`: Static analysis (shellcheck, yamllint)
+- `tests/shell-check.bats`: ShellCheck validation for all scripts
+- `tests/validation.bats`: Validation function tests
+- `tests/compose-profiles.bats`: Compose profile generation tests
+- `tests/health-checks.bats`: Health check logic tests
 
-**Observability:**
-- `monitoring/prometheus.yml`: Metrics configuration
-- `monitoring/alert_rules.yml`: Alert definitions
-- `monitoring/grafana/dashboards/`: 4 operational dashboards
-- `scripts/health-gen.sh`: Generate `/health` JSON endpoint
+**Runtime Directories (Created):**
+- `$INSTALL_DIR/docker/volumes/`: Volume mount points (db, redis, app storage, etc.)
+- `$INSTALL_DIR/docker/volumes/app/storage`: Dify file uploads
+- `$INSTALL_DIR/docker/volumes/certbot/ssl`: ACME certificates (if TLS enabled)
+- `$INSTALL_DIR/docker/nginx/`: Nginx config + health.json (read by cron)
+- `$INSTALL_DIR/docker/monitoring/`: Prometheus, Grafana, Loki, Alertmanager YAML
+- `$INSTALL_DIR/scripts/`: Copied day-2 scripts
+- `$INSTALL_DIR/workflows/`: Dify workflow templates
+- `/var/backups/agmind/`: Local backup destination
 
 ## Naming Conventions
 
 **Files:**
-- Shell scripts: `*.sh` (executable, `chmod +x`)
-- Templates: `*.template` (placeholder variables, `${VAR_NAME}`)
-- Configuration: `*.yml` (YAML, docker-compose/monitoring)
-- Tests: `test_*.bats` (BATS syntax)
-- Documentation: `*.md` (Markdown)
+- Entry point: Lowercase, no extension (`install.sh`, `agmind.sh`)
+- Library modules: `{module}.sh` (e.g., `compose.sh`, `health.sh`)
+- Templates: `{config}.{profile}.template` or `{config}.template` (e.g., `env.vps.template`)
+- Special: Prefix-based organization (`_*.sh` = private scripts, not exported)
+
+**Functions:**
+- Public functions: `verb_noun()` (e.g., `compose_up`, `setup_docker`)
+- Private functions: `_verb_noun()` (leading underscore, e.g., `_generate_secrets`)
+- Validators: `validate_noun()` (e.g., `validate_domain`)
+- Loggers: `log_level()` (e.g., `log_error`, `log_success`)
+
+**Variables:**
+- Global config: `UPPERCASE_WITH_UNDERSCORES` (e.g., `DEPLOY_PROFILE`, `LLM_MODEL`)
+- Exported: Prefixed with env var name (e.g., `COMPOSE_PROFILES`, `INSTALL_DIR`)
+- Local: lowercase_with_underscores (e.g., `timeout`, `compose_dir`)
+- Internal: `_LEADING_UNDERSCORE` (e.g., `_SECRET_KEY`, `_DB_PASSWORD`)
+- Constants: `SCREAMING_SNAKE_CASE` for hardcoded values
 
 **Directories:**
-- Installation libraries: `lib/` (lowercase, short names)
-- Runtime scripts: `scripts/` (lowercase, feature-based names)
-- Config templates: `templates/` (file extensions preserved: `.yml`, `.env`, `.template`)
-- Observability: `monitoring/` (prometheus, alertmanager, grafana subdirs)
-- Testing: `tests/` (BATS files only)
-- Planning: `.planning/` (dotdir, hidden by default)
-- Generated: `/opt/agmind/docker/` (created during phase 4, not in git)
-
-**Functions in Shell:**
-- Validation: `validate_*` (validate_domain, validate_port, etc.)
-- Detection: `detect_*` (detect_os, detect_gpu, etc.)
-- Installation: `phase_*` (phase_diagnostics, phase_wizard, etc.)
-- Checks: `check_*` (check_container, check_all, etc.)
-- Configuration: `configure_*` (configure_ufw, configure_fail2ban, etc.)
-- Private functions: `_*` (underscore prefix, not exported)
-
-**Environment Variables:**
-- Detected system state: `DETECTED_*` (DETECTED_OS, DETECTED_GPU, DETECTED_DOCKER_INSTALLED)
-- User selections: Uppercase, no prefix (DEPLOY_PROFILE, DOMAIN, LLM_PROVIDER)
-- Configuration: `*_URL`, `*_HOST`, `*_PORT` suffixes
-- Container names: `agmind-*` prefix in docker-compose
+- Project root: (no prefix)
+- Source: `lib/`, `scripts/`, `templates/`
+- Generated: `$INSTALL_DIR/docker/`, `$INSTALL_DIR/scripts/`, `$INSTALL_DIR/workflows/`
+- Volumes: `$INSTALL_DIR/docker/volumes/{service}/`
 
 ## Where to Add New Code
 
-**New Feature (e.g., backup encryption):**
-- Primary code: Add function to `lib/backup.sh` or create `lib/encryption.sh`
-- Tests: Add test to `tests/test_backup.bats`
-- CLI hook: Add command to `scripts/agmind.sh` if user-facing
-- Example: `encrypt_backup()` function in `lib/backup.sh`, `cmd_backup_encrypt()` in `scripts/agmind.sh`
+**New Feature (e.g., new provider, new TLS mode):**
+- Configuration: Update `lib/wizard.sh` with prompt, update template env files
+- Implementation: Add to appropriate lib module or create new `lib/module.sh`
+- Integration: Source new module in `install.sh`, call from appropriate phase
+- Templates: Create/update `templates/env.*.template` with new variables
+- Example: To add vLLM provider, add prompt in `lib/wizard.sh`, update `templates/env.*.template`, ensure docker-compose.yml has vLLM service with profile
 
-**New Component/Module (e.g., Redis Cluster support):**
-- Implementation: Create `lib/redis.sh` with functions (detect_redis, setup_redis_cluster)
-- Integration: Source in `install.sh` after line 76: `source "${INSTALLER_DIR}/lib/redis.sh"`
-- Tests: Create `tests/test_redis.bats` with BATS test cases
-- Docker: Add service(s) to `templates/docker-compose.yml` with profile `redis_cluster`
-- Config: Add env vars to `lib/config.sh` template rendering
+**New Component/Module:**
+- Create: `lib/newmodule.sh` with header comment documenting dependencies and exports
+- Ensure: First line sources `lib/common.sh` (if needs logging/validation)
+- Header: Copy template from existing module (specify what functions/variables it exports)
+- Integration: Source in `install.sh` near other modules, call function from appropriate phase
+- Testing: Add bats test file in `tests/newmodule.bats`
 
-**Utilities/Helpers (e.g., log formatting):**
-- Shared helpers: `lib/common.sh` (if doesn't exist)
-- Logging: Add `log_*` functions (log_info, log_warn, log_error)
-- Called from: Any script via `source "${INSTALLER_DIR}/lib/common.sh"`
-- No tests required: Utility functions are tested through integration tests
+**Utilities (shared helpers):**
+- Location: Add to `lib/common.sh` or create new `lib/utils.sh`
+- Pattern: Prefix with leading underscore if internal-only, full name if public
+- Validation: All user input through validate_* functions
+- Logging: All output through log_* functions for consistency
 
-**New Health Check (e.g., SSL certificate expiry):**
-- Implementation: Add function to `lib/health.sh` (check_ssl_expiry)
-- Add to service list: Update `get_service_list()` or call from `check_all()`
-- CLI integration: Display in `agmind status` output via `scripts/agmind.sh`
-- Tests: Add to `tests/test_agmind_cli.bats` under status tests
+**New Day-2 Command:**
+- Create: `scripts/newcommand.sh` (standalone executable)
+- Entry: Add case statement in `scripts/agmind.sh` that sources and calls it
+- Pattern: Read `$ENV_FILE` for configuration, respect `--json` flag for parseable output
+- Installation: Automatically copied to `$INSTALL_DIR/scripts/` by phase 9
 
-**New Docker Service (e.g., Vector search alternative):**
-- Service definition: Add to `templates/docker-compose.yml` with unique profile
-- Environment vars: Add to appropriate `templates/env.*.template` (or all)
-- Version pinning: Add to `templates/versions.env`
-- Health check: Add function to `lib/health.sh`, include in service list
-- CLI hint: Add provider-specific message to `phase_complete()` in `install.sh`
+**New Docker Service:**
+- Compose: Add service block to `templates/docker-compose.yml` with profile if optional
+- Health: Update `get_service_list()` in `lib/health.sh` if profile-dependent
+- Dependencies: Use `depends_on: service_name: condition: service_healthy`
+- Environment: Add variables to `x-shared-env` or service-specific section
+- Volumes: Use `./volumes/` mounts for persistence
+
+**Test Suite:**
+- Create: `tests/feature.bats` following existing test structure
+- Imports: `load test_helper` to access common test functions
+- Assertions: Use `assert`, `assert_equals`, `assert_success` from Bats
+- Run: `bats tests/feature.bats` to validate before shipping
 
 ## Special Directories
 
-**Generated Directories (Not Committed):**
-- `/opt/agmind/` (entire production directory)
-  - Location: Created during phase 4 configuration
-  - Contains: docker/, backups/, credentials.txt, install.log, .install_phase
-  - Ownership: root (created by install.sh with sudo)
-  - Persistence: Survives `docker compose down` (data in named volumes)
+**`$INSTALL_DIR/`** (typically `/opt/agmind`):
+- Purpose: Installation target, all config and runtime files live here
+- Generated: Created during phase 1 diagnostics
+- Committed: No, path depends on installation (typically `/opt/agmind`)
+- Owner: `root:root` (install.sh runs as root)
+- Preserved: On reinstall, phase resume checks for `.install_phase` to allow recovery
 
-**Volume Directories (Persistent Data):**
-- `volumes/db/data/` (PostgreSQL data)
-- `volumes/app/storage/` (Dify file storage, uploads)
-- Named volumes: `agmind_ollama_data`, `agmind_openwebui_data`, etc.
-  - Managed by: Docker daemon
-  - Located: `/var/lib/docker/volumes/` (system-dependent)
-  - Persist: Across container restarts and upgrades
+**`$INSTALL_DIR/docker/`:**
+- Purpose: Docker Compose working directory
+- Contains: `docker-compose.yml`, `.env` (secrets), nginx/, volumes/, monitoring/
+- Generated: Yes, all files copied/rendered here during phase 4
+- Committed: No, contains secrets and runtime state
+- Example structure:
+  ```
+  docker/
+  ├── docker-compose.yml
+  ├── .env                  (secrets, chmod 600)
+  ├── nginx/
+  │   ├── nginx.conf
+  │   └── health.json       (generated by cron every minute)
+  ├── volumes/
+  │   ├── db/data/
+  │   ├── redis/
+  │   ├── app/storage/
+  │   ├── weaviate/
+  │   ├── qdrant/
+  │   └── ...
+  ├── monitoring/           (if MONITORING_MODE=local)
+  │   ├── prometheus.yml
+  │   ├── alert_rules.yml
+  │   ├── alertmanager.yml
+  │   └── ...
+  └── certbot/              (if TLS enabled)
+      ├── conf/
+      ├── ssl/
+      └── www/
+  ```
 
-**Temporary Directories:**
-- `/tmp/agmind-*` (temporary files during install)
-- `/tmp/agmind-install.lock` (macOS lock)
-- Cleaned up: By cleanup trap on exit
+**`/var/backups/agmind/`:**
+- Purpose: Local backup destination
+- Generated: Created during phase 8 (Backups)
+- Committed: No, contains backup dumps
+- Permissions: Created by root, readable by backup scripts
 
-## Git Ignore Patterns
-
-```
-# Environment and secrets (never committed)
-.env*
-credentials.txt
-*.key
-*.pem
-
-# Generated/runtime (never committed)
-/docker/          # symlink or copies created at install time
-/opt/              # production directory (outside repo)
-
-# Local dev and test artifacts
-/.bats/
-/build/
-/node_modules/
-*.log
-
-# OS and IDE
-.DS_Store
-.vscode/
-.idea/
-*.swp
-```
+**`.planning/` (project root):**
+- Purpose: Planning artifacts and codebase analysis
+- Generated: `.planning/codebase/` by `/gsd:map-codebase`
+- Committed: Yes, part of repository for continuity
+- Contents: Markdown documents (ARCHITECTURE.md, STRUCTURE.md, etc.)
 
 ---
 
-*Structure analysis: 2026-03-18*
+*Structure analysis: 2026-03-20*
