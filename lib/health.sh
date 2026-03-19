@@ -101,6 +101,16 @@ wait_healthy() {
         for svc in "${services[@]}"; do
             local status
             status="$(docker compose -f "$compose_file" ps --format '{{.Status}}' "$svc" 2>/dev/null || echo "")"
+            # Fail fast: container exited — no point waiting
+            if echo "$status" | grep -qi "exited"; then
+                echo ""
+                log_error "Container '${svc}' has exited — not waiting for timeout"
+                echo -e "  ${RED}Last logs from ${svc}:${NC}"
+                docker compose -f "$compose_file" logs --tail=15 "$svc" 2>/dev/null || true
+                echo ""
+                check_all
+                return 1
+            fi
             if ! echo "$status" | grep -qi "up\|healthy"; then
                 all_ok=false
                 break
