@@ -483,6 +483,14 @@ enable_gpu_compose() {
             _atomic_sed "$compose_file" '/#__GPU__/d'
             ;;
     esac
+
+    # If vLLM and TEI share the same GPU, reduce vLLM memory utilization
+    # to leave room for TEI (~1.5-2 GB VRAM for bge-m3)
+    if [[ "${LLM_PROVIDER:-}" == "vllm" && "${EMBED_PROVIDER:-}" == "tei" ]]; then
+        log_info "vLLM + TEI on same GPU — setting gpu-memory-utilization=0.75"
+        _atomic_sed "$compose_file" \
+            's|--gpu-memory-utilization 0\.90|--gpu-memory-utilization 0.75|g'
+    fi
 }
 
 # ============================================================================
