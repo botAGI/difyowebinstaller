@@ -131,7 +131,7 @@ phase_start()       { compose_up; create_openwebui_admin; }
 phase_health()      { wait_healthy 300; _check_critical_services; }
 phase_models()      { download_models; }
 phase_backups()     { setup_backups; setup_tunnel; }
-phase_complete()    { create_openwebui_admin; _save_credentials; _install_cli; _install_crons; _show_final_summary; }
+phase_complete()    { create_openwebui_admin; _init_dify_admin; _save_credentials; _install_cli; _install_crons; _show_final_summary; }
 
 _confirm_continue() {
     if [[ "$NON_INTERACTIVE" == "true" ]]; then log_warn "Non-interactive: continuing despite: $1"; return 0; fi
@@ -186,6 +186,61 @@ _copy_runtime_files() {
     cp "${INSTALLER_DIR}/lib/detect.sh" "${INSTALL_DIR}/scripts/detect.sh" 2>/dev/null || true
     chmod +x "${INSTALL_DIR}/scripts/"*.sh 2>/dev/null || true
     cp "${INSTALLER_DIR}/workflows/rag-assistant.json" "${INSTALL_DIR}/workflows/" 2>/dev/null || true
+}
+
+_init_dify_admin() {
+    # Skip if already initialized
+    [[ -f "${INSTALL_DIR}/.dify_initialized" ]] && { log_info "Dify already initialized"; return 0; }
+
+    local env_file="${INSTALL_DIR}/docker/.env"
+    local init_password
+    init_password="$(grep '^INIT_PASSWORD=' "$env_file" 2>/dev/null | cut -d'=' -f2-)"
+    [[ -z "$init_password" ]] && return 0
+
+    local admin_password
+    admin_password="$(echo "$init_password" | base64 -d 2>/dev/null || echo "$init_password")"
+
+    # Wait for Dify API to be ready
+    local attempts=0
+    while [[ $attempts -lt 30 ]]; do
+        docker exec agmind-api curl -sf http://localhost:5001/health >/dev/null 2>&1 && break
+        sleep 5
+        attempts=$((attempts + 1))
+    done
+    if [[ $attempts -ge 30 ]]; then
+        log_warn "Dify API not ready, skipping init"
+        return 0
+    fi
+
+    log_info "Initializing Dify admin (1.13 two-step)..."
+
+    # Two-step init: POST /console/api/init → POST /console/api/setup
+    # Uses curl cookie jar inside the container for session handling
+    local resp
+    resp="$(docker exec \
+        -e "INIT_PWD=${init_password}" \
+        -e "ADMIN_PWD=${admin_password}" \
+        agmind-api sh -c '
+            curl -sf -c /tmp/dify_cookies \
+                -H "Content-Type: application/json" \
+                -d "{\"password\":\"$INIT_PWD\"}" \
+                http://localhost:5001/console/api/init >/dev/null 2>&1
+            curl -sf -b /tmp/dify_cookies \
+                -H "Content-Type: application/json" \
+                -d "{\"email\":\"admin@agmind.local\",\"name\":\"AGMind Admin\",\"password\":\"$ADMIN_PWD\"}" \
+                http://localhost:5001/console/api/setup 2>/dev/null
+            rm -f /tmp/dify_cookies
+        ' 2>&1)" || true
+
+    if echo "$resp" | grep -qi '"result"\|"id"\|"token"\|success'; then
+        log_success "Dify admin initialized"
+        touch "${INSTALL_DIR}/.dify_initialized"
+    elif echo "$resp" | grep -qi "already\|initialized\|repeat"; then
+        log_info "Dify already initialized"
+        touch "${INSTALL_DIR}/.dify_initialized"
+    else
+        log_warn "Dify init: $(echo "$resp" | head -c 200)"
+    fi
 }
 
 _save_credentials() {

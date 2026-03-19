@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# openwebui.sh — Create admin user in Open WebUI, lock down signups.
+# openwebui.sh — Create admin user in Open WebUI.
 # Dependencies: common.sh (log_*)
 # Functions: create_openwebui_admin()
 # Expects: INSTALL_DIR
 #
-# Strategy: Stop nginx → enable signup → create admin via container-internal
-# API → disable signup → start nginx. This prevents public exposure of the
-# signup endpoint (race condition fix from v2).
+# Open WebUI persists ENABLE_SIGNUP in SQLite on first boot.
+# After that, env var is ignored ("loaded from the latest database entry").
+# Strategy: delete webui.db → start with ENABLE_SIGNUP=true → create admin
+# → restart without override. Nginx stopped during the whole process.
 set -euo pipefail
 
 INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
@@ -19,13 +20,16 @@ create_openwebui_admin() {
     local docker_dir="${INSTALL_DIR}/docker"
     local env_file="${docker_dir}/.env"
 
-    # Read admin password from .env (Base64-encoded INIT_PASSWORD)
-    local admin_email="admin@localhost"
-    local admin_name="AGMind Admin"
+    # Skip if admin already created in a previous run
+    if [[ -f "${INSTALL_DIR}/.admin_created" ]]; then
+        log_info "Open WebUI admin already configured"
+        return 0
+    fi
+
+    # Read admin password
     local admin_password
     admin_password="$(grep '^INIT_PASSWORD=' "$env_file" 2>/dev/null | cut -d'=' -f2- | base64 -d 2>/dev/null || true)"
     if [[ -z "$admin_password" ]]; then
-        # Fallback: read from .admin_password file
         admin_password="$(cat "${INSTALL_DIR}/.admin_password" 2>/dev/null || true)"
     fi
     if [[ -z "$admin_password" ]]; then
@@ -36,29 +40,41 @@ create_openwebui_admin() {
     log_info "Creating Open WebUI admin account..."
     cd "$docker_dir"
 
-    # Step 1: Stop nginx to prevent external access during signup window
+    # Step 1: Stop nginx (no public access during signup window)
     docker compose stop nginx >/dev/null 2>&1 || true
 
-    # Step 2: Restart open-webui with signup enabled
-    # Shell env overrides .env file (ENABLE_SIGNUP=false stays in .env permanently)
+    # Step 2: Stop open-webui and delete webui.db
+    # ENABLE_SIGNUP env var only sets the initial value on first DB creation.
+    # If DB already exists with signup=false, env override is ignored.
+    # Deleting webui.db lets the next start with ENABLE_SIGNUP=true take effect.
+    docker compose stop open-webui >/dev/null 2>&1 || true
+    local vol_name
+    vol_name="$(docker volume ls -q 2>/dev/null | grep 'openwebui_data' | head -1)"
+    if [[ -n "$vol_name" ]]; then
+        docker run --rm -v "${vol_name}:/data" alpine rm -f /data/webui.db 2>/dev/null || true
+    fi
+
+    # Step 3: Start open-webui with signup enabled (first boot → DB stores true)
     ENABLE_SIGNUP=true docker compose up -d open-webui >/dev/null 2>&1 || true
 
-    # Step 3: Wait for Open WebUI to be healthy (up to 120s)
+    # Step 4: Wait for health
     if ! _wait_openwebui_healthy; then
         log_error "Open WebUI did not respond within 120s, skipping admin creation"
         docker compose up -d nginx >/dev/null 2>&1 || true
         return 0
     fi
 
-    # Step 4: Create admin via container-internal API
-    _create_admin_via_api "$admin_name" "$admin_email" "$admin_password"
+    # Step 5: Create admin via signup API
+    _create_admin_via_api "AGMind Admin" "admin@agmind.local" "$admin_password"
 
-    # Step 5: Restart open-webui with signup locked (reads .env: ENABLE_SIGNUP=false)
+    # Step 6: Restart open-webui normally (reads ENABLE_SIGNUP from DB)
     docker compose up -d open-webui >/dev/null 2>&1 || true
 
-    # Step 6: Start nginx (public access begins AFTER signup is locked)
+    # Step 7: Start nginx
     docker compose up -d nginx >/dev/null 2>&1 || true
-    log_success "Signup locked (ENABLE_SIGNUP=false)"
+
+    # Mark as done (idempotent on re-runs)
+    touch "${INSTALL_DIR}/.admin_created"
 }
 
 # ============================================================================
@@ -82,7 +98,6 @@ _create_admin_via_api() {
     local email="$2"
     local password="$3"
 
-    # Escape double quotes in JSON values
     local json_payload
     json_payload="$(printf '{"name":"%s","email":"%s","password":"%s"}' \
         "$(printf '%s' "$name" | sed 's/\\/\\\\/g; s/"/\\"/g')" \
