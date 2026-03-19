@@ -146,16 +146,26 @@ _check_critical_services() {
             log_error "Critical service ${svc}: ${st}"; docker logs --tail 5 "agmind-${svc}" 2>&1 | sed 's/^/    /'; failed=$((failed+1))
         fi
     done
-    # GPU compatibility hint for vLLM
+    # GPU compatibility hint for vLLM (warning only — not critical)
     if [[ "${LLM_PROVIDER:-}" == "vllm" ]]; then
         local vllm_st; vllm_st="$(docker ps --filter "name=agmind-vllm" --format "{{.Status}}" 2>/dev/null | head -1)"
         if echo "$vllm_st" | grep -qi "exited\|restarting"; then
-            log_error "vLLM не запустился: ${vllm_st}"
+            log_warn "vLLM не запустился: ${vllm_st}"
             if docker logs --tail 20 agmind-vllm 2>&1 | grep -qi "no kernel image"; then
-                log_error "GPU compute capability не поддерживается данной сборкой vLLM."
-                log_error "Решение: переустановите с VLLM_CUDA_SUFFIX=-cu130 или переключитесь на Ollama."
+                log_warn "GPU compute capability не поддерживается данной сборкой vLLM."
+                log_warn "Решение: переустановите с VLLM_CUDA_SUFFIX=-cu130 или переключитесь на Ollama."
+            elif docker logs --tail 20 agmind-vllm 2>&1 | grep -qi "out of memory\|OOM\|CUDA.*memory"; then
+                log_warn "Недостаточно VRAM для выбранной модели."
+                log_warn "Решение: выберите AWQ-квантизированную модель (например Qwen/Qwen2.5-7B-Instruct-AWQ)."
             fi
-            failed=$((failed+1))
+        fi
+    fi
+    # TEI hint (warning only — not critical)
+    if [[ "${EMBED_PROVIDER:-}" == "tei" ]]; then
+        local tei_st; tei_st="$(docker ps --filter "name=agmind-tei" --format "{{.Status}}" 2>/dev/null | head -1)"
+        if echo "$tei_st" | grep -qi "exited\|restarting"; then
+            log_warn "TEI не запустился: ${tei_st}"
+            docker logs --tail 5 agmind-tei 2>&1 | sed 's/^/    /' || true
         fi
     fi
     [[ $failed -gt 0 ]] && { log_error "${failed} critical service(s) failed"; return 1; }

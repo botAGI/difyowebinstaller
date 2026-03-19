@@ -89,11 +89,16 @@ wait_healthy() {
     local elapsed=0
     local compose_file="${INSTALL_DIR}/docker/docker-compose.yml"
 
+    # Critical services: exit of any of these = immediate failure
+    local critical_services="db redis sandbox ssrf_proxy api worker web plugin_daemon nginx"
+
     log_info "Waiting for containers to be healthy (timeout: ${timeout}s)..."
     echo ""
 
     local services
     read -ra services <<< "$(get_service_list)"
+
+    local optional_exited=""
 
     while [[ $elapsed -lt $timeout ]]; do
         local all_ok=true
@@ -101,15 +106,25 @@ wait_healthy() {
         for svc in "${services[@]}"; do
             local status
             status="$(docker compose -f "$compose_file" ps --format '{{.Status}}' "$svc" 2>/dev/null || echo "")"
-            # Fail fast: container exited — no point waiting
+            # Fail fast: critical container exited — no point waiting
             if echo "$status" | grep -qi "exited"; then
-                echo ""
-                log_error "Container '${svc}' has exited — not waiting for timeout"
-                echo -e "  ${RED}Last logs from ${svc}:${NC}"
-                docker compose -f "$compose_file" logs --tail=15 "$svc" 2>/dev/null || true
-                echo ""
-                check_all
-                return 1
+                if echo " $critical_services " | grep -q " $svc "; then
+                    echo ""
+                    log_error "Critical container '${svc}' has exited — not waiting for timeout"
+                    echo -e "  ${RED}Last logs from ${svc}:${NC}"
+                    docker compose -f "$compose_file" logs --tail=15 "$svc" 2>/dev/null || true
+                    echo ""
+                    check_all
+                    return 1
+                else
+                    # Optional service exited — warn once, skip from wait loop
+                    if ! echo "$optional_exited" | grep -q " $svc "; then
+                        optional_exited="${optional_exited} ${svc} "
+                        log_warn "Optional service '${svc}' exited (non-critical, continuing)"
+                        docker compose -f "$compose_file" logs --tail=5 "$svc" 2>/dev/null || true
+                    fi
+                    continue
+                fi
             fi
             if ! echo "$status" | grep -qi "up\|healthy"; then
                 all_ok=false
