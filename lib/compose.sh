@@ -35,6 +35,70 @@ build_compose_profiles() {
 }
 
 # ============================================================================
+# PULL WITH PROGRESS
+# ============================================================================
+
+_pull_with_progress() {
+    local profiles="${1:-}"
+    local docker_dir="${INSTALL_DIR}/docker"
+    cd "$docker_dir"
+
+    # Get list of required images (fallback: skip progress if config fails)
+    local images_raw
+    if [[ -n "$profiles" ]]; then
+        images_raw="$(COMPOSE_PROFILES="$profiles" docker compose config --images 2>/dev/null)" || { log_info "Pulling images..."; return 0; }
+    else
+        images_raw="$(docker compose config --images 2>/dev/null)" || { log_info "Pulling images..."; return 0; }
+    fi
+    [[ -z "$images_raw" ]] && return 0
+
+    local -a images
+    mapfile -t images <<< "$images_raw"
+    local total=${#images[@]}
+    [[ $total -eq 0 ]] && return 0
+
+    # Start pull in background (quiet — we show our own progress)
+    if [[ -n "$profiles" ]]; then
+        COMPOSE_PROFILES="$profiles" docker compose pull -q >/dev/null 2>&1 &
+    else
+        docker compose pull -q >/dev/null 2>&1 &
+    fi
+    local pull_pid=$!
+
+    # Monitor which images appear locally
+    while kill -0 "$pull_pid" 2>/dev/null; do
+        _print_pull_status images "$total"
+        sleep 3
+    done
+    wait "$pull_pid" || true
+
+    # Final line
+    _print_pull_status images "$total"
+    echo ""
+    log_success "All ${total} images ready"
+}
+
+_print_pull_status() {
+    local -n _imgs=$1
+    local total="$2"
+    local ready=0 names=""
+
+    for img in "${_imgs[@]}"; do
+        if docker image inspect "$img" >/dev/null 2>&1; then
+            ready=$((ready + 1))
+            local short="${img##*/}"
+            short="${short%%:*}"
+            [[ ${#short} -gt 12 ]] && short="${short:0:10}.."
+            names="${names:+${names} }${short} ✓"
+        fi
+    done
+
+    # Truncate to fit terminal
+    [[ ${#names} -gt 64 ]] && names="${names:0:61}..."
+    printf "\r  ⬇️  Pulling images... %d/%d [%s]   " "$ready" "$total" "$names"
+}
+
+# ============================================================================
 # COMPOSE UP
 # ============================================================================
 
@@ -53,7 +117,12 @@ compose_up() {
     _nuclear_cleanup_dirs
     preflight_bind_mount_check
 
-    # --- Pull + Up ---
+    # --- Pull with progress (skip for offline) ---
+    if [[ "${DEPLOY_PROFILE:-}" != "offline" ]]; then
+        _pull_with_progress "$profiles"
+    fi
+
+    # --- Up (--pull missing as safety net for anything _pull missed) ---
     local pull_flag="--pull missing"
     if [[ "${DEPLOY_PROFILE:-}" == "offline" ]]; then
         pull_flag="--pull never"
