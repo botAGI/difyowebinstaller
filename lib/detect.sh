@@ -1,20 +1,33 @@
 #!/usr/bin/env bash
-# detect.sh — System diagnostics: OS, GPU, RAM, disk, ports, Docker, network
+# detect.sh — System diagnostics: OS, GPU, RAM, disk, ports, Docker, network.
+# Dependencies: common.sh (colors, log_*, init_detected_defaults)
+# Exports: DETECTED_OS, DETECTED_OS_VERSION, DETECTED_OS_NAME, DETECTED_ARCH,
+#          DETECTED_GPU, DETECTED_GPU_NAME, DETECTED_GPU_VRAM,
+#          DETECTED_RAM_TOTAL_MB, DETECTED_RAM_AVAILABLE_MB,
+#          DETECTED_RAM_TOTAL_GB, DETECTED_RAM_AVAILABLE_GB,
+#          DETECTED_DISK_FREE_GB,
+#          DETECTED_DOCKER_INSTALLED, DETECTED_DOCKER_VERSION, DETECTED_DOCKER_COMPOSE,
+#          DETECTED_NETWORK, DOCKER_PLATFORM, PORTS_IN_USE,
+#          RECOMMENDED_MODEL, RECOMMENDED_REASON
+# Functions: run_diagnostics(), preflight_checks()
+# ENV overrides: FORCE_GPU_TYPE, SKIP_GPU_DETECT, SKIP_PREFLIGHT
 set -euo pipefail
 
-# Colors
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
+# ============================================================================
+# OS DETECTION
+# ============================================================================
 
 detect_os() {
     if [[ -f /etc/os-release ]]; then
+        # shellcheck source=/dev/null
         . /etc/os-release
-        DETECTED_OS="$ID"
-        DETECTED_OS_VERSION="$VERSION_ID"
-        DETECTED_OS_NAME="$PRETTY_NAME"
+        DETECTED_OS="${ID:-unknown}"
+        DETECTED_OS_VERSION="${VERSION_ID:-}"
+        DETECTED_OS_NAME="${PRETTY_NAME:-${ID:-unknown}}"
     elif [[ "$(uname)" == "Darwin" ]]; then
         DETECTED_OS="macos"
-        DETECTED_OS_VERSION="$(sw_vers -productVersion)"
-        DETECTED_OS_NAME="macOS $DETECTED_OS_VERSION"
+        DETECTED_OS_VERSION="$(sw_vers -productVersion 2>/dev/null || echo "0")"
+        DETECTED_OS_NAME="macOS ${DETECTED_OS_VERSION}"
     else
         DETECTED_OS="unknown"
         DETECTED_OS_VERSION="0"
@@ -24,6 +37,27 @@ detect_os() {
     export DETECTED_OS DETECTED_OS_VERSION DETECTED_OS_NAME DETECTED_ARCH
 }
 
+# ============================================================================
+# ARCHITECTURE / DOCKER PLATFORM
+# ============================================================================
+
+detect_arch() {
+    local arch
+    arch="$(uname -m)"
+    case "$arch" in
+        x86_64|amd64)  DOCKER_PLATFORM="linux/amd64" ;;
+        aarch64|arm64) DOCKER_PLATFORM="linux/arm64" ;;
+        armv7l)        DOCKER_PLATFORM="linux/arm/v7" ;;
+        *)             DOCKER_PLATFORM="linux/amd64" ;;
+    esac
+    DETECTED_ARCH="$arch"
+    export DOCKER_PLATFORM DETECTED_ARCH
+}
+
+# ============================================================================
+# GPU DETECTION
+# ============================================================================
+
 detect_gpu() {
     DETECTED_GPU="none"
     DETECTED_GPU_NAME=""
@@ -31,12 +65,12 @@ detect_gpu() {
 
     # ENV override: force a specific GPU type
     if [[ -n "${FORCE_GPU_TYPE:-}" ]]; then
-        case "$FORCE_GPU_TYPE" in
+        case "${FORCE_GPU_TYPE}" in
             nvidia|amd|intel|apple|none)
-                DETECTED_GPU="$FORCE_GPU_TYPE"
+                DETECTED_GPU="${FORCE_GPU_TYPE}"
                 ;;
             *)
-                echo -e "${YELLOW}Unknown FORCE_GPU_TYPE '${FORCE_GPU_TYPE}', ignoring (valid: nvidia, amd, intel, apple, none)${NC}"
+                log_warn "Unknown FORCE_GPU_TYPE '${FORCE_GPU_TYPE}', ignoring (valid: nvidia, amd, intel, apple, none)"
                 ;;
         esac
         export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM
@@ -52,12 +86,12 @@ detect_gpu() {
     # 1. NVIDIA — nvidia-smi
     if command -v nvidia-smi &>/dev/null; then
         local gpu_info
-        gpu_info=$(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits 2>/dev/null || true)
+        gpu_info="$(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits 2>/dev/null || true)"
         if [[ -n "$gpu_info" ]]; then
             DETECTED_GPU="nvidia"
-            DETECTED_GPU_NAME=$(echo "$gpu_info" | head -1 | cut -d',' -f1 | xargs)
-            DETECTED_GPU_VRAM=$(echo "$gpu_info" | head -1 | cut -d',' -f2 | xargs)
-            [[ "$DETECTED_GPU_VRAM" =~ ^[0-9]+$ ]] || DETECTED_GPU_VRAM="0"
+            DETECTED_GPU_NAME="$(echo "$gpu_info" | head -1 | cut -d',' -f1 | xargs)"
+            DETECTED_GPU_VRAM="$(echo "$gpu_info" | head -1 | cut -d',' -f2 | xargs)"
+            [[ "${DETECTED_GPU_VRAM}" =~ ^[0-9]+$ ]] || DETECTED_GPU_VRAM="0"
             export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM
             return 0
         fi
@@ -66,9 +100,9 @@ detect_gpu() {
     # 2. AMD ROCm — /dev/kfd or rocminfo
     if [[ -e /dev/kfd ]] || command -v rocminfo &>/dev/null; then
         DETECTED_GPU="amd"
-        DETECTED_GPU_NAME=$(rocminfo 2>/dev/null | grep 'Marketing Name' | head -1 | cut -d: -f2- | xargs 2>/dev/null || echo "")
-        DETECTED_GPU_VRAM=$(rocm-smi --showmeminfo vram 2>/dev/null | grep 'Total' | awk '{print $NF}' || echo "0")
-        [[ "$DETECTED_GPU_VRAM" =~ ^[0-9]+$ ]] || DETECTED_GPU_VRAM="0"
+        DETECTED_GPU_NAME="$(rocminfo 2>/dev/null | grep 'Marketing Name' | head -1 | cut -d: -f2- | xargs 2>/dev/null || echo "")"
+        DETECTED_GPU_VRAM="$(rocm-smi --showmeminfo vram 2>/dev/null | grep 'Total' | awk '{print $NF}' || echo "0")"
+        [[ "${DETECTED_GPU_VRAM}" =~ ^[0-9]+$ ]] || DETECTED_GPU_VRAM="0"
         export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM
         return 0
     fi
@@ -77,7 +111,7 @@ detect_gpu() {
     if [[ -e /dev/dri/renderD128 ]]; then
         if lspci 2>/dev/null | grep -qi 'vga.*intel'; then
             DETECTED_GPU="intel"
-            DETECTED_GPU_NAME=$(lspci 2>/dev/null | grep -i 'vga.*intel' | head -1 | sed 's/.*: //' || echo "")
+            DETECTED_GPU_NAME="$(lspci 2>/dev/null | grep -i 'vga.*intel' | head -1 | sed 's/.*: //' || echo "")"
             export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM
             return 0
         fi
@@ -87,77 +121,72 @@ detect_gpu() {
     if [[ "$(uname -m)" == "arm64" && "$(uname -s)" == "Darwin" ]]; then
         DETECTED_GPU="apple"
         DETECTED_GPU_NAME="Apple Silicon ($(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'M-series'))"
-        echo -e "${YELLOW}Apple Silicon использует Metal нативно, Docker GPU passthrough не поддерживается${NC}"
+        log_warn "Apple Silicon uses Metal natively, Docker GPU passthrough not supported"
         export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM
         return 0
     fi
 
-    # 5. CPU fallback
+    # 5. CPU fallback — defaults already set
     export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM
 }
 
-persist_gpu_profile() {
-    local profile_file="${INSTALL_DIR:-.}/.agmind_gpu_profile"
-    cat > "$profile_file" <<EOF
-GPU_TYPE="${DETECTED_GPU:-none}"
-GPU_NAME="${DETECTED_GPU_NAME:-unknown}"
-GPU_VRAM="${DETECTED_GPU_VRAM:-0}"
-DOCKER_PLATFORM="${DOCKER_PLATFORM:-linux/amd64}"
-EOF
-}
-
-detect_arch() {
-    local arch
-    arch=$(uname -m)
-    case "$arch" in
-        x86_64|amd64) DOCKER_PLATFORM="linux/amd64" ;;
-        aarch64|arm64) DOCKER_PLATFORM="linux/arm64" ;;
-        armv7l) DOCKER_PLATFORM="linux/arm/v7" ;;
-        *) DOCKER_PLATFORM="linux/amd64" ;;
-    esac
-    export DOCKER_PLATFORM
-    DETECTED_ARCH="$arch"
-    export DETECTED_ARCH
-}
+# ============================================================================
+# RAM DETECTION
+# ============================================================================
 
 detect_ram() {
     if [[ "$(uname)" == "Darwin" ]]; then
-        DETECTED_RAM_TOTAL_MB=$(( $(sysctl -n hw.memsize) / 1024 / 1024 ))
-        # macOS doesn't have a simple "available" memory metric
+        DETECTED_RAM_TOTAL_MB=$(( $(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1024 / 1024 ))
         local pages_free pages_inactive page_size
-        page_size=$(sysctl -n hw.pagesize 2>/dev/null || echo 4096)
-        pages_free=$(vm_stat 2>/dev/null | awk '/Pages free/ {gsub(/\./,"",$3); print $3}')
-        pages_inactive=$(vm_stat 2>/dev/null | awk '/Pages inactive/ {gsub(/\./,"",$3); print $3}')
+        page_size="$(sysctl -n hw.pagesize 2>/dev/null || echo 4096)"
+        pages_free="$(vm_stat 2>/dev/null | awk '/Pages free/ {gsub(/\./,"",$3); print $3}')"
+        pages_inactive="$(vm_stat 2>/dev/null | awk '/Pages inactive/ {gsub(/\./,"",$3); print $3}')"
         DETECTED_RAM_AVAILABLE_MB=$(( (${pages_free:-0} + ${pages_inactive:-0}) * page_size / 1024 / 1024 ))
     else
-        DETECTED_RAM_TOTAL_MB=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
-        DETECTED_RAM_AVAILABLE_MB=$(awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo)
+        DETECTED_RAM_TOTAL_MB="$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)"
+        DETECTED_RAM_AVAILABLE_MB="$(awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)"
     fi
+    # Ensure non-empty (awk returns empty if pattern not found)
+    DETECTED_RAM_TOTAL_MB="${DETECTED_RAM_TOTAL_MB:-0}"
+    DETECTED_RAM_AVAILABLE_MB="${DETECTED_RAM_AVAILABLE_MB:-0}"
     DETECTED_RAM_TOTAL_GB=$(( DETECTED_RAM_TOTAL_MB / 1024 ))
     DETECTED_RAM_AVAILABLE_GB=$(( DETECTED_RAM_AVAILABLE_MB / 1024 ))
     export DETECTED_RAM_TOTAL_MB DETECTED_RAM_AVAILABLE_MB DETECTED_RAM_TOTAL_GB DETECTED_RAM_AVAILABLE_GB
 }
 
+# ============================================================================
+# DISK DETECTION
+# ============================================================================
+
 detect_disk() {
     if [[ "$(uname)" == "Darwin" ]]; then
-        DETECTED_DISK_FREE_GB=$(df -g / | awk 'NR==2 {print $4}')
+        DETECTED_DISK_FREE_GB="$(df -g / 2>/dev/null | awk 'NR==2 {print $4}')"
     else
-        DETECTED_DISK_FREE_GB=$(df -BG / | awk 'NR==2 {gsub(/G/,"",$4); print $4}')
+        DETECTED_DISK_FREE_GB="$(df -BG / 2>/dev/null | awk 'NR==2 {gsub(/G/,"",$4); print $4}')"
     fi
+    DETECTED_DISK_FREE_GB="${DETECTED_DISK_FREE_GB:-0}"
     export DETECTED_DISK_FREE_GB
 }
+
+# ============================================================================
+# PORT DETECTION
+# ============================================================================
 
 detect_ports() {
     PORTS_IN_USE=""
     local check_ports=(80 443 3000 5001 8080 11434)
     for port in "${check_ports[@]}"; do
         if ss -tlnp 2>/dev/null | grep -q ":${port} " || \
-           lsof -i ":${port}" -sTCP:LISTEN &>/dev/null; then
+           lsof -i ":${port}" -sTCP:LISTEN &>/dev/null 2>&1; then
             PORTS_IN_USE="${PORTS_IN_USE}${port} "
         fi
     done
     export PORTS_IN_USE
 }
+
+# ============================================================================
+# DOCKER DETECTION
+# ============================================================================
 
 detect_docker() {
     DETECTED_DOCKER_INSTALLED="false"
@@ -166,14 +195,17 @@ detect_docker() {
 
     if command -v docker &>/dev/null; then
         DETECTED_DOCKER_INSTALLED="true"
-        DETECTED_DOCKER_VERSION=$(docker --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "unknown")
-
+        DETECTED_DOCKER_VERSION="$(docker --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "unknown")"
         if docker compose version &>/dev/null 2>&1; then
             DETECTED_DOCKER_COMPOSE="true"
         fi
     fi
     export DETECTED_DOCKER_INSTALLED DETECTED_DOCKER_VERSION DETECTED_DOCKER_COMPOSE
 }
+
+# ============================================================================
+# NETWORK DETECTION
+# ============================================================================
 
 detect_network() {
     DETECTED_NETWORK="false"
@@ -189,102 +221,100 @@ detect_network() {
     export DETECTED_NETWORK
 }
 
+# ============================================================================
+# MODEL RECOMMENDATION
+# ============================================================================
+
 recommend_model() {
     local ram_gb="${DETECTED_RAM_TOTAL_GB:-0}"
     local gpu="${DETECTED_GPU:-none}"
     local vram="${DETECTED_GPU_VRAM:-0}"
 
-    # Use VRAM if GPU available, otherwise fallback to RAM-based recommendation
+    # Use VRAM if GPU available, otherwise fallback to RAM
     local effective_mem="$ram_gb"
-    if [[ "$gpu" == "nvidia" && "${vram:-0}" -gt 0 ]]; then
-        # VRAM in MB from nvidia-smi, convert to GB
-        effective_mem=$(( vram / 1024 ))
-    elif [[ "$gpu" == "amd" && "${vram:-0}" -gt 0 ]]; then
-        # VRAM in MB from rocm-smi, convert to GB
+    if [[ "$gpu" == "nvidia" || "$gpu" == "amd" ]] && [[ "${vram:-0}" -gt 0 ]]; then
         effective_mem=$(( vram / 1024 ))
     fi
-    # Apple Silicon / Intel / CPU fallback: use total RAM (already set above)
 
     if [[ "$effective_mem" -ge 48 ]]; then
         RECOMMENDED_MODEL="qwen2.5:72b-instruct-q4_K_M"
-        RECOMMENDED_REASON="48GB+ VRAM/RAM — максимальное качество"
+        RECOMMENDED_REASON="48GB+ VRAM/RAM"
     elif [[ "$effective_mem" -ge 24 ]]; then
         RECOMMENDED_MODEL="qwen2.5:32b"
-        RECOMMENDED_REASON="24GB+ VRAM/RAM — высокое качество"
+        RECOMMENDED_REASON="24GB+ VRAM/RAM"
     elif [[ "$effective_mem" -ge 12 ]]; then
         RECOMMENDED_MODEL="qwen2.5:14b"
-        RECOMMENDED_REASON="12GB+ VRAM/RAM — баланс скорости и качества"
+        RECOMMENDED_REASON="12GB+ VRAM/RAM"
     elif [[ "$effective_mem" -ge 6 ]]; then
         RECOMMENDED_MODEL="qwen2.5:7b"
-        RECOMMENDED_REASON="6GB+ VRAM/RAM — быстрая работа"
+        RECOMMENDED_REASON="6GB+ VRAM/RAM"
     else
         RECOMMENDED_MODEL="gemma3:4b"
-        RECOMMENDED_REASON="4GB+ RAM — компактная модель"
+        RECOMMENDED_REASON="<6GB RAM"
     fi
     export RECOMMENDED_MODEL RECOMMENDED_REASON
 }
 
+# ============================================================================
+# RUN DIAGNOSTICS (Phase 1 main function)
+# ============================================================================
+
 run_diagnostics() {
-    echo -e "${CYAN}=== Диагностика системы ===${NC}"
+    echo -e "${CYAN}=== System Diagnostics ===${NC}"
     echo ""
 
     detect_os
     detect_arch
-    echo -e "  Система:      ${GREEN}${DETECTED_OS_NAME:-Unknown}, ${DETECTED_ARCH:-unknown}${NC}"
-    echo -e "  Платформа:    ${GREEN}${DOCKER_PLATFORM:-unknown}${NC}"
+    echo -e "  OS:           ${GREEN}${DETECTED_OS_NAME}, ${DETECTED_ARCH}${NC}"
+    echo -e "  Platform:     ${GREEN}${DOCKER_PLATFORM}${NC}"
 
     detect_gpu
-    case "${DETECTED_GPU:-none}" in
-        nvidia)
-            echo -e "  GPU:          ${GREEN}NVIDIA ${DETECTED_GPU_NAME:-GPU} (${DETECTED_GPU_VRAM:-0} MB VRAM)${NC}" ;;
-        amd)
-            echo -e "  GPU:          ${GREEN}AMD ${DETECTED_GPU_NAME:-ROCm} ${DETECTED_GPU_VRAM:+(${DETECTED_GPU_VRAM} MB VRAM)}${NC}" ;;
-        intel)
-            echo -e "  GPU:          ${GREEN}Intel ${DETECTED_GPU_NAME:-Arc}${NC}" ;;
-        apple)
-            echo -e "  GPU:          ${GREEN}${DETECTED_GPU_NAME:-Apple Silicon} (Metal)${NC}" ;;
-        *)
-            echo -e "  GPU:          ${YELLOW}Не обнаружен (CPU only)${NC}" ;;
+    case "${DETECTED_GPU}" in
+        nvidia) echo -e "  GPU:          ${GREEN}NVIDIA ${DETECTED_GPU_NAME} (${DETECTED_GPU_VRAM} MB VRAM)${NC}" ;;
+        amd)    echo -e "  GPU:          ${GREEN}AMD ${DETECTED_GPU_NAME} ${DETECTED_GPU_VRAM:+(${DETECTED_GPU_VRAM} MB VRAM)}${NC}" ;;
+        intel)  echo -e "  GPU:          ${GREEN}Intel ${DETECTED_GPU_NAME}${NC}" ;;
+        apple)  echo -e "  GPU:          ${GREEN}${DETECTED_GPU_NAME} (Metal)${NC}" ;;
+        *)      echo -e "  GPU:          ${YELLOW}Not detected (CPU only)${NC}" ;;
     esac
 
     detect_ram
-    echo -e "  RAM:          ${GREEN}${DETECTED_RAM_TOTAL_GB:-0}GB (${DETECTED_RAM_AVAILABLE_GB:-0}GB доступно)${NC}"
-    if [[ "${DETECTED_RAM_TOTAL_GB:-0}" -lt 4 ]]; then
-        echo -e "                ${RED}ВНИМАНИЕ: минимум 4GB RAM, рекомендуется 16GB+${NC}"
-    elif [[ "${DETECTED_RAM_TOTAL_GB:-0}" -lt 16 ]]; then
-        echo -e "                ${YELLOW}Рекомендуется 16GB+ для оптимальной работы${NC}"
+    echo -e "  RAM:          ${GREEN}${DETECTED_RAM_TOTAL_GB}GB (${DETECTED_RAM_AVAILABLE_GB}GB available)${NC}"
+    if [[ "${DETECTED_RAM_TOTAL_GB}" -lt 4 ]]; then
+        echo -e "                ${RED}WARNING: minimum 4GB RAM, 16GB+ recommended${NC}"
+    elif [[ "${DETECTED_RAM_TOTAL_GB}" -lt 16 ]]; then
+        echo -e "                ${YELLOW}16GB+ recommended for full stack${NC}"
     fi
 
     detect_disk
-    echo -e "  Диск:         ${GREEN}${DETECTED_DISK_FREE_GB:-0}GB свободно${NC}"
-    if [[ "${DETECTED_DISK_FREE_GB:-0}" -lt 30 ]]; then
-        echo -e "                ${RED}ВНИМАНИЕ: минимум 30GB, рекомендуется 50GB+${NC}"
+    echo -e "  Disk:         ${GREEN}${DETECTED_DISK_FREE_GB}GB free${NC}"
+    if [[ "${DETECTED_DISK_FREE_GB}" -lt 30 ]]; then
+        echo -e "                ${RED}WARNING: minimum 30GB, 50GB+ recommended${NC}"
     fi
 
     detect_ports
-    if [[ -n "$PORTS_IN_USE" ]]; then
-        echo -e "  Порты:        ${YELLOW}Заняты: ${PORTS_IN_USE}${NC}"
+    if [[ -n "${PORTS_IN_USE}" ]]; then
+        echo -e "  Ports:        ${YELLOW}In use: ${PORTS_IN_USE}${NC}"
     else
-        echo -e "  Порты:        ${GREEN}80, 443, 3000, 5001, 8080 свободны${NC}"
+        echo -e "  Ports:        ${GREEN}80, 443, 3000, 5001, 8080, 11434 free${NC}"
     fi
 
     detect_docker
-    if [[ "${DETECTED_DOCKER_INSTALLED:-false}" == "true" ]]; then
-        echo -e "  Docker:       ${GREEN}${DETECTED_DOCKER_VERSION:-unknown}${NC}"
-        if [[ "${DETECTED_DOCKER_COMPOSE:-false}" == "true" ]]; then
-            echo -e "  Compose:      ${GREEN}установлен${NC}"
+    if [[ "${DETECTED_DOCKER_INSTALLED}" == "true" ]]; then
+        echo -e "  Docker:       ${GREEN}${DETECTED_DOCKER_VERSION}${NC}"
+        if [[ "${DETECTED_DOCKER_COMPOSE}" == "true" ]]; then
+            echo -e "  Compose:      ${GREEN}installed${NC}"
         else
-            echo -e "  Compose:      ${YELLOW}не установлен${NC}"
+            echo -e "  Compose:      ${YELLOW}not installed${NC}"
         fi
     else
-        echo -e "  Docker:       ${YELLOW}не установлен${NC}"
+        echo -e "  Docker:       ${YELLOW}not installed${NC}"
     fi
 
     detect_network
-    if [[ "${DETECTED_NETWORK:-false}" == "true" ]]; then
-        echo -e "  Сеть:         ${GREEN}доступна${NC}"
+    if [[ "${DETECTED_NETWORK}" == "true" ]]; then
+        echo -e "  Network:      ${GREEN}available${NC}"
     else
-        echo -e "  Сеть:         ${YELLOW}недоступна${NC}"
+        echo -e "  Network:      ${YELLOW}unavailable${NC}"
     fi
 
     recommend_model
@@ -292,221 +322,230 @@ run_diagnostics() {
 
     # Validate minimum requirements
     local errors=0
-    if [[ "${DETECTED_RAM_TOTAL_GB:-0}" -lt 4 ]]; then
-        echo -e "${RED}ОШИБКА: Недостаточно RAM (минимум 4GB)${NC}"
+    if [[ "${DETECTED_RAM_TOTAL_GB}" -lt 4 ]]; then
+        log_error "Insufficient RAM (minimum 4GB)"
         errors=$((errors + 1))
     fi
-    if [[ "${DETECTED_DISK_FREE_GB:-0}" -lt 30 ]]; then
-        echo -e "${RED}ОШИБКА: Недостаточно места на диске (минимум 30GB)${NC}"
+    if [[ "${DETECTED_DISK_FREE_GB}" -lt 30 ]]; then
+        log_error "Insufficient disk space (minimum 30GB)"
         errors=$((errors + 1))
     fi
 
-    return $errors
+    return "$errors"
 }
+
+# ============================================================================
+# PREFLIGHT CHECKS
+# ============================================================================
 
 preflight_checks() {
     if [[ "${SKIP_PREFLIGHT:-false}" == "true" ]]; then
-        echo -e "${YELLOW}Pre-flight проверки пропущены (SKIP_PREFLIGHT=true)${NC}"
+        log_warn "Pre-flight checks skipped (SKIP_PREFLIGHT=true)"
         return 0
     fi
 
-    echo -e "${BOLD}Pre-flight проверки:${NC}"
+    echo -e "${BOLD}Pre-flight checks:${NC}"
     echo ""
 
     local errors=0
     local warnings=0
 
-    # 1. OS detection and version
-    local os_name os_ver
+    # --- 1. OS version ---
     if [[ -f /etc/os-release ]]; then
-        os_name=$(. /etc/os-release && echo "$ID")
-        os_ver=$(. /etc/os-release && echo "$VERSION_ID")
+        local os_name os_ver
+        os_name="$(. /etc/os-release && echo "$ID")"
+        os_ver="$(. /etc/os-release && echo "${VERSION_ID:-0}")"
         case "$os_name" in
             ubuntu)
                 local os_major="${os_ver%%.*}"
-                local os_minor="${os_ver#*.}"
-                os_minor="${os_minor%%.*}"
-                if [[ "$os_major" -gt 20 ]] 2>/dev/null || [[ "$os_major" -eq 20 && "${os_minor:-0}" -ge 4 ]] 2>/dev/null; then
-                    echo -e "  ${GREEN}[PASS]${NC} OS: Ubuntu $os_ver"
+                local os_minor="${os_ver#*.}"; os_minor="${os_minor%%.*}"
+                if [[ "$os_major" -gt 20 ]] 2>/dev/null || \
+                   [[ "$os_major" -eq 20 && "${os_minor:-0}" -ge 4 ]] 2>/dev/null; then
+                    echo -e "  ${GREEN}[PASS]${NC} OS: Ubuntu ${os_ver}"
                 else
-                    echo -e "  ${YELLOW}[WARN]${NC} OS: Ubuntu $os_ver (рекомендуется 20.04+)"
+                    echo -e "  ${YELLOW}[WARN]${NC} OS: Ubuntu ${os_ver} (20.04+ recommended)"
                     warnings=$((warnings + 1))
                 fi ;;
             debian)
                 if [[ "${os_ver%%.*}" -ge 11 ]] 2>/dev/null; then
-                    echo -e "  ${GREEN}[PASS]${NC} OS: Debian $os_ver"
+                    echo -e "  ${GREEN}[PASS]${NC} OS: Debian ${os_ver}"
                 else
-                    echo -e "  ${YELLOW}[WARN]${NC} OS: Debian $os_ver (рекомендуется 11+)"
+                    echo -e "  ${YELLOW}[WARN]${NC} OS: Debian ${os_ver} (11+ recommended)"
                     warnings=$((warnings + 1))
                 fi ;;
             centos|rhel|rocky|almalinux)
                 if [[ "${os_ver%%.*}" -ge 8 ]] 2>/dev/null; then
-                    echo -e "  ${GREEN}[PASS]${NC} OS: $os_name $os_ver"
+                    echo -e "  ${GREEN}[PASS]${NC} OS: ${os_name} ${os_ver}"
                 else
-                    echo -e "  ${YELLOW}[WARN]${NC} OS: $os_name $os_ver (рекомендуется 8+)"
+                    echo -e "  ${YELLOW}[WARN]${NC} OS: ${os_name} ${os_ver} (8+ recommended)"
                     warnings=$((warnings + 1))
                 fi ;;
             fedora)
                 if [[ "${os_ver%%.*}" -ge 38 ]] 2>/dev/null; then
-                    echo -e "  ${GREEN}[PASS]${NC} OS: Fedora $os_ver"
+                    echo -e "  ${GREEN}[PASS]${NC} OS: Fedora ${os_ver}"
                 else
-                    echo -e "  ${YELLOW}[WARN]${NC} OS: Fedora $os_ver (рекомендуется 38+)"
+                    echo -e "  ${YELLOW}[WARN]${NC} OS: Fedora ${os_ver} (38+ recommended)"
                     warnings=$((warnings + 1))
                 fi ;;
-            *) echo -e "  ${YELLOW}[WARN]${NC} OS: $os_name $os_ver (не тестировалось)"
-               warnings=$((warnings + 1)) ;;
+            *)
+                echo -e "  ${YELLOW}[WARN]${NC} OS: ${os_name} ${os_ver} (untested)"
+                warnings=$((warnings + 1)) ;;
         esac
     elif [[ "$(uname -s)" == "Darwin" ]]; then
-        echo -e "  ${YELLOW}[WARN]${NC} OS: macOS (только для разработки)"
+        echo -e "  ${YELLOW}[WARN]${NC} OS: macOS (development only)"
         warnings=$((warnings + 1))
     else
-        echo -e "  ${YELLOW}[WARN]${NC} OS: неизвестная система"
+        echo -e "  ${YELLOW}[WARN]${NC} OS: unknown"
         warnings=$((warnings + 1))
     fi
 
-    # 2. Docker version >= 24.0
+    # --- 2. Docker version >= 24.0 ---
     if command -v docker &>/dev/null; then
-        local docker_ver
-        docker_ver=$(docker version --format '{{.Server.Version}}' 2>/dev/null || echo "0")
-        local docker_major="${docker_ver%%.*}"
+        local docker_ver docker_major
+        docker_ver="$(docker version --format '{{.Server.Version}}' 2>/dev/null || echo "0")"
+        docker_major="${docker_ver%%.*}"
         if [[ "$docker_major" -ge 24 ]] 2>/dev/null; then
             echo -e "  ${GREEN}[PASS]${NC} Docker: v${docker_ver}"
         elif [[ "$docker_major" -ge 20 ]] 2>/dev/null; then
-            echo -e "  ${YELLOW}[WARN]${NC} Docker: v${docker_ver} (рекомендуется 24.0+)"
+            echo -e "  ${YELLOW}[WARN]${NC} Docker: v${docker_ver} (24.0+ recommended)"
             warnings=$((warnings + 1))
         else
-            echo -e "  ${RED}[FAIL]${NC} Docker: v${docker_ver} (требуется 24.0+)"
+            echo -e "  ${RED}[FAIL]${NC} Docker: v${docker_ver} (24.0+ required)"
             errors=$((errors + 1))
         fi
     else
-        echo -e "  ${YELLOW}[WARN]${NC} Docker: не установлен (будет установлен автоматически)"
+        echo -e "  ${YELLOW}[WARN]${NC} Docker: not installed (will be installed automatically)"
         warnings=$((warnings + 1))
     fi
 
-    # 3. Docker Compose version >= 2.20
-    if docker compose version &>/dev/null; then
-        local compose_ver
-        compose_ver=$(docker compose version --short 2>/dev/null | sed 's/^v//')
-        local compose_major="${compose_ver%%.*}"
-        local compose_minor="${compose_ver#*.}"
-        compose_minor="${compose_minor%%.*}"
+    # --- 3. Docker Compose >= 2.20 ---
+    if docker compose version &>/dev/null 2>&1; then
+        local compose_ver compose_major compose_minor
+        compose_ver="$(docker compose version --short 2>/dev/null | sed 's/^v//')"
+        compose_major="${compose_ver%%.*}"
+        compose_minor="${compose_ver#*.}"; compose_minor="${compose_minor%%.*}"
         if [[ "$compose_major" -gt 2 ]] 2>/dev/null || \
            [[ "$compose_major" -eq 2 && "$compose_minor" -ge 20 ]] 2>/dev/null; then
             echo -e "  ${GREEN}[PASS]${NC} Docker Compose: v${compose_ver}"
         else
-            echo -e "  ${YELLOW}[WARN]${NC} Docker Compose: v${compose_ver} (рекомендуется 2.20+)"
+            echo -e "  ${YELLOW}[WARN]${NC} Docker Compose: v${compose_ver} (2.20+ recommended)"
             warnings=$((warnings + 1))
         fi
     elif command -v docker &>/dev/null; then
-        echo -e "  ${YELLOW}[WARN]${NC} Docker Compose: не найден"
+        echo -e "  ${YELLOW}[WARN]${NC} Docker Compose: not found"
         warnings=$((warnings + 1))
     fi
 
-    # 4. Disk space
+    # --- 4. Disk space ---
     local disk_gb
-    disk_gb=$(df -BG / 2>/dev/null | awk 'NR==2 {gsub(/G/,""); print $4}' || echo "0")
+    if [[ "$(uname)" == "Darwin" ]]; then
+        disk_gb="$(df -g / 2>/dev/null | awk 'NR==2 {print $4}')"
+    else
+        disk_gb="$(df -BG / 2>/dev/null | awk 'NR==2 {gsub(/G/,""); print $4}')"
+    fi
+    disk_gb="${disk_gb:-0}"
     if [[ "$disk_gb" -ge 30 ]] 2>/dev/null; then
-        echo -e "  ${GREEN}[PASS]${NC} Диск: ${disk_gb}GB свободно"
+        echo -e "  ${GREEN}[PASS]${NC} Disk: ${disk_gb}GB free"
     elif [[ "$disk_gb" -ge 20 ]] 2>/dev/null; then
-        echo -e "  ${YELLOW}[WARN]${NC} Диск: ${disk_gb}GB свободно (рекомендуется 30GB+)"
-        warnings=$((warnings + 1))
-    elif [[ "$disk_gb" -ge 10 ]] 2>/dev/null; then
-        echo -e "  ${YELLOW}[WARN]${NC} Диск: ${disk_gb}GB свободно (минимум 20GB)"
+        echo -e "  ${YELLOW}[WARN]${NC} Disk: ${disk_gb}GB free (30GB+ recommended)"
         warnings=$((warnings + 1))
     else
-        echo -e "  ${RED}[FAIL]${NC} Диск: ${disk_gb}GB свободно (требуется минимум 10GB)"
+        echo -e "  ${RED}[FAIL]${NC} Disk: ${disk_gb}GB free (30GB+ required)"
         errors=$((errors + 1))
     fi
 
-    # 5. RAM >= 4GB
-    local ram_gb
-    ram_gb="${DETECTED_RAM_TOTAL_GB:-0}"
+    # --- 5. RAM >= 4GB ---
+    local ram_gb="${DETECTED_RAM_TOTAL_GB:-0}"
     if [[ "$ram_gb" -ge 8 ]] 2>/dev/null; then
         echo -e "  ${GREEN}[PASS]${NC} RAM: ${ram_gb}GB"
     elif [[ "$ram_gb" -ge 4 ]] 2>/dev/null; then
-        echo -e "  ${YELLOW}[WARN]${NC} RAM: ${ram_gb}GB (рекомендуется 8GB+ для полного стека)"
+        echo -e "  ${YELLOW}[WARN]${NC} RAM: ${ram_gb}GB (8GB+ recommended for full stack)"
         warnings=$((warnings + 1))
     else
-        echo -e "  ${RED}[FAIL]${NC} RAM: ${ram_gb}GB (требуется минимум 4GB)"
+        echo -e "  ${RED}[FAIL]${NC} RAM: ${ram_gb}GB (4GB minimum required)"
         errors=$((errors + 1))
     fi
 
-    # 6. CPU cores >= 2
+    # --- 6. CPU cores >= 2 ---
     local cpu_cores
-    cpu_cores=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo "1")
+    cpu_cores="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo "1")"
     if [[ "$cpu_cores" -ge 4 ]] 2>/dev/null; then
-        echo -e "  ${GREEN}[PASS]${NC} CPU: ${cpu_cores} ядер"
+        echo -e "  ${GREEN}[PASS]${NC} CPU: ${cpu_cores} cores"
     elif [[ "$cpu_cores" -ge 2 ]] 2>/dev/null; then
-        echo -e "  ${YELLOW}[WARN]${NC} CPU: ${cpu_cores} ядер (рекомендуется 4+)"
+        echo -e "  ${YELLOW}[WARN]${NC} CPU: ${cpu_cores} cores (4+ recommended)"
         warnings=$((warnings + 1))
     else
-        echo -e "  ${RED}[FAIL]${NC} CPU: ${cpu_cores} ядро (требуется минимум 2)"
+        echo -e "  ${RED}[FAIL]${NC} CPU: ${cpu_cores} core (2+ required)"
         errors=$((errors + 1))
     fi
 
-    # 7. Ports 80/443 not in use
+    # --- 7. Key ports ---
     for port in 80 443; do
         if ss -tlnp 2>/dev/null | grep -q ":${port} " || \
-           lsof -i ":${port}" -sTCP:LISTEN &>/dev/null; then
-            echo -e "  ${YELLOW}[WARN]${NC} Порт ${port}: занят"
+           lsof -i ":${port}" -sTCP:LISTEN &>/dev/null 2>&1; then
+            echo -e "  ${YELLOW}[WARN]${NC} Port ${port}: in use"
             warnings=$((warnings + 1))
         else
-            echo -e "  ${GREEN}[PASS]${NC} Порт ${port}: свободен"
+            echo -e "  ${GREEN}[PASS]${NC} Port ${port}: free"
         fi
     done
 
-    # 8. Docker daemon running
+    # --- 8. Docker daemon running ---
     if command -v docker &>/dev/null; then
         if docker info &>/dev/null; then
-            echo -e "  ${GREEN}[PASS]${NC} Docker daemon: работает"
+            echo -e "  ${GREEN}[PASS]${NC} Docker daemon: running"
         else
-            echo -e "  ${YELLOW}[WARN]${NC} Docker daemon: не запущен"
+            echo -e "  ${YELLOW}[WARN]${NC} Docker daemon: not running"
             warnings=$((warnings + 1))
         fi
     fi
 
-    # 9. docker.sock accessible
+    # --- 9. Docker socket ---
     if [[ -S /var/run/docker.sock ]]; then
         if [[ -r /var/run/docker.sock ]]; then
-            echo -e "  ${GREEN}[PASS]${NC} Docker socket: доступен"
+            echo -e "  ${GREEN}[PASS]${NC} Docker socket: accessible"
         else
-            echo -e "  ${YELLOW}[WARN]${NC} Docker socket: нет прав чтения"
+            echo -e "  ${YELLOW}[WARN]${NC} Docker socket: no read permission"
             warnings=$((warnings + 1))
         fi
     elif command -v docker &>/dev/null; then
-        echo -e "  ${YELLOW}[WARN]${NC} Docker socket: /var/run/docker.sock не найден"
+        echo -e "  ${YELLOW}[WARN]${NC} Docker socket: /var/run/docker.sock not found"
         warnings=$((warnings + 1))
     fi
 
-    # 10. Internet connectivity (skip if offline)
+    # --- 10. Internet connectivity ---
     if [[ "${DEPLOY_PROFILE:-}" != "offline" ]]; then
         if curl -sf --connect-timeout 5 https://hub.docker.com >/dev/null 2>&1 || \
            wget -q --spider --timeout=5 https://hub.docker.com 2>/dev/null; then
-            echo -e "  ${GREEN}[PASS]${NC} Интернет: доступен"
+            echo -e "  ${GREEN}[PASS]${NC} Internet: available"
         else
-            echo -e "  ${YELLOW}[WARN]${NC} Интернет: недоступен (потребуется для скачивания образов)"
+            echo -e "  ${YELLOW}[WARN]${NC} Internet: unavailable (required for image pulls)"
             warnings=$((warnings + 1))
         fi
     else
-        echo -e "  ${CYAN}[SKIP]${NC} Интернет: пропущено (offline профиль)"
+        echo -e "  ${CYAN}[SKIP]${NC} Internet: skipped (offline profile)"
     fi
 
-    # Summary
+    # --- Summary ---
     echo ""
     if [[ $errors -gt 0 ]]; then
-        echo -e "  ${RED}Ошибок: ${errors}, Предупреждений: ${warnings}${NC}"
-        echo -e "  ${RED}Исправьте ошибки перед продолжением.${NC}"
+        echo -e "  ${RED}Errors: ${errors}, Warnings: ${warnings}${NC}"
+        echo -e "  ${RED}Fix errors before continuing.${NC}"
     elif [[ $warnings -gt 0 ]]; then
-        echo -e "  ${YELLOW}Предупреждений: ${warnings} (установка возможна)${NC}"
+        echo -e "  ${YELLOW}Warnings: ${warnings} (installation can proceed)${NC}"
     else
-        echo -e "  ${GREEN}Все проверки пройдены!${NC}"
+        echo -e "  ${GREEN}All checks passed!${NC}"
     fi
     echo ""
 
-    return $errors
+    return "$errors"
 }
 
 # Run if executed directly
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    # Source common.sh for colors and logging
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    # shellcheck source=common.sh
+    source "${SCRIPT_DIR}/common.sh"
     run_diagnostics
 fi

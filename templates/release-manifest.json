@@ -35,7 +35,7 @@
     "postgres": {
       "registry": "docker.io",
       "image": "postgres",
-      "tag": "15.10-alpine",
+      "tag": "16-alpine",
       "digest": "",
       "platforms": ["linux/amd64", "linux/arm64"]
     },

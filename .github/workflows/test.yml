@@ -14,10 +14,21 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install BATS
         run: |
-          sudo apt-get update
-          sudo apt-get install -y bats
-      - name: Run BATS tests
-        run: bats tests/
+          git clone --depth 1 https://github.com/bats-core/bats-core.git /tmp/bats
+          sudo /tmp/bats/install.sh /usr/local
+      - name: Run all BATS tests
+        run: |
+          bats tests/test_common.bats
+          bats tests/test_detect.bats
+          bats tests/test_wizard.bats
+          bats tests/test_docker.bats
+          bats tests/test_config.bats
+          bats tests/test_compose.bats
+          bats tests/test_health.bats
+          bats tests/test_openwebui.bats
+          bats tests/test_models.bats
+          bats tests/test_security.bats
+          bats tests/test_backup.bats
 
   trivy:
     name: Trivy Security Scan

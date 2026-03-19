@@ -28,12 +28,12 @@ log_error() { echo -e "${RED}✗ $*${NC}"; }
 LOCK_FILE="/var/lock/agmind-operation.lock"
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
-    log_error "Другая операция AGMind уже запущена. Дождитесь завершения."
+    log_error "Another AGMind operation is running. Wait for it to finish."
     exit 1
 fi
 
 if [[ $EUID -ne 0 ]]; then
-    log_error "Этот скрипт необходимо запускать от root"
+    log_error "This script must be run as root"
     exit 1
 fi
 
@@ -47,8 +47,8 @@ chmod 600 "$LOG_FILE"
 cleanup_on_failure() {
     local exit_code=$?
     if [[ $exit_code -ne 0 ]]; then
-        log_error "Update прерван. .env мог быть частично обновлён."
-        log_error "Проверьте: diff ${ENV_FILE} ${ENV_FILE}.pre-update"
+        log_error "Update interrupted. .env may have been partially updated."
+        log_error "Check: diff ${ENV_FILE} ${ENV_FILE}.pre-update"
     fi
 }
 trap cleanup_on_failure EXIT INT TERM
@@ -113,23 +113,23 @@ check_preflight() {
         free_gb=0
     fi
     if [[ "$free_gb" -lt 5 ]]; then
-        log_error "Недостаточно места: ${free_gb}GB (требуется 5GB+)"
+        log_error "Insufficient disk space: ${free_gb}GB (5GB+ required)"
         errors=$((errors + 1))
     else
-        log_success "Диск: ${free_gb}GB свободно"
+        log_success "Disk: ${free_gb}GB free"
     fi
 
     # Docker running
     if ! docker info &>/dev/null; then
-        log_error "Docker daemon не запущен"
+        log_error "Docker daemon is not running"
         errors=$((errors + 1))
     else
-        log_success "Docker: работает"
+        log_success "Docker: running"
     fi
 
     # Compose file exists
     if [[ ! -f "$COMPOSE_FILE" ]]; then
-        log_error "docker-compose.yml не найден: ${COMPOSE_FILE}"
+        log_error "docker-compose.yml not found: ${COMPOSE_FILE}"
         errors=$((errors + 1))
     fi
 
@@ -139,14 +139,14 @@ check_preflight() {
 create_update_backup() {
     local tag
     tag="pre-update-$(date +%Y%m%d_%H%M%S)"
-    log_info "Создание бэкапа: ${tag}..."
+    log_info "Creating backup: ${tag}..."
 
     if [[ -x "$BACKUP_SCRIPT" ]]; then
         BACKUP_TAG="$tag" bash "$BACKUP_SCRIPT" >/dev/null 2>&1 && \
-            log_success "Бэкап создан: ${tag}" || \
-            log_warn "Бэкап завершился с ошибками (продолжаем)"
+            log_success "Backup created: ${tag}" || \
+            log_warn "Backup completed with errors (continuing)"
     else
-        log_warn "Скрипт бэкапа не найден — пропускаем"
+        log_warn "Backup script not found — skipping"
     fi
 }
 
@@ -193,12 +193,12 @@ save_rollback_state() {
         done
     fi
 
-    log_success "Rollback state сохранён в ${ROLLBACK_DIR}"
+    log_success "Rollback state saved to ${ROLLBACK_DIR}"
 }
 
 # Rollback to previous state
 perform_rollback() {
-    log_warn "Откат к предыдущему состоянию..."
+    log_warn "Rolling back to previous state..."
 
     if [[ -f "${ROLLBACK_DIR}/versions.env.bak" ]]; then
         cp "${ROLLBACK_DIR}/versions.env.bak" "$VERSIONS_FILE"
@@ -214,8 +214,8 @@ perform_rollback() {
     cd "${INSTALL_DIR}/docker"
     docker compose -f "$COMPOSE_FILE" up -d 2>/dev/null || true
 
-    log_success "Rollback выполнен"
-    send_notification "⚠️ AGMind Update ROLLBACK — восстановлены предыдущие версии"
+    log_success "Rollback complete"
+    send_notification "⚠️ AGMind Update ROLLBACK — previous versions restored"
 }
 
 # Verify rollback by comparing running images against saved state
@@ -247,8 +247,8 @@ verify_rollback() {
 
 display_version_diff() {
     echo ""
-    echo -e "${BOLD}Сравнение версий:${NC}"
-    printf "  %-30s %-20s %-20s %s\n" "КОМПОНЕНТ" "ТЕКУЩАЯ" "НОВАЯ" "СТАТУС"
+    echo -e "${BOLD}Version comparison:${NC}"
+    printf "  %-30s %-20s %-20s %s\n" "COMPONENT" "CURRENT" "NEW" "STATUS"
     echo "  $(printf '%.0s─' {1..85})"
 
     local has_updates=false
@@ -269,7 +269,7 @@ display_version_diff() {
     echo ""
 
     if [[ "$has_updates" == "false" ]]; then
-        log_success "Все версии актуальны"
+        log_success "All versions are up to date"
         return 1
     fi
     return 0
@@ -300,7 +300,7 @@ update_service() {
     local old_image
     old_image=$(save_current_image "$service")
 
-    log_info "Обновление ${service}..."
+    log_info "Updating ${service}..."
 
     # Pull new image (with retries)
     local attempts=0
@@ -323,7 +323,7 @@ update_service() {
     docker compose -f "$COMPOSE_FILE" up -d "$service" 2>/dev/null
 
     # Wait for health check
-    log_info "Ожидание healthcheck для ${service}..."
+    log_info "Waiting for healthcheck on ${service}..."
     local wait=0
     local max_wait=120
     while [[ $wait -lt $max_wait ]]; do
@@ -333,7 +333,7 @@ update_service() {
             log_success "${service}: healthy"
             return 0
         elif echo "$status" | grep -qi "unhealthy\|exit"; then
-            log_error "${service}: unhealthy после обновления"
+            log_error "${service}: unhealthy after update"
             # Rollback
             rollback_service "$service" "$old_image"
             return 1
@@ -346,11 +346,11 @@ update_service() {
     local status
     status=$(docker compose -f "$COMPOSE_FILE" ps --format '{{.Status}}' "$service" 2>/dev/null | head -1)
     if echo "$status" | grep -qi "up\|running"; then
-        log_warn "${service}: запущен, но healthcheck не прошёл за ${max_wait}s"
+        log_warn "${service}: running but healthcheck did not pass within ${max_wait}s"
         return 0
     fi
 
-    log_error "${service}: не удалось запустить"
+    log_error "${service}: failed to start"
     rollback_service "$service" "$old_image"
     return 1
 }
@@ -360,11 +360,11 @@ rollback_service() {
     local old_image="$2"
 
     if [[ -z "$old_image" ]]; then
-        log_warn "Нет образа для отката ${service}"
+        log_warn "No image to rollback ${service}"
         return 1
     fi
 
-    log_warn "Откат ${service} → ${old_image}..."
+    log_warn "Rolling back ${service} → ${old_image}..."
 
     # Restore pre-update config so compose reads OLD version tags
     if [[ -f "${ROLLBACK_DIR}/dot-env.bak" ]]; then
@@ -411,16 +411,16 @@ perform_rolling_update() {
             updated=$((updated + 1))
         else
             failed=$((failed + 1))
-            log_error "Обновление прервано из-за ошибки в ${service}"
+            log_error "Update aborted due to error in ${service}"
             break
         fi
     done
 
     echo ""
-    echo -e "${BOLD}Результат:${NC}"
-    echo "  Обновлено: ${updated}"
-    echo "  Пропущено: ${skipped}"
-    echo "  Ошибок: ${failed}"
+    echo -e "${BOLD}Result:${NC}"
+    echo "  Updated: ${updated}"
+    echo "  Skipped: ${skipped}"
+    echo "  Errors: ${failed}"
 
     return $failed
 }
@@ -444,7 +444,7 @@ main() {
 
     # Pre-flight
     if ! check_preflight; then
-        log_error "Pre-flight проверки не пройдены"
+        log_error "Pre-flight checks failed"
         exit 1
     fi
 
@@ -464,9 +464,9 @@ main() {
 
     # Confirm
     if [[ "$AUTO_UPDATE" != "true" ]]; then
-        read -rp "Начать обновление? (yes/no): " confirm
+        read -rp "Start update? (yes/no): " confirm
         if [[ "$confirm" != "yes" ]]; then
-            echo "Отменено."
+            echo "Cancelled."
             exit 0
         fi
     fi
@@ -483,7 +483,7 @@ main() {
 
     # Rolling update (versions in .env are updated AFTER success to allow rollback)
     echo ""
-    log_info "Начинаем rolling update..."
+    log_info "Starting rolling update..."
     echo ""
 
     cd "${INSTALL_DIR}/docker"
@@ -503,16 +503,16 @@ main() {
                 chmod 600 "$ENV_FILE"
             done < <(grep '_VERSION=' "$VERSIONS_FILE" 2>/dev/null | grep -v '^#')
         fi
-        log_success "Обновление завершено успешно!"
+        log_success "Update completed successfully!"
         log_update "SUCCESS" "Rolling update completed"
-        send_notification "✅ AGMind обновлён успешно на $(hostname 2>/dev/null || echo 'server')"
+        send_notification "✅ AGMind updated successfully on $(hostname 2>/dev/null || echo 'server')"
     else
-        log_error "Обновление завершено с ошибками"
+        log_error "Update completed with errors"
         # Rollback to previous state
         perform_rollback
         verify_rollback || log_warn "Some services may not have rolled back correctly"
         log_update "PARTIAL_FAILURE" "Some services failed to update"
-        send_notification "⚠️ AGMind обновление завершено с ошибками на $(hostname 2>/dev/null || echo 'server')"
+        send_notification "⚠️ AGMind update completed with errors on $(hostname 2>/dev/null || echo 'server')"
         exit 1
     fi
 }
