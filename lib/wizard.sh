@@ -120,11 +120,13 @@ _wizard_profile() {
 }
 
 _wizard_security_defaults() {
-    # Auto-set security defaults per profile (can be overridden by env)
+    # VPS profile forces security ON unless user explicitly overrode via env
+    # before _init_wizard_defaults ran. Since _init_wizard_defaults already set
+    # these to "false", we must unconditionally set for vps.
     case "$DEPLOY_PROFILE" in
         vps)
-            ENABLE_UFW="${ENABLE_UFW:-true}"
-            ENABLE_FAIL2BAN="${ENABLE_FAIL2BAN:-true}"
+            ENABLE_UFW="true"
+            ENABLE_FAIL2BAN="true"
             ;;
         lan|vpn)
             ENABLE_FAIL2BAN="${ENABLE_FAIL2BAN:-false}"
