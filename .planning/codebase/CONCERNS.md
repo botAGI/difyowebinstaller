@@ -1,222 +1,505 @@
 # Codebase Concerns
 
-**Analysis Date:** 2026-03-18
-
----
+**Analysis Date:** 2026-03-20
 
 ## Tech Debt
 
-**`pipeline` service referenced but absent from docker-compose.yml:**
-- Issue: `lib/health.sh` line 11 includes `pipeline` in `get_service_list()`. `scripts/update.sh` line 393 includes `"pipeline"` in `update_order`. No `pipeline` service exists in `templates/docker-compose.yml`. This is a remnant of the v1 architecture where an Open WebUI pipeline proxy existed.
-- Files: `lib/health.sh`, `scripts/update.sh`
-- Impact: `check_all` always reports one "not found" service. Rolling update silently skips it. Misleading output in `agmind status`.
-- Fix approach: Remove `pipeline` from both lists.
+### 1. Incomplete GPU Configuration Fix (BUG-V3-009, BUG-V3-010)
 
-**`DB_USER` / `DB_USERNAME` naming inconsistency:**
-- Issue: The `.env` template and docker-compose use `DB_USERNAME=postgres`. The backup script (`scripts/backup.sh` lines 81, 91, 93) uses the variable `${DB_USER:-postgres}`. `DB_USER` is never set anywhere in the system.
-- Files: `scripts/backup.sh`, `templates/env.lan.template`
-- Impact: Backup always falls back to `postgres` regardless of any custom username; fails silently if a real override was intended.
-- Fix approach: Replace `DB_USER` with `DB_USERNAME` in `backup.sh`, sourcing it from `.env`.
+**Issue:** Phase 6 bug fixes for vLLM CUDA errors and TEI OOM are only partially committed. Essential changes exist in working directory but not in git HEAD.
 
-**`config.sh` double-call to `ensure_bind_mount_files`:**
-- Issue: `ensure_bind_mount_files` is called twice in `phase_config()` — once before `generate_config` and once after. This is compensatory coding for a historical Docker directory-artifact bug. The `preflight_bind_mount_check` (which aborts) plus a third "nuclear find+delete" loop also exist in `phase_start()`.
-- Files: `install.sh` lines 776-968
-- Impact: Multiple overlapping defense layers add complexity and install time. Underlying cause (Docker creating directories instead of files when bind-mount sources are missing) is fully addressed; redundant layers can be reduced.
-- Fix approach: Keep only `ensure_bind_mount_files` + `preflight_bind_mount_check`. Remove duplicate ensure call and nuclear find loop.
+**Files:** `templates/docker-compose.yml`
 
-**`harden_docker_compose` applies `no-new-privileges` by mutating the installed file:**
-- Issue: `lib/security.sh:harden_docker_compose()` uses Python to post-process `docker-compose.yml` in-place after it is copied to `INSTALL_DIR`. This modifies the live compose file on every fresh install but is skipped on reinstall (idempotent check). The source template already ships with `security_opt` commented out.
-- Files: `lib/security.sh` lines 160-202, `templates/docker-compose.yml`
-- Impact: Fragile — depends on YAML structure being stable for regex. Template already has the capability; the function adds complexity without benefit.
-- Fix approach: Add `security_opt: [no-new-privileges:true]` directly to all applicable services in `templates/docker-compose.yml`, remove `harden_docker_compose()`.
+**Impact:**
+- vLLM may still error on multi-GPU systems: `ValueError: CUDA_VISIBLE_DEVICES='all'` (commit 5c55bd6 removed `=all` but didn't add explicit `=0`)
+- TEI container may run on all GPUs causing OOM (commit 5c55bd6 added `CUDA_VISIBLE_DEVICES=0` env but missing `--cuda-devices 0` flag and increased `mem_limit: 8g`)
+- vLLM deploy still set to `count: all` instead of `count: 1` (uncommitted in git)
+- Next deployment will revert working tree changes since they're not in git history
 
-**`Authelia` `jwt_secret` reused as session secret:**
-- Issue: In `templates/authelia/configuration.yml.template`, both `jwt_secret` and `session.secret` are set to `__AUTHELIA_JWT_SECRET__` (same placeholder, replaced by the same value in `lib/authelia.sh:51`). This means both secrets are identical.
-- Files: `templates/authelia/configuration.yml.template` lines 12, 47
-- Impact: Reduces cryptographic separation between JWT and session contexts. Low practical risk, but contradicts security principle of separate keys per purpose.
-- Fix approach: Generate a separate `__AUTHELIA_SESSION_SECRET__` placeholder and set it to a distinct random value in `lib/authelia.sh`.
+**Fix approach:**
+1. Review `templates/docker-compose.yml` working tree changes (lines 320, 336, 347, 353)
+2. Verify vLLM section has both `CUDA_VISIBLE_DEVICES=0` env AND `deploy: count: 1`
+3. Verify TEI section has both `CUDA_VISIBLE_DEVICES=0` env, `--cuda-devices 0` command flag, AND `mem_limit: 8g`
+4. Commit atomic fix preserving all 8 changes across vLLM/TEI sections
+5. Update `.planning/phases/06-v3-bugfixes/06-VERIFICATION.md` to mark as "verified_committed"
 
 ---
 
 ## Known Bugs
 
-**BUG-017: IPv6 DNS breaks Ollama model pull (partially fixed, risk remains):**
-- Symptoms: `ollama pull` inside the container fails with `dial tcp [IPv6]:443: connect: cannot assign requested address` on hosts without IPv6 routing.
-- Files: `templates/docker-compose.yml` lines 254-258, `lib/models.sh` lines 39-43
-- Trigger: Any host where IPv6 networking is absent (most LAN/VPS servers). Go runtime ignores kernel sysctl for its internal DNS resolver.
-- Status: Partially fixed with `GODEBUG=netdns=cgo` + `sysctls: net.ipv6.conf.all.disable_ipv6=1` in docker-compose for the `ollama` service. Comment in `lib/models.sh` confirms the fix is in place. TASKS.md TASK-013 remains open but the fix described there (GODEBUG env var) has already been applied. Risk: If these lines are accidentally removed or the ollama service definition is restructured, the bug resurfaces.
-- Workaround: Current compose is correct; adding `GODEBUG=netdns=cgo` is already present.
+### 1. BUG-017: Ollama IPv6 Resolution Fails on Non-IPv6 Hosts
 
-**`sync_db_password` rejects passwords with special characters:**
-- Symptoms: `sync_db_password` in `install.sh` line 1119 rejects any `DB_PASSWORD` that does not match `^[a-zA-Z0-9]+$`. Generated passwords from `generate_random` in `lib/config.sh` only use `a-zA-Z0-9`, so this currently never triggers. However, any manual override or future change to `generate_random` that allows symbols will cause silent install failure.
-- Files: `install.sh` lines 1114-1122
-- Trigger: Manually setting `DB_PASSWORD` with special characters (underscore, dash, etc.) before install.
-- Fix approach: Use parameterized `psql` with `--command` and `PGPASSWORD`, not string interpolation, to avoid this constraint.
+**Symptoms:**
+- `docker exec agmind-ollama ollama pull qwen2.5:7b` fails with: `dial tcp [2606:4700:3034::ac43:b6e5]:443: connect: cannot assign requested address`
+- Occurs on any host without IPv6 routing (majority of home/office networks)
+- Affects all model downloads, blocking entire Ollama provider path
 
-**`create_openwebui_admin` falls through silently on password decode failure:**
-- Symptoms: Line 1044 of `install.sh` attempts to base64-decode `INIT_PASSWORD`. If decode fails, it falls back to a freshly generated 16-char random password which is never recorded. The admin account is created with an unknown password.
-- Files: `install.sh` lines 1043-1044
-- Trigger: Reinstall where `.env` from a previous run has a differently-encoded `INIT_PASSWORD`.
-- Fix approach: Fail explicitly if decode fails; always write resulting password to `credentials.txt`.
+**Files:** `lib/models.sh:54`, `templates/docker-compose.yml:284-290`
+
+**Trigger:** Deploy on network without IPv6 connectivity + Ollama provider selected
+
+**Current "fix" (incomplete):**
+- `templates/docker-compose.yml` line 290 sets `GODEBUG=netdns=cgo` for Ollama service
+- `templates/docker-compose.yml` line 3 has `net.ipv6.conf.all.disable_ipv6=1` sysctl
+- Go runtime has its own userspace DNS resolver that ignores kernel sysctl — partial solution
+
+**Workaround:** Ensure host has IPv6 connectivity or manually configure firewall rules to block AAAA DNS responses before deploying
+
+**Fix approach:**
+1. The existing `GODEBUG=netdns=cgo` + `sysctls: disable_ipv6` should work but needs validation in offline/IPv6-restricted networks
+2. Alternative: Add `extra_hosts` block in docker-compose Ollama section with hardcoded IPv4 for registry.ollama.ai
+3. Test on network explicitly with IPv6 disabled at interface level
+
+---
+
+### 2. TASK-012: import.py Missing Required Fields for Model Credentials
+
+**Symptoms:**
+- KB creation fails: `HTTP 400: Default model not found for text-embedding`
+- Dify API 1.13+ requires `context_size` parameter for Ollama embedding and LLM models
+- Requires `invoke_timeout` for Xinference reranker
+- `import.py` (external script, not in this repo) passes incomplete credentials to Dify API
+
+**Files:** Not in installer (external Python script called from post-config phase)
+
+**Impact:** Entire Dify workflow automation breaks; users cannot create knowledge bases
+
+**Fix approach:** TASK-012 in TASKS.md documents required Python code changes:
+- Add `context_size: "8192"` to embedding model credentials
+- Add `context_size: "32768"` to LLM model credentials
+- Add `invoke_timeout: "60"` to reranker credentials
+
+---
+
+### 3. TASK-015: Pipeline + OpenWebUI Don't Restart After DIFY_API_KEY Update
+
+**Symptoms:**
+- `import.py` writes `DIFY_API_KEY` to `.env` but pipeline/openwebui containers already running with empty value
+- Open WebUI cannot see RAG assistant as available model (Pipeline integration broken)
+- User experiences broken RAG after installation appears successful
+
+**Files:** Not in installer (external `import.py` script)
+
+**Impact:** RAG pipeline → Dify integration non-functional
+
+**Fix approach:** TASK-015 in TASKS.md requires:
+1. After writing `DIFY_API_KEY` to `.env`, call `docker compose restart pipeline openwebui`
+2. Add 30-second wait before restarting to allow containers to flush buffers
+3. Verify services are healthy before returning success
 
 ---
 
 ## Security Considerations
 
-**`sandbox` container runs with `SYS_ADMIN` capability:**
-- Risk: The Dify sandbox service requires `SYS_ADMIN` for its chroot/namespace operations (see compose comment lines 504-510). `SYS_ADMIN` is one of the most powerful Linux capabilities, enabling a wide range of privileged operations.
-- Files: `templates/docker-compose.yml` lines 517-520
-- Current mitigation: Sandbox is on an `ssrf-network` internal network only; no direct host port binding; SSRF proxy (Squid) blocks outbound private-range requests. Sandbox network is isolated (`internal: true` equivalent via ssrf-network design).
-- Recommendations: Add `--security-opt seccomp=/path/to/sandbox-seccomp.json` when a minimal syscall profile is determined. Monitor for upstream Dify sandbox image updates that eliminate `SYS_ADMIN` need.
+### 1. Admin Credentials Not Shown in Post-Install Summary
 
-**`cAdvisor` runs `privileged: true` with full host filesystem mounts:**
-- Risk: cAdvisor has `privileged: true` plus read-only mounts of `/`, `/sys`, `/proc`, `/var/lib/docker`, and `docker.sock`. Compromise of cAdvisor = full host read access.
-- Files: `templates/docker-compose.yml` lines 818-836
-- Current mitigation: Only active under the `monitoring` profile (opt-in); bound to internal `agmind-backend` network; no external port exposed.
-- Recommendations: Consider replacing with a less-privileged alternative (e.g., using Docker API stats endpoint only) or restricting filesystem mounts to the minimum required.
+**Risk:** User doesn't know what credentials are in play; potential confusion about access paths
 
-**`Portainer` has read-write access to `docker.sock`:**
-- Risk: RW access to `/var/run/docker.sock` grants full host control (container escape, arbitrary command execution on host).
-- Files: `templates/docker-compose.yml` lines 902-903
-- Current mitigation: Bound to `127.0.0.1` (or LAN IP if `ADMIN_UI_OPEN=true`); only available under `monitoring` profile; `read_only: true` filesystem; `no-new-privileges`. Comment in compose explicitly warns about this.
-- Recommendations: Consider Portainer Agent mode with socket proxy, or replace with a read-only Docker stats dashboard. Document that `ADMIN_UI_OPEN=true` increases attack surface for this service specifically.
+**Files:** `lib/config.sh:_store_admin_credentials()`, `install.sh` (post-install summary phase)
 
-**Squid SSRF proxy uses hardcoded Google DNS (`8.8.8.8 8.8.4.4`):**
-- Risk: Squid is configured with `dns_nameservers 8.8.8.8 8.8.4.4` in `create_squid_config()`. In air-gapped (offline) or VPN profiles, this DNS may be unreachable, causing Squid to fail silently or leak DNS queries outside the corporate network.
-- Files: `install.sh` lines 926-927
-- Current mitigation: Offline profile skips model downloads but still runs Squid.
-- Recommendations: Make Squid DNS configurable via `SQUID_DNS` env var; default to host's DNS (`/etc/resolv.conf` nameserver).
+**Current mitigation:**
+- Credentials stored in `${INSTALL_DIR}/.admin_password` (root-only file)
+- Credentials.txt written to disk (chmod 600)
+- Summary mentions file path but doesn't display password
 
-**Alertmanager Telegram config uses shell variable interpolation into YAML heredoc:**
-- Risk: In `lib/config.sh` lines 544-578, Telegram bot token and chat ID are interpolated directly into a YAML heredoc without sanitization. A token containing `${}` characters could produce malformed YAML.
-- Files: `lib/config.sh` lines 540-578
-- Current mitigation: Token format from Telegram API is `[0-9]+:[A-Za-z0-9_-]+`; unlikely to contain injection characters. `escape_sed` is used for webhook URL but not for Telegram token.
-- Recommendations: Validate Telegram token format before interpolation; use `escape_sed` or validate with a regex like `^[0-9]+:[A-Za-z0-9_-]+$`.
+**Recommendations:**
+1. Update `phase_complete()` to display full credentials summary in terminal (password, Grafana, API key, etc.)
+2. Include container health summary (X/23 healthy)
+3. Include security summary (Authelia enabled? UFW status? Rate limits active?)
+4. Write same summary to `${INSTALL_DIR}/credentials.txt` for future reference
+5. Document in README that credentials.txt is the single source of truth (survives log rotation)
+
+---
+
+### 2. DIFY_API_KEY Not Persisted in .env
+
+**Risk:** Pipeline service cannot authenticate to Dify; security key generated but lost
+
+**Files:** `lib/config.sh`, not stored in installer repo (external import.py creates it)
+
+**Current mitigation:** None — key is generated by import.py but not written to .env
+
+**Recommendations:**
+1. `import.py` must write `DIFY_API_KEY=${key}` to `/opt/agmind/docker/.env`
+2. Use atomic sed pattern: `_atomic_sed "s|^DIFY_API_KEY=.*|DIFY_API_KEY=${api_key}|"` (see `lib/common.sh` pattern)
+3. Verify file exists and is chmod 600 before writing
+4. Test that pipeline container can read key after restart
 
 ---
 
 ## Performance Bottlenecks
 
-**`wait_healthy` polls all services every 5s with individual `docker compose ps` calls:**
-- Problem: `lib/health.sh:wait_healthy()` loops calling `docker compose ps --format {{.Status}} <service>` individually per service in a tight loop. With 23+ services and 5s sleep, this generates significant subprocess overhead during a long wait.
-- Files: `lib/health.sh` lines 72-95
-- Cause: One `docker compose ps` call per service per tick instead of a single batch call.
-- Improvement path: Replace with a single `docker compose ps --format '{{.Service}}:{{.Status}}'` call per tick, then parse in Bash.
+### 1. wizard.sh Module Size (805 lines)
 
-**Ollama model downloads block the install for up to 20 minutes:**
-- Problem: `phase_models` calls `download_models` which blocks install completion while downloading large LLMs (up to 45GB for 72B quant). No progress display. The installer appears hung.
-- Files: `lib/models.sh`, `install.sh` lines 1242-1246
-- Cause: Synchronous model pull with no parallel download or background option.
-- Improvement path: Use `docker exec agmind-ollama ollama pull ... &` with a progress tracking loop; or defer model download to a post-install background process.
+**Problem:** User interaction logic, validation, and provider selection crammed into single file
+
+**Files:** `lib/wizard.sh`
+
+**Cause:** Multiple decision trees (profile, LLM provider, embedding provider, monitoring) nested in single function
+
+**Improvement path:**
+1. Extract provider selection into `lib/providers.sh` (~150 lines)
+2. Extract monitoring questions into `lib/monitoring.sh` (~100 lines)
+3. Extract TLS questions into `lib/tls.sh` (~80 lines)
+4. Reduces wizard.sh to ~400 lines, improves testability
+
+---
+
+### 2. config.sh Module Size (715 lines)
+
+**Problem:** Secret generation, env file generation, nginx config, monitoring config all mixed in one module
+
+**Files:** `lib/config.sh`
+
+**Cause:** All "setup" logic grouped together; should be split by concern
+
+**Improvement path:**
+1. Extract nginx configuration into `lib/nginx.sh` (~120 lines)
+2. Extract monitoring setup into `lib/monitoring-config.sh` (~100 lines)
+3. Extract authelia setup into `lib/authelia-config.sh` (~80 lines) (currently partial in lib/authelia.sh)
+4. Reduces config.sh to ~400 lines, improves maintainability
+
+---
+
+### 3. Large docker-compose.yml (1028 lines)
+
+**Problem:** All services in single file; difficult to review GPU changes; provider-specific sections hard to find
+
+**Files:** `templates/docker-compose.yml`
+
+**Cause:** Single compose file for all profile + provider combinations
+
+**Improvement path:**
+1. Split into base services (`docker-compose.base.yml`) + profile overrides (`docker-compose.vps.yml`, `docker-compose.offline.yml`)
+2. Split GPU-enabled services into separate include (`docker-compose.gpu.yml`)
+3. Use Docker Compose `include:` feature (Docker 24.0+) to compose at runtime
+4. Makes GPU changes in single section, easier to review
 
 ---
 
 ## Fragile Areas
 
-**`harden_docker_compose` Python regex modifies live YAML structurally:**
-- Files: `lib/security.sh` lines 176-199
-- Why fragile: Uses regex on raw YAML lines to inject `security_opt` after `container_name` lines. Any YAML reformatting, comment insertion, or multi-line `container_name` values will cause incorrect injection or double-injection (though the idempotency check mitigates the latter).
-- Safe modification: The idempotency check (`grep -q 'no-new-privileges'`) prevents re-application. Any change to docker-compose.yml YAML structure must be tested against this function.
-- Test coverage: No BATS test covers this function.
+### 1. health.sh Fail-Fast Logic (BUG-V3-008)
 
-**`enable_gpu_compose` uses `sed` to replace multi-line YAML blocks:**
-- Files: `lib/config.sh` lines 655-682
-- Why fragile: Uses `sed` address ranges (`/driver: nvidia/,/capabilities: \[gpu\]/c\...`) to replace GPU blocks. This works only if the YAML block matches exactly the expected format. Any whitespace change, comment insertion, or line order change in the template breaks the AMD/Intel GPU transformation.
-- Safe modification: GPU block format in `templates/docker-compose.yml` (lines 269-276, 299-305, 328-334, 488-494) must not be changed without testing all four GPU paths.
-- Test coverage: No integration test for AMD/Intel GPU paths.
+**Files:** `lib/health.sh:103-120`
 
-**Authelia `generate_argon2_hash` fallback produces wrong hash type:**
-- Files: `lib/authelia.sh` lines 92-113
-- Why fragile: If Docker is unavailable (e.g., first install before Docker is installed), the fallback uses Python scrypt, which produces a hash format incompatible with Authelia's argon2id requirement. The function prints a warning but returns successfully with a bad hash. Authelia will then reject all logins.
-- Safe modification: Authelia setup requires Docker to be installed first (Phase 3: Docker install). As long as install phase order is maintained (Docker installed before Authelia config), the primary path always succeeds. Verify phase ordering if install.sh phase order changes.
-- Test coverage: No test for hash generation failure path.
+**Why fragile:**
+- Hardcoded list of critical_services must match docker-compose.yml exactly
+- If service added to compose but not to critical_services list, failure silently waits for timeout
+- If service renamed in compose, health check silently ignores it
+- No automated sync between service list and critical check
 
-**`restore.sh` uses `COMPOSE_PROFILES` reconstruction without LLM/embed provider info:**
-- Files: `scripts/restore.sh` lines 342-358
-- Why fragile: When restarting after restore, the script reconstructs `COMPOSE_PROFILES` from `.env` for vector store, ETL, monitoring, and Authelia — but does NOT include `ollama`, `vllm`, or `tei` profiles. Services requiring these profiles won't start after restore.
-- Safe modification: After restore, the operator must manually identify and start provider-specific profiles: `COMPOSE_PROFILES=...,ollama docker compose up -d`.
-- Fix approach: Read `LLM_PROVIDER` and `EMBED_PROVIDER` from restored `.env` and include appropriate profiles.
+**Safe modification:**
+1. Generate critical_services list dynamically from docker-compose.yml (parse `depends_on` relationships)
+2. OR: Document critical services in docker-compose.yml as a comment, parse at runtime
+3. Add validation in `lib/health.sh` to verify all services in docker-compose.yml are known
 
-**`config.sh:generate_redis_config` embeds a random suffix in `rename-command SHUTDOWN`:**
-- Files: `lib/config.sh` lines 490-491
-- Why fragile: `rename-command SHUTDOWN AGMIND_SHUTDOWN_$(head -c 8 /dev/urandom | ...)` runs at config generation time. The random suffix changes every time `generate_config` runs (e.g., reinstall). If the redis.conf is regenerated but the Redis data volume persists, the operator loses the ability to run `SHUTDOWN` via the known command name. The randomly renamed command is never recorded anywhere.
-- Safe modification: The actual `SHUTDOWN` rename is a defense-in-depth measure; Redis restart via `docker compose restart redis` bypasses it. Still, recording the renamed command (or using a stable deterministic suffix) would be safer.
+**Test coverage gaps:**
+- No unit tests for `wait_healthy()` with different service exit scenarios
+- No integration test for timeout behavior on slow startup
+
+---
+
+### 2. Models.sh Pull with Minimal Validation (BUG-017)
+
+**Files:** `lib/models.sh:54`
+
+**Why fragile:**
+- Simple `docker exec ollama pull` with no DNS fallback
+- `GODEBUG=netdns=cgo` works on Linux but behavior varies on macOS/Windows (Go runtime differences)
+- No retry loop if network fails during download
+- No validation that model actually downloaded before declaring success
+
+**Safe modification:**
+1. Add retry loop: 3 attempts with 30s backoff for transient DNS failures
+2. Add post-pull verification: `ollama list | grep -q "^${model}"` before returning success
+3. Add explicit error message with mitigation steps if all retries fail
+
+**Test coverage gaps:**
+- No test for DNS failure recovery
+- No test for partial download (interrupted mid-pull)
+
+---
+
+### 3. Atomic Sed Usage Throughout Codebase
+
+**Files:** `lib/common.sh:_atomic_sed()`, used in `lib/config.sh` for 20+ sed operations
+
+**Why fragile:**
+- Pattern relies on temp file + move; if move fails, original file untouched but status ambiguous
+- Error handling in `_atomic_sed` uses generic `log_error` — caller must check return code
+- Some callers (e.g., provider var appending) don't check return value
+- No validation that sed pattern actually matched before replacing
+
+**Safe modification:**
+1. Add match validation: `grep -q "$pattern" "$file"` before sed, fail if not found
+2. Add verification after: `grep -q "$replacement" "$file"` to confirm replacement succeeded
+3. Update all callers to use `|| return 1` after _atomic_sed calls
+4. Document in lib/common.sh that sed errors are fatal and skip install phase
+
+**Test coverage gaps:**
+- No integration test for failed sed operations (e.g., disk full, permission denied)
+- No test for partial replacements (pattern matched 1/5 times expected)
 
 ---
 
 ## Scaling Limits
 
-**Single PostgreSQL instance, no connection pooling:**
-- Current capacity: `max_connections=128`, `shared_buffers=256MB`, `effective_cache_size=512MB` — appropriate for single-tenant use.
-- Limit: Under heavy concurrent Dify API + worker + plugin-daemon load, connection exhaustion is possible (3 services × multiple workers each).
-- Scaling path: Add PgBouncer sidecar; or increase `max_connections` and `shared_buffers` (requires container memory limit adjustment).
+### 1. Single install.sh Checkpoint Per Phase
 
-**`MONITORING_MODE=local` adds 8 containers, no resource limits set:**
-- Current capacity: Prometheus, Alertmanager, Grafana, Loki, Promtail, Node Exporter, cAdvisor, Portainer add ~2-3GB RAM overhead with no `mem_limit` defined.
-- Limit: On 16GB servers, local monitoring can squeeze out RAM for LLM inference.
-- Scaling path: Add `deploy.resources.limits.memory` to monitoring containers in docker-compose template.
+**Current capacity:** 9 phases with single checkpoint file `.install_phase` (stores phase number only)
+
+**Limit:** If multi-plan phases introduced, need sub-phase checkpoints
+
+**Scaling path:**
+1. Extend checkpoint format to include plan number: `06-plan-02` instead of `06`
+2. Update `run_phase()` to load/save both phase and plan before executing
+3. Allows resuming within a plan without re-running earlier sub-plans
+
+---
+
+### 2. Docker Compose Service Count
+
+**Current capacity:** 23-34 containers (Prometheus, Grafana, cAdvisor, Loki, Promtail + core services)
+
+**Limit approaches:**
+- Health check loop iterates over all services every 5 seconds; beyond 50 services becomes slow
+- docker-compose ps output parsing becomes unreliable on very large output
+- Memory footprint: cAdvisor + Prometheus + Grafana + Loki significant on low-resource VPS
+
+**Scaling path:**
+1. Move monitoring stack to optional on-demand mode: skip by default, enable via flag
+2. Replace cAdvisor + Prometheus + Grafana with Victoria Metrics (lighter footprint)
+3. Use health check endpoint `/health` instead of iterating ps output (already implemented)
+
+---
+
+### 3. Container Health Check Parsing
+
+**Current approach:** `docker compose ps --format '{{.Status}}'` + grep for status string
+
+**Limit:** Brittle if Docker format changes; no structured parsing
+
+**Scaling path:**
+1. Switch to `docker inspect --format='{{json .State}}'` for JSON output
+2. Use `jq` or equivalent to extract state predictably
+3. More robust across Docker versions
 
 ---
 
 ## Dependencies at Risk
 
-**`ubuntu/squid:6.6-24.04_edge` — uses unstable "edge" tag:**
-- Risk: The `_edge` suffix in Ubuntu container images denotes the `edge` channel, which receives unvetted upstream updates. This violates the project's version-pinning policy (documented in `CLAUDE.md`).
-- Files: `templates/versions.env` line 23, `templates/docker-compose.yml` line 546
-- Impact: Container could receive breaking changes silently between deploys without version change in `versions.env`.
-- Migration plan: Pin to a stable Ubuntu/Squid image, e.g., `ubuntu/squid:6.6-24.04_beta` or use the official `sameersbn/squid` image pinned to a specific digest.
+### 1. vLLM Dependency on Specific CUDA Versions
 
-**`Authelia 4.38` — major version only, no minor/patch pin:**
-- Risk: `AUTHELIA_VERSION=4.38` in `templates/versions.env` is pinned at minor version. Docker will pull the latest `4.38.x` patch, which may include breaking configuration format changes.
-- Files: `templates/versions.env` line 35
-- Impact: Authelia configuration format has changed between minor versions; silent upgrade could break 2FA logins.
-- Migration plan: Pin to a specific patch version, e.g., `4.38.10`.
+**Risk:** vLLM 0.6+ requires CUDA ≥12.1; vLLM 0.5.x requires CUDA ≤12.1. Host CUDA version mismatch causes container start failure.
+
+**Impact:** Silent failure if user has wrong NVIDIA driver/CUDA toolkit
+
+**Migration plan:**
+1. Pin vLLM and CUDA driver versions together in `versions.env`
+2. Add `agmind doctor` check for NVIDIA driver version vs required CUDA version
+3. Display warning if mismatch detected but allow override flag
+
+---
+
+### 2. Weaviate 1.27.6 Data Compatibility
+
+**Risk:** Weaviate 1.27.x schema differs from 1.19.0 (this was the original bugfix BUG-001); if user has v1 data with 1.19.x schema, upgrade to 1.27.6 will fail unless schema migrated.
+
+**Impact:** Data loss if backup/restore doesn't account for schema version
+
+**Migration plan:**
+1. Document in README v1→v2 migration requires backup → recreate weaviate volume → restore
+2. Add schema validation in backup script to detect old schema
+3. Add migration helper script `scripts/migrate-weaviate-schema.sh` if possible
+
+---
+
+### 3. Dify 1.13+ API Requirement (context_size, invoke_timeout)
+
+**Risk:** If Dify major version changes API again, import.py breaks silently (returns HTTP 400)
+
+**Impact:** All installations post-import fail on credential setup
+
+**Migration plan:**
+1. Version-lock Dify in `versions.env` with explicit minimum version (≥1.13.0)
+2. Add API version check in health checks: curl Dify `/api/status` to verify version
+3. Document in COMPATIBILITY.md minimum Dify API version + known breaking changes
 
 ---
 
 ## Missing Critical Features
 
-**No credential rotation for PostgreSQL `DB_PASSWORD` in `rotate_secrets.sh`:**
-- Problem: `scripts/rotate_secrets.sh` rotates `SECRET_KEY`, `REDIS_PASSWORD`, `GRAFANA_ADMIN_PASSWORD`, `SANDBOX_API_KEY`, `PLUGIN_DAEMON_KEY`, `PLUGIN_INNER_API_KEY` — but NOT `DB_PASSWORD` or `WEAVIATE_API_KEY`/`QDRANT_API_KEY`.
-- Files: `scripts/rotate_secrets.sh` lines 60-82
-- Blocks: Periodic credential hygiene (monthly rotation via cron) is incomplete. DB password rotation requires both `.env` update AND `ALTER USER` inside PostgreSQL.
+### 1. Pre-Install Validation for IPv6-Only Networks
 
-**No health.json bind-mount file listed in nginx volume for non-initial installs:**
-- Problem: `health.json` is referenced as a bind-mount in `templates/docker-compose.yml` line 674 (`./nginx/health.json:/etc/nginx/health/health.json:ro`) and in `scripts/health-gen.sh`. It is created as a placeholder in `phase_config()`. However, `ensure_bind_mount_files()` in `lib/config.sh` (lines 34-57) does not include `nginx/health.json` in its protection list. If Docker creates a directory artifact at this path, nginx will fail to start with no clear error message.
-- Files: `lib/config.sh` lines 34-57, `install.sh` line 855
+**Problem:** Installer assumes IPv4 connectivity; fails silently if host only has IPv6
 
-**No automatic multi-instance volume isolation:**
-- Problem: `scripts/multi-instance.sh` exists but is not integrated into the main installer. Multiple installs on the same host will conflict on port 80/443 and potentially on named volumes if the `agmind_` prefix is shared.
-- Files: `scripts/multi-instance.sh`
+**Blocks:** Ollama model download
+
+**Recommendation:**
+1. Add network test in phase_diagnose: try to resolve registry.ollama.ai via A record
+2. If fails, show warning and offer "IPv6 workaround" checkbox to enable `GODEBUG=netdns=cgo`
+3. Document in README that IPv6-only hosts need manual DNS configuration
+
+---
+
+### 2. Model Availability Pre-Check
+
+**Problem:** Wizard asks "download qwen2.5:7b?" but doesn't verify model exists in registry
+
+**Blocks:** Silent failure during download phase
+
+**Recommendation:**
+1. Before asking user, curl Ollama registry API to list available models
+2. Show user only models that actually exist
+3. Add fallback list if registry unreachable
+
+---
+
+### 3. Credentials Recovery Path
+
+**Problem:** If user loses credentials.txt or .admin_password file, no way to recover (no password reset built in)
+
+**Blocks:** System access if files lost
+
+**Recommendation:**
+1. Document recovery in README: `docker compose exec web dify-cli reset-password`
+2. Add `agmind reset-password` command to `scripts/agmind.sh` for convenience
+3. Include test in test suite that password reset works
 
 ---
 
 ## Test Coverage Gaps
 
-**No integration tests for install phases 3-9:**
-- What's not tested: `phase_config`, `phase_start`, `phase_health`, `phase_models`, `phase_backups`, `phase_complete`. All BATS tests validate script structure and static patterns, not actual execution with Docker.
-- Files: `tests/test_config.bats`, `tests/test_compose_profiles.bats`
-- Risk: A runtime error in `generate_config`, `enable_gpu_compose`, or `harden_docker_compose` would only be caught by a live deployment test.
-- Priority: High — the installer is the primary product.
+### 1. Untested: Multi-GPU vLLM Behavior
 
-**No test for AMD/Intel GPU transformation paths in `enable_gpu_compose`:**
-- What's not tested: The `sed`-based YAML transformation for `amd` and `intel` GPU types in `lib/config.sh` lines 653-683.
-- Files: `lib/config.sh`
-- Risk: Any template change to GPU block format silently breaks non-NVIDIA GPU support.
-- Priority: Medium.
+**What's not tested:** vLLM starting on system with 2+ GPUs + explicit CUDA_VISIBLE_DEVICES=0 pinning
 
-**No test for `validate_no_default_secrets` with partial matches:**
-- What's not tested: The regex `^[^#].*=changeme$` will miss `MY_PASS=changeme_extended`. A user setting `DB_PASSWORD=changeme123` would pass validation.
-- Files: `lib/config.sh` lines 144-180
-- Risk: Weak passwords with known-default prefixes slip past the guard.
-- Priority: Low — generated passwords from `generate_random` are never weak defaults.
+**Files:** `templates/docker-compose.yml` (vLLM section)
 
-**`trivy` security scan uses `@master` for the action:**
-- What's not tested: `.github/workflows/test.yml` line 32 uses `aquasecurity/trivy-action@master` — an unpinned action reference. This is a supply-chain risk: a malicious or broken commit to the action repo could compromise CI.
-- Files: `.github/workflows/test.yml`
-- Risk: CI security posture.
-- Priority: Medium — pin to a specific SHA or tag (e.g., `aquasecurity/trivy-action@v0.28.0`).
+**Risk:** BUG-V3-009 fix may have unintended side effects on multi-GPU systems
+
+**Test plan:**
+1. Integration test on 2+ GPU host: verify vLLM only uses GPU 0
+2. Verify no CUDA memory contention with other GPU consumers (Ollama on GPU 0, TEI on GPU 0)
+3. Monitor nvidia-smi during test to confirm device allocation
 
 ---
 
-*Concerns audit: 2026-03-18*
+### 2. Untested: IPv6 Disabled Network Behavior
+
+**What's not tested:** Model download on host with IPv6 explicitly disabled (`sysctl net.ipv6.conf.all.disable_ipv6=1`)
+
+**Files:** `lib/models.sh:54`, `templates/docker-compose.yml:290`
+
+**Risk:** BUG-017 fix assumes GODEBUG works; needs validation
+
+**Test plan:**
+1. Deploy on test host with IPv6 disabled at kernel level
+2. Run `ollama pull qwen2.5:7b` via installer
+3. Verify no IPv6 dial errors in logs
+4. Verify model downloads successfully
+
+---
+
+### 3. Untested: Health Check Timeout Behavior
+
+**What's not tested:** Behavior when service starts very slowly (e.g., vLLM downloading 14B model during healthcheck)
+
+**Files:** `lib/health.sh:85-130`
+
+**Risk:** Health check may timeout before service ready, causing false-negative phase failure
+
+**Test plan:**
+1. Mock slow-starting vLLM service (sleep 500s in entrypoint)
+2. Run health check with timeout=600s
+3. Verify health check waits patiently without fail-fast
+4. Verify no false positives for services with legitimate startup time >5min
+
+---
+
+### 4. Untested: Atomic Sed Failure Recovery
+
+**What's not tested:** What happens when sed operation fails mid-install (disk full, permission denied)
+
+**Files:** `lib/common.sh:_atomic_sed()`
+
+**Risk:** Install continues with incomplete config, resulting in silent failures
+
+**Test plan:**
+1. Mock `mv` failure after sed succeeds
+2. Verify `_atomic_sed` returns non-zero
+3. Verify install phase aborts and checkpoints for resume
+4. Verify no partial files left in system
+
+---
+
+## Architecture Debt
+
+### 1. Provider Questions Coupled to Compose Generation
+
+**Problem:** `lib/wizard.sh` asks provider questions, `lib/config.sh` generates compose with provider-specific vars appended. Tight coupling makes it hard to add new providers.
+
+**Files:** `lib/wizard.sh`, `lib/config.sh:_append_provider_vars()`
+
+**Improvement path:**
+1. Create provider plugin interface: `lib/providers/${name}.sh` with functions `ask_`, `validate_`, `compose_vars_`
+2. Load provider dynamically based on wizard choice
+3. Reduces wizard.sh + config.sh, makes new providers self-contained
+
+---
+
+### 2. Health Check Service List Hard-Coded
+
+**Problem:** `lib/health.sh:get_service_list()` manually builds list based on env vars. If service added to compose, must update this function.
+
+**Files:** `lib/health.sh:14-57`
+
+**Improvement path:**
+1. Parse service list directly from docker-compose.yml at runtime: `docker compose config --format=json | jq -r '.services | keys[]'`
+2. Reduces manual sync errors
+3. Slightly slower (one extra docker call) but worth reliability gain
+
+---
+
+## Known Limitations
+
+### 1. No Multi-Instance Isolation
+
+**Limitation:** Installer assumes single AGMind instance per host (volumes are global, not per-instance)
+
+**Files:** `lib/config.sh`, `templates/docker-compose.yml`
+
+**Workaround:** Deploy multiple instances in different directories with different INSTALL_DIR, manually manage port/network isolation
+
+**Future work:** Phase 5 Requirements document (INSE-05) mentions multi-instance as v2.1 feature
+
+---
+
+### 2. No Graceful Shutdown / Drain Mode
+
+**Limitation:** `agmind stop` just kills containers; no time for pipeline requests to complete
+
+**Files:** `lib/docker.sh`
+
+**Workaround:** Manual `docker compose graceful-shutdown` (no Docker equivalent, would need custom script)
+
+**Future work:** Planned as ADVX-01 in v2.2+ requirements
+
+---
+
+### 3. No Model Validation Registry Check
+
+**Limitation:** Wizard accepts any model name; doesn't verify it exists in registry before download
+
+**Files:** `lib/wizard.sh`, `lib/models.sh`
+
+**Workaround:** User must know valid Ollama model names (qwen2.5:7b, llama2:13b, etc.)
+
+**Future work:** Planned as INSE-04 in v2.1+ requirements
+
+---
+
+---
+
+*Concerns audit: 2026-03-20*

@@ -1,264 +1,313 @@
 # External Integrations
 
-**Analysis Date:** 2026-03-18
+**Analysis Date:** 2026-03-20
 
 ## APIs & External Services
 
-**Model Providers:**
-- Ollama - Local LLM inference
-  - SDK/Client: langgenius/dify-api (built-in)
+**LLM Providers (conditional):**
+- **OpenAI-compatible APIs** - External LLM inference
+  - Config: `OPENAI_API_BASE_URL`, `OPENAI_API_KEY`
+  - When: `LLM_PROVIDER=external`
+  - Supported via Dify's native LLM integrations
+  - Example: OpenAI, Anthropic, custom OpenAI-compatible endpoints
+
+- **Ollama (local)** - Default on-premise LLM server
   - Connection: `OLLAMA_API_BASE=http://ollama:11434`
-  - Auth: No auth required (internal network)
+  - When: `LLM_PROVIDER=ollama`
+  - Profile: `--profile ollama`
 
-- vLLM (OpenAI-compatible) - High-performance LLM serving
-  - SDK/Client: OpenAI Python client
-  - Connection: `OPENAI_API_BASE_URL=http://vllm:8000/v1` (when LLM_PROVIDER=vllm)
-  - Auth: No auth (internal)
+- **vLLM (local)** - Production inference engine
+  - Connection: `http://vllm:8000` (internal)
+  - When: `LLM_PROVIDER=vllm`
+  - Profile: `--profile vllm`
+  - OpenAI-compatible `/v1/completions` API
 
-- HuggingFace Hub - Model weights and model registry
-  - SDK/Client: huggingface_hub Python library
-  - Auth: `HF_TOKEN` (environment variable, optional for public models)
-  - Used by: vLLM, TEI for downloading model weights
+**Embedding Providers (conditional):**
+- **Ollama Embeddings** - Default local embeddings
+  - Connection: `OLLAMA_API_BASE=http://ollama:11434`
+  - When: `EMBED_PROVIDER=ollama`
+  - Models: bge-m3 (default)
 
-**Embedding & Semantic Search:**
-- Weaviate - Vector database for semantic search
-  - SDK/Client: weaviate-client Python library
-  - Connection: `WEAVIATE_ENDPOINT=http://weaviate:8080`
-  - Auth: `WEAVIATE_API_KEY` (required, generated at install-time)
-  - Default vector store: `VECTOR_STORE=weaviate`
+- **TEI (Text Embeddings Inference)** - HuggingFace embeddings
+  - Connection: `http://tei:8080` (internal)
+  - When: `EMBED_PROVIDER=tei`
+  - Profile: `--profile tei`
+  - Models: Based on TEI image, bge-m3 compatible
 
-- Qdrant - Alternative vector database (interchangeable)
-  - SDK/Client: qdrant-client Python library
-  - Connection: `QDRANT_HOST=qdrant`, `QDRANT_PORT=6333`
-  - Auth: `QDRANT_API_KEY` (required, generated at install-time)
-  - Selection: `VECTOR_STORE=qdrant`
+- **External Embedding API** - Third-party services
+  - When: `EMBED_PROVIDER=external`
+  - Configured via Dify UI after installation
 
-- Text Embeddings Inference (TEI) - HuggingFace embeddings
-  - SDK/Client: Direct REST API (langgenius/dify-api calls)
-  - Connection: Integrated within Dify (internal network)
-  - Model: BAAI/bge-m3 (default)
-  - Auth: `HF_TOKEN` (for HuggingFace Hub model access)
+**Marketplace & Updates:**
+- **Dify Marketplace** - Plugin and extension hub
+  - Endpoint: `CHECK_UPDATE_URL=https://updates.dify.ai`
+  - Purpose: Version checks, plugin discovery
+  - Configurable via environment variable
 
-**Reranking & Retrieval Enhancement:**
-- Xinference - Distributed inference for reranking
-  - SDK/Client: REST API (langgenius/dify-api)
-  - Connection: `XINFERENCE_BASE_URL=http://xinference:9997`
-  - Model: bce-reranker-base_v1 (default, configurable)
-  - Auth: None required
-  - Purpose: Rerank search results for improved relevance
-
-**Document Processing & ETL:**
-- Docling - Advanced document parsing and layout understanding
-  - SDK/Client: REST API
-  - Connection: `UNSTRUCTURED_API_URL=http://docling:8765` (when ETL_TYPE=unstructured_api)
-  - Supported formats: PDF, docx, xlsx, ppt, images
-  - Auth: None required (internal)
-
-- Unstructured.io API - External document processing (optional)
-  - SDK/Client: HTTP REST
-  - Connection: `UNSTRUCTURED_API_URL=<external-url>` (when configured)
-  - Auth: API key-based (if using SaaS)
-  - Default: Not enabled (ETL_TYPE=dify uses built-in parsing)
-
-**Plugin System:**
-- Dify Plugin Daemon - Runtime for Dify plugins
-  - SDK/Client: gRPC (internal)
-  - Connection: `PLUGIN_DAEMON_URL=http://plugin_daemon:5002`
-  - Auth: `PLUGIN_DAEMON_KEY` (internal service key)
-  - Purpose: Execute third-party plugins, extend functionality
+- **HuggingFace Hub** - Model repository
+  - Used by: vLLM, TEI, Ollama (for model downloads)
+  - Token: `HF_TOKEN` (optional, for gated model access)
+  - When: Pulling quantized models during initialization
 
 ## Data Storage
 
 **Databases:**
-- PostgreSQL 15.10-alpine
-  - Connection: `postgresql://postgres:<DB_PASSWORD>@db:5432/dify`
-  - Credentials: `DB_USERNAME`, `DB_PASSWORD`, `DB_DATABASE`, `DB_HOST`, `DB_PORT`
-  - Purpose: Primary relational database (workflows, users, knowledge bases, logs)
-  - Client: SQLAlchemy ORM (Python)
-  - Hardened: Password encryption (scram-sha-256), max_connections=128, logging enabled
+- **PostgreSQL 16** - Primary database for Dify metadata
+  - Connection: `postgresql://${DB_USERNAME}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_DATABASE}`
+  - Default host: `db` (container name, internal)
+  - Default port: 5432
+  - Default database: `dify`
+  - Client: psycopg2 (Python driver in Dify)
+  - Schema: Auto-migrated by Dify on startup (`MIGRATION_ENABLED=true`)
+  - Volumes: `./volumes/db/data:/var/lib/postgresql/data`
 
-- Redis 7.4.1-alpine
-  - Connection: `redis://:REDIS_PASSWORD@redis:6379/1`
-  - Credentials: `REDIS_PASSWORD`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`
-  - Purpose: Session cache, Celery task queue (worker jobs), real-time features
-  - Client: redis-py Python library
-  - Hardened: requirepass enforced, dangerous commands renamed/disabled, maxmemory=512mb
+- **Plugin Database (separate PostgreSQL)** - Plugin daemon metadata
+  - Database: `dify_plugin` (separate from main `dify` db)
+  - Connection: `postgresql://...@db:5432/dify_plugin`
+  - Used by: Plugin daemon container
+
+**Vector Stores (selectable):**
+- **Weaviate 1.27.6** - Default vector database
+  - Endpoint: `WEAVIATE_ENDPOINT=http://weaviate:8080`
+  - API Key: `WEAVIATE_API_KEY` (empty = no auth by default)
+  - Authentication: Anonymous disabled, API key required
+  - Admin users: `hello@dify.ai`
+  - Port: 8080 (internal only)
+  - Volumes: `./volumes/weaviate:/var/lib/weaviate`
+  - Use case: RAG document embeddings
+
+- **Qdrant v1.12.1** - Alternative vector database
+  - Endpoint: `QDRANT_HOST=qdrant`, `QDRANT_PORT=6333`
+  - API Key: `QDRANT_API_KEY` (optional)
+  - Port: 6333 (internal only)
+  - Volumes: `./volumes/qdrant:/qdrant/storage`
+  - When: `VECTOR_STORE=qdrant`
 
 **File Storage:**
-- Local filesystem (default)
+- **Local filesystem (default)** - Document and file storage
   - Type: `STORAGE_TYPE=local`
-  - Path: `/app/api/storage` (container mount: `./volumes/app/storage`)
-  - Persistence: Docker named volume `./volumes/app/storage:/app/api/storage`
-  - Backups: Optional S3 integration (`ENABLE_S3_BACKUP=true`)
+  - Path: `/app/api/storage` (container) → `./volumes/app/storage` (host)
+  - Permissions: Mounted as bind mount, read-write
+  - Use case: RAG documents, file uploads
 
-- S3 (AWS / Minio compatible) - Optional backup
-  - SDK/Client: boto3 (implicit in backup scripts)
-  - Connection: `S3_REMOTE_NAME=s3` (rclone config)
-  - Auth: AWS credentials (rclone configuration)
-  - Usage: Backup/restore only, not primary storage
+- **S3 (optional)** - Remote object storage
+  - When: `ENABLE_S3_BACKUP=true`
+  - Config: S3 bucket and credentials
+  - Variables: `S3_BUCKET`, `S3_PATH`, `S3_REMOTE_NAME`
+  - Purpose: Backup destination for data replication
 
 **Caching:**
-- Redis (see above) - In-process caching via Dify
+- **Redis 7.4.1** - In-memory cache and message broker
+  - Connection: `redis://:${REDIS_PASSWORD}@${REDIS_HOST}:${REDIS_PORT}/${REDIS_DB}`
+  - Default host: `redis` (container)
+  - Default port: 6379
+  - Default database: 0 (cache), 1 (Celery broker)
+  - Celery broker URL: `redis://:${REDIS_PASSWORD}@${REDIS_HOST}:${REDIS_PORT}/1`
+  - Use case: Session cache, Celery task queue, rate limiting
+  - Volumes: `./volumes/redis/data:/data`
+  - Auth: Optional password via `REDIS_PASSWORD`
 
 ## Authentication & Identity
 
-**Auth Provider:**
-- Dify built-in - Custom username/password (default)
-  - Implementation: SQLAlchemy model + Flask-Login
-  - Admin creation: `INIT_PASSWORD=<base64-encoded-password>` (injected at first API startup)
+**Dify Internal Auth:**
+- **Method:** Admin account creation on first startup
+  - Admin setup: `INIT_PASSWORD` (base64-encoded or plaintext)
+  - Stored in: PostgreSQL `account` table
+  - Credentials saved to: `/opt/agmind/credentials.txt` (chmod 600)
 
-- Authelia (optional) - SSO/2FA
-  - Profile: Enabled when `ENABLE_AUTHELIA=true` (optional, not default)
-  - Implementation: TOTP (2FA), LDAP backend (configurable), File-based users
-  - Config: `templates/authelia/configuration.yml.template`, `users_database.yml.template`
-  - Storage: SQLite database (`/config/db.sqlite3`)
-  - Auth methods: Factor 1 (password), Factor 2 (TOTP/authenticator apps)
-  - Integration: nginx reverse proxy enforcement before Dify routes
+- **Session management:** Redis sessions + Dify token system
+- **API authentication:** API keys per workspace (created in Dify UI)
+
+**Open WebUI Auth:**
+- **Method:** Local user database + optional signup lockdown
+  - Signup enabled: `ENABLE_SIGNUP=false` (disabled by default for security)
+  - Authentication: Built-in OpenWebUI user system
+  - Role-based: `DEFAULT_USER_ROLE=user` (default)
+  - Credentials: Stored in Open WebUI's SQLite/PostgreSQL backend
+
+**Authelia (optional 2FA):**
+- **When:** `ENABLE_AUTHELIA=true`
+- **Provider:** Configured in `templates/authelia/`
+- **Protected routes:** `/console/*` (Dify UI)
+- **Unprotected routes:** `/api`, `/v1`, `/files` (use Dify API keys)
+- **JWT configuration:** `AUTHELIA_JWT_SECRET`
+- **Storage:** One-time passwords, session state in authelia container
+
+**LLM Provider Auth:**
+- **When:** `LLM_PROVIDER=external` or external embedding
+  - OpenAI API key, Anthropic API key, etc. → configured in Dify UI
+  - NOT stored in .env (configured per-workspace in Dify)
+- **Model provider keys:** `HF_TOKEN` (HuggingFace, optional for gated models)
 
 ## Monitoring & Observability
 
 **Error Tracking:**
-- Sentry (optional)
-  - Usage: Dify Web UI error reporting
-  - Env var: `WEB_SENTRY_DSN` (if configured, telemetry)
-  - Default: Not configured (`NEXT_TELEMETRY_DISABLED=1`)
+- **Sentry (optional)** - Error aggregation for Dify Web
+  - DSN: `WEB_SENTRY_DSN` (environment variable, optional)
+  - When: Configured, Dify Web sends JavaScript errors to Sentry
 
 **Logs:**
-- Loki - Log aggregation (profile: monitoring)
-  - Agent: Promtail (reads Docker logs)
-  - Query: Grafana integration
-  - Retention: Configurable (default: 168h)
-  - Config: `monitoring/loki-config.yml`, `monitoring/promtail-config.yml`
+- **Local JSON file logging** - Docker default
+  - Driver: `json-file`
+  - Options: max-size 10m, max-file 5
+  - Location: `/var/lib/docker/containers/*/...`
 
-- Standard output (json-file driver)
-  - Docker logging: json-file driver, max-size=10m, max-file=5
-  - Path: `/var/lib/docker/containers/*/`
+- **Loki (optional)** - Centralized log aggregation
+  - When: `MONITORING_MODE=local` and `ENABLE_LOKI=true`
+  - Endpoint: `http://loki:3100` (internal)
+  - Shipper: Promtail → `monitoring/promtail-config.yml`
+  - Storage: Loki database
 
-**Metrics:**
-- Prometheus - Metrics scraping
-  - Job names: cadvisor, node-exporter, prometheus
+- **Prometheus** - Metrics collection
+  - When: `MONITORING_MODE=local`
   - Config: `monitoring/prometheus.yml`
-  - Scrape interval: 15s
-  - Retention: Default 15 days
-
-- Node Exporter - Host system metrics
-  - Port: 9100 (internal)
-  - Metrics: CPU, memory, disk, network, processes
-
-- cAdvisor - Container metrics
-  - Port: 8080 (internal)
-  - Metrics: Container CPU, memory, disk I/O, network
+  - Scrape targets: Node Exporter, cAdvisor, Prometheus itself
+  - Port: 9090 (internal)
 
 **Alerting:**
-- Alertmanager - Alert deduplication and routing
-  - Config: `monitoring/alertmanager.yml`
-  - Default receiver: 'default' (no action)
-  - Integrations: Telegram, Webhook
+- **AlertManager** - Alert routing and notifications
+  - Config: `monitoring/alertmanager.yml`, `monitoring/alert_rules.yml`
+  - When: `MONITORING_MODE=local`
+  - Alert modes:
+    - `ALERT_MODE=webhook` → `ALERT_WEBHOOK_URL`
+    - `ALERT_MODE=telegram` → `ALERT_TELEGRAM_TOKEN`, `ALERT_TELEGRAM_CHAT_ID`
+    - `ALERT_MODE=none` → No external alerts
 
-**Alert Channels (optional):**
-- Telegram Bot
-  - Env vars: `ALERT_TELEGRAM_TOKEN`, `ALERT_TELEGRAM_CHAT_ID`
-  - Mode: `ALERT_MODE=telegram`
-  - Template: HTML-formatted messages with emoji status
+- **Grafana** - Visualization and dashboarding
+  - Port: 3001 (localhost only, `MONITORING_MODE=local`)
+  - Admin password: `GRAFANA_ADMIN_PASSWORD`
+  - Image: `grafana/grafana:11.4.0`
+  - Provisioned dashboards: `monitoring/grafana/dashboards/`
 
-- Webhook
-  - Env vars: `ALERT_WEBHOOK_URL`
-  - Mode: `ALERT_MODE=webhook`
-  - Format: Alertmanager payload (JSON)
-
-**Grafana - Visualization:**
-- Port: 3001 (localhost-only by default)
-- Bind: `GRAFANA_BIND_ADDR=127.0.0.1`
-- Admin password: `GRAFANA_ADMIN_PASSWORD` (generated, stored in .env)
-- Datasources: Prometheus (auto-provisioned)
-- Dashboards: Pre-built (stored in `monitoring/grafana/dashboards/`)
+**External Monitoring:**
+- **When:** `MONITORING_MODE=external`
+- **Endpoint:** `MONITORING_ENDPOINT` (custom monitoring system)
+- **Auth:** `MONITORING_TOKEN` (bearer token)
 
 ## CI/CD & Deployment
 
 **Hosting:**
-- Docker Compose (local deployment)
-- Deployment profiles: LAN, VPN, VPS, Offline (air-gapped)
-- Single command installation: `sudo bash install.sh`
+- **Target:** Docker Compose on single or multiple servers
+- **Supported platforms:**
+  - Linux (Ubuntu 20.04+, Debian 11+, CentOS Stream 9+, etc.)
+  - macOS (Docker Desktop)
+  - Cloud VMs (AWS EC2, Azure VMs, GCP, DigitalOcean, etc.)
+- **Installation:** Single command: `sudo bash install.sh`
 
-**TLS/HTTPS:**
-- Let's Encrypt (VPS profile)
-  - Certbot: Automatic renewal
-  - Config: `volumes/certbot/` (certs + renewal hook)
-  - Nginx: Automatic HTTPS redirect when TLS_MODE=letsencrypt
+**CI Pipeline:**
+- **GitHub Actions** - Automated testing and linting
+  - Workflows: `.github/workflows/`
+  - Jobs:
+    - `lint.yml` - shellcheck on all bash scripts
+    - `test.yml` - BATS unit/integration tests
+    - `lifecycle.yml` - E2E installation tests (optional)
 
-- Self-signed (development)
-  - Generation: `openssl req -x509` in `lib/config.sh`
-  - TLS_MODE=self-signed
-
-- Custom certificates
-  - TLS_MODE=custom, provide `TLS_CERT_PATH`, `TLS_KEY_PATH`
-
-**Optional CI/CD:**
-- No built-in CI/CD
-- GitHub Actions: Lint (shellcheck) and test workflows (see `.github/workflows/`)
-- Manual deployment: Git clone + `sudo bash install.sh`
+**Release Management:**
+- **Manifest:** `templates/release-manifest.json`
+- **Version coordination:** `templates/versions.env` (single source of truth)
+- **Process:** Manual semantic versioning in releases
 
 ## Environment Configuration
 
 **Required env vars (secrets):**
-- `SECRET_KEY` - Dify session key (64 random chars)
-- `DB_PASSWORD` - PostgreSQL password (32 random chars)
-- `REDIS_PASSWORD` - Redis password (32 random chars)
-- `SANDBOX_API_KEY` - Code execution API key (dify-sandbox-{16-chars})
-- `PLUGIN_DAEMON_KEY` - Plugin daemon service key (48 random chars)
-- `PLUGIN_INNER_API_KEY` - Internal plugin API key (48 random chars)
-- `INIT_PASSWORD` - Base64-encoded admin password
-- `WEAVIATE_API_KEY` - Vector DB key (32 random chars)
-- `QDRANT_API_KEY` - Alternative vector DB key (32 random chars)
-- `GRAFANA_ADMIN_PASSWORD` - Grafana login (16 random chars)
+- `SECRET_KEY` - Dify application secret (generated during setup)
+- `DB_PASSWORD` - PostgreSQL password (generated)
+- `REDIS_PASSWORD` - Redis auth (optional, generated if set)
+- `SANDBOX_API_KEY` - Dify sandbox authorization token (default: `dify-sandbox`)
+- `PLUGIN_DAEMON_KEY` - Plugin daemon API key (generated)
+- `PLUGIN_INNER_API_KEY` - Internal plugin API key (generated)
+- `INIT_PASSWORD` - Initial admin password (base64-encoded, generated)
 
-**Optional integrations:**
-- `HF_TOKEN` - HuggingFace API token (for private models)
-- `UNSTRUCTURED_API_URL` - External document processing (Unstructured.io)
-- `MONITORING_ENDPOINT` - Remote monitoring ingestion
-- `MONITORING_TOKEN` - Remote monitoring auth
-- `ALERT_WEBHOOK_URL` - Alertmanager webhook endpoint
-- `ALERT_TELEGRAM_TOKEN` - Telegram bot token
-- `ALERT_TELEGRAM_CHAT_ID` - Telegram chat ID
-- `S3_REMOTE_NAME`, `S3_BUCKET`, `S3_PATH` - S3 backup (when ENABLE_S3_BACKUP=true)
+**Critical env vars (configuration):**
+- `DEPLOY_PROFILE` - Deployment profile: `lan`, `vps`, `vpn`, `offline`
+- `LLM_PROVIDER` - Model provider: `ollama`, `vllm`, `external`, `skip`
+- `EMBED_PROVIDER` - Embedding provider: `ollama`, `tei`, `external`, `same`
+- `VECTOR_STORE` - Vector DB: `weaviate`, `qdrant`
+- `ETL_TYPE` - Document processing: `dify`, `unstructured_api`
+- `DEPLOY_ENV` - Environment mode: `PRODUCTION` or `DEVELOPMENT`
+
+**Network Configuration:**
+- `CONSOLE_WEB_URL` - Dify console public URL (auto-detected if empty)
+- `CONSOLE_API_URL` - Dify API public URL (auto-detected if empty)
+- `SERVICE_API_URL` - Service API public URL
+- `APP_API_URL` - App API public URL
+- `APP_WEB_URL` - App frontend public URL
+- `FILES_URL` - File serving URL
+
+**TLS/HTTPS:**
+- `TLS_MODE` - `none`, `self-signed`, `custom`, `letsencrypt` (VPS only)
+- `NGINX_HTTPS_ENABLED` - Enable HTTPS: `true` / `false`
+- `NGINX_SERVER_NAME` - Domain name for TLS certificate
+- Certificates: `./volumes/certbot/conf/` (Let's Encrypt) or custom location
 
 **Secrets location:**
-- `.env` file: `/opt/agmind/docker/.env` (mode 600, owned by root)
-- Backup: `.env.backup.YYYYMMDD_HHMMSS` (before re-running installer)
-- Admin password: `/opt/agmind/.admin_password` (mode 600)
-- Redis config: `./volumes/redis/redis.conf` (mode 644, contains password in plaintext for redis user)
-
-**Security features:**
-- Placeholder validation: `validate_no_default_secrets()` checks for common weak passwords
-- Unresolved placeholders rejected: `^[^#].*=__[A-Z_]+__` pattern
-- Secret generation: `/dev/urandom` (head -c 256 + LC_ALL=C tr for safe chars)
+- **Installation directory:** `/opt/agmind/` (created by installer)
+- **Docker configs:** `/opt/agmind/docker/`
+- **Credentials file:** `/opt/agmind/credentials.txt` (chmod 600)
+- **Environment file:** `/opt/agmind/docker/.env` (chmod 600, root:root owner)
 
 ## Webhooks & Callbacks
 
 **Incoming:**
-- Dify workflow triggers - REST API endpoints for external systems
-  - Pattern: `/api/v1/workflows/<workflow-id>/run`
-  - Auth: API key (Dify-internal)
-  - No webhook subscription system built-in
+- **Health endpoint:** `GET /health` → JSON status of all services
+  - Returns container health, GPU status, model loaded status
+  - Used by: External monitoring, orchestration tools
+  - Auth: None (unauthenticated, local network only)
+
+- **Dify API endpoints:** `/api/*`, `/v1/*`
+  - Standard Dify REST API
+  - Rate limited: 10r/s (nginx)
+  - Auth: API keys (created in Dify UI)
 
 **Outgoing:**
-- Alertmanager → Telegram Bot (optional)
-  - Trigger: Alert firing/resolved
-  - Destination: Telegram chat
-  - Integration: `telegram_configs` in alertmanager.yml
+- **Alert webhooks** - Notifications on system issues
+  - When: `ALERT_MODE=webhook`
+  - Endpoint: `ALERT_WEBHOOK_URL` (custom HTTP endpoint)
+  - Payload: AlertManager JSON format
+  - Use case: Slack, Discord, custom integrations
 
-- Alertmanager → Custom Webhook (optional)
-  - Trigger: Alert firing/resolved
-  - Destination: User-provided webhook URL
-  - Format: Alertmanager JSON payload
-  - Integration: `webhook_configs` in alertmanager.yml
+- **Telegram alerts** - Bot notifications
+  - When: `ALERT_MODE=telegram`
+  - Bot token: `ALERT_TELEGRAM_TOKEN`
+  - Chat ID: `ALERT_TELEGRAM_CHAT_ID`
 
-**Marketplace Webhooks (optional):**
-- Dify Marketplace - Version update checks
-  - `CHECK_UPDATE_URL=https://updates.dify.ai` (configurable)
-  - Connection: Outbound HTTPS
-  - Frequency: On-demand in Dify Console
+- **Marketplace updates check** - Version polling
+  - Endpoint: `CHECK_UPDATE_URL=https://updates.dify.ai`
+  - Frequency: Manual check via agmind CLI or periodic (if configured)
+  - No authentication required
+
+- **HuggingFace model pulls** - Model downloads
+  - When: Downloading vLLM/TEI models
+  - Endpoint: `https://huggingface.co`
+  - Auth: Optional `HF_TOKEN` for gated models
+  - Rate limiting: Automatic backoff
+
+**Dify Integrations:**
+- **Document processing** - Via Docling service
+  - Internal endpoint: `http://docling:8765`
+  - When: `ETL_TYPE=unstructured_api`
+
+- **Reranking** - Via Xinference
+  - Internal endpoint: `http://xinference:9997`
+  - Model: `bce-reranker-base_v1` (configurable)
+  - When: Reranking enabled in Dify knowledge base settings
+
+- **Code sandbox execution** - Isolated execution
+  - Internal endpoint: `http://sandbox:8194`
+  - API key: `SANDBOX_API_KEY=dify-sandbox`
+  - Network isolation: `ssrf-network` (separated from API)
+
+- **SSRF proxy** - Outbound request filtering
+  - Internal endpoint: `http://ssrf_proxy:3128`
+  - Used by: Dify API/Worker for external HTTP(S) requests
+  - Purpose: Security boundary, DNS spoofing prevention
+
+**Plugin Daemon:**
+- **Internal API** - Plugin management
+  - Endpoint: `http://plugin_daemon:5002`
+  - Auth: `PLUGIN_INNER_API_KEY`
+  - Database: Separate PostgreSQL `dify_plugin`
 
 ---
 
-*Integration audit: 2026-03-18*
+*Integration audit: 2026-03-20*
