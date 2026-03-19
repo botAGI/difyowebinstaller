@@ -7,6 +7,16 @@ set -euo pipefail
 
 INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
 
+# Fallback log functions when sourced without common.sh (e.g. via agmind.sh)
+command -v log_info    >/dev/null 2>&1 || log_info()    { echo -e "  → $*"; }
+command -v log_success >/dev/null 2>&1 || log_success() { echo -e "  ✓ $*"; }
+command -v log_warn    >/dev/null 2>&1 || log_warn()    { echo -e "  ⚠ $*"; }
+command -v log_error   >/dev/null 2>&1 || log_error()   { echo -e "  ✗ $*"; }
+
+# Fallback colors
+RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
+CYAN="${CYAN:-\033[0;36m}"; BOLD="${BOLD:-\033[1m}"; NC="${NC:-\033[0m}"
+
 # ============================================================================
 # SERVICE LIST (dynamic based on .env)
 # ============================================================================
@@ -62,9 +72,9 @@ get_service_list() {
 
 check_container() {
     local name="$1"
-    local compose_file="${INSTALL_DIR}/docker/docker-compose.yml"
     local status
-    status="$(docker compose -f "$compose_file" ps --format '{{.Status}}' "$name" 2>/dev/null || echo "not found")"
+    status="$(docker ps -a --filter "name=agmind-${name}" --format '{{.Status}}' 2>/dev/null | head -1)"
+    [[ -z "$status" ]] && status="not found"
 
     if echo "$status" | grep -qi "up\|healthy"; then
         echo -e "  ${GREEN}[OK]${NC}  ${name}"
