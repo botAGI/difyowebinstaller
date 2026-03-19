@@ -89,7 +89,7 @@ _ask_choice() {
         if [[ "$REPLY" =~ ^[0-9]+$ ]] && [[ "$REPLY" -ge "$min" && "$REPLY" -le "$max" ]]; then
             return 0
         fi
-        echo "Enter a number from ${min} to ${max}"
+        echo "Введите число от ${min} до ${max}"
     done
 }
 
@@ -98,19 +98,19 @@ _ask_choice() {
 # ============================================================================
 
 _wizard_profile() {
-    echo "Select deployment profile:"
-    echo "  1) VPS     — public access via domain (internet + domain required)"
-    echo "  2) LAN     — local office network (internet, no domain)"
-    echo "  3) VPN     — corporate VPN (access only through VPN)"
-    echo "  4) Offline — air-gapped network (no internet)"
+    echo "Выберите профиль развёртывания:"
+    echo "  1) VPS     — публичный доступ через домен (нужен интернет + домен)"
+    echo "  2) LAN     — локальная офисная сеть (интернет, без домена)"
+    echo "  3) VPN     — корпоративный VPN (доступ только через VPN)"
+    echo "  4) Offline — изолированная сеть (без интернета)"
     echo ""
 
-    if [[ -n "${DEPLOY_PROFILE}" ]]; then
-        # Already set via env var
+    if [[ "${NON_INTERACTIVE}" == "true" && -n "${DEPLOY_PROFILE}" ]]; then
+        # Respect env override only in non-interactive mode
         return 0
     fi
 
-    _ask_choice "Profile [1-4]: " 1 4 2
+    _ask_choice "Профиль [1-4]: " 1 4 2
     case "$REPLY" in
         1) DEPLOY_PROFILE="vps";;
         2) DEPLOY_PROFILE="lan";;
@@ -138,8 +138,8 @@ _wizard_admin_ui() {
         return 0
     fi
 
-    echo "Portainer and Grafana are bound to localhost (127.0.0.1) by default."
-    _ask "Open access from LAN? [no/yes] (default: no):" "no"
+    echo "Portainer и Grafana привязаны к localhost (127.0.0.1) по умолчанию."
+    _ask "Открыть доступ из LAN? [no/yes] (по умолчанию: no):" "no"
     if [[ "$REPLY" == "yes" ]]; then
         ADMIN_UI_OPEN=true
     else
@@ -153,18 +153,18 @@ _wizard_domain() {
         return 0
     fi
 
-    if [[ -n "$DOMAIN" && -n "$CERTBOT_EMAIL" ]]; then
-        # Already set via env
+    if [[ "${NON_INTERACTIVE}" == "true" && -n "$DOMAIN" && -n "$CERTBOT_EMAIL" ]]; then
+        # Respect env override only in non-interactive mode
         return 0
     fi
 
-    _ask "Domain for access:" ""
+    _ask "Домен для доступа:" ""
     DOMAIN="$REPLY"
-    validate_domain "$DOMAIN" || { log_error "Invalid domain, aborting"; exit 1; }
+    validate_domain "$DOMAIN" || { log_error "Некорректный домен, отмена"; exit 1; }
 
-    _ask "Email for certificate:" ""
+    _ask "Email для сертификата:" ""
     CERTBOT_EMAIL="$REPLY"
-    validate_email "$CERTBOT_EMAIL" || { log_error "Invalid email, aborting"; exit 1; }
+    validate_email "$CERTBOT_EMAIL" || { log_error "Некорректный email, отмена"; exit 1; }
     echo ""
 }
 
@@ -174,12 +174,12 @@ _wizard_vector_store() {
         return 0
     fi
 
-    echo "Select vector store:"
-    echo "  1) Weaviate  — stable, battle-tested (default)"
-    echo "  2) Qdrant    — fast, REST/gRPC API"
+    echo "Выберите векторное хранилище:"
+    echo "  1) Weaviate  — стабильный, проверенный (по умолчанию)"
+    echo "  2) Qdrant    — быстрый, REST/gRPC API"
     echo ""
 
-    _ask_choice "Choice [1-2, Enter=1]: " 1 2 1
+    _ask_choice "Выбор [1-2, Enter=1]: " 1 2 1
     case "$REPLY" in
         2) VECTOR_STORE="qdrant";;
         *) VECTOR_STORE="weaviate";;
@@ -193,12 +193,12 @@ _wizard_etl() {
         return 0
     fi
 
-    echo "Enhanced document processing (Docling + Xinference reranker)?"
-    echo "  1) No — standard Dify ETL (default)"
-    echo "  2) Yes — Docling + bce-reranker-base_v1"
+    echo "Расширенная обработка документов (Docling + Xinference reranker)?"
+    echo "  1) Нет — стандартный Dify ETL (по умолчанию)"
+    echo "  2) Да — Docling + bce-reranker-base_v1"
     echo ""
 
-    _ask_choice "Choice [1-2, Enter=1]: " 1 2 1
+    _ask_choice "Выбор [1-2, Enter=1]: " 1 2 1
     case "$REPLY" in
         2) ETL_ENHANCED="true";;
         *) ETL_ENHANCED="false";;
@@ -213,22 +213,22 @@ _wizard_llm_provider() {
     if [[ "${DETECTED_GPU:-none}" != "nvidia" ]]; then
         default_provider="ollama"
         default_idx=1
-        gpu_note="  (NVIDIA GPU not detected — default: Ollama)"
+        gpu_note="  (NVIDIA GPU не обнаружен — по умолчанию: Ollama)"
     fi
 
-    # If already set via env
-    if [[ -n "$LLM_PROVIDER" ]]; then
+    # Respect env override only in non-interactive mode
+    if [[ "${NON_INTERACTIVE}" == "true" && -n "$LLM_PROVIDER" ]]; then
         return 0
     fi
 
-    echo "Select LLM provider:${gpu_note}"
+    echo "Выберите LLM-провайдер:${gpu_note}"
     echo "  1) Ollama"
     echo "  2) vLLM"
-    echo "  3) External API"
-    echo "  4) Skip"
+    echo "  3) Внешний API"
+    echo "  4) Пропустить"
     echo ""
 
-    _ask_choice "Choice [1-4, Enter=${default_idx}]: " 1 4 "$default_idx"
+    _ask_choice "Выбор [1-4, Enter=${default_idx}]: " 1 4 "$default_idx"
     case "$REPLY" in
         1) LLM_PROVIDER="ollama";;
         2) LLM_PROVIDER="vllm";;
@@ -250,36 +250,36 @@ _wizard_ollama_model() {
         *72b*) rec_idx=13;;
     esac
 
-    echo "Select LLM model:"
+    echo "Выберите LLM-модель:"
     echo ""
-    echo " -- 4-8B [fast, 8GB+ RAM, 6GB+ VRAM] --"
-    echo "  1) gemma3:4b$([ "$rec_idx" -eq 1 ] && echo '  [recommended]')"
-    echo "  2) qwen2.5:7b$([ "$rec_idx" -eq 2 ] && echo '  [recommended]')"
+    echo " -- 4-8B [быстрые, 8GB+ RAM, 6GB+ VRAM] --"
+    echo "  1) gemma3:4b$([ "$rec_idx" -eq 1 ] && echo '  [рекомендуется]')"
+    echo "  2) qwen2.5:7b$([ "$rec_idx" -eq 2 ] && echo '  [рекомендуется]')"
     echo "  3) qwen3:8b"
     echo "  4) llama3.1:8b"
     echo "  5) mistral:7b"
     echo ""
-    echo " -- 12-14B [balanced, 16GB+ RAM, 10GB+ VRAM] --"
-    echo "  6) qwen2.5:14b$([ "$rec_idx" -eq 6 ] && echo '  [recommended]')"
+    echo " -- 12-14B [баланс, 16GB+ RAM, 10GB+ VRAM] --"
+    echo "  6) qwen2.5:14b$([ "$rec_idx" -eq 6 ] && echo '  [рекомендуется]')"
     echo "  7) phi-4:14b"
     echo "  8) mistral-nemo:12b"
     echo "  9) gemma3:12b"
     echo ""
-    echo " -- 27-32B [quality, 32GB+ RAM, 16GB+ VRAM] --"
-    echo "  10) qwen2.5:32b$([ "$rec_idx" -eq 10 ] && echo '  [recommended]')"
+    echo " -- 27-32B [качество, 32GB+ RAM, 16GB+ VRAM] --"
+    echo "  10) qwen2.5:32b$([ "$rec_idx" -eq 10 ] && echo '  [рекомендуется]')"
     echo "  11) gemma3:27b"
     echo "  12) command-r:35b"
     echo ""
-    echo " -- 60B+ [max quality, 64GB+ RAM, 24GB+ VRAM] --"
-    echo "  13) qwen2.5:72b-instruct-q4_K_M$([ "$rec_idx" -eq 13 ] && echo '  [recommended]')"
+    echo " -- 60B+ [макс. качество, 64GB+ RAM, 24GB+ VRAM] --"
+    echo "  13) qwen2.5:72b-instruct-q4_K_M$([ "$rec_idx" -eq 13 ] && echo '  [рекомендуется]')"
     echo "  14) llama3.1:70b-instruct-q4_K_M"
     echo "  15) qwen3:32b"
     echo ""
-    echo " -- Custom --"
-    echo "  16) Enter manually (Ollama registry name)"
+    echo " -- Своя модель --"
+    echo "  16) Ввести вручную (имя из реестра Ollama)"
     echo ""
 
-    _ask_choice "Model [1-16, Enter=6]: " 1 16 6
+    _ask_choice "Модель [1-16, Enter=6]: " 1 16 6
     local ollama_models=(
         ""  # 0 placeholder
         "gemma3:4b"
@@ -301,35 +301,35 @@ _wizard_ollama_model() {
     if [[ "$REPLY" -ge 1 && "$REPLY" -le 15 ]]; then
         LLM_MODEL="${ollama_models[$REPLY]}"
     elif [[ "$REPLY" -eq 16 ]]; then
-        _ask "Model name:" "qwen2.5:14b"
+        _ask "Имя модели:" "qwen2.5:14b"
         LLM_MODEL="$REPLY"
-        validate_model_name "$LLM_MODEL" || { LLM_MODEL="qwen2.5:14b"; log_warn "Invalid model name, using default"; }
+        validate_model_name "$LLM_MODEL" || { LLM_MODEL="qwen2.5:14b"; log_warn "Некорректное имя модели, используется значение по умолчанию"; }
     fi
     echo ""
 }
 
 _wizard_vllm_model() {
-    echo "Select vLLM model:"
+    echo "Выберите модель vLLM:"
     echo ""
     echo " -- 7-8B [14GB+ VRAM] --"
     echo "  1) Qwen/Qwen2.5-7B-Instruct"
     echo "  2) mistralai/Mistral-7B-Instruct-v0.3"
-    echo "  3) meta-llama/Llama-3.1-8B-Instruct  (requires HF_TOKEN)"
+    echo "  3) meta-llama/Llama-3.1-8B-Instruct  (нужен HF_TOKEN)"
     echo ""
     echo " -- 14B [24GB+ VRAM] --"
-    echo "  4) Qwen/Qwen2.5-14B-Instruct           [recommended]"
+    echo "  4) Qwen/Qwen2.5-14B-Instruct           [рекомендуется]"
     echo "  5) Qwen/Qwen3-14B"
     echo "  6) microsoft/phi-4"
     echo ""
     echo " -- 32B+ [48GB+ VRAM] --"
     echo "  7) Qwen/Qwen2.5-32B-Instruct"
-    echo "  8) meta-llama/Llama-3.3-70B-Instruct  (requires HF_TOKEN)"
+    echo "  8) meta-llama/Llama-3.3-70B-Instruct  (нужен HF_TOKEN)"
     echo ""
-    echo " -- Custom --"
-    echo "  9) Enter HuggingFace repo (org/model-name)"
+    echo " -- Своя модель --"
+    echo "  9) Ввести HuggingFace репозиторий (org/model-name)"
     echo ""
 
-    _ask_choice "Model [1-9, Enter=4]: " 1 9 4
+    _ask_choice "Модель [1-9, Enter=4]: " 1 9 4
     local vllm_models=(
         ""  # 0 placeholder
         "Qwen/Qwen2.5-7B-Instruct"
@@ -344,15 +344,15 @@ _wizard_vllm_model() {
     if [[ "$REPLY" -ge 1 && "$REPLY" -le 8 ]]; then
         VLLM_MODEL="${vllm_models[$REPLY]}"
     elif [[ "$REPLY" -eq 9 ]]; then
-        _ask "HuggingFace repo (org/model):" "Qwen/Qwen2.5-14B-Instruct"
+        _ask "HuggingFace репозиторий (org/model):" "Qwen/Qwen2.5-14B-Instruct"
         VLLM_MODEL="${REPLY:-Qwen/Qwen2.5-14B-Instruct}"
     fi
     echo ""
 }
 
 _wizard_llm_model() {
-    # Already set via env
-    if [[ -n "$LLM_MODEL" || -n "$VLLM_MODEL" ]]; then
+    # Respect env override only in non-interactive mode
+    if [[ "${NON_INTERACTIVE}" == "true" && ( -n "$LLM_MODEL" || -n "$VLLM_MODEL" ) ]]; then
         return 0
     fi
 
@@ -373,19 +373,19 @@ _wizard_llm_model() {
 }
 
 _wizard_embed_provider() {
-    # Already set via env
-    if [[ -n "$EMBED_PROVIDER" ]]; then
+    # Respect env override only in non-interactive mode
+    if [[ "${NON_INTERACTIVE}" == "true" && -n "$EMBED_PROVIDER" ]]; then
         return 0
     fi
 
-    echo "Select Embedding provider:"
-    echo "  1) Same as LLM"
+    echo "Выберите провайдер эмбеддингов:"
+    echo "  1) Как LLM"
     echo "  2) TEI (Text Embeddings Inference)"
-    echo "  3) External API"
-    echo "  4) Skip"
+    echo "  3) Внешний API"
+    echo "  4) Пропустить"
     echo ""
 
-    _ask_choice "Choice [1-4, Enter=1]: " 1 4 1
+    _ask_choice "Выбор [1-4, Enter=1]: " 1 4 1
     case "$REPLY" in
         1) case "$LLM_PROVIDER" in
                ollama)   EMBED_PROVIDER="ollama";;
@@ -407,9 +407,9 @@ _wizard_embed_model() {
         return 0
     fi
 
-    _ask "Embedding model [bge-m3]:" "bge-m3"
+    _ask "Модель эмбеддингов [bge-m3]:" "bge-m3"
     EMBEDDING_MODEL="${REPLY:-bge-m3}"
-    validate_model_name "$EMBEDDING_MODEL" || { EMBEDDING_MODEL="bge-m3"; log_warn "Invalid embedding model, using default"; }
+    validate_model_name "$EMBEDDING_MODEL" || { EMBEDDING_MODEL="bge-m3"; log_warn "Некорректное имя модели, используется значение по умолчанию"; }
     echo ""
 }
 
@@ -421,7 +421,7 @@ _wizard_hf_token() {
         return 0
     fi
 
-    _ask "HuggingFace token (Enter to skip):" ""
+    _ask "Токен HuggingFace (Enter — пропустить):" ""
     HF_TOKEN="$REPLY"
 }
 
@@ -430,15 +430,15 @@ _wizard_offline_warning() {
         return 0
     fi
 
-    log_warn "Offline profile: models will NOT be downloaded."
+    log_warn "Offline-профиль: модели НЕ будут загружены."
     if [[ "$LLM_PROVIDER" == "ollama" || "$EMBED_PROVIDER" == "ollama" ]]; then
-        echo "  Ensure models are pre-loaded in ollama_data volume."
+        echo "  Убедитесь, что модели предзагружены в том ollama_data."
     fi
     if [[ "$LLM_PROVIDER" == "vllm" ]]; then
-        echo "  Ensure vLLM image and model ${VLLM_MODEL:-} are pre-loaded."
+        echo "  Убедитесь, что образ vLLM и модель ${VLLM_MODEL:-} предзагружены."
     fi
     if [[ "$EMBED_PROVIDER" == "tei" ]]; then
-        echo "  Ensure TEI image and BAAI/bge-m3 model are pre-loaded."
+        echo "  Убедитесь, что образ TEI и модель BAAI/bge-m3 предзагружены."
     fi
     echo ""
 }
@@ -458,10 +458,10 @@ _wizard_tls() {
         return 0
     fi
 
-    echo "TLS (HTTPS) setup:"
-    echo "  1) No TLS (default)"
-    echo "  2) Self-signed certificate"
-    echo "  3) Custom certificate (provide paths)"
+    echo "Настройка TLS (HTTPS):"
+    echo "  1) Без TLS (по умолчанию)"
+    echo "  2) Самоподписанный сертификат"
+    echo "  3) Свой сертификат (указать пути)"
     echo ""
 
     _ask_choice "TLS [1-3, Enter=1]: " 1 3 1
@@ -469,14 +469,14 @@ _wizard_tls() {
         2) TLS_MODE="self-signed";;
         3)
             TLS_MODE="custom"
-            _ask "Certificate path (.pem):" ""
+            _ask "Путь к сертификату (.pem):" ""
             TLS_CERT_PATH="$(validate_path "$REPLY" 2>/dev/null)" || {
-                log_error "Invalid cert path, TLS disabled"
+                log_error "Некорректный путь к сертификату, TLS отключён"
                 TLS_MODE="none"; TLS_CERT_PATH=""
             }
-            _ask "Key path (.pem):" ""
+            _ask "Путь к ключу (.pem):" ""
             TLS_KEY_PATH="$(validate_path "$REPLY" 2>/dev/null)" || {
-                log_error "Invalid key path, TLS disabled"
+                log_error "Некорректный путь к ключу, TLS отключён"
                 TLS_MODE="none"; TLS_KEY_PATH=""
             }
             ;;
@@ -491,18 +491,18 @@ _wizard_monitoring() {
         return 0
     fi
 
-    echo "Monitoring:"
-    echo "  1) Disabled (default)"
-    echo "  2) Local (Grafana + Portainer + Prometheus)"
+    echo "Мониторинг:"
+    echo "  1) Отключён (по умолчанию)"
+    echo "  2) Локальный (Grafana + Portainer + Prometheus)"
     if [[ "$DEPLOY_PROFILE" != "offline" ]]; then
-        echo "  3) External (endpoint + token)"
+        echo "  3) Внешний (endpoint + токен)"
     fi
     echo ""
 
     local max_choice=2
     [[ "$DEPLOY_PROFILE" != "offline" ]] && max_choice=3
 
-    _ask_choice "Monitoring [1-${max_choice}, Enter=1]: " 1 "$max_choice" 1
+    _ask_choice "Мониторинг [1-${max_choice}, Enter=1]: " 1 "$max_choice" 1
     case "$REPLY" in
         2) MONITORING_MODE="local";;
         3)
@@ -511,10 +511,10 @@ _wizard_monitoring() {
                 _ask "Endpoint (URL):" ""
                 MONITORING_ENDPOINT="$REPLY"
                 validate_url "$MONITORING_ENDPOINT" || {
-                    log_error "Invalid URL, monitoring disabled"
+                    log_error "Некорректный URL, мониторинг отключён"
                     MONITORING_MODE="none"; MONITORING_ENDPOINT=""
                 }
-                _ask "Token:" ""
+                _ask "Токен:" ""
                 MONITORING_TOKEN="$REPLY"
             fi
             ;;
@@ -529,32 +529,32 @@ _wizard_alerts() {
         return 0
     fi
 
-    echo "Alerts on failures:"
-    echo "  1) Disabled (default)"
+    echo "Уведомления о сбоях:"
+    echo "  1) Отключены (по умолчанию)"
     echo "  2) Webhook (URL)"
     if [[ "$DEPLOY_PROFILE" != "offline" ]]; then
-        echo "  3) Telegram bot"
+        echo "  3) Telegram-бот"
     fi
     echo ""
 
     local max_choice=2
     [[ "$DEPLOY_PROFILE" != "offline" ]] && max_choice=3
 
-    _ask_choice "Alerts [1-${max_choice}, Enter=1]: " 1 "$max_choice" 1
+    _ask_choice "Уведомления [1-${max_choice}, Enter=1]: " 1 "$max_choice" 1
     case "$REPLY" in
         2)
             ALERT_MODE="webhook"
             _ask "Webhook URL:" ""
             ALERT_WEBHOOK_URL="$REPLY"
             validate_url "$ALERT_WEBHOOK_URL" || {
-                log_error "Invalid URL, alerts disabled"
+                log_error "Некорректный URL, уведомления отключены"
                 ALERT_MODE="none"; ALERT_WEBHOOK_URL=""
             }
             ;;
         3)
             if [[ "$DEPLOY_PROFILE" != "offline" ]]; then
                 ALERT_MODE="telegram"
-                _ask "Telegram Bot Token:" ""
+                _ask "Токен Telegram-бота:" ""
                 ALERT_TELEGRAM_TOKEN="$REPLY"
                 _ask "Telegram Chat ID:" ""
                 ALERT_TELEGRAM_CHAT_ID="$REPLY"
@@ -568,21 +568,21 @@ _wizard_alerts() {
 _wizard_security() {
     # UFW
     if [[ "$DEPLOY_PROFILE" == "vps" ]]; then
-        echo "  UFW firewall will be configured automatically (VPS)"
+        echo "  UFW файрвол будет настроен автоматически (VPS)"
         ENABLE_UFW="true"
     else
-        echo "Security:"
-        echo "  1) Configure UFW firewall"
-        echo "  2) Skip (default)"
+        echo "Безопасность:"
+        echo "  1) Настроить UFW файрвол"
+        echo "  2) Пропустить (по умолчанию)"
         echo ""
         _ask_choice "UFW [1-2, Enter=2]: " 1 2 2
         [[ "$REPLY" == "1" ]] && ENABLE_UFW="true" || ENABLE_UFW="${ENABLE_UFW:-false}"
     fi
 
     # Fail2ban (SSH jail only)
-    echo "  Fail2ban (SSH brute-force protection):"
-    echo "  1) Enable"
-    echo "  2) Skip (default)"
+    echo "  Fail2ban (защита от перебора SSH):"
+    echo "  1) Включить"
+    echo "  2) Пропустить (по умолчанию)"
     echo ""
     _ask_choice "Fail2ban [1-2, Enter=2]: " 1 2 2
     [[ "$REPLY" == "1" ]] && ENABLE_FAIL2BAN="true" || ENABLE_FAIL2BAN="${ENABLE_FAIL2BAN:-false}"
@@ -590,10 +590,10 @@ _wizard_security() {
 
     # Authelia 2FA (VPS only)
     if [[ "$DEPLOY_PROFILE" == "vps" ]]; then
-        echo "Enable Authelia 2FA (two-factor authentication)?"
-        echo "  1) No (default)"
-        echo "  2) Yes"
-        _ask_choice "Choice [1-2, Enter=1]: " 1 2 1
+        echo "Включить Authelia 2FA (двухфакторная аутентификация)?"
+        echo "  1) Нет (по умолчанию)"
+        echo "  2) Да"
+        _ask_choice "Выбор [1-2, Enter=1]: " 1 2 1
         if [[ "$REPLY" == "2" ]]; then
             ENABLE_AUTHELIA="true"
         fi
@@ -605,32 +605,32 @@ _wizard_tunnel() {
         return 0
     fi
 
-    echo "Reverse SSH tunnel (access LAN node via VPS)?"
-    echo "  1) No (default)"
-    echo "  2) Yes"
+    echo "Обратный SSH-туннель (доступ к LAN через VPS)?"
+    echo "  1) Нет (по умолчанию)"
+    echo "  2) Да"
     echo ""
-    _ask_choice "Tunnel [1-2, Enter=1]: " 1 2 1
+    _ask_choice "Туннель [1-2, Enter=1]: " 1 2 1
     if [[ "$REPLY" == "2" ]]; then
         ENABLE_TUNNEL="true"
-        _ask "VPS host:" ""
+        _ask "Хост VPS:" ""
         TUNNEL_VPS_HOST="$REPLY"
-        validate_hostname "$TUNNEL_VPS_HOST" || { log_warn "Invalid host, tunnel disabled"; ENABLE_TUNNEL="false"; return 0; }
-        _ask "VPS SSH port [22]:" "22"
+        validate_hostname "$TUNNEL_VPS_HOST" || { log_warn "Некорректный хост, туннель отключён"; ENABLE_TUNNEL="false"; return 0; }
+        _ask "SSH-порт VPS [22]:" "22"
         TUNNEL_VPS_PORT="${REPLY:-22}"
-        _ask "Remote port for web [8080]:" "8080"
+        _ask "Удалённый порт для веб [8080]:" "8080"
         TUNNEL_REMOTE_PORT="${REPLY:-8080}"
     fi
     echo ""
 }
 
 _wizard_backups() {
-    echo "Backup configuration:"
-    echo "  1) Local (/var/backups/agmind/)"
-    echo "  2) Remote (SCP/rsync)"
-    echo "  3) Both"
+    echo "Настройка бэкапов:"
+    echo "  1) Локальные (/var/backups/agmind/)"
+    echo "  2) Удалённые (SCP/rsync)"
+    echo "  3) Оба варианта"
     echo ""
 
-    _ask_choice "Backup target [1-3, Enter=1]: " 1 3 1
+    _ask_choice "Бэкапы [1-3, Enter=1]: " 1 3 1
     case "$REPLY" in
         1) BACKUP_TARGET="local";;
         2) BACKUP_TARGET="remote";;
@@ -638,20 +638,20 @@ _wizard_backups() {
     esac
     echo ""
 
-    echo "Backup schedule:"
-    echo "  1) Daily at 03:00 (default)"
-    echo "  2) Every 12 hours (03:00 and 15:00)"
-    echo "  3) Custom cron expression"
+    echo "Расписание бэкапов:"
+    echo "  1) Ежедневно в 03:00 (по умолчанию)"
+    echo "  2) Каждые 12 часов (03:00 и 15:00)"
+    echo "  3) Своё cron-выражение"
     echo ""
 
-    _ask_choice "Schedule [1-3, Enter=1]: " 1 3 1
+    _ask_choice "Расписание [1-3, Enter=1]: " 1 3 1
     case "$REPLY" in
         2) BACKUP_SCHEDULE="0 3,15 * * *";;
         3)
-            _ask "Cron expression:" "0 3 * * *"
+            _ask "Cron-выражение:" "0 3 * * *"
             BACKUP_SCHEDULE="$REPLY"
             validate_cron "$BACKUP_SCHEDULE" || {
-                log_warn "Invalid cron expression, using default"
+                log_warn "Некорректное cron-выражение, используется значение по умолчанию"
                 BACKUP_SCHEDULE="0 3 * * *"
             }
             ;;
@@ -661,40 +661,40 @@ _wizard_backups() {
 
     # Remote backup details
     if [[ "$BACKUP_TARGET" != "local" ]]; then
-        _ask "SSH host for backups:" ""
+        _ask "SSH-хост для бэкапов:" ""
         REMOTE_BACKUP_HOST="$REPLY"
         validate_hostname "$REMOTE_BACKUP_HOST" || {
-            log_error "Invalid host, falling back to local"
+            log_error "Некорректный хост, переключение на локальные бэкапы"
             BACKUP_TARGET="local"
             return 0
         }
-        _ask "SSH port [22]:" "22"
+        _ask "SSH-порт [22]:" "22"
         REMOTE_BACKUP_PORT="${REPLY:-22}"
-        validate_port "$REMOTE_BACKUP_PORT" || { REMOTE_BACKUP_PORT="22"; log_warn "Using default port 22"; }
-        _ask "SSH user:" ""
+        validate_port "$REMOTE_BACKUP_PORT" || { REMOTE_BACKUP_PORT="22"; log_warn "Используется порт по умолчанию 22"; }
+        _ask "SSH-пользователь:" ""
         REMOTE_BACKUP_USER="$REPLY"
-        _ask "SSH key path (Enter to auto-generate):" ""
+        _ask "Путь к SSH-ключу (Enter — сгенерировать):" ""
         REMOTE_BACKUP_KEY="$REPLY"
         echo ""
     fi
 }
 
 _wizard_summary() {
-    echo -e "${CYAN}=== Installation Summary ===${NC}"
-    echo "  Profile:      ${DEPLOY_PROFILE}"
-    [[ -n "$DOMAIN" ]] && echo "  Domain:       ${DOMAIN}"
-    echo "  Vector DB:    ${VECTOR_STORE}"
+    echo -e "${CYAN}=== Сводка установки ===${NC}"
+    echo "  Профиль:      ${DEPLOY_PROFILE}"
+    [[ -n "$DOMAIN" ]] && echo "  Домен:        ${DOMAIN}"
+    echo "  Вектор. БД:   ${VECTOR_STORE}"
     [[ "$ETL_ENHANCED" == "true" ]] && echo "  ETL:          Docling + Xinference"
     echo "  LLM:          ${LLM_PROVIDER} ${LLM_MODEL}${VLLM_MODEL:+ (${VLLM_MODEL})}"
-    echo "  Embedding:    ${EMBED_PROVIDER} ${EMBEDDING_MODEL}"
+    echo "  Эмбеддинги:   ${EMBED_PROVIDER} ${EMBEDDING_MODEL}"
     [[ "$TLS_MODE" != "none" ]] && echo "  TLS:          ${TLS_MODE}"
-    [[ "$MONITORING_MODE" != "none" ]] && echo "  Monitoring:   ${MONITORING_MODE}"
-    [[ "$ALERT_MODE" != "none" ]] && echo "  Alerts:       ${ALERT_MODE}"
-    [[ "$ENABLE_UFW" == "true" ]] && echo "  UFW:          enabled"
+    [[ "$MONITORING_MODE" != "none" ]] && echo "  Мониторинг:   ${MONITORING_MODE}"
+    [[ "$ALERT_MODE" != "none" ]] && echo "  Уведомления:  ${ALERT_MODE}"
+    [[ "$ENABLE_UFW" == "true" ]] && echo "  UFW:          включён"
     [[ "$ENABLE_FAIL2BAN" == "true" ]] && echo "  Fail2ban:     SSH jail"
-    [[ "$ENABLE_AUTHELIA" == "true" ]] && echo "  Authelia:     2FA enabled"
-    [[ "$ENABLE_TUNNEL" == "true" ]] && echo "  Tunnel:       ${TUNNEL_VPS_HOST}:${TUNNEL_REMOTE_PORT}"
-    echo "  Backup:       ${BACKUP_TARGET} (${BACKUP_SCHEDULE})"
+    [[ "$ENABLE_AUTHELIA" == "true" ]] && echo "  Authelia:     2FA включена"
+    [[ "$ENABLE_TUNNEL" == "true" ]] && echo "  Туннель:      ${TUNNEL_VPS_HOST}:${TUNNEL_REMOTE_PORT}"
+    echo "  Бэкапы:       ${BACKUP_TARGET} (${BACKUP_SCHEDULE})"
     echo ""
 }
 
@@ -702,9 +702,9 @@ _wizard_confirm() {
     if [[ "${NON_INTERACTIVE}" == "true" ]]; then
         return 0
     fi
-    _ask "Start installation? (yes/no):" "no"
+    _ask "Начать установку? (yes/no):" "no"
     if [[ "$REPLY" != "yes" ]]; then
-        echo "Cancelled."
+        echo "Отменено."
         exit 0
     fi
     echo ""

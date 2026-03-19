@@ -91,19 +91,21 @@ run_phase_with_timeout() {
     local num="$1" total="$2" name="$3" func="$4" timeout="$5"
     echo "$num" > "${INSTALL_DIR}/.install_phase"
     echo -e "\n${BOLD}[$(date +%H:%M:%S)] === PHASE ${num}/${total}: ${name} (timeout: ${timeout}s) ===${NC}"
-    if _run_with_timeout "$func" "$timeout"; then
+    local rc=0
+    _run_with_timeout "$func" "$timeout" || rc=$?
+    if [[ $rc -eq 0 ]]; then
         echo -e "${GREEN}[$(date +%H:%M:%S)] === PHASE ${num}/${total}: ${name} DONE ===${NC}"
         return 0
     fi
-    local rc=$?
     if [[ $rc -eq 124 ]]; then
         local retry=$((timeout * 2))
         log_warn "Phase ${name} timed out after ${timeout}s. Retrying (${retry}s)..."
-        if _run_with_timeout "$func" "$retry"; then
+        rc=0
+        _run_with_timeout "$func" "$retry" || rc=$?
+        if [[ $rc -eq 0 ]]; then
             echo -e "${GREEN}[$(date +%H:%M:%S)] === PHASE ${num}/${total}: ${name} DONE (retry) ===${NC}"
             return 0
         fi
-        rc=$?
         [[ $rc -eq 124 ]] && { log_error "Phase ${name} timed out after ${retry}s"; return 1; }
     fi
     log_error "Phase ${name} failed (code: ${rc})"
@@ -126,10 +128,10 @@ phase_wizard()      { run_wizard; }
 phase_docker()      { setup_docker; }
 phase_config()      { ensure_bind_mount_files; export INSTALL_DIR; generate_config "$DEPLOY_PROFILE" "$TEMPLATE_DIR"; enable_gpu_compose; setup_security; [[ "$ENABLE_AUTHELIA" == "true" ]] && configure_authelia "$TEMPLATE_DIR"; _copy_runtime_files; }
 phase_start()       { compose_up; create_openwebui_admin; }
-phase_health()      { wait_healthy 300 || true; _check_critical_services; }
+phase_health()      { wait_healthy 300; _check_critical_services; }
 phase_models()      { download_models; }
 phase_backups()     { setup_backups; setup_tunnel; }
-phase_complete()    { _save_credentials; _install_cli; _install_crons; log_success "Installation complete!"; }
+phase_complete()    { _save_credentials; _install_cli; _install_crons; _show_final_summary; }
 
 _confirm_continue() {
     if [[ "$NON_INTERACTIVE" == "true" ]]; then log_warn "Non-interactive: continuing despite: $1"; return 0; fi
@@ -144,7 +146,7 @@ _check_critical_services() {
             log_error "Critical service ${svc}: ${st}"; docker logs --tail 5 "agmind-${svc}" 2>&1 | sed 's/^/    /'; failed=$((failed+1))
         fi
     done
-    [[ $failed -gt 0 ]] && { log_error "${failed} critical service(s) failed"; exit 1; }
+    [[ $failed -gt 0 ]] && { log_error "${failed} critical service(s) failed"; return 1; }
 }
 
 _copy_runtime_files() {
@@ -184,6 +186,42 @@ _install_crons() {
         echo "* * * * * root ${INSTALL_DIR}/scripts/health-gen.sh >> ${INSTALL_DIR}/health-gen.log 2>&1" > /etc/cron.d/agmind-health
         chmod 644 /etc/cron.d/agmind-health
     fi
+}
+
+_show_final_summary() {
+    local ip; ip="$(_get_ip)"
+    local url="http://${ip}"
+    [[ "${DEPLOY_PROFILE:-}" == "vps" && -n "${DOMAIN:-}" ]] && url="https://${DOMAIN}"
+    local owui_pass=""
+    [[ -f "${INSTALL_DIR}/.admin_password" ]] && owui_pass="$(cat "${INSTALL_DIR}/.admin_password")"
+    local dify_url="http://${DOMAIN:-$ip}:3000"
+
+    local container_count
+    container_count="$(docker ps --filter "name=agmind-" -q 2>/dev/null | wc -l | tr -d ' ')"
+
+    echo ""
+    echo -e "${CYAN}${BOLD}"
+    echo "  +--------------------------------------------------+"
+    echo "  |            AGMind — Установка завершена           |"
+    echo "  +--------------------------------------------------+"
+    echo -e "${NC}"
+    echo -e "  ${BOLD}Open WebUI:${NC}      ${GREEN}${url}${NC}"
+    echo -e "  ${BOLD}Dify Console:${NC}    ${GREEN}${dify_url}${NC}"
+    echo ""
+    echo -e "  ${BOLD}Логин:${NC}           admin@agmind.local"
+    echo -e "  ${BOLD}Пароль:${NC}          ${owui_pass:-см. ${INSTALL_DIR}/credentials.txt}"
+    echo ""
+    echo -e "  ${BOLD}Профиль:${NC}         ${DEPLOY_PROFILE:-lan}"
+    echo -e "  ${BOLD}LLM:${NC}             ${LLM_PROVIDER:-ollama} ${LLM_MODEL:-}${VLLM_MODEL:+ (${VLLM_MODEL})}"
+    echo -e "  ${BOLD}Эмбеддинги:${NC}      ${EMBED_PROVIDER:-ollama} ${EMBEDDING_MODEL:-bge-m3}"
+    echo -e "  ${BOLD}Контейнеры:${NC}      ${container_count} запущено"
+    echo ""
+    echo -e "  ${BOLD}Credentials:${NC}     ${INSTALL_DIR}/credentials.txt"
+    echo -e "  ${BOLD}Логи:${NC}            ${INSTALL_DIR}/install.log"
+    echo -e "  ${BOLD}CLI:${NC}             agmind status | agmind health"
+    echo ""
+    echo -e "  +--------------------------------------------------+"
+    echo ""
 }
 
 # --- Main ---

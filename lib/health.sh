@@ -14,7 +14,7 @@ INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
 get_service_list() {
     local compose_dir="${INSTALL_DIR}/docker"
     local env_file="${compose_dir}/.env"
-    local services=(db redis sandbox ssrf_proxy api worker web plugin_daemon pipeline nginx open-webui)
+    local services=(db redis sandbox ssrf_proxy api worker web plugin_daemon pipelines nginx open-webui)
 
     if [[ -f "$env_file" ]]; then
         # Vector store

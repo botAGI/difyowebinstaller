@@ -36,7 +36,7 @@ http {
 
     # --- Rate Limiting ---
     limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
-    limit_req_zone $binary_remote_addr zone=login:10m rate=1r/10s;
+    limit_req_zone $binary_remote_addr zone=login:10m rate=6r/m;
     limit_req_zone $binary_remote_addr zone=health:1m rate=1r/s;
     limit_conn_zone $binary_remote_addr zone=ws:10m;
 

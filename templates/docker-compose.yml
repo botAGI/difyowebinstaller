@@ -239,14 +239,36 @@ services:
       - ENABLE_OLLAMA_API=${ENABLE_OLLAMA_API:-false}
       - ENABLE_OPENAI_API=${ENABLE_OPENAI_API:-false}
       - OPENAI_API_BASE_URL=${OPENAI_API_BASE_URL:-}
+      - PIPELINES_URLS=http://pipelines:9099
     volumes:
       - agmind_openwebui_data:/app/backend/data
+    depends_on:
+      pipelines:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY && curl -sf http://localhost:8080/health 2>/dev/null || wget -qO- http://localhost:8080/health 2>/dev/null || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
       start_period: 30s
+    networks:
+      - agmind-backend
+
+  # ==================== Open WebUI Pipelines ====================
+  pipelines:
+    <<: *security-defaults
+    image: ghcr.io/open-webui/pipelines:${PIPELINES_VERSION:-main}
+    container_name: agmind-pipelines
+    restart: on-failure:5
+    mem_limit: ${PIPELINES_MEM_LIMIT:-1g}
+    volumes:
+      - agmind_pipelines_data:/app/pipelines
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9099/health || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 15s
     networks:
       - agmind-backend
 
@@ -991,6 +1013,7 @@ networks:
 
 volumes:
   agmind_openwebui_data:
+  agmind_pipelines_data:
   agmind_ollama_data:
   agmind_xinference_data:
   agmind_grafana_data:
