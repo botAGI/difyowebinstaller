@@ -171,7 +171,10 @@ _check_critical_services() {
             docker logs --tail 5 agmind-tei 2>&1 | sed 's/^/    /' || true
         fi
     fi
-    [[ $failed -gt 0 ]] && { log_error "${failed} critical service(s) failed"; return 1; }
+    if [[ $failed -gt 0 ]]; then
+        log_error "${failed} critical service(s) failed"
+        return 1
+    fi
 }
 
 _copy_runtime_files() {
