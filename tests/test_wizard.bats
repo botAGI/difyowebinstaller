@@ -146,6 +146,42 @@ teardown() {
 }
 
 # ============================================================================
+# BLACKWELL GPU SUPPORT
+# ============================================================================
+
+@test "blackwell: vllm auto-sets -cu130 suffix on Blackwell GPU" {
+    export DEPLOY_PROFILE="lan"
+    export LLM_PROVIDER="vllm"
+    export VLLM_MODEL="Qwen/Qwen2.5-14B-Instruct"
+    export DETECTED_GPU="nvidia"
+    export DETECTED_GPU_COMPUTE="12.0"
+    run_wizard >/dev/null 2>&1
+    [ "$LLM_PROVIDER" = "vllm" ]
+    [ "$VLLM_CUDA_SUFFIX" = "-cu130" ]
+}
+
+@test "blackwell: no suffix on older GPU (compute 8.9)" {
+    export DEPLOY_PROFILE="lan"
+    export LLM_PROVIDER="vllm"
+    export VLLM_MODEL="Qwen/Qwen2.5-14B-Instruct"
+    export DETECTED_GPU="nvidia"
+    export DETECTED_GPU_COMPUTE="8.9"
+    run_wizard >/dev/null 2>&1
+    [ "$LLM_PROVIDER" = "vllm" ]
+    [ -z "$VLLM_CUDA_SUFFIX" ]
+}
+
+@test "blackwell: no suffix when compute not detected" {
+    export DEPLOY_PROFILE="lan"
+    export LLM_PROVIDER="vllm"
+    export VLLM_MODEL="Qwen/Qwen2.5-14B-Instruct"
+    export DETECTED_GPU="nvidia"
+    export DETECTED_GPU_COMPUTE=""
+    run_wizard >/dev/null 2>&1
+    [ -z "$VLLM_CUDA_SUFFIX" ]
+}
+
+# ============================================================================
 # EMBEDDING PROVIDER
 # ============================================================================
 

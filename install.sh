@@ -146,6 +146,18 @@ _check_critical_services() {
             log_error "Critical service ${svc}: ${st}"; docker logs --tail 5 "agmind-${svc}" 2>&1 | sed 's/^/    /'; failed=$((failed+1))
         fi
     done
+    # GPU compatibility hint for vLLM
+    if [[ "${LLM_PROVIDER:-}" == "vllm" ]]; then
+        local vllm_st; vllm_st="$(docker ps --filter "name=agmind-vllm" --format "{{.Status}}" 2>/dev/null | head -1)"
+        if echo "$vllm_st" | grep -qi "exited\|restarting"; then
+            log_error "vLLM не запустился: ${vllm_st}"
+            if docker logs --tail 20 agmind-vllm 2>&1 | grep -qi "no kernel image"; then
+                log_error "GPU compute capability не поддерживается данной сборкой vLLM."
+                log_error "Решение: переустановите с VLLM_CUDA_SUFFIX=-cu130 или переключитесь на Ollama."
+            fi
+            failed=$((failed+1))
+        fi
+    fi
     [[ $failed -gt 0 ]] && { log_error "${failed} critical service(s) failed"; return 1; }
 }
 

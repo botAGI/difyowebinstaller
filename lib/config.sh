@@ -243,6 +243,7 @@ _append_provider_vars() {
                 echo "ENABLE_OLLAMA_API=false"
                 echo "ENABLE_OPENAI_API=true"
                 echo "OPENAI_API_BASE_URL=http://vllm:8000/v1"
+                [[ -n "${VLLM_CUDA_SUFFIX:-}" ]] && echo "VLLM_CUDA_SUFFIX=${VLLM_CUDA_SUFFIX}"
                 ;;
             external|skip)
                 echo "OLLAMA_BASE_URL="

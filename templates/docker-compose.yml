@@ -309,7 +309,7 @@ services:
   # ==================== vLLM (vllm profile) ====================
   vllm:
     <<: *logging-defaults
-    image: vllm/vllm-openai:${VLLM_VERSION:-v0.8.4}
+    image: vllm/vllm-openai:${VLLM_VERSION:-v0.17.1}${VLLM_CUDA_SUFFIX:-}
     container_name: agmind-vllm
     restart: on-failure:5
     mem_limit: ${VLLM_MEM_LIMIT:-16g}
@@ -317,6 +317,7 @@ services:
       - vllm
     environment:
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-all}
     command: --model ${VLLM_MODEL:-Qwen/Qwen2.5-14B-Instruct} --host 0.0.0.0 --port 8000
     volumes:
       - agmind_vllm_cache:/root/.cache/huggingface

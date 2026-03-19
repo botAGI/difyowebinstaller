@@ -29,6 +29,7 @@ _init_wizard_defaults() {
     LLM_PROVIDER="${LLM_PROVIDER:-}"
     LLM_MODEL="${LLM_MODEL:-}"
     VLLM_MODEL="${VLLM_MODEL:-}"
+    VLLM_CUDA_SUFFIX="${VLLM_CUDA_SUFFIX:-}"
     EMBED_PROVIDER="${EMBED_PROVIDER:-}"
     EMBEDDING_MODEL="${EMBEDDING_MODEL:-bge-m3}"
     HF_TOKEN="${HF_TOKEN:-}"
@@ -220,6 +221,7 @@ _wizard_llm_provider() {
 
     # Respect env override only in non-interactive mode
     if [[ "${NON_INTERACTIVE}" == "true" && -n "$LLM_PROVIDER" ]]; then
+        _apply_blackwell_cu130
         return 0
     fi
 
@@ -238,7 +240,40 @@ _wizard_llm_provider() {
         4) LLM_PROVIDER="skip";;
         *) LLM_PROVIDER="$default_provider";;
     esac
+
+    # Blackwell GPU warning: sm_120+ needs CUDA 13.0 build
+    if [[ "$LLM_PROVIDER" == "vllm" ]] && _is_blackwell_gpu; then
+        echo ""
+        log_warn "GPU Blackwell (compute ${DETECTED_GPU_COMPUTE}) — требуется vLLM с CUDA 13.0."
+        echo "  1) Переключиться на Ollama (рекомендуется)"
+        echo "  2) Использовать vLLM с CUDA 13.0 (stable -cu130)"
+        echo ""
+        _ask_choice "Выбор [1-2, Enter=2]: " 1 2 2
+        if [[ "$REPLY" == "1" ]]; then
+            LLM_PROVIDER="ollama"
+            log_info "Переключено на Ollama"
+        else
+            VLLM_CUDA_SUFFIX="-cu130"
+            log_info "vLLM будет использовать образ с CUDA 13.0"
+        fi
+    fi
     echo ""
+}
+
+# Check if GPU is Blackwell architecture (compute capability >= 12.0)
+_is_blackwell_gpu() {
+    local cc="${DETECTED_GPU_COMPUTE:-}"
+    [[ -z "$cc" ]] && return 1
+    local major="${cc%%.*}"
+    [[ "$major" -ge 12 ]] 2>/dev/null
+}
+
+# Auto-apply -cu130 suffix for Blackwell in non-interactive mode
+_apply_blackwell_cu130() {
+    if [[ "$LLM_PROVIDER" == "vllm" ]] && _is_blackwell_gpu; then
+        VLLM_CUDA_SUFFIX="-cu130"
+        log_info "Blackwell GPU (compute ${DETECTED_GPU_COMPUTE}) — автоматически выбран vLLM с CUDA 13.0"
+    fi
 }
 
 _wizard_ollama_model() {
@@ -742,7 +777,7 @@ run_wizard() {
 
     # Export all choices
     export DEPLOY_PROFILE DOMAIN CERTBOT_EMAIL VECTOR_STORE ETL_ENHANCED
-    export LLM_PROVIDER LLM_MODEL VLLM_MODEL EMBED_PROVIDER EMBEDDING_MODEL
+    export LLM_PROVIDER LLM_MODEL VLLM_MODEL VLLM_CUDA_SUFFIX EMBED_PROVIDER EMBEDDING_MODEL
     export HF_TOKEN TLS_MODE TLS_CERT_PATH TLS_KEY_PATH
     export MONITORING_MODE MONITORING_ENDPOINT MONITORING_TOKEN
     export ALERT_MODE ALERT_WEBHOOK_URL ALERT_TELEGRAM_TOKEN ALERT_TELEGRAM_CHAT_ID
