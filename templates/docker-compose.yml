@@ -264,7 +264,7 @@ services:
     volumes:
       - agmind_pipelines_data:/app/pipelines
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:9099/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:9099/ || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
@@ -531,7 +531,7 @@ services:
     #__GPU__          count: all
     #__GPU__          capabilities: [gpu]
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:9997/v1/models')\" 2>/dev/null || curl -sf http://localhost:9997/v1/models 2>/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:9997/v1/models 2>/dev/null || wget -qO- http://localhost:9997/v1/models 2>/dev/null || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
