@@ -156,6 +156,9 @@ _check_critical_services() {
                 log_warn "Решение: переустановите с VLLM_CUDA_SUFFIX=-cu130 или переключитесь на Ollama."
             elif docker logs --tail 20 agmind-vllm 2>&1 | grep -qi "out of memory\|OOM\|CUDA.*memory"; then
                 log_warn "Недостаточно VRAM для выбранной модели."
+                if [[ "${EMBED_PROVIDER:-}" == "tei" ]]; then
+                    log_warn "TEI занимает ~1.5-2 GB VRAM на той же GPU."
+                fi
                 log_warn "Решение: выберите AWQ-квантизированную модель (например Qwen/Qwen2.5-7B-Instruct-AWQ)."
             fi
         fi
