@@ -38,11 +38,11 @@ generate_secret() {
 }
 
 rotate_secrets() {
-    echo -e "${BOLD}=== Ротация секретов AGMind ===${NC}"
+    echo -e "${BOLD}=== AGMind Secret Rotation ===${NC}"
     echo ""
 
     if [[ ! -f "$ENV_FILE" ]]; then
-        echo -e "${RED}Файл .env не найден: ${ENV_FILE}${NC}"
+        echo -e "${RED}.env file not found: ${ENV_FILE}${NC}"
         exit 1
     fi
 
@@ -83,7 +83,7 @@ rotate_secrets() {
         "$ENV_FILE" > "$env_tmp" || { rm -f "$env_tmp"; return 1; }
     mv "$env_tmp" "$ENV_FILE"
 
-    echo -e "${GREEN}Секреты обновлены:${NC}"
+    echo -e "${GREEN}Secrets updated:${NC}"
     echo -e "  ${GREEN}✓${NC} SECRET_KEY rotated"
     echo -e "  ${GREEN}✓${NC} REDIS_PASSWORD rotated"
     echo -e "  ${GREEN}✓${NC} GRAFANA_ADMIN_PASSWORD rotated"
@@ -96,7 +96,7 @@ rotate_secrets() {
         local pub_key
         pub_key=$(grep 'public key:' "${INSTALL_DIR}/.age/agmind.key" | cut -d: -f2- | tr -d ' ')
         SOPS_AGE_KEY_FILE="${INSTALL_DIR}/.age/agmind.key" sops --encrypt --age "$pub_key" "$ENV_FILE" > "${ENV_FILE}.enc"
-        echo -e "${GREEN}  .env.enc обновлён${NC}"
+        echo -e "${GREEN}  .env.enc updated${NC}"
     fi
 
     # Update Redis config file BEFORE restart (so Redis loads new password)
@@ -110,7 +110,7 @@ rotate_secrets() {
 
     # Restart affected services
     echo ""
-    echo -e "${CYAN}Перезапуск сервисов...${NC}"
+    echo -e "${CYAN}Restarting services...${NC}"
     cd "${INSTALL_DIR}/docker"
     docker compose restart api worker redis grafana sandbox plugin_daemon 2>/dev/null || true
 
@@ -130,13 +130,13 @@ rotate_secrets() {
         if [[ -n "$token" && -n "$chat_id" ]]; then
             curl -sf --max-time 10 "https://api.telegram.org/bot${token}/sendMessage" \
                 -d "chat_id=${chat_id}" \
-                -d "text=🔐 AGMind: секреты ротированы ($(hostname 2>/dev/null || echo 'unknown'))" \
+                -d "text=🔐 AGMind: secrets rotated ($(hostname 2>/dev/null || echo 'unknown'))" \
                 -d "parse_mode=HTML" >/dev/null 2>&1 || true
         fi
     fi
 
     echo ""
-    echo -e "${GREEN}=== Ротация завершена ===${NC}"
+    echo -e "${GREEN}=== Rotation complete ===${NC}"
 }
 
 # Setup cron for monthly rotation
@@ -148,7 +148,7 @@ setup_rotation_cron() {
     # Add to crontab if not already there
     if ! crontab -l 2>/dev/null | grep -q 'rotate_secrets'; then
         (crontab -l 2>/dev/null; echo "$cron_entry") | crontab -
-        echo -e "${GREEN}Ротация секретов добавлена в cron (1-е число каждого месяца)${NC}"
+        echo -e "${GREEN}Secret rotation added to cron (1st of each month)${NC}"
     fi
 }
 

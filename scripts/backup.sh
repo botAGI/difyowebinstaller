@@ -8,16 +8,14 @@ if [[ $EUID -ne 0 ]]; then echo "This script must be run as root"; exit 1; fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
+CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 
 # Exclusive lock — prevent parallel backup/update/restore
 LOCK_FILE="/var/lock/agmind-operation.lock"
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
-    echo -e "${RED}Другая операция AGMind уже запущена. Дождитесь завершения.${NC}"
+    echo -e "${RED}Another AGMind operation is running. Wait for it to finish.${NC}"
     exit 1
 fi
 
@@ -64,9 +62,9 @@ echo "=== AGMind Backup: ${DATE} ==="
 mkdir -p "${TARGET_DIR}"
 
 # === Pre-backup checks ===
-echo "Проверка доступности PostgreSQL..."
+echo "Checking PostgreSQL availability..."
 if ! docker compose -f "$COMPOSE_FILE" exec -T db pg_isready -U postgres >/dev/null 2>&1; then
-    echo -e "${RED}PostgreSQL недоступен! Бэкап отменён.${NC}"
+    echo -e "${RED}PostgreSQL unavailable! Backup cancelled.${NC}"
     BACKUP_OK=false
     exit 1
 fi
@@ -158,7 +156,7 @@ cd - >/dev/null
 
 # === Encryption ===
 if [[ "${ENABLE_BACKUP_ENCRYPTION:-false}" == "true" ]]; then
-    echo "Шифрование бэкапа..."
+    echo "Encrypting backup..."
     age_key="${INSTALL_DIR}/.age/agmind.key"
     if [[ -f "$age_key" ]] && command -v age &>/dev/null; then
         pub_key=$(grep 'public key:' "$age_key" | cut -d: -f2- | tr -d ' ')
@@ -166,9 +164,9 @@ if [[ "${ENABLE_BACKUP_ENCRYPTION:-false}" == "true" ]]; then
             [[ -f "$f" ]] || continue
             age -r "$pub_key" -o "${f}.age" "$f" 2>/dev/null && rm -f "$f"
         done
-        echo -e "${GREEN}Бэкап зашифрован${NC}"
+        echo -e "${GREEN}Backup encrypted${NC}"
     else
-        echo -e "${YELLOW}age ключ не найден — пропускаем шифрование${NC}"
+        echo -e "${YELLOW}age key not found — skipping encryption${NC}"
     fi
 fi
 
@@ -180,7 +178,7 @@ if [[ "${ENABLE_BACKUP_ENCRYPTION:-false}" == "true" ]]; then
 fi
 
 # 8. Rotation — delete backups older than retention period
-echo "  Ротация (удаление старше ${RETENTION_DAYS} дней)..."
+echo "  Rotation (deleting older than ${RETENTION_DAYS} days)..."
 find "${BACKUP_DIR}" -maxdepth 1 -type d -mtime "+${RETENTION_DAYS}" -not -name "$(basename "$BACKUP_DIR")" -exec rm -rf {} \; 2>/dev/null || true
 
 # Retention by count
@@ -190,14 +188,14 @@ if [[ -n "${BACKUP_RETENTION_COUNT:-}" ]] && [[ "$BACKUP_RETENTION_COUNT" -gt 0 
         to_delete=$((backup_count - BACKUP_RETENTION_COUNT))
         find "${BACKUP_DIR}" -maxdepth 1 -type d -name "20*" | sort | head -n "$to_delete" | while read -r old_dir; do
             rm -rf "$old_dir"
-            echo "  Удалён (по лимиту): $(basename "$old_dir")"
+            echo "  Deleted (by limit): $(basename "$old_dir")"
         done
     fi
 fi
 
 # 9. Remote backup (if configured)
 if [[ "${REMOTE_BACKUP_ENABLED:-false}" == "true" && -n "${REMOTE_BACKUP_HOST:-}" ]]; then
-    echo "  Удалённый бэкап → ${REMOTE_BACKUP_USER}@${REMOTE_BACKUP_HOST}..."
+    echo "  Remote backup → ${REMOTE_BACKUP_USER}@${REMOTE_BACKUP_HOST}..."
     rsync_cmd=(rsync -azP)
     if [[ -n "${REMOTE_BACKUP_KEY:-}" ]]; then
         # B-14: Quote REMOTE_BACKUP_KEY
@@ -212,9 +210,9 @@ fi
 
 # === S3 Upload ===
 if [[ "${ENABLE_S3_BACKUP:-false}" == "true" ]]; then
-    echo "Загрузка в S3..."
+    echo "Uploading to S3..."
     if ! command -v rclone &>/dev/null; then
-        echo -e "${YELLOW}rclone не установлен. Установите: https://rclone.org/install/${NC}"
+        echo -e "${YELLOW}rclone not installed. Install: https://rclone.org/install/${NC}"
     else
         s3_remote="${S3_REMOTE_NAME:-s3}"
         s3_bucket="${S3_BUCKET:-agmind-backups}"
@@ -222,14 +220,14 @@ if [[ "${ENABLE_S3_BACKUP:-false}" == "true" ]]; then
         rclone copy "${TARGET_DIR}/" "${s3_remote}:${s3_bucket}/${s3_path}/${DATE}/" \
             --config "${RCLONE_CONFIG_PATH:-$HOME/.config/rclone/rclone.conf}" \
             2>/dev/null && echo -e "${GREEN}S3 upload: OK${NC}" \
-            || echo -e "${YELLOW}S3 upload: ошибка${NC}"
+            || echo -e "${YELLOW}S3 upload: error${NC}"
     fi
 fi
 
 # Summary
 BACKUP_SIZE=$(du -sh "${TARGET_DIR}" 2>/dev/null | cut -f1)
 echo ""
-echo "=== Бэкап завершён ==="
-echo "  Путь: ${TARGET_DIR}"
-echo "  Размер: ${BACKUP_SIZE}"
-echo "  Дата: $(date '+%Y-%m-%d %H:%M:%S')"
+echo "=== Backup complete ==="
+echo "  Path: ${TARGET_DIR}"
+echo "  Size: ${BACKUP_SIZE}"
+echo "  Date: $(date '+%Y-%m-%d %H:%M:%S')"

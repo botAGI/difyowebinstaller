@@ -1,52 +1,60 @@
 #!/usr/bin/env bash
-# authelia.sh — Configure Authelia 2FA (optional, gated by ENABLE_AUTHELIA)
+# authelia.sh — Authelia 2FA configuration for /console/* routes.
+# Dependencies: common.sh (log_*, generate_random, escape_sed, _atomic_sed)
+# Functions: configure_authelia(template_dir), generate_argon2_hash(password),
+#            create_authelia_user(email, password)
+# Expects: INSTALL_DIR, ENABLE_AUTHELIA, DOMAIN
 set -euo pipefail
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
-
 INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
+
+# ============================================================================
+# CONFIGURE AUTHELIA
+# ============================================================================
 
 configure_authelia() {
     if [[ "${ENABLE_AUTHELIA:-false}" != "true" ]]; then
         return 0
     fi
 
-    echo -e "${YELLOW}Настройка Authelia 2FA...${NC}"
-
     local template_dir="$1"
     local authelia_dir="${INSTALL_DIR}/docker/authelia"
     mkdir -p "$authelia_dir"
 
-    # Copy configuration template
-    cp "${template_dir}/authelia/configuration.yml.template" "${authelia_dir}/configuration.yml"
+    log_info "Configuring Authelia 2FA..."
 
-    # Generate argon2 hash for admin password (read from INIT_PASSWORD in .env)
+    # Copy templates
+    cp "${template_dir}/authelia/configuration.yml.template" "${authelia_dir}/configuration.yml"
+    cp "${template_dir}/authelia/users_database.yml.template" "${authelia_dir}/users_database.yml"
+
+    # Read admin password
     local admin_password
-    admin_password=$(grep '^INIT_PASSWORD=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- | base64 -d 2>/dev/null || echo "")
+    admin_password="$(grep '^INIT_PASSWORD=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- | base64 -d 2>/dev/null || true)"
     if [[ -z "$admin_password" ]]; then
-        admin_password=$(head -c 256 /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z0-9' | head -c 16)
+        admin_password="$(cat "${INSTALL_DIR}/.admin_password" 2>/dev/null || true)"
+    fi
+    if [[ -z "$admin_password" ]]; then
+        admin_password="$(generate_random 16)"
     fi
 
+    # Generate argon2 hash
     local admin_hash
-    admin_hash=$(generate_argon2_hash "$admin_password") || {
-        echo -e "${RED}Ошибка: не удалось сгенерировать хеш пароля для Authelia${NC}"
-        echo -e "${YELLOW}Установите argon2 или Docker для генерации хешей${NC}"
+    admin_hash="$(generate_argon2_hash "$admin_password")" || {
+        log_error "Failed to generate argon2 hash for Authelia"
+        log_warn "Install argon2 or Docker for hash generation"
         return 1
     }
 
-    # Copy users database template
-    cp "${template_dir}/authelia/users_database.yml.template" "${authelia_dir}/users_database.yml"
-
     # Generate JWT secret
     local jwt_secret
-    jwt_secret=$(head -c 256 /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z0-9' | head -c 64)
+    jwt_secret="$(generate_random 64)"
 
-    # Escape user-controlled values for safe sed substitution
+    # Escape user-controlled values for sed
     local safe_domain safe_company
-    safe_domain=$(printf '%s' "${DOMAIN:-localhost}" | sed 's/[&/|\]/\\&/g')
-    safe_company=$(printf '%s' "AGMind" | sed 's/[&/|\]/\\&/g')
+    safe_domain="$(escape_sed "${DOMAIN:-localhost}")"
+    safe_company="$(escape_sed "AGMind")"
 
-    # Replace placeholders in configuration.yml (atomic: temp+mv)
+    # Replace placeholders in configuration.yml (atomic)
     local conf_tmp="${authelia_dir}/configuration.yml.tmp.$$"
     sed \
         -e "s|__AUTHELIA_JWT_SECRET__|${jwt_secret}|g" \
@@ -55,7 +63,7 @@ configure_authelia() {
         "${authelia_dir}/configuration.yml" > "$conf_tmp" || { rm -f "$conf_tmp"; return 1; }
     mv "$conf_tmp" "${authelia_dir}/configuration.yml"
 
-    # Replace placeholders in users_database.yml (atomic: temp+mv)
+    # Replace placeholders in users_database.yml (atomic)
     local users_tmp="${authelia_dir}/users_database.yml.tmp.$$"
     sed \
         -e "s|__AUTHELIA_ADMIN_HASH__|${admin_hash}|g" \
@@ -64,65 +72,67 @@ configure_authelia() {
         "${authelia_dir}/users_database.yml" > "$users_tmp" || { rm -f "$users_tmp"; return 1; }
     mv "$users_tmp" "${authelia_dir}/users_database.yml"
 
-    # Set restrictive permissions on config files
+    # Restrictive permissions
     chmod 600 "${authelia_dir}/configuration.yml" "${authelia_dir}/users_database.yml"
 
-    # Also update .env with the generated JWT secret
+    # Update JWT secret in .env
     local env_file="${INSTALL_DIR}/docker/.env"
     if [[ -f "$env_file" ]]; then
-        local env_tmp="${env_file}.tmp.$$"
-        sed "s|AUTHELIA_JWT_SECRET=.*|AUTHELIA_JWT_SECRET=${jwt_secret}|" "$env_file" > "$env_tmp" \
-            && mv "$env_tmp" "$env_file" \
-            || rm -f "$env_tmp"
+        _atomic_sed "$env_file" "s|AUTHELIA_JWT_SECRET=.*|AUTHELIA_JWT_SECRET=${jwt_secret}|"
     fi
 
-    echo -e "${GREEN}Authelia 2FA настроена: ${authelia_dir}${NC}"
+    log_success "Authelia 2FA configured: ${authelia_dir}"
 }
+
+# ============================================================================
+# ARGON2 HASH GENERATION
+# ============================================================================
 
 generate_argon2_hash() {
     local password="$1"
     local hash=""
 
-    # Use docker to generate argon2 hash via authelia container (pass password via stdin)
+    # Preferred: use Docker + Authelia image
     if command -v docker &>/dev/null; then
-        hash=$(echo -n "$password" | docker run --rm -i "authelia/authelia:${AUTHELIA_VERSION:-4.38}" \
-            authelia crypto hash generate argon2 --stdin 2>/dev/null | tail -1) || true
+        hash="$(echo -n "$password" | docker run --rm -i "authelia/authelia:${AUTHELIA_VERSION:-4.38}" \
+            authelia crypto hash generate argon2 --stdin 2>/dev/null | tail -1)" || true
         if [[ -n "${hash:-}" ]]; then
             echo "$hash"
             return 0
         fi
     fi
 
-    # Degraded fallback: use python3 scrypt-based hash if available.
-    # NOTE: This produces a scrypt hash, NOT argon2id. It may not work with all
-    # Authelia versions. The docker method above is strongly preferred.
-    hash=""
+    # Fallback: python3 scrypt (degraded — may not work with all Authelia versions)
     if command -v python3 &>/dev/null; then
-        hash=$(AUTHELIA_PW="$password" python3 -c "
+        hash="$(AUTHELIA_PW="$password" python3 -c "
 import os, hashlib, base64
 password = os.environ['AUTHELIA_PW'].encode()
 salt = os.urandom(16)
 h = hashlib.scrypt(password, salt=salt, n=65536, r=8, p=1, dklen=32)
 print(base64.b64encode(salt).decode() + '\$' + base64.b64encode(h).decode())
-" 2>/dev/null) || true
+" 2>/dev/null)" || true
         if [[ -n "${hash:-}" ]]; then
             echo "$hash"
             return 0
         fi
     fi
 
-    # Last resort: placeholder that must be replaced manually
-    echo -e "${RED}ВНИМАНИЕ: не удалось сгенерировать argon2 хеш. Замените вручную.${NC}" >&2
+    # Last resort: placeholder
+    log_error "Cannot generate argon2 hash. Replace manually." >&2
     echo '$argon2id$v=19$m=65536,t=3,p=4$PLACEHOLDER_SALT$PLACEHOLDER_HASH'
     return 1
 }
 
+# ============================================================================
+# CREATE ADDITIONAL USER
+# ============================================================================
+
 create_authelia_user() {
-    local email="$1"
-    local password="$2"
+    local email="${1:-}"
+    local password="${2:-}"
 
     if [[ -z "$email" || -z "$password" ]]; then
-        echo -e "${RED}Использование: create_authelia_user <email> <password>${NC}"
+        log_error "Usage: create_authelia_user <email> <password>"
         return 1
     fi
 
@@ -130,26 +140,27 @@ create_authelia_user() {
     local users_file="${authelia_dir}/users_database.yml"
 
     if [[ ! -f "$users_file" ]]; then
-        echo -e "${RED}Файл пользователей не найден: ${users_file}${NC}"
+        log_error "Users file not found: ${users_file}"
         return 1
     fi
 
     # Derive username from email
     local username
-    username=$(echo "$email" | cut -d'@' -f1 | tr '.' '_' | tr '[:upper:]' '[:lower:]')
+    username="$(echo "$email" | cut -d'@' -f1 | tr '.' '_' | tr '[:upper:]' '[:lower:]')"
 
-    # Generate password hash
     local password_hash
-    password_hash=$(generate_argon2_hash "$password")
+    password_hash="$(generate_argon2_hash "$password")"
 
-    # Append user to users_database.yml
     printf '  %s:\n    displayname: "%s"\n    password: "%s"\n    email: %s\n    groups:\n      - admins\n      - users\n' \
         "$username" "$username" "$password_hash" "$email" >> "$users_file"
 
-    echo -e "${GREEN}Пользователь ${username} (${email}) добавлен в Authelia${NC}"
+    log_success "User ${username} (${email}) added to Authelia"
 }
 
+# Standalone
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    echo "Этот скрипт предназначен для sourcing из install.sh"
-    exit 1
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    # shellcheck source=common.sh
+    source "${SCRIPT_DIR}/common.sh"
+    echo "authelia.sh: use configure_authelia(template_dir)"
 fi

@@ -1,193 +1,12 @@
 #!/usr/bin/env bash
-# config.sh — Generate .env and configuration files from templates
+# config.sh — Generate .env, nginx.conf, redis.conf, sandbox config, compose GPU setup.
+# Dependencies: common.sh (log_*, generate_random, _atomic_sed, escape_sed,
+#               safe_write_file, validate_no_default_secrets, ensure_bind_mount_files)
+# Functions: generate_config(profile, template_dir), enable_gpu_compose()
+# Expects: wizard exports (DEPLOY_PROFILE, LLM_PROVIDER, DOMAIN, etc.)
 set -euo pipefail
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
-
 INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
-
-# ============================================================================
-# SAFE FILE OPERATIONS
-# ============================================================================
-
-# Prepare a path for writing: remove directory artifact, ensure parent exists.
-# Usage: safe_write_file "/path/to/file.yml"
-#   then: cat > "/path/to/file.yml" <<EOF ...
-#   or:   cp source "/path/to/file.yml"
-safe_write_file() {
-    local filepath="$1"
-    # Safety: only operate within INSTALL_DIR
-    if [[ -n "${INSTALL_DIR:-}" && "$filepath" != "${INSTALL_DIR}"/* ]]; then
-        echo -e "${RED}ERROR: safe_write_file called with path outside INSTALL_DIR: ${filepath}${NC}" >&2
-        return 1
-    fi
-    # Docker creates directories when bind mount source files don't exist.
-    # On reinstall these stale directories block file creation.
-    [[ -d "$filepath" ]] && rm -rf "${filepath:?}"
-    mkdir -p "$(dirname "$filepath")"
-}
-
-# Ensure all bind-mounted config files exist as FILES (not dirs, not missing).
-# Call right before docker compose up as final safety net.
-ensure_bind_mount_files() {
-    local docker_dir="${INSTALL_DIR}/docker"
-    local files=(
-        "monitoring/prometheus.yml"
-        "monitoring/alert_rules.yml"
-        "monitoring/alertmanager.yml"
-        "monitoring/loki-config.yml"
-        "monitoring/promtail-config.yml"
-        "nginx/nginx.conf"
-        "volumes/redis/redis.conf"
-        "volumes/ssrf_proxy/squid.conf"
-        "volumes/sandbox/conf/config.yaml"
-    )
-    for f in "${files[@]}"; do
-        local full="${docker_dir}/${f}"
-        if [[ -d "$full" ]]; then
-            rm -rf "${full:?}"
-            mkdir -p "$(dirname "$full")"
-            touch "$full"
-            echo -e "${YELLOW}⚠ Fixed directory artifact: ${f}${NC}"
-        elif [[ ! -f "$full" ]]; then
-            mkdir -p "$(dirname "$full")"
-            touch "$full"
-            echo -e "${YELLOW}⚠ Created missing bind mount file: ${f}${NC}"
-        fi
-    done
-}
-
-# Pre-flight validation before docker compose up.
-# Catches any remaining directory artifacts or missing bind mount sources.
-# Aborts with clear error if anything is wrong.
-preflight_bind_mount_check() {
-    local docker_dir="${INSTALL_DIR}/docker"
-    local errors=0
-
-    echo -e "${CYAN}Pre-flight: проверка bind mount файлов...${NC}"
-
-    # 1. Find .yml/.yaml files that are actually directories
-    local yml_dirs
-    yml_dirs=$(find "$docker_dir" -name "*.yml" -type d 2>/dev/null || true)
-    yml_dirs+=$'\n'
-    yml_dirs+=$(find "$docker_dir" -name "*.yaml" -type d 2>/dev/null || true)
-    yml_dirs=$(echo "$yml_dirs" | sed '/^$/d')
-    if [[ -n "$yml_dirs" ]]; then
-        echo -e "${RED}✗ ОШИБКА: .yml/.yaml пути являются директориями (а не файлами):${NC}"
-        while IFS= read -r d; do
-            echo -e "  ${RED}→ ${d}${NC}"
-        done <<< "$yml_dirs"
-        errors=$((errors + 1))
-    fi
-
-    # 2. Find .conf files that are actually directories
-    local conf_dirs
-    conf_dirs=$(find "$docker_dir" -name "*.conf" -type d 2>/dev/null || true)
-    conf_dirs=$(echo "$conf_dirs" | sed '/^$/d')
-    if [[ -n "$conf_dirs" ]]; then
-        echo -e "${RED}✗ ОШИБКА: .conf пути являются директориями (а не файлами):${NC}"
-        while IFS= read -r d; do
-            echo -e "  ${RED}→ ${d}${NC}"
-        done <<< "$conf_dirs"
-        errors=$((errors + 1))
-    fi
-
-    # 3. Verify ALL bind-mount source files exist (unconditional — Docker creates
-    #    directories for missing sources, which causes OCI mount errors)
-    local all_bind_files=(
-        "nginx/nginx.conf"
-        "volumes/redis/redis.conf"
-        "volumes/ssrf_proxy/squid.conf"
-        "volumes/sandbox/conf/config.yaml"
-        "monitoring/prometheus.yml"
-        "monitoring/alert_rules.yml"
-        "monitoring/alertmanager.yml"
-        "monitoring/loki-config.yml"
-        "monitoring/promtail-config.yml"
-    )
-    for f in "${all_bind_files[@]}"; do
-        local full="${docker_dir}/${f}"
-        if [[ ! -f "$full" ]]; then
-            echo -e "${RED}✗ ОШИБКА: bind mount файл отсутствует: ${f}${NC}"
-            errors=$((errors + 1))
-        fi
-    done
-
-    # Abort if any errors found
-    if [[ $errors -gt 0 ]]; then
-        echo ""
-        echo -e "${RED}╔══════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${RED}║  PRE-FLIGHT FAILED: ${errors} ошибка(и) bind mount обнаружено    ║${NC}"
-        echo -e "${RED}║  docker compose up отменён для предотвращения OCI ошибок ║${NC}"
-        echo -e "${RED}║  Удалите ${INSTALL_DIR} и запустите установку заново     ║${NC}"
-        echo -e "${RED}╚══════════════════════════════════════════════════════════╝${NC}"
-        exit 1
-    fi
-
-    echo -e "${GREEN}✓ Pre-flight: все bind mount файлы в порядке${NC}"
-}
-
-# ============================================================================
-# HELPERS
-# ============================================================================
-
-generate_random() {
-    local length="${1:-32}"
-    head -c 256 /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z0-9' | head -c "$length"
-}
-
-# Atomic sed: write to temp file, then mv. Prevents TOCTOU and partial writes.
-# Usage: _atomic_sed "file" -e 's|old|new|g' -e 's|old2|new2|g'
-#   or:  _atomic_sed "file" '/pattern/d'
-_atomic_sed() {
-    local file="$1"; shift
-    local tmp="${file}.tmp.$$"
-    sed "$@" "$file" > "$tmp" || { rm -f "$tmp"; return 1; }
-    mv "$tmp" "$file"
-}
-
-# Escape special characters for sed replacement strings (& | \ /)
-escape_sed() {
-    printf '%s' "$1" | sed 's/[&/|\]/\\&/g'
-}
-
-# Validate that .env contains no known default/weak passwords
-validate_no_default_secrets() {
-    local env_file="$1"
-    local known_defaults=(
-        "difyai123456"
-        "QaHbTe77"
-        "changeme"
-        "password"
-        "admin123"
-        "secret"
-        "default"
-        "test1234"
-    )
-    local found=0
-    for default in "${known_defaults[@]}"; do
-        if grep -qE "^[^#].*=${default}$" "$env_file" 2>/dev/null; then
-            local offending
-            offending=$(grep -E "^[^#].*=${default}$" "$env_file" | head -5)
-            echo -e "${RED}SECURITY FAIL: Default password '${default}' found in .env:${NC}"
-            echo "$offending"
-            found=1
-        fi
-    done
-    # Also check for unresolved placeholders
-    if grep -qE "^[^#].*=__[A-Z_]+__" "$env_file" 2>/dev/null; then
-        local unresolved
-        unresolved=$(grep -E "^[^#].*=__[A-Z_]+__" "$env_file" | head -5)
-        echo -e "${RED}SECURITY FAIL: Unresolved placeholders in .env:${NC}"
-        echo "$unresolved"
-        found=1
-    fi
-    if [[ $found -eq 1 ]]; then
-        echo -e "${RED}Aborting: fix secrets before proceeding${NC}"
-        return 1
-    fi
-    return 0
-}
 
 # ============================================================================
 # MAIN CONFIG GENERATION
@@ -197,120 +16,202 @@ generate_config() {
     local profile="$1"
     local template_dir="$2"
 
-    echo -e "${YELLOW}Генерация конфигурации (профиль: ${profile})...${NC}"
+    log_info "Generating configuration (profile: ${profile})..."
 
-    # Create directory structure (ONLY directories, never file paths)
-    mkdir -p "${INSTALL_DIR}/docker/volumes/sandbox/conf"
-    mkdir -p "${INSTALL_DIR}/docker/volumes/app/storage"
-    mkdir -p "${INSTALL_DIR}/docker/volumes/db/data"
-    mkdir -p "${INSTALL_DIR}/docker/volumes/redis/data"
-    mkdir -p "${INSTALL_DIR}/docker/volumes/weaviate"
-    mkdir -p "${INSTALL_DIR}/docker/volumes/plugin_daemon/storage"
-    mkdir -p "${INSTALL_DIR}/docker/volumes/certbot/conf"
-    mkdir -p "${INSTALL_DIR}/docker/volumes/certbot/www"
-    mkdir -p "${INSTALL_DIR}/docker/volumes/certbot/ssl"
-    mkdir -p "${INSTALL_DIR}/docker/nginx"
-    mkdir -p "${INSTALL_DIR}/docker/volumes/qdrant"
-    mkdir -p "${INSTALL_DIR}/docker/volumes/ssrf_proxy"
-    mkdir -p "${INSTALL_DIR}/docker/monitoring/grafana/provisioning/datasources"
-    mkdir -p "${INSTALL_DIR}/docker/monitoring/grafana/provisioning/dashboards"
-    mkdir -p "${INSTALL_DIR}/docker/monitoring/grafana/dashboards"
-    mkdir -p "${INSTALL_DIR}/branding"
-    mkdir -p "${INSTALL_DIR}/scripts"
-    mkdir -p "${INSTALL_DIR}/workflows"
-    mkdir -p /var/backups/agmind
+    _create_directory_structure
+    _copy_compose_file "$template_dir"
+    _generate_secrets
+    _generate_env_file "$profile" "$template_dir"
+    _append_provider_vars
+    _copy_versions "$template_dir"
+    _copy_release_manifest "$template_dir"
 
-    # Copy docker-compose.yml
+    # Sub-configs
+    generate_nginx_config "$profile" "$template_dir"
+    handle_tls_config "$profile"
+
+    if [[ "${ENABLE_AUTHELIA:-false}" == "true" ]]; then
+        _enable_authelia_nginx
+        _copy_authelia_files "$template_dir"
+    fi
+
+    if [[ "${MONITORING_MODE:-none}" == "local" ]]; then
+        _copy_monitoring_files "$template_dir"
+        _configure_alertmanager
+    fi
+
+    generate_redis_config
+    generate_sandbox_config
+    _generate_squid_config
+
+    # Validate secrets
+    validate_no_default_secrets "${INSTALL_DIR}/docker/.env"
+
+    # Secure permissions
+    chmod 600 "${INSTALL_DIR}/docker/.env"
+    if [[ $(id -u) -eq 0 ]]; then
+        chown root:root "${INSTALL_DIR}/docker/.env"
+    fi
+
+    # Store admin credentials
+    _store_admin_credentials
+
+    log_success "Configuration generated: ${INSTALL_DIR}/docker/.env"
+}
+
+# ============================================================================
+# DIRECTORY STRUCTURE
+# ============================================================================
+
+_create_directory_structure() {
+    local dirs=(
+        "${INSTALL_DIR}/docker/volumes/sandbox/conf"
+        "${INSTALL_DIR}/docker/volumes/app/storage"
+        "${INSTALL_DIR}/docker/volumes/db/data"
+        "${INSTALL_DIR}/docker/volumes/redis/data"
+        "${INSTALL_DIR}/docker/volumes/weaviate"
+        "${INSTALL_DIR}/docker/volumes/qdrant"
+        "${INSTALL_DIR}/docker/volumes/plugin_daemon/storage"
+        "${INSTALL_DIR}/docker/volumes/certbot/conf"
+        "${INSTALL_DIR}/docker/volumes/certbot/www"
+        "${INSTALL_DIR}/docker/volumes/certbot/ssl"
+        "${INSTALL_DIR}/docker/volumes/ssrf_proxy"
+        "${INSTALL_DIR}/docker/nginx"
+        "${INSTALL_DIR}/docker/monitoring/grafana/provisioning/datasources"
+        "${INSTALL_DIR}/docker/monitoring/grafana/provisioning/dashboards"
+        "${INSTALL_DIR}/docker/monitoring/grafana/dashboards"
+        "${INSTALL_DIR}/branding"
+        "${INSTALL_DIR}/scripts"
+        "${INSTALL_DIR}/workflows"
+        "/var/backups/agmind"
+    )
+    for d in "${dirs[@]}"; do
+        mkdir -p "$d" 2>/dev/null || log_warn "Cannot create ${d} (may need root)"
+    done
+}
+
+_copy_compose_file() {
+    local template_dir="$1"
     cp "${template_dir}/docker-compose.yml" "${INSTALL_DIR}/docker/docker-compose.yml"
-    local installer_root
-    installer_root="$(dirname "$template_dir")"
+}
 
-    # Generate secrets (validate non-empty — /dev/urandom failure is fatal)
-    local secret_key db_password redis_password sandbox_api_key
-    local plugin_daemon_key plugin_inner_api_key
-    local weaviate_api_key qdrant_api_key grafana_admin_password
-    secret_key=$(generate_random 64)
-    db_password=$(generate_random 32)
-    redis_password=$(generate_random 32)
-    sandbox_api_key="dify-sandbox-$(generate_random 16)"
-    plugin_daemon_key=$(generate_random 48)
-    plugin_inner_api_key=$(generate_random 48)
-    weaviate_api_key=$(generate_random 32)
-    qdrant_api_key=$(generate_random 32)
-    grafana_admin_password=$(generate_random 16)
+# ============================================================================
+# SECRET GENERATION
+# ============================================================================
 
-    # Admin password (auto-generated, Base64 encoded for Dify INIT_PASSWORD)
-    local admin_password_plain
-    admin_password_plain=$(generate_random 16)
-    local admin_password_b64
-    admin_password_b64=$(echo -n "$admin_password_plain" | base64)
+# Module-level variables set by _generate_secrets, consumed by _generate_env_file
+_SECRET_KEY=""
+_DB_PASSWORD=""
+_REDIS_PASSWORD=""
+_SANDBOX_API_KEY=""
+_PLUGIN_DAEMON_KEY=""
+_PLUGIN_INNER_API_KEY=""
+_WEAVIATE_API_KEY=""
+_QDRANT_API_KEY=""
+_GRAFANA_ADMIN_PASSWORD=""
+_ADMIN_PASSWORD_PLAIN=""
+_ADMIN_PASSWORD_B64=""
+_AUTHELIA_JWT_SECRET=""
 
-    # Fatal check: if any critical secret is empty, /dev/urandom failed
-    if [[ -z "$secret_key" || -z "$db_password" || -z "$redis_password" || -z "$admin_password_plain" ]]; then
-        echo -e "${RED}FATAL: не удалось сгенерировать секреты (проблема с /dev/urandom)${NC}"
+_generate_secrets() {
+    _SECRET_KEY="$(generate_random 64)"
+    _DB_PASSWORD="$(generate_random 32)"
+    _REDIS_PASSWORD="$(generate_random 32)"
+    _SANDBOX_API_KEY="dify-sandbox-$(generate_random 16)"
+    _PLUGIN_DAEMON_KEY="$(generate_random 48)"
+    _PLUGIN_INNER_API_KEY="$(generate_random 48)"
+    _WEAVIATE_API_KEY="$(generate_random 32)"
+    _QDRANT_API_KEY="$(generate_random 32)"
+    _GRAFANA_ADMIN_PASSWORD="$(generate_random 16)"
+    _AUTHELIA_JWT_SECRET="$(generate_random 64)"
+
+    _ADMIN_PASSWORD_PLAIN="$(generate_random 16)"
+    _ADMIN_PASSWORD_B64="$(echo -n "$_ADMIN_PASSWORD_PLAIN" | base64)"
+
+    # Fatal check
+    if [[ -z "$_SECRET_KEY" || -z "$_DB_PASSWORD" || -z "$_REDIS_PASSWORD" || -z "$_ADMIN_PASSWORD_PLAIN" ]]; then
+        log_error "FATAL: failed to generate secrets (/dev/urandom issue)"
         return 1
     fi
 
-    # Generate .env from template
+    # Export for other modules
+    GRAFANA_ADMIN_PASSWORD="$_GRAFANA_ADMIN_PASSWORD"
+    export GRAFANA_ADMIN_PASSWORD
+}
+
+# ============================================================================
+# .ENV GENERATION
+# ============================================================================
+
+_generate_env_file() {
+    local profile="$1"
+    local template_dir="$2"
     local template_file="${template_dir}/env.${profile}.template"
+    local env_file="${INSTALL_DIR}/docker/.env"
+
     if [[ ! -f "$template_file" ]]; then
-        echo -e "${RED}Шаблон не найден: ${template_file}${NC}"
+        log_error "Template not found: ${template_file}"
         return 1
     fi
 
-    local env_file="${INSTALL_DIR}/docker/.env"
+    # Backup existing .env
     if [[ -f "$env_file" ]]; then
-        echo -e "${YELLOW}⚠ Существующий .env будет перезаписан с новыми секретами${NC}"
+        log_warn "Existing .env will be overwritten with new secrets"
         cp "$env_file" "${env_file}.backup.$(date +%Y%m%d_%H%M%S)"
     fi
+
     cp "$template_file" "$env_file"
     chmod 600 "$env_file"
 
-    # Escape user-input values for safe sed replacement (& | / \ chars)
-    local safe_domain safe_certbot_email
-    local safe_monitoring_endpoint safe_webhook_url
-    local safe_llm_model safe_embedding_model
+    # Escape user-input values for safe sed replacement
+    local safe_domain safe_certbot_email safe_monitoring_endpoint safe_webhook_url
+    local safe_llm_model safe_embedding_model safe_vllm_model safe_hf_token
+    local safe_llm_provider safe_embed_provider
     local safe_monitoring_token safe_telegram_token safe_telegram_chat_id
-    safe_domain=$(escape_sed "${DOMAIN:-localhost}")
-    safe_certbot_email=$(escape_sed "${CERTBOT_EMAIL:-}")
-    safe_monitoring_endpoint=$(escape_sed "${MONITORING_ENDPOINT:-}")
-    safe_webhook_url=$(escape_sed "${ALERT_WEBHOOK_URL:-}")
-    safe_llm_model=$(escape_sed "${LLM_MODEL:-qwen2.5:14b}")
-    safe_embedding_model=$(escape_sed "${EMBEDDING_MODEL:-bge-m3}")
-    local safe_vllm_model safe_hf_token safe_llm_provider safe_embed_provider
-    safe_llm_provider=$(escape_sed "${LLM_PROVIDER:-ollama}")
-    safe_embed_provider=$(escape_sed "${EMBED_PROVIDER:-ollama}")
-    safe_vllm_model=$(escape_sed "${VLLM_MODEL:-Qwen/Qwen2.5-14B-Instruct}")
-    safe_hf_token=$(escape_sed "${HF_TOKEN:-}")
-    safe_monitoring_token=$(escape_sed "${MONITORING_TOKEN:-}")
-    safe_telegram_token=$(escape_sed "${ALERT_TELEGRAM_TOKEN:-}")
-    safe_telegram_chat_id=$(escape_sed "${ALERT_TELEGRAM_CHAT_ID:-}")
 
-    # Replace placeholders in .env (atomic: write to temp, then mv)
-    local authelia_jwt_secret
-    authelia_jwt_secret=$(generate_random 64)
+    safe_domain="$(escape_sed "${DOMAIN:-localhost}")"
+    safe_certbot_email="$(escape_sed "${CERTBOT_EMAIL:-}")"
+    safe_monitoring_endpoint="$(escape_sed "${MONITORING_ENDPOINT:-}")"
+    safe_webhook_url="$(escape_sed "${ALERT_WEBHOOK_URL:-}")"
+    safe_llm_model="$(escape_sed "${LLM_MODEL:-qwen2.5:14b}")"
+    safe_embedding_model="$(escape_sed "${EMBEDDING_MODEL:-bge-m3}")"
+    safe_llm_provider="$(escape_sed "${LLM_PROVIDER:-ollama}")"
+    safe_embed_provider="$(escape_sed "${EMBED_PROVIDER:-ollama}")"
+    safe_vllm_model="$(escape_sed "${VLLM_MODEL:-Qwen/Qwen2.5-14B-Instruct}")"
+    safe_hf_token="$(escape_sed "${HF_TOKEN:-}")"
+    safe_monitoring_token="$(escape_sed "${MONITORING_TOKEN:-}")"
+    safe_telegram_token="$(escape_sed "${ALERT_TELEGRAM_TOKEN:-}")"
+    safe_telegram_chat_id="$(escape_sed "${ALERT_TELEGRAM_CHAT_ID:-}")"
+
+    # ETL type mapping (v3: true/false → unstructured_api/dify)
+    local etl_type="dify"
+    if [[ "${ETL_ENHANCED:-false}" == "true" ]]; then
+        etl_type="unstructured_api"
+    fi
+
+    # Replace all placeholders (atomic: temp + mv)
     local env_tmp="${env_file}.tmp.$$"
     sed \
-        -e "s|__SECRET_KEY__|${secret_key}|g" \
-        -e "s|__DB_PASSWORD__|${db_password}|g" \
-        -e "s|__REDIS_PASSWORD__|${redis_password}|g" \
-        -e "s|__SANDBOX_API_KEY__|${sandbox_api_key}|g" \
-        -e "s|__PLUGIN_DAEMON_KEY__|${plugin_daemon_key}|g" \
-        -e "s|__PLUGIN_INNER_API_KEY__|${plugin_inner_api_key}|g" \
-        -e "s|__ADMIN_PASSWORD_B64__|${admin_password_b64}|g" \
+        -e "s|__SECRET_KEY__|${_SECRET_KEY}|g" \
+        -e "s|__DB_PASSWORD__|${_DB_PASSWORD}|g" \
+        -e "s|__REDIS_PASSWORD__|${_REDIS_PASSWORD}|g" \
+        -e "s|__SANDBOX_API_KEY__|${_SANDBOX_API_KEY}|g" \
+        -e "s|__PLUGIN_DAEMON_KEY__|${_PLUGIN_DAEMON_KEY}|g" \
+        -e "s|__PLUGIN_INNER_API_KEY__|${_PLUGIN_INNER_API_KEY}|g" \
+        -e "s|__ADMIN_PASSWORD_B64__|${_ADMIN_PASSWORD_B64}|g" \
         -e "s|__LLM_MODEL__|${safe_llm_model}|g" \
         -e "s|__EMBEDDING_MODEL__|${safe_embedding_model}|g" \
         -e "s|__DOMAIN__|${safe_domain}|g" \
         -e "s|__CERTBOT_EMAIL__|${safe_certbot_email}|g" \
         -e "s|__VECTOR_STORE__|${VECTOR_STORE:-weaviate}|g" \
-        -e "s|__WEAVIATE_API_KEY__|${weaviate_api_key}|g" \
-        -e "s|__QDRANT_API_KEY__|${qdrant_api_key}|g" \
-        -e "s|__ETL_TYPE__|$([ "${ETL_ENHANCED:-no}" = "yes" ] && echo "unstructured_api" || echo "dify")|g" \
+        -e "s|__WEAVIATE_API_KEY__|${_WEAVIATE_API_KEY}|g" \
+        -e "s|__QDRANT_API_KEY__|${_QDRANT_API_KEY}|g" \
+        -e "s|__ETL_TYPE__|${etl_type}|g" \
         -e "s|__TLS_MODE__|${TLS_MODE:-none}|g" \
         -e "s|__MONITORING_MODE__|${MONITORING_MODE:-none}|g" \
         -e "s|__MONITORING_ENDPOINT__|${safe_monitoring_endpoint}|g" \
         -e "s|__MONITORING_TOKEN__|${safe_monitoring_token}|g" \
-        -e "s|__GRAFANA_ADMIN_PASSWORD__|${grafana_admin_password}|g" \
+        -e "s|__GRAFANA_ADMIN_PASSWORD__|${_GRAFANA_ADMIN_PASSWORD}|g" \
         -e "s|__ALERT_MODE__|${ALERT_MODE:-none}|g" \
         -e "s|__ALERT_WEBHOOK_URL__|${safe_webhook_url}|g" \
         -e "s|__ALERT_TELEGRAM_TOKEN__|${safe_telegram_token}|g" \
@@ -319,12 +220,14 @@ generate_config() {
         -e "s|__EMBED_PROVIDER__|${safe_embed_provider}|g" \
         -e "s|__VLLM_MODEL__|${safe_vllm_model}|g" \
         -e "s|__HF_TOKEN__|${safe_hf_token}|g" \
-        -e "s|__AUTHELIA_JWT_SECRET__|${authelia_jwt_secret}|g" \
+        -e "s|__AUTHELIA_JWT_SECRET__|${_AUTHELIA_JWT_SECRET}|g" \
         "$env_file" > "$env_tmp" || { rm -f "$env_tmp"; return 1; }
     mv "$env_tmp" "$env_file"
     chmod 600 "$env_file"
+}
 
-    # Provider-specific Open WebUI env vars
+_append_provider_vars() {
+    local env_file="${INSTALL_DIR}/docker/.env"
     {
         echo ""
         echo "# --- Provider-specific WebUI vars ---"
@@ -349,75 +252,48 @@ generate_config() {
                 ;;
         esac
     } >> "$env_file"
+}
 
-    # Copy release manifest
+_copy_versions() {
+    local template_dir="$1"
+    local versions_file="${template_dir}/versions.env"
+    local env_file="${INSTALL_DIR}/docker/.env"
+
+    if [[ ! -f "$versions_file" ]]; then
+        log_warn "versions.env not found: ${versions_file}"
+        return 0
+    fi
+
+    cp "$versions_file" "${INSTALL_DIR}/versions.env"
+
+    echo "" >> "$env_file"
+    echo "# === Pinned versions (from versions.env) ===" >> "$env_file"
+    while IFS='=' read -r key value; do
+        # Validate key format and value safety
+        [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*_VERSION$ ]] || continue
+        [[ "$value" =~ ^[a-zA-Z0-9._:-]+$ ]] || continue
+        echo "${key}=${value}" >> "$env_file"
+    done < <(grep -E '^[A-Z].*_VERSION=' "$versions_file")
+}
+
+_copy_release_manifest() {
+    local template_dir="$1"
     local manifest_file="${template_dir}/release-manifest.json"
     if [[ -f "$manifest_file" ]]; then
         cp "$manifest_file" "${INSTALL_DIR}/release-manifest.json"
     fi
+}
 
-    # Copy versions.env and append to .env (single source of truth)
-    local versions_file="${template_dir}/versions.env"
-    if [[ -f "$versions_file" ]]; then
-        cp "$versions_file" "${INSTALL_DIR}/versions.env"
-        # Safely parse and append version variables to .env
-        echo "" >> "$env_file"
-        echo "# === Pinned versions (from versions.env) ===" >> "$env_file"
-        while IFS='=' read -r key value; do
-            [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*_VERSION$ ]] || continue
-            [[ "$value" =~ ^[a-zA-Z0-9._:-]+$ ]] || continue
-            declare "$key=$value"
-            echo "${key}=${value}" >> "$env_file"
-        done < <(grep -E '^[A-Z].*_VERSION=' "$versions_file")
-    fi
-
-    GRAFANA_ADMIN_PASSWORD="$grafana_admin_password"
-
-    # Generate nginx.conf from template
-    generate_nginx_config "$profile" "$template_dir"
-
-    # Handle TLS mode
-    handle_tls_config "$profile"
-
-    # Handle Authelia 2FA
-    if [[ "${ENABLE_AUTHELIA:-false}" == "true" ]]; then
-        enable_authelia_nginx
-        copy_authelia_files "$template_dir"
-    fi
-
-    # Copy monitoring provisioning files if local monitoring
-    if [[ "${MONITORING_MODE:-none}" == "local" ]]; then
-        copy_monitoring_files "$template_dir"
-        configure_alertmanager
-    fi
-
-    # Generate Redis config (password in file, not command line)
-    generate_redis_config
-
-    # Generate sandbox config
-    generate_sandbox_config
-
-    # Validate no default/weak secrets remain
-    validate_no_default_secrets "$env_file"
-
-    # Secure file permissions
-    chmod 600 "$env_file"
-    if [[ $(id -u) -eq 0 ]]; then
-        chown root:root "$env_file"
-    fi
-
-    # Store admin credentials for final output (atomic: install -m creates with correct perms)
+_store_admin_credentials() {
     install -m 600 /dev/null "${INSTALL_DIR}/.admin_password"
-    echo "$admin_password_plain" > "${INSTALL_DIR}/.admin_password"
+    echo "$_ADMIN_PASSWORD_PLAIN" > "${INSTALL_DIR}/.admin_password"
     if [[ $(id -u) -eq 0 ]]; then
         chown root:root "${INSTALL_DIR}/.admin_password"
     fi
-
-    echo -e "${GREEN}Конфигурация сгенерирована: ${INSTALL_DIR}/docker/.env${NC}"
 }
 
 # ============================================================================
-# CONFIG FILE GENERATORS (all use safe_write_file)
+# NGINX CONFIG
 # ============================================================================
 
 generate_nginx_config() {
@@ -433,10 +309,9 @@ generate_nginx_config() {
         server_name="${DOMAIN}"
     fi
 
-    # Replace all placeholders (atomic writes via _atomic_sed)
     _atomic_sed "$nginx_conf" -e "s|__SERVER_NAME__|${server_name}|g"
 
-    # Handle TLS markers based on TLS_MODE
+    # TLS markers
     if [[ "${TLS_MODE:-none}" != "none" ]]; then
         _atomic_sed "$nginx_conf" 's|#__TLS__||g'
         _atomic_sed "$nginx_conf" 's|#__TLS_REDIRECT__||g'
@@ -445,7 +320,7 @@ generate_nginx_config() {
         _atomic_sed "$nginx_conf" '/#__TLS_REDIRECT__/d'
     fi
 
-    # Replace TLS cert/key paths
+    # TLS cert/key paths
     local cert_path="/etc/nginx/ssl/cert.pem"
     local key_path="/etc/nginx/ssl/key.pem"
     if [[ "${TLS_MODE:-none}" == "letsencrypt" ]]; then
@@ -455,22 +330,30 @@ generate_nginx_config() {
     _atomic_sed "$nginx_conf" -e "s|__TLS_CERT_PATH__|${cert_path}|g" -e "s|__TLS_KEY_PATH__|${key_path}|g"
 }
 
+# ============================================================================
+# REDIS CONFIG (ACL instead of rename-command — Redis 7+)
+# ============================================================================
+
 generate_redis_config() {
     local redis_conf="${INSTALL_DIR}/docker/volumes/redis/redis.conf"
     safe_write_file "$redis_conf"
 
     local redis_pass
-    redis_pass=$(grep '^REDIS_PASSWORD=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "")
+    redis_pass="$(grep '^REDIS_PASSWORD=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "")"
     if [[ -z "$redis_pass" ]]; then
-        echo -e "${RED}FATAL: REDIS_PASSWORD пуст в .env — Redis будет без аутентификации${NC}" >&2
+        log_error "FATAL: REDIS_PASSWORD empty in .env"
         return 1
     fi
+
     cat > "$redis_conf" << REDISEOF
-# AGMind Redis Configuration — Hardened
-# bind 0.0.0.0 — container networking requires this; access controlled by Docker network + requirepass
+# AGMind Redis Configuration — Hardened (Redis 7+ ACL, no deprecated commands)
 bind 0.0.0.0
 protected-mode no
-requirepass ${redis_pass}
+
+# Authentication via ACL (Redis 7+ recommended approach)
+user default on >${redis_pass} ~* &* +@all -@dangerous
+user agmind on >${redis_pass} ~* &* +@all -@dangerous
+
 maxmemory 512mb
 maxmemory-policy allkeys-lru
 save 60 1000
@@ -478,35 +361,272 @@ save 300 100
 appendonly yes
 appendfilename "appendonly.aof"
 
-# Disable dangerous commands
-rename-command FLUSHALL ""
-rename-command FLUSHDB ""
-rename-command CONFIG ""
-rename-command DEBUG ""
-rename-command SHUTDOWN AGMIND_SHUTDOWN_$(head -c 8 /dev/urandom | LC_ALL=C tr -dc 'a-f0-9')
-
 # Connection limits
 maxclients 100
 timeout 300
 tcp-keepalive 60
 REDISEOF
-    # 644: redis user (UID 999) in container needs read access; password
-    # is already protected by Docker network isolation + bind mount :ro
+
     chmod 644 "$redis_conf"
-    # Redis image runs as uid 999 (redis user). Without chown, the file
-    # is owned by root and redis gets "Permission denied" on bind mount.
-    if command -v chown &>/dev/null && [[ $(id -u) -eq 0 ]]; then
-        chown 999:999 "$redis_conf"
+    # Redis image runs as uid 999
+    if [[ $(id -u) -eq 0 ]]; then
+        chown 999:999 "$redis_conf" 2>/dev/null || true
     fi
 }
 
-configure_alertmanager() {
+# ============================================================================
+# SANDBOX CONFIG
+# ============================================================================
+
+generate_sandbox_config() {
+    local sandbox_conf="${INSTALL_DIR}/docker/volumes/sandbox/conf/config.yaml"
+    safe_write_file "$sandbox_conf"
+
+    cat > "$sandbox_conf" << 'SANDBOXEOF'
+# Dify Sandbox Configuration
+app:
+  port: 8194
+  debug: false
+  key: __will_be_replaced__
+
+proxy:
+  socks5: ""
+  http: ""
+  https: ""
+
+max_workers: 4
+max_requests: 50
+worker_timeout: 15
+python_path: ""
+enable_network: false
+SANDBOXEOF
+
+    local sandbox_key
+    sandbox_key="$(grep '^SANDBOX_API_KEY=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "dify-sandbox")"
+    _atomic_sed "$sandbox_conf" "s|__will_be_replaced__|${sandbox_key}|g"
+}
+
+# ============================================================================
+# SQUID CONFIG (SSRF protection)
+# ============================================================================
+
+_generate_squid_config() {
+    local squid_conf="${INSTALL_DIR}/docker/volumes/ssrf_proxy/squid.conf"
+    safe_write_file "$squid_conf"
+
+    cat > "$squid_conf" << 'SQUIDEOF'
+# AGMind SSRF Proxy — Block metadata, RFC1918, link-local
+acl localnet src 172.16.0.0/12
+acl SSL_ports port 443
+acl Safe_ports port 80 443 1025-65535
+acl CONNECT method CONNECT
+
+# Block cloud metadata endpoints
+acl metadata dst 169.254.169.254
+acl metadata dst 169.254.0.0/16
+http_access deny metadata
+
+# Block RFC1918 private networks (except Docker)
+acl private_nets dst 10.0.0.0/8
+acl private_nets dst 192.168.0.0/16
+http_access deny private_nets
+
+# Allow Docker internal networks
+acl docker_nets src 172.16.0.0/12
+http_access allow docker_nets
+
+http_access deny !Safe_ports
+http_access deny CONNECT !SSL_ports
+http_access allow localnet
+http_access deny all
+
+http_port 3128
+coredump_dir /var/spool/squid
+SQUIDEOF
+
+    chmod 644 "$squid_conf"
+}
+
+# ============================================================================
+# GPU COMPOSE SUPPORT
+# ============================================================================
+
+enable_gpu_compose() {
+    local compose_file="${INSTALL_DIR}/docker/docker-compose.yml"
+
+    case "${DETECTED_GPU:-none}" in
+        none)
+            log_info "No GPU detected — CPU mode"
+            _atomic_sed "$compose_file" '/#__GPU__/d'
+            ;;
+        nvidia)
+            log_info "Enabling NVIDIA GPU support..."
+            _atomic_sed "$compose_file" 's|#__GPU__||g'
+            log_success "NVIDIA GPU → deploy.resources.reservations.devices"
+            ;;
+        amd)
+            log_info "Enabling AMD ROCm GPU support..."
+            _atomic_sed "$compose_file" 's|#__GPU__||g'
+            _atomic_sed "$compose_file" '/driver: nvidia/,/capabilities: \[gpu\]/c\      # AMD ROCm GPU\n    devices:\n      - /dev/kfd:/dev/kfd\n      - /dev/dri:/dev/dri\n    group_add:\n      - video\n      - render'
+            _atomic_sed "$compose_file" '/OLLAMA_API_BASE/a\      OLLAMA_ROCM: "1"' 2>/dev/null || true
+            log_success "AMD ROCm GPU → device passthrough"
+            ;;
+        intel)
+            log_info "Enabling Intel GPU support..."
+            _atomic_sed "$compose_file" 's|#__GPU__||g'
+            _atomic_sed "$compose_file" '/driver: nvidia/,/capabilities: \[gpu\]/c\      # Intel GPU\n    devices:\n      - /dev/dri:/dev/dri\n    group_add:\n      - video\n      - render'
+            log_success "Intel GPU → /dev/dri passthrough"
+            ;;
+        apple)
+            log_info "Apple Silicon — GPU handled natively via Metal"
+            _atomic_sed "$compose_file" '/#__GPU__/d'
+            ;;
+    esac
+}
+
+# ============================================================================
+# TLS
+# ============================================================================
+
+handle_tls_config() {
+    local profile="$1"
+    local tls_mode="${TLS_MODE:-none}"
+    local ssl_dir="${INSTALL_DIR}/docker/volumes/certbot/ssl"
+
+    case "$tls_mode" in
+        self-signed)
+            _generate_self_signed_cert "$ssl_dir"
+            ;;
+        custom)
+            _copy_custom_cert "$ssl_dir"
+            ;;
+        letsencrypt)
+            log_info "TLS: Let's Encrypt (certbot will obtain cert after launch)"
+            ;;
+        none)
+            log_info "TLS: disabled"
+            ;;
+    esac
+}
+
+_generate_self_signed_cert() {
+    local ssl_dir="$1"
+    mkdir -p "$ssl_dir"
+
+    if ! command -v openssl &>/dev/null; then
+        log_error "openssl not found. Install: apt install openssl"
+        return 1
+    fi
+
+    log_info "Generating self-signed certificate..."
+    openssl req -x509 -nodes -days 365 \
+        -newkey rsa:2048 \
+        -keyout "${ssl_dir}/key.pem" \
+        -out "${ssl_dir}/cert.pem" \
+        -subj "/CN=${DOMAIN:-localhost}/O=AGMind/C=US" \
+        2>/dev/null
+
+    chmod 600 "${ssl_dir}/key.pem"
+    log_success "Self-signed certificate created"
+}
+
+_copy_custom_cert() {
+    local ssl_dir="$1"
+    mkdir -p "$ssl_dir"
+
+    if [[ -n "${TLS_CERT_PATH:-}" && -f "${TLS_CERT_PATH}" ]]; then
+        cp "${TLS_CERT_PATH}" "${ssl_dir}/cert.pem"
+        cp "${TLS_KEY_PATH}" "${ssl_dir}/key.pem"
+        chmod 600 "${ssl_dir}/key.pem"
+        log_success "Custom certificate copied"
+    else
+        log_error "Certificate file not found: ${TLS_CERT_PATH:-not specified}"
+        return 1
+    fi
+}
+
+# ============================================================================
+# AUTHELIA
+# ============================================================================
+
+_enable_authelia_nginx() {
+    local nginx_conf="${INSTALL_DIR}/docker/nginx/nginx.conf"
+    if [[ ! -f "$nginx_conf" ]]; then
+        log_error "nginx.conf not found: ${nginx_conf}"
+        return 1
+    fi
+
+    log_info "Enabling Authelia in nginx..."
+    _atomic_sed "$nginx_conf" 's|#__AUTHELIA__||g'
+    log_success "Authelia blocks activated in nginx.conf"
+}
+
+_copy_authelia_files() {
+    local template_dir="$1"
+    local authelia_dir="${INSTALL_DIR}/docker/authelia"
+    mkdir -p "$authelia_dir"
+
+    log_info "Copying Authelia files..."
+    for f in "configuration.yml.template" "users_database.yml.template"; do
+        local src="${template_dir}/authelia/${f}"
+        local dest="${authelia_dir}/${f%.template}"
+        if [[ -f "$src" ]]; then
+            safe_write_file "$dest"
+            cp "$src" "$dest"
+        fi
+    done
+    log_success "Authelia files copied"
+}
+
+# ============================================================================
+# MONITORING
+# ============================================================================
+
+_copy_monitoring_files() {
+    local template_dir="$1"
+    local installer_root
+    installer_root="$(dirname "$template_dir")"
+    local dest="${INSTALL_DIR}/docker/monitoring"
+
+    log_info "Copying monitoring files..."
+    mkdir -p "$dest"
+
+    # Core config files
+    local mon_files=("prometheus.yml" "alert_rules.yml" "alertmanager.yml" "loki-config.yml" "promtail-config.yml")
+    for f in "${mon_files[@]}"; do
+        if [[ -f "${installer_root}/monitoring/${f}" ]]; then
+            safe_write_file "${dest}/${f}"
+            cp "${installer_root}/monitoring/${f}" "${dest}/${f}"
+            chmod 644 "${dest}/${f}"
+        else
+            log_warn "Monitoring source not found: monitoring/${f}"
+        fi
+    done
+
+    # Grafana provisioning
+    if [[ -d "${installer_root}/monitoring/grafana" ]]; then
+        cp -r "${installer_root}/monitoring/grafana/provisioning/"* "${dest}/grafana/provisioning/" 2>/dev/null || true
+        cp -r "${installer_root}/monitoring/grafana/dashboards/"* "${dest}/grafana/dashboards/" 2>/dev/null || true
+    fi
+
+    # Post-copy verification
+    for f in "${mon_files[@]}"; do
+        if [[ -d "${dest}/${f}" ]]; then
+            log_warn "BUG: ${f} is a directory after copy — fixing"
+            rm -rf "${dest:?}/${f}"
+            cp "${installer_root}/monitoring/${f}" "${dest}/${f}" 2>/dev/null || touch "${dest}/${f}"
+        fi
+    done
+
+    log_success "Monitoring files copied"
+}
+
+_configure_alertmanager() {
     local alertmanager_conf="${INSTALL_DIR}/docker/monitoring/alertmanager.yml"
     safe_write_file "$alertmanager_conf"
 
-    # Create default alertmanager config if not copied or empty
+    # Create default config if empty
     if [[ ! -s "$alertmanager_conf" ]]; then
-        echo -e "${YELLOW}Создание дефолтного alertmanager.yml...${NC}"
         cat > "$alertmanager_conf" << 'DEFAULTAMEOF'
 global:
   resolve_timeout: 5m
@@ -530,14 +650,11 @@ inhibit_rules:
 DEFAULTAMEOF
     fi
 
-    local alert_mode="${ALERT_MODE:-none}"
-
-    case "$alert_mode" in
+    case "${ALERT_MODE:-none}" in
         telegram)
             local token="${ALERT_TELEGRAM_TOKEN:-}"
             local chat_id="${ALERT_TELEGRAM_CHAT_ID:-}"
             if [[ -n "$token" && -n "$chat_id" ]]; then
-                # Replace default receiver with telegram config
                 cat > "$alertmanager_conf" << AMEOF
 global:
   resolve_timeout: 5m
@@ -562,7 +679,6 @@ receivers:
         chat_id: ${chat_id}
         parse_mode: 'HTML'
         send_resolved: true
-        message: '{{ range .Alerts }}{{ if eq .Status "firing" }}🔴{{ else }}🟢{{ end }} <b>{{ .Labels.alertname }}</b>\n{{ .Annotations.summary }}\n{{ .Annotations.description }}{{ end }}'
 
 inhibit_rules:
   - source_match:
@@ -576,10 +692,9 @@ AMEOF
         webhook)
             local webhook_url="${ALERT_WEBHOOK_URL:-}"
             if [[ -n "$webhook_url" ]]; then
-                # Enable webhook markers (atomic writes)
                 _atomic_sed "$alertmanager_conf" 's|#__WEBHOOK__||g'
                 local safe_webhook
-                safe_webhook=$(escape_sed "$webhook_url")
+                safe_webhook="$(escape_sed "$webhook_url")"
                 _atomic_sed "$alertmanager_conf" "s|__ALERT_WEBHOOK_URL__|${safe_webhook}|g"
             fi
             ;;
@@ -587,236 +702,13 @@ AMEOF
     chmod 644 "$alertmanager_conf"
 }
 
-generate_sandbox_config() {
-    local sandbox_conf="${INSTALL_DIR}/docker/volumes/sandbox/conf/config.yaml"
-    safe_write_file "$sandbox_conf"
-
-    cat > "$sandbox_conf" << 'SANDBOXEOF'
-# Dify Sandbox Configuration
-# allowed_syscalls intentionally omitted — sandbox uses its own defaults.
-# Specifying syscall names as strings causes panic (expects int syscall numbers).
-app:
-  port: 8194
-  debug: false
-  key: __will_be_replaced__
-
-proxy:
-  socks5: ""
-  http: ""
-  https: ""
-
-max_workers: 4
-max_requests: 50
-worker_timeout: 15
-python_path: ""
-
-enable_network: false
-SANDBOXEOF
-
-    # Replace sandbox key from .env
-    local sandbox_key
-    sandbox_key=$(grep '^SANDBOX_API_KEY=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "dify-sandbox")
-    _atomic_sed "$sandbox_conf" "s|__will_be_replaced__|${sandbox_key}|g"
-}
-
 # ============================================================================
-# GPU SUPPORT
+# STANDALONE
 # ============================================================================
-
-# Enable GPU in docker-compose based on detected GPU type
-enable_gpu_compose() {
-    local compose_file="${INSTALL_DIR}/docker/docker-compose.yml"
-
-    case "${DETECTED_GPU:-none}" in
-        none)
-            echo -e "${YELLOW}GPU не обнаружен — режим CPU${NC}"
-            _atomic_sed "$compose_file" '/#__GPU__/d'
-            ;;
-        nvidia)
-            echo -e "${YELLOW}Включение GPU поддержки (NVIDIA)...${NC}"
-            _atomic_sed "$compose_file" 's|#__GPU__||g'
-            echo -e "${GREEN}NVIDIA GPU → deploy.resources.reservations.devices${NC}"
-            ;;
-        amd)
-            echo -e "${YELLOW}Включение GPU поддержки (AMD ROCm)...${NC}"
-            _atomic_sed "$compose_file" 's|#__GPU__||g'
-            _atomic_sed "$compose_file" '/driver: nvidia/,/capabilities: \[gpu\]/c\      # AMD ROCm GPU\n    devices:\n      - /dev/kfd:/dev/kfd\n      - /dev/dri:/dev/dri\n    group_add:\n      - video\n      - render'
-            _atomic_sed "$compose_file" '/OLLAMA_API_BASE/a\      OLLAMA_ROCM: "1"' 2>/dev/null || true
-            echo -e "${GREEN}AMD ROCm GPU → device passthrough${NC}"
-            ;;
-        intel)
-            echo -e "${YELLOW}Включение GPU поддержки (Intel)...${NC}"
-            _atomic_sed "$compose_file" 's|#__GPU__||g'
-            _atomic_sed "$compose_file" '/driver: nvidia/,/capabilities: \[gpu\]/c\      # Intel GPU\n    devices:\n      - /dev/dri:/dev/dri\n    group_add:\n      - video\n      - render'
-            echo -e "${GREEN}Intel GPU → /dev/dri passthrough${NC}"
-            ;;
-        apple)
-            echo -e "${YELLOW}Apple Silicon — GPU обрабатывается нативно через Metal${NC}"
-            _atomic_sed "$compose_file" '/#__GPU__/d'
-            echo -e "${GREEN}Apple Silicon — Docker GPU passthrough не требуется${NC}"
-            ;;
-    esac
-
-    persist_gpu_profile
-}
-
-# ============================================================================
-# TLS
-# ============================================================================
-
-handle_tls_config() {
-    local profile="$1"
-    local tls_mode="${TLS_MODE:-none}"
-    local ssl_dir="${INSTALL_DIR}/docker/volumes/certbot/ssl"
-
-    case "$tls_mode" in
-        self-signed)
-            generate_self_signed_cert "$ssl_dir"
-            ;;
-        custom)
-            copy_custom_cert "$ssl_dir"
-            ;;
-        letsencrypt)
-            # Certs will be obtained by certbot container
-            echo -e "${YELLOW}TLS: Let's Encrypt (certbot получит сертификат после запуска)${NC}"
-            ;;
-        none)
-            echo -e "${YELLOW}TLS: отключен${NC}"
-            ;;
-    esac
-}
-
-generate_self_signed_cert() {
-    local ssl_dir="$1"
-    mkdir -p "$ssl_dir"
-
-    if ! command -v openssl &>/dev/null; then
-        echo -e "${RED}openssl не найден. Установите: apt install openssl${NC}"
-        return 1
-    fi
-
-    echo -e "${YELLOW}Генерация self-signed сертификата...${NC}"
-    openssl req -x509 -nodes -days 365 \
-        -newkey rsa:2048 \
-        -keyout "${ssl_dir}/key.pem" \
-        -out "${ssl_dir}/cert.pem" \
-        -subj "/CN=${DOMAIN:-localhost}/O=AGMind/C=RU" \
-        2>/dev/null
-
-    chmod 600 "${ssl_dir}/key.pem"
-    echo -e "${GREEN}Self-signed сертификат создан${NC}"
-}
-
-copy_custom_cert() {
-    local ssl_dir="$1"
-    mkdir -p "$ssl_dir"
-
-    if [[ -n "${TLS_CERT_PATH:-}" && -f "${TLS_CERT_PATH}" ]]; then
-        cp "${TLS_CERT_PATH}" "${ssl_dir}/cert.pem"
-        cp "${TLS_KEY_PATH}" "${ssl_dir}/key.pem"
-        chmod 600 "${ssl_dir}/key.pem"
-        echo -e "${GREEN}Пользовательский сертификат скопирован${NC}"
-    else
-        echo -e "${RED}Файл сертификата не найден: ${TLS_CERT_PATH:-не указан}${NC}"
-        return 1
-    fi
-}
-
-# ============================================================================
-# AUTHELIA
-# ============================================================================
-
-enable_authelia_nginx() {
-    local nginx_conf="${INSTALL_DIR}/docker/nginx/nginx.conf"
-
-    if [[ ! -f "$nginx_conf" ]]; then
-        echo -e "${RED}nginx.conf не найден: ${nginx_conf}${NC}"
-        return 1
-    fi
-
-    echo -e "${YELLOW}Активация Authelia в nginx...${NC}"
-    _atomic_sed "$nginx_conf" 's|#__AUTHELIA__||g'
-    echo -e "${GREEN}Authelia блоки активированы в nginx.conf${NC}"
-}
-
-copy_authelia_files() {
-    local template_dir="$1"
-    local authelia_dir="${INSTALL_DIR}/docker/authelia"
-    mkdir -p "$authelia_dir"
-
-    echo -e "${YELLOW}Копирование файлов Authelia...${NC}"
-
-    if [[ -f "${template_dir}/authelia/configuration.yml.template" ]]; then
-        safe_write_file "${authelia_dir}/configuration.yml"
-        cp "${template_dir}/authelia/configuration.yml.template" "${authelia_dir}/configuration.yml"
-    fi
-
-    if [[ -f "${template_dir}/authelia/users_database.yml.template" ]]; then
-        safe_write_file "${authelia_dir}/users_database.yml"
-        cp "${template_dir}/authelia/users_database.yml.template" "${authelia_dir}/users_database.yml"
-    fi
-
-    echo -e "${GREEN}Файлы Authelia скопированы${NC}"
-}
-
-# ============================================================================
-# MONITORING
-# ============================================================================
-
-copy_monitoring_files() {
-    local template_dir="$1"
-    local installer_root
-    installer_root="$(dirname "$template_dir")"
-    local dest="${INSTALL_DIR}/docker/monitoring"
-
-    echo -e "${YELLOW}Копирование файлов мониторинга...${NC}"
-
-    # Ensure destination exists as directory
-    mkdir -p "${dest}"
-
-    # Copy individual config files with safe_write_file protection
-    local mon_files=("prometheus.yml" "alert_rules.yml" "alertmanager.yml")
-    for f in "${mon_files[@]}"; do
-        if [[ -f "${installer_root}/monitoring/${f}" ]]; then
-            safe_write_file "${dest}/${f}"
-            cp "${installer_root}/monitoring/${f}" "${dest}/${f}"
-            chmod 644 "${dest}/${f}"
-            echo -e "  ${GREEN}✓ ${f} ($(file -b "${dest}/${f}" 2>/dev/null))${NC}"
-        else
-            echo -e "  ${YELLOW}⚠ source not found: ${installer_root}/monitoring/${f}${NC}"
-        fi
-    done
-
-    # Loki + Promtail configs
-    if [[ "${ENABLE_LOKI:-true}" == "true" ]]; then
-        for f in "loki-config.yml" "promtail-config.yml"; do
-            if [[ -f "${installer_root}/monitoring/${f}" ]]; then
-                safe_write_file "${dest}/${f}"
-                cp "${installer_root}/monitoring/${f}" "${dest}/${f}"
-                chmod 644 "${dest}/${f}"
-                echo -e "  ${GREEN}✓ ${f}${NC}"
-            fi
-        done
-    fi
-
-    # Copy grafana provisioning
-    if [[ -d "${installer_root}/monitoring/grafana" ]]; then
-        cp -r "${installer_root}/monitoring/grafana/provisioning/"* "${dest}/grafana/provisioning/" 2>/dev/null || true
-        cp -r "${installer_root}/monitoring/grafana/dashboards/"* "${dest}/grafana/dashboards/" 2>/dev/null || true
-    fi
-
-    # POST-COPY VERIFICATION: catch any corruption immediately
-    for f in "${mon_files[@]}"; do
-        if [[ -d "${dest}/${f}" ]]; then
-            echo -e "  ${RED}✗ BUG: ${f} is a DIRECTORY after copy! Fixing...${NC}"
-            rm -rf "${dest:?}/${f}"
-            cp "${installer_root}/monitoring/${f}" "${dest}/${f}" 2>/dev/null || touch "${dest}/${f}"
-        fi
-    done
-
-    echo -e "${GREEN}Файлы мониторинга скопированы${NC}"
-}
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    # shellcheck source=common.sh
+    source "${SCRIPT_DIR}/common.sh"
     generate_config "${1:-lan}" "${2:-.}"
 fi

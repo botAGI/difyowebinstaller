@@ -348,7 +348,7 @@ services:
   # ==================== PostgreSQL ====================
   db:
     <<: *security-defaults
-    image: postgres:${POSTGRES_VERSION:-15.10-alpine}
+    image: postgres:${POSTGRES_VERSION:-16-alpine}
     container_name: agmind-db
     restart: always
     mem_limit: ${DB_MEM_LIMIT:-2g}

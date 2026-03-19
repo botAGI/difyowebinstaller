@@ -1,0 +1,296 @@
+#!/usr/bin/env bash
+# compose.sh — Docker compose up/down, DB sync, plugin DB, retry loop, post-launch.
+# Dependencies: common.sh (log_*, ensure_bind_mount_files, preflight_bind_mount_check)
+# Functions: compose_up(), compose_down(), sync_db_password(), create_plugin_db(),
+#            post_launch_status(), build_compose_profiles()
+# Expects: INSTALL_DIR, DEPLOY_PROFILE, wizard exports
+set -euo pipefail
+
+INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
+
+# ============================================================================
+# BUILD PROFILES
+# ============================================================================
+
+# Build comma-separated compose profiles from wizard choices.
+# Returns profiles string in COMPOSE_PROFILE_STRING.
+build_compose_profiles() {
+    local profiles=""
+
+    [[ "${DEPLOY_PROFILE:-}" == "vps" ]] && profiles="vps"
+    [[ "${VECTOR_STORE:-weaviate}" == "qdrant" ]] && profiles="${profiles:+$profiles,}qdrant"
+    [[ "${VECTOR_STORE:-weaviate}" == "weaviate" ]] && profiles="${profiles:+$profiles,}weaviate"
+    [[ "${ETL_ENHANCED:-false}" == "true" ]] && profiles="${profiles:+$profiles,}etl"
+    [[ "${MONITORING_MODE:-none}" == "local" ]] && profiles="${profiles:+$profiles,}monitoring"
+    [[ "${ENABLE_AUTHELIA:-false}" == "true" ]] && profiles="${profiles:+$profiles,}authelia"
+
+    if [[ "${LLM_PROVIDER:-}" == "ollama" || "${EMBED_PROVIDER:-}" == "ollama" ]]; then
+        profiles="${profiles:+$profiles,}ollama"
+    fi
+    [[ "${LLM_PROVIDER:-}" == "vllm" ]] && profiles="${profiles:+$profiles,}vllm"
+    [[ "${EMBED_PROVIDER:-}" == "tei" ]] && profiles="${profiles:+$profiles,}tei"
+
+    COMPOSE_PROFILE_STRING="$profiles"
+    export COMPOSE_PROFILE_STRING
+}
+
+# ============================================================================
+# COMPOSE UP
+# ============================================================================
+
+compose_up() {
+    local docker_dir="${INSTALL_DIR}/docker"
+    cd "$docker_dir"
+
+    build_compose_profiles
+    local profiles="$COMPOSE_PROFILE_STRING"
+
+    # --- Cleanup stale containers ---
+    _cleanup_stale_containers
+
+    # --- Bind mount safety ---
+    ensure_bind_mount_files
+    _nuclear_cleanup_dirs
+    preflight_bind_mount_check
+
+    # --- Pull + Up ---
+    local pull_flag="--pull missing"
+    if [[ "${DEPLOY_PROFILE:-}" == "offline" ]]; then
+        pull_flag="--pull never"
+    fi
+
+    log_info "Starting containers (profiles: ${profiles:-core})..."
+    if [[ -n "$profiles" ]]; then
+        COMPOSE_PROFILES="$profiles" docker compose up -d $pull_flag
+    else
+        docker compose up -d $pull_flag
+    fi
+
+    # --- Post-up tasks ---
+    sync_db_password
+    create_plugin_db
+    _retry_stuck_containers "$profiles"
+    _fix_storage_permissions
+    post_launch_status
+}
+
+# ============================================================================
+# COMPOSE DOWN
+# ============================================================================
+
+compose_down() {
+    local docker_dir="${INSTALL_DIR}/docker"
+    if [[ ! -d "$docker_dir" ]]; then
+        log_warn "Docker dir not found: ${docker_dir}"
+        return 0
+    fi
+
+    cd "$docker_dir"
+    log_info "Stopping all containers..."
+    COMPOSE_PROFILES=vps,monitoring,qdrant,weaviate,etl,authelia,ollama,vllm,tei \
+        docker compose down --remove-orphans 2>/dev/null || true
+    log_success "All containers stopped"
+}
+
+# ============================================================================
+# CLEANUP HELPERS
+# ============================================================================
+
+_cleanup_stale_containers() {
+    local docker_dir="${INSTALL_DIR}/docker"
+    cd "$docker_dir"
+
+    # Stop ALL profiles — docker compose down without profiles won't touch
+    # services that have profiles: [monitoring], etc.
+    log_info "Cleaning up stale containers..."
+    COMPOSE_PROFILES=vps,monitoring,qdrant,weaviate,etl,authelia,ollama,vllm,tei \
+        docker compose down --remove-orphans 2>/dev/null || true
+
+    # Force-remove any agmind containers docker compose missed
+    docker ps -a --filter "name=agmind-" -q 2>/dev/null | while read -r id; do
+        docker rm -f "$id" 2>/dev/null || true
+    done
+}
+
+# Remove any .yml/.yaml/.conf paths that are directories (Docker artifacts)
+_nuclear_cleanup_dirs() {
+    local docker_dir="${INSTALL_DIR}/docker"
+    find "$docker_dir" -maxdepth 3 -name "*.yml" -type d -exec rm -rf {} + 2>/dev/null || true
+    find "$docker_dir" -maxdepth 3 -name "*.yaml" -type d -exec rm -rf {} + 2>/dev/null || true
+    find "$docker_dir" -maxdepth 3 -name "*.conf" -type d -exec rm -rf {} + 2>/dev/null || true
+}
+
+# ============================================================================
+# RETRY STUCK CONTAINERS
+# ============================================================================
+
+# Containers with condition: service_healthy deps may stay in "Created" state.
+# Re-run compose up to kick them once dependencies are healthy.
+_retry_stuck_containers() {
+    local profiles="${1:-}"
+    local docker_dir="${INSTALL_DIR}/docker"
+    cd "$docker_dir"
+
+    log_info "Waiting for dependency cascade..."
+    local retry created=0
+    for retry in 1 2 3; do
+        created="$(docker ps -a --filter "name=agmind-" --filter "status=created" --format '{{.ID}}' 2>/dev/null | wc -l | tr -d ' ')"
+        if [[ "${created:-0}" -eq 0 ]]; then
+            break
+        fi
+        log_info "Retry ${retry}/3: ${created} containers in Created state, restarting..."
+        sleep 10
+        if [[ -n "$profiles" ]]; then
+            COMPOSE_PROFILES="$profiles" docker compose up -d 2>&1 | tail -5
+        else
+            docker compose up -d 2>&1 | tail -5
+        fi
+    done
+
+    if [[ "${created:-0}" -gt 0 ]]; then
+        local stuck_names
+        stuck_names="$(docker ps -a --filter "name=agmind-" --filter "status=created" --format '{{.Names}}' 2>/dev/null | tr '\n' ', ')"
+        log_error "${created} containers failed to start after 3 retries: ${stuck_names}"
+        echo "  Check logs: docker compose logs <service>"
+    fi
+}
+
+# ============================================================================
+# FIX STORAGE PERMISSIONS
+# ============================================================================
+
+_fix_storage_permissions() {
+    docker exec -u root agmind-api chown -R dify:dify /app/api/storage 2>/dev/null || true
+}
+
+# ============================================================================
+# SYNC DB PASSWORD
+# ============================================================================
+
+# If db volume exists from a previous attempt, the password in the DB won't
+# match the newly generated .env password. ALTER USER to sync.
+sync_db_password() {
+    local env_file="${INSTALL_DIR}/docker/.env"
+    local db_pass db_user
+
+    db_pass="$(grep '^DB_PASSWORD=' "$env_file" 2>/dev/null | cut -d'=' -f2-)"
+    [[ -z "$db_pass" ]] && return 0
+
+    db_user="$(grep '^DB_USERNAME=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "postgres")"
+    db_user="${db_user:-postgres}"
+
+    # Validate inputs (prevent SQL injection)
+    if [[ ! "$db_user" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+        log_error "Invalid DB_USERNAME: contains disallowed characters"
+        return 1
+    fi
+    if [[ ! "$db_pass" =~ ^[a-zA-Z0-9]+$ ]]; then
+        log_error "Invalid DB_PASSWORD: contains disallowed characters"
+        return 1
+    fi
+
+    log_info "Syncing PostgreSQL password..."
+    local attempts=0
+    while [[ $attempts -lt 30 ]]; do
+        if docker exec agmind-db pg_isready -U "$db_user" &>/dev/null; then
+            if docker exec agmind-db psql -U "$db_user" -c \
+                "ALTER USER ${db_user} WITH PASSWORD '${db_pass}';" &>/dev/null; then
+                log_success "PostgreSQL password synced"
+                return 0
+            fi
+            log_error "Failed to update PostgreSQL password"
+            return 1
+        fi
+        sleep 2
+        attempts=$((attempts + 1))
+    done
+    log_error "PostgreSQL not ready after 60s, skipping password sync"
+}
+
+# ============================================================================
+# CREATE PLUGIN DB
+# ============================================================================
+
+create_plugin_db() {
+    local env_file="${INSTALL_DIR}/docker/.env"
+    local db_user plugin_db
+
+    db_user="$(grep '^DB_USERNAME=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "postgres")"
+    db_user="${db_user:-postgres}"
+    plugin_db="$(grep '^PLUGIN_DB_DATABASE=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "dify_plugin")"
+    plugin_db="${plugin_db:-dify_plugin}"
+
+    # Validate (prevent SQL injection)
+    if [[ ! "$db_user" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+        log_error "Invalid DB_USERNAME: ${db_user}"
+        return 1
+    fi
+    if [[ ! "$plugin_db" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+        log_error "Invalid PLUGIN_DB_DATABASE: ${plugin_db}"
+        return 1
+    fi
+
+    local attempts=0
+    while [[ $attempts -lt 15 ]]; do
+        if docker exec agmind-db pg_isready -U "$db_user" &>/dev/null; then
+            if docker exec agmind-db psql -U "$db_user" -tc \
+                "SELECT 1 FROM pg_database WHERE datname = '${plugin_db}';" 2>/dev/null | grep -q 1; then
+                return 0  # Already exists
+            fi
+            if docker exec agmind-db psql -U "$db_user" -c \
+                "CREATE DATABASE ${plugin_db};" &>/dev/null; then
+                log_success "Database ${plugin_db} created"
+            fi
+            return 0
+        fi
+        sleep 2
+        attempts=$((attempts + 1))
+    done
+}
+
+# ============================================================================
+# POST-LAUNCH STATUS
+# ============================================================================
+
+post_launch_status() {
+    log_info "Waiting for containers to stabilize..."
+    local elapsed=0
+    while [[ $elapsed -lt 120 ]]; do
+        local starting
+        starting="$(docker ps --filter "name=agmind-" --filter "health=starting" -q 2>/dev/null | wc -l || echo "0")"
+        [[ "$starting" -eq 0 ]] && break
+        sleep 5
+        elapsed=$((elapsed + 5))
+        echo -n "."
+    done
+    echo ""
+
+    local bad
+    bad="$(docker ps --filter "name=agmind-" --format "{{.Names}}\t{{.Status}}" 2>/dev/null | grep -iE "unhealthy|restarting" || true)"
+    if [[ -n "$bad" ]]; then
+        log_warn "Containers with issues:"
+        while IFS=$'\t' read -r name status; do
+            log_error "${name}: ${status}"
+            local logs
+            logs="$(docker logs --tail 3 "$name" 2>&1 || true)"
+            if [[ -n "$logs" ]]; then
+                echo "$logs" | head -3 | sed 's/^/    /'
+            fi
+        done <<< "$bad"
+        echo ""
+        echo "  Use 'docker logs <container>' for details"
+    else
+        log_success "All containers running"
+    fi
+}
+
+# ============================================================================
+# STANDALONE
+# ============================================================================
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    # shellcheck source=common.sh
+    source "${SCRIPT_DIR}/common.sh"
+    echo "compose.sh: use compose_up() or compose_down()"
+fi

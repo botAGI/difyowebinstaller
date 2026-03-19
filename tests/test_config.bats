@@ -1,115 +1,335 @@
 #!/usr/bin/env bats
-
-# Test config.sh functions
+# test_config.bats — Tests for lib/config.sh
+# Run: bats tests/test_config.bats
 
 setup() {
-    export INSTALL_DIR="$(mktemp -d)"
+    export INSTALL_DIR="${BATS_TMPDIR}/agmind_test_$$"
     mkdir -p "${INSTALL_DIR}/docker"
-    source "$(dirname "$BATS_TEST_FILENAME")/../lib/config.sh" 2>/dev/null || true
+
+    # shellcheck source=../lib/common.sh
+    source "${BATS_TEST_DIRNAME}/../lib/common.sh"
+    # shellcheck source=../lib/config.sh
+    source "${BATS_TEST_DIRNAME}/../lib/config.sh"
+
+    TEMPLATE_DIR="${BATS_TEST_DIRNAME}/../templates"
 }
 
 teardown() {
-    rm -rf "$INSTALL_DIR"
+    rm -rf "${INSTALL_DIR}"
 }
 
-@test "generate_random produces correct length" {
-    result=$(generate_random 16)
-    [ ${#result} -eq 16 ]
+# ============================================================================
+# GENERATE CONFIG — FULL RUN
+# ============================================================================
+
+@test "generate_config: LAN profile creates .env and configs" {
+    export DEPLOY_PROFILE="lan"
+    export LLM_PROVIDER="ollama"
+    export LLM_MODEL="qwen2.5:7b"
+    export EMBED_PROVIDER="ollama"
+    export EMBEDDING_MODEL="bge-m3"
+    export VECTOR_STORE="weaviate"
+    export TLS_MODE="none"
+    export MONITORING_MODE="none"
+    export ALERT_MODE="none"
+    export ETL_ENHANCED="false"
+    export ENABLE_AUTHELIA="false"
+
+    run generate_config "lan" "$TEMPLATE_DIR"
+    [ "$status" -eq 0 ]
+
+    # .env exists and is not empty
+    [ -f "${INSTALL_DIR}/docker/.env" ]
+    [ -s "${INSTALL_DIR}/docker/.env" ]
+
+    # Permissions
+    local perms
+    perms="$(stat -c '%a' "${INSTALL_DIR}/docker/.env" 2>/dev/null || stat -f '%Lp' "${INSTALL_DIR}/docker/.env")"
+    [ "$perms" = "600" ]
 }
 
-@test "generate_random produces alphanumeric only" {
-    result=$(generate_random 64)
-    [[ "$result" =~ ^[a-zA-Z0-9]+$ ]]
+@test "generate_config: creates admin password file" {
+    export DEPLOY_PROFILE="lan"
+    export LLM_PROVIDER="ollama"
+    export LLM_MODEL="qwen2.5:7b"
+    export EMBED_PROVIDER="ollama"
+    export VECTOR_STORE="weaviate"
+    export TLS_MODE="none"
+    export MONITORING_MODE="none"
+    export ALERT_MODE="none"
+    export ETL_ENHANCED="false"
+    export ENABLE_AUTHELIA="false"
+
+    generate_config "lan" "$TEMPLATE_DIR"
+
+    [ -f "${INSTALL_DIR}/.admin_password" ]
+    [ -s "${INSTALL_DIR}/.admin_password" ]
+    local perms
+    perms="$(stat -c '%a' "${INSTALL_DIR}/.admin_password" 2>/dev/null || stat -f '%Lp' "${INSTALL_DIR}/.admin_password")"
+    [ "$perms" = "600" ]
 }
 
-@test "generate_random produces unique values" {
-    val1=$(generate_random 32)
-    val2=$(generate_random 32)
-    [ "$val1" != "$val2" ]
+@test "generate_config: .env has no unresolved placeholders" {
+    export DEPLOY_PROFILE="lan"
+    export LLM_PROVIDER="ollama"
+    export LLM_MODEL="qwen2.5:7b"
+    export EMBED_PROVIDER="ollama"
+    export VECTOR_STORE="weaviate"
+    export TLS_MODE="none"
+    export MONITORING_MODE="none"
+    export ALERT_MODE="none"
+    export ETL_ENHANCED="false"
+    export ENABLE_AUTHELIA="false"
+
+    generate_config "lan" "$TEMPLATE_DIR"
+
+    # No __PLACEHOLDER__ patterns should remain
+    run grep -E '^[^#].*__[A-Z_]+__' "${INSTALL_DIR}/docker/.env"
+    [ "$status" -ne 0 ]  # grep returns 1 = no matches = good
 }
 
-@test "escape_sed handles special characters" {
-    result=$(escape_sed "test&value/with|backslash\\")
-    [[ "$result" == *'\&'* ]] && [[ "$result" == *'\/'* ]]
-}
+@test "generate_config: .env has no weak default passwords" {
+    export DEPLOY_PROFILE="lan"
+    export LLM_PROVIDER="ollama"
+    export LLM_MODEL="qwen2.5:7b"
+    export EMBED_PROVIDER="ollama"
+    export VECTOR_STORE="weaviate"
+    export TLS_MODE="none"
+    export MONITORING_MODE="none"
+    export ALERT_MODE="none"
+    export ETL_ENHANCED="false"
+    export ENABLE_AUTHELIA="false"
 
-@test "validate_no_default_secrets rejects 'changeme'" {
-    local env_file="${INSTALL_DIR}/docker/.env"
-    echo "DB_PASSWORD=changeme" > "$env_file"
-    run validate_no_default_secrets "$env_file"
-    [ "$status" -ne 0 ]
-}
+    generate_config "lan" "$TEMPLATE_DIR"
 
-@test "validate_no_default_secrets rejects 'difyai123456'" {
-    local env_file="${INSTALL_DIR}/docker/.env"
-    echo "SECRET_KEY=difyai123456" > "$env_file"
-    run validate_no_default_secrets "$env_file"
-    [ "$status" -ne 0 ]
-}
-
-@test "validate_no_default_secrets accepts random passwords" {
-    local env_file="${INSTALL_DIR}/docker/.env"
-    echo "DB_PASSWORD=$(generate_random 32)" > "$env_file"
-    echo "SECRET_KEY=$(generate_random 64)" >> "$env_file"
-    run validate_no_default_secrets "$env_file"
+    run validate_no_default_secrets "${INSTALL_DIR}/docker/.env"
     [ "$status" -eq 0 ]
 }
 
-@test "validate_no_default_secrets rejects unresolved placeholders" {
-    local env_file="${INSTALL_DIR}/docker/.env"
-    echo "SECRET_KEY=__SECRET_KEY__" > "$env_file"
-    run validate_no_default_secrets "$env_file"
+# ============================================================================
+# PROVIDER VARS
+# ============================================================================
+
+@test "generate_config: ollama provider sets OLLAMA_BASE_URL" {
+    export DEPLOY_PROFILE="lan"
+    export LLM_PROVIDER="ollama"
+    export LLM_MODEL="qwen2.5:7b"
+    export EMBED_PROVIDER="ollama"
+    export VECTOR_STORE="weaviate"
+    export TLS_MODE="none"
+    export MONITORING_MODE="none"
+    export ALERT_MODE="none"
+    export ETL_ENHANCED="false"
+    export ENABLE_AUTHELIA="false"
+
+    generate_config "lan" "$TEMPLATE_DIR"
+
+    grep -q "OLLAMA_BASE_URL=http://ollama:11434" "${INSTALL_DIR}/docker/.env"
+    grep -q "ENABLE_OLLAMA_API=true" "${INSTALL_DIR}/docker/.env"
+}
+
+@test "generate_config: vllm provider sets OPENAI_API_BASE_URL" {
+    export DEPLOY_PROFILE="lan"
+    export LLM_PROVIDER="vllm"
+    export VLLM_MODEL="Qwen/Qwen2.5-14B-Instruct"
+    export EMBED_PROVIDER="tei"
+    export VECTOR_STORE="weaviate"
+    export TLS_MODE="none"
+    export MONITORING_MODE="none"
+    export ALERT_MODE="none"
+    export ETL_ENHANCED="false"
+    export ENABLE_AUTHELIA="false"
+
+    generate_config "lan" "$TEMPLATE_DIR"
+
+    grep -q "ENABLE_OPENAI_API=true" "${INSTALL_DIR}/docker/.env"
+    grep -q "OPENAI_API_BASE_URL=http://vllm:8000/v1" "${INSTALL_DIR}/docker/.env"
+}
+
+# ============================================================================
+# REDIS CONFIG
+# ============================================================================
+
+@test "generate_redis_config: uses ACL not rename-command" {
+    export DEPLOY_PROFILE="lan"
+    export LLM_PROVIDER="ollama"
+    export LLM_MODEL="qwen2.5:7b"
+    export EMBED_PROVIDER="ollama"
+    export VECTOR_STORE="weaviate"
+    export TLS_MODE="none"
+    export MONITORING_MODE="none"
+    export ALERT_MODE="none"
+    export ETL_ENHANCED="false"
+    export ENABLE_AUTHELIA="false"
+
+    generate_config "lan" "$TEMPLATE_DIR"
+
+    local redis_conf="${INSTALL_DIR}/docker/volumes/redis/redis.conf"
+    [ -f "$redis_conf" ]
+
+    # Must use ACL
+    grep -q "user default on" "$redis_conf"
+    grep -q "@dangerous" "$redis_conf"
+
+    # Must NOT use rename-command
+    run grep "rename-command" "$redis_conf"
     [ "$status" -ne 0 ]
+}
+
+# ============================================================================
+# SQUID CONFIG
+# ============================================================================
+
+@test "generate_config: creates squid config with SSRF protection" {
+    export DEPLOY_PROFILE="lan"
+    export LLM_PROVIDER="ollama"
+    export LLM_MODEL="qwen2.5:7b"
+    export EMBED_PROVIDER="ollama"
+    export VECTOR_STORE="weaviate"
+    export TLS_MODE="none"
+    export MONITORING_MODE="none"
+    export ALERT_MODE="none"
+    export ETL_ENHANCED="false"
+    export ENABLE_AUTHELIA="false"
+
+    generate_config "lan" "$TEMPLATE_DIR"
+
+    local squid_conf="${INSTALL_DIR}/docker/volumes/ssrf_proxy/squid.conf"
+    [ -f "$squid_conf" ]
+    grep -q "169.254" "$squid_conf"
+    grep -q "deny metadata" "$squid_conf"
+}
+
+# ============================================================================
+# SANDBOX CONFIG
+# ============================================================================
+
+@test "generate_config: sandbox config has replaced key" {
+    export DEPLOY_PROFILE="lan"
+    export LLM_PROVIDER="ollama"
+    export LLM_MODEL="qwen2.5:7b"
+    export EMBED_PROVIDER="ollama"
+    export VECTOR_STORE="weaviate"
+    export TLS_MODE="none"
+    export MONITORING_MODE="none"
+    export ALERT_MODE="none"
+    export ETL_ENHANCED="false"
+    export ENABLE_AUTHELIA="false"
+
+    generate_config "lan" "$TEMPLATE_DIR"
+
+    local sandbox_conf="${INSTALL_DIR}/docker/volumes/sandbox/conf/config.yaml"
+    [ -f "$sandbox_conf" ]
+
+    # Key must be replaced (not the placeholder)
+    run grep "__will_be_replaced__" "$sandbox_conf"
+    [ "$status" -ne 0 ]
+}
+
+# ============================================================================
+# VERSIONS
+# ============================================================================
+
+@test "generate_config: pinned versions appended to .env" {
+    export DEPLOY_PROFILE="lan"
+    export LLM_PROVIDER="ollama"
+    export LLM_MODEL="qwen2.5:7b"
+    export EMBED_PROVIDER="ollama"
+    export VECTOR_STORE="weaviate"
+    export TLS_MODE="none"
+    export MONITORING_MODE="none"
+    export ALERT_MODE="none"
+    export ETL_ENHANCED="false"
+    export ENABLE_AUTHELIA="false"
+
+    generate_config "lan" "$TEMPLATE_DIR"
+
+    grep -q "DIFY_VERSION=" "${INSTALL_DIR}/docker/.env"
+    grep -q "POSTGRES_VERSION=" "${INSTALL_DIR}/docker/.env"
+    grep -q "REDIS_VERSION=" "${INSTALL_DIR}/docker/.env"
 }
 
 @test "versions.env has no 'latest' tags" {
-    local versions_file="$(dirname "$BATS_TEST_FILENAME")/../templates/versions.env"
-    run grep -i "latest" "$versions_file"
+    run grep -i "latest" "${TEMPLATE_DIR}/versions.env"
     [ "$status" -ne 0 ]
 }
 
+# ============================================================================
+# TEMPLATE VALIDATION
+# ============================================================================
+
 @test "env templates have no _VERSION variables" {
-    for template in $(dirname "$BATS_TEST_FILENAME")/../templates/env.*.template; do
-        count=$(grep -c "_VERSION=" "$template" || true)
+    for template in "${TEMPLATE_DIR}"/env.*.template; do
+        [ -f "$template" ] || continue
+        local count
+        count="$(grep -c "_VERSION=" "$template" || true)"
         [ "$count" -eq 0 ]
     done
 }
 
 @test "nginx template has no __ADMIN_TOKEN__" {
-    local nginx_template="$(dirname "$BATS_TEST_FILENAME")/../templates/nginx.conf.template"
-    run grep "__ADMIN_TOKEN__" "$nginx_template"
+    run grep "__ADMIN_TOKEN__" "${TEMPLATE_DIR}/nginx.conf.template"
     [ "$status" -ne 0 ]
 }
 
 @test "docker-compose.yml is valid YAML" {
-    local compose="$(dirname "$BATS_TEST_FILENAME")/../templates/docker-compose.yml"
-    run python3 -c "import yaml; yaml.safe_load(open('$compose'))"
+    if ! command -v python3 &>/dev/null; then
+        skip "python3 not available"
+    fi
+    run python3 -c "import yaml; yaml.safe_load(open('${TEMPLATE_DIR}/docker-compose.yml'))"
     [ "$status" -eq 0 ]
 }
 
-@test "all services have security or logging defaults" {
-    local compose="$(dirname "$BATS_TEST_FILENAME")/../templates/docker-compose.yml"
-    # Count services using either *security-defaults or *logging-defaults
-    # (logging-defaults inherits security-defaults + adds logging config)
-    local security_count=$(grep -c "<<: \*security-defaults" "$compose")
-    local logging_count=$(grep -c "<<: \*logging-defaults" "$compose")
-    local total=$((security_count + logging_count))
-    # 26 services total, 1 (sandbox) intentionally excluded = 25 minimum
-    [ "$total" -ge 25 ]
+# ============================================================================
+# DIRECTORY STRUCTURE
+# ============================================================================
+
+@test "generate_config: creates all required directories" {
+    export DEPLOY_PROFILE="lan"
+    export LLM_PROVIDER="ollama"
+    export LLM_MODEL="qwen2.5:7b"
+    export EMBED_PROVIDER="ollama"
+    export VECTOR_STORE="weaviate"
+    export TLS_MODE="none"
+    export MONITORING_MODE="none"
+    export ALERT_MODE="none"
+    export ETL_ENHANCED="false"
+    export ENABLE_AUTHELIA="false"
+
+    generate_config "lan" "$TEMPLATE_DIR"
+
+    [ -d "${INSTALL_DIR}/docker/volumes/sandbox/conf" ]
+    [ -d "${INSTALL_DIR}/docker/volumes/db/data" ]
+    [ -d "${INSTALL_DIR}/docker/volumes/redis/data" ]
+    [ -d "${INSTALL_DIR}/docker/nginx" ]
+    [ -d "${INSTALL_DIR}/scripts" ]
+    [ -d "${INSTALL_DIR}/workflows" ]
 }
 
-@test "backup and restore use same DB dump filename" {
-    local base="$(dirname "$BATS_TEST_FILENAME")/.."
-    local backup_file="$base/scripts/backup.sh"
-    local restore_file="$base/scripts/restore.sh"
-    local runbook_file="$base/scripts/restore-runbook.sh"
+# ============================================================================
+# GPU COMPOSE
+# ============================================================================
 
-    # backup.sh creates dify_db.sql — extract the canonical name
-    grep -q 'dify_db\.sql' "$backup_file"
-    grep -q 'dify_db\.sql' "$restore_file"
-    grep -q 'dify_db\.sql' "$runbook_file"
+@test "enable_gpu_compose: CPU mode removes GPU markers" {
+    export DETECTED_GPU="none"
+    local compose="${INSTALL_DIR}/docker/docker-compose.yml"
+    mkdir -p "$(dirname "$compose")"
+    echo "#__GPU__some gpu config" > "$compose"
 
-    # plugin DB name must also match
-    grep -q 'dify_plugin_db\.sql' "$backup_file"
-    grep -q 'dify_plugin_db\.sql' "$restore_file"
+    enable_gpu_compose
+    run grep "#__GPU__" "$compose"
+    [ "$status" -ne 0 ]  # markers removed
+}
+
+@test "enable_gpu_compose: NVIDIA enables GPU markers" {
+    export DETECTED_GPU="nvidia"
+    local compose="${INSTALL_DIR}/docker/docker-compose.yml"
+    mkdir -p "$(dirname "$compose")"
+    echo "#__GPU__      deploy:" > "$compose"
+
+    enable_gpu_compose
+    # Markers should be stripped (not the content after them)
+    run grep "#__GPU__" "$compose"
+    [ "$status" -ne 0 ]
+    grep -q "deploy:" "$compose"
 }

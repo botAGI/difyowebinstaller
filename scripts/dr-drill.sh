@@ -24,7 +24,7 @@ REPORT_DIR="${INSTALL_DIR}/logs/dr-drills"
 COMPOSE_FILE="${INSTALL_DIR}/docker/docker-compose.yml"
 HEALTH_SCRIPT="${INSTALL_DIR}/scripts/health.sh"
 BACKUP_SCRIPT="${INSTALL_DIR}/scripts/backup.sh"
-RESTORE_RUNBOOK="${INSTALL_DIR}/scripts/restore-runbook.sh"
+RESTORE_SCRIPT="${INSTALL_DIR}/scripts/restore.sh"
 
 DRY_RUN=false
 SKIP_RESTORE=false
@@ -111,7 +111,7 @@ else
 fi
 
 # Check required scripts
-for script in "$BACKUP_SCRIPT" "$RESTORE_RUNBOOK" "$HEALTH_SCRIPT"; do
+for script in "$BACKUP_SCRIPT" "$RESTORE_SCRIPT" "$HEALTH_SCRIPT"; do
     if [[ -x "$script" ]]; then
         log_ok "Script found: $(basename "$script")"
     elif [[ -f "$script" ]]; then
@@ -254,7 +254,7 @@ elif [[ -n "${DRILL_BACKUP_PATH:-}" ]]; then
     log_warn "This will restart services — expect brief downtime"
 
     restore_start=$(date +%s)
-    if AUTO_CONFIRM=true bash "$RESTORE_RUNBOOK" "$DRILL_BACKUP_PATH" 2>&1 | tee -a "$REPORT_FILE"; then
+    if AUTO_CONFIRM=true bash "$RESTORE_SCRIPT" "$DRILL_BACKUP_PATH" 2>&1 | tee -a "$REPORT_FILE"; then
         restore_end=$(date +%s)
         restore_duration=$((restore_end - restore_start))
         log_ok "Restore completed in ${restore_duration}s"

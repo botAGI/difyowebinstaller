@@ -3,7 +3,8 @@
 set -euo pipefail
 umask 077
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
+CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 
 # R-13: Root check
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -15,7 +16,7 @@ fi
 LOCK_FILE="/var/lock/agmind-operation.lock"
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
-    echo -e "${RED}Другая операция AGMind уже запущена. Дождитесь завершения.${NC}"
+    echo -e "${RED}Another AGMind operation is running. Wait for it to finish.${NC}"
     exit 1
 fi
 
@@ -63,35 +64,35 @@ if [[ -n "${1:-}" ]]; then
     RESTORE_DIR="$(realpath -m "$1" 2>/dev/null || readlink -f "$1" 2>/dev/null || echo "$1")"
     [[ "$RESTORE_DIR" == "$BACKUP_BASE"/* ]] || { echo -e "${RED}Error: path must be under ${BACKUP_BASE}${NC}"; exit 1; }
 else
-    echo -e "${YELLOW}Доступные бэкапы:${NC}"
+    echo -e "${YELLOW}Available backups:${NC}"
     ls -1d "${BACKUP_BASE}"/*/ 2>/dev/null | while read -r dir; do
         local_size=$(du -sh "$dir" 2>/dev/null | cut -f1)
         echo "  $(basename "$dir")  ($local_size)"
     done
 
     echo ""
-    read -rp "Введите дату бэкапа (YYYY-MM-DD_HHMM): " BACKUP_DATE
+    read -rp "Enter backup date (YYYY-MM-DD_HHMM): " BACKUP_DATE
     RESTORE_DIR="$(realpath -m "${BACKUP_BASE}/${BACKUP_DATE}" 2>/dev/null)"
     [[ "$RESTORE_DIR" == "$BACKUP_BASE"/* ]] || { echo -e "${RED}Invalid backup path${NC}"; exit 1; }
 fi
 
 if [[ ! -d "$RESTORE_DIR" ]]; then
-    echo -e "${RED}Бэкап не найден: ${RESTORE_DIR}${NC}"
+    echo -e "${RED}Backup not found: ${RESTORE_DIR}${NC}"
     exit 1
 fi
 
-echo -e "${YELLOW}=== Восстановление из бэкапа ===${NC}"
-echo "  Источник: ${RESTORE_DIR}"
+echo -e "${YELLOW}=== Restoring from backup ===${NC}"
+echo "  Source: ${RESTORE_DIR}"
 echo ""
 
 # Confirmation
 if [[ "$AUTO_CONFIRM" == "true" ]]; then
     CONFIRM="yes"
 else
-    read -rp "ВНИМАНИЕ: Текущие данные будут перезаписаны. Продолжить? (yes/no): " CONFIRM
+    read -rp "WARNING: Current data will be overwritten. Continue? (yes/no): " CONFIRM
 fi
 if [[ "$CONFIRM" != "yes" ]]; then
-    echo "Отменено."
+    echo "Cancelled."
     exit 0
 fi
 
@@ -102,29 +103,29 @@ for f in "${RESTORE_DIR}"/*.age; do
 done
 
 if [[ "$has_age_files" == "true" ]]; then
-    echo -e "${YELLOW}Обнаружены зашифрованные файлы (.age)${NC}"
+    echo -e "${YELLOW}Encrypted files detected (.age)${NC}"
     age_key="${INSTALL_DIR}/.age/agmind.key"
     if [[ -f "$age_key" ]] && command -v age &>/dev/null; then
-        echo -e "${YELLOW}Расшифровка бэкапа...${NC}"
+        echo -e "${YELLOW}Decrypting backup...${NC}"
         for f in "${RESTORE_DIR}"/*.age; do
             [[ -f "$f" ]] || continue
             local_output="${f%.age}"
             age -d -i "$age_key" -o "$local_output" "$f" 2>/dev/null && rm -f "$f"
         done
-        echo -e "${GREEN}Бэкап расшифрован${NC}"
+        echo -e "${GREEN}Backup decrypted${NC}"
     else
-        echo -e "${RED}Ключ дешифрования не найден: ${age_key}${NC}"
-        echo "Укажите путь к ключу age или скопируйте его в ${age_key}"
-        read -rp "Путь к ключу (Enter для отмены): " custom_key
+        echo -e "${RED}Decryption key not found: ${age_key}${NC}"
+        echo "Provide path to age key or copy it to ${age_key}"
+        read -rp "Path to key (Enter to cancel): " custom_key
         if [[ -n "$custom_key" && -f "$custom_key" ]]; then
             for f in "${RESTORE_DIR}"/*.age; do
                 [[ -f "$f" ]] || continue
                 local_output="${f%.age}"
                 age -d -i "$custom_key" -o "$local_output" "$f" 2>/dev/null && rm -f "$f"
             done
-            echo -e "${GREEN}Бэкап расшифрован${NC}"
+            echo -e "${GREEN}Backup decrypted${NC}"
         else
-            echo -e "${RED}Отменено — невозможно расшифровать бэкап${NC}"
+            echo -e "${RED}Cancelled — cannot decrypt backup${NC}"
             exit 1
         fi
     fi
@@ -132,19 +133,19 @@ fi
 
 # Verify checksums
 if [[ -f "${RESTORE_DIR}/sha256sums.txt" ]]; then
-    echo -e "${YELLOW}Проверка контрольных сумм...${NC}"
+    echo -e "${YELLOW}Verifying checksums...${NC}"
     cd "${RESTORE_DIR}"
     if sha256sum -c sha256sums.txt >/dev/null 2>&1; then
-        echo -e "${GREEN}Контрольные суммы совпадают${NC}"
+        echo -e "${GREEN}Checksums match${NC}"
     else
-        echo -e "${RED}ВНИМАНИЕ: Контрольные суммы НЕ совпадают!${NC}"
+        echo -e "${RED}WARNING: Checksums DO NOT match!${NC}"
         if [[ "$AUTO_CONFIRM" == "true" ]]; then
             FORCE_RESTORE="yes"
         else
-            read -rp "Продолжить восстановление? (yes/no): " FORCE_RESTORE
+            read -rp "Continue restore? (yes/no): " FORCE_RESTORE
         fi
         if [[ "$FORCE_RESTORE" != "yes" ]]; then
-            echo "Отменено."
+            echo "Cancelled."
             exit 1
         fi
     fi
@@ -155,13 +156,13 @@ fi
 mkdir -p "$RESTORE_TMP"
 
 # Stop services
-echo -e "${YELLOW}Остановка контейнеров...${NC}"
+echo -e "${YELLOW}Stopping containers...${NC}"
 SERVICES_DOWN=true
 docker compose -f "$COMPOSE_FILE" down
 
 # 1. Restore PostgreSQL
 if [[ -f "${RESTORE_DIR}/dify_db.sql.gz" ]]; then
-    echo -e "${YELLOW}Восстановление PostgreSQL...${NC}"
+    echo -e "${YELLOW}Restoring PostgreSQL...${NC}"
     docker compose -f "$COMPOSE_FILE" up -d db
 
     # R-05: Wait for PostgreSQL with pg_isready loop
@@ -174,7 +175,7 @@ if [[ -f "${RESTORE_DIR}/dify_db.sql.gz" ]]; then
     done
 
     if ! docker compose -f "$COMPOSE_FILE" exec -T db pg_isready -U "${DB_USER:-postgres}" >/dev/null 2>&1; then
-        echo -e "${RED}✗ PostgreSQL не готов за отведённое время${NC}"
+        echo -e "${RED}✗ PostgreSQL not ready within timeout${NC}"
         exit 1
     fi
 
@@ -202,12 +203,12 @@ if [[ -f "${RESTORE_DIR}/dify_db.sql.gz" ]]; then
     fi
 
     docker compose -f "$COMPOSE_FILE" stop db
-    echo -e "${GREEN}PostgreSQL восстановлен${NC}"
+    echo -e "${GREEN}PostgreSQL restored${NC}"
 fi
 
 # 2. Restore vector store
 if [[ -f "${RESTORE_DIR}/qdrant.tar.gz" ]]; then
-    echo -e "${YELLOW}Восстановление Qdrant...${NC}"
+    echo -e "${YELLOW}Restoring Qdrant...${NC}"
     data_dir="${INSTALL_DIR}/docker/volumes/qdrant"
     mkdir -p "${data_dir}"
 
@@ -227,9 +228,9 @@ if [[ -f "${RESTORE_DIR}/qdrant.tar.gz" ]]; then
     fi
 
     # Qdrant: volume tar restore only (API not exposed to host — no ports: in compose)
-    echo -e "${GREEN}Qdrant восстановлен${NC}"
+    echo -e "${GREEN}Qdrant restored${NC}"
 elif [[ -f "${RESTORE_DIR}/weaviate.tar.gz" ]]; then
-    echo -e "${YELLOW}Восстановление Weaviate...${NC}"
+    echo -e "${YELLOW}Restoring Weaviate...${NC}"
     data_dir="${INSTALL_DIR}/docker/volumes/weaviate"
 
     # R-06: Safe restore for Weaviate
@@ -248,12 +249,12 @@ elif [[ -f "${RESTORE_DIR}/weaviate.tar.gz" ]]; then
         echo -e "${RED}Weaviate restore failed, old data preserved${NC}"
         exit 1
     fi
-    echo -e "${GREEN}Weaviate восстановлен${NC}"
+    echo -e "${GREEN}Weaviate restored${NC}"
 fi
 
 # 3. Restore Dify storage
 if [[ -f "${RESTORE_DIR}/dify-storage.tar.gz" ]]; then
-    echo -e "${YELLOW}Восстановление Dify storage...${NC}"
+    echo -e "${YELLOW}Restoring Dify storage...${NC}"
     data_dir="${INSTALL_DIR}/docker/volumes/app/storage"
 
     # R-06: Safe restore for Dify storage
@@ -272,12 +273,12 @@ if [[ -f "${RESTORE_DIR}/dify-storage.tar.gz" ]]; then
         echo -e "${RED}Dify storage restore failed, old data preserved${NC}"
         exit 1
     fi
-    echo -e "${GREEN}Dify storage восстановлен${NC}"
+    echo -e "${GREEN}Dify storage restored${NC}"
 fi
 
 # 4. Restore Open WebUI
 if [[ -f "${RESTORE_DIR}/openwebui.tar.gz" ]]; then
-    echo -e "${YELLOW}Восстановление Open WebUI...${NC}"
+    echo -e "${YELLOW}Restoring Open WebUI...${NC}"
     # R-10: Check if volume exists before restore
     vol_name=$(docker volume ls -q | grep "openwebui" | head -1)
     if [[ -z "$vol_name" ]]; then
@@ -285,20 +286,20 @@ if [[ -f "${RESTORE_DIR}/openwebui.tar.gz" ]]; then
     else
         docker run --rm -v "${vol_name}:/data" -v "${RESTORE_DIR}:/backup" \
             alpine sh -c "rm -rf /data/* && tar xzf /backup/openwebui.tar.gz -C /data/"
-        echo -e "${GREEN}Open WebUI восстановлен${NC}"
+        echo -e "${GREEN}Open WebUI restored${NC}"
     fi
 fi
 
 # 5. Restore Ollama models
 if [[ -f "${RESTORE_DIR}/ollama.tar.gz" ]]; then
-    echo -e "${YELLOW}Восстановление моделей Ollama...${NC}"
+    echo -e "${YELLOW}Restoring Ollama models...${NC}"
     vol_name=$(docker volume ls -q | grep "ollama_data" | head -1)
     if [[ -z "$vol_name" ]]; then
         echo -e "${YELLOW}Volume not found, skipping Ollama restore${NC}"
     else
         docker run --rm -v "${vol_name}:/data" -v "${RESTORE_DIR}:/backup" \
             alpine sh -c "rm -rf /data/* && tar xzf /backup/ollama.tar.gz -C /data/"
-        echo -e "${GREEN}Модели Ollama восстановлены${NC}"
+        echo -e "${GREEN}Ollama models restored${NC}"
     fi
 fi
 
@@ -307,7 +308,7 @@ if [[ -f "${RESTORE_DIR}/env.backup" ]]; then
     if [[ "$AUTO_CONFIRM" == "true" ]]; then
         RESTORE_CONFIG="yes"
     else
-        read -rp "Восстановить конфигурацию (.env, nginx)? (yes/no): " RESTORE_CONFIG
+        read -rp "Restore configuration (.env, nginx)? (yes/no): " RESTORE_CONFIG
     fi
     if [[ "$RESTORE_CONFIG" == "yes" ]]; then
         cp "${RESTORE_DIR}/env.backup" "${INSTALL_DIR}/docker/.env"
@@ -316,21 +317,21 @@ if [[ -f "${RESTORE_DIR}/env.backup" ]]; then
         cp "${RESTORE_DIR}/nginx.conf.backup" "${INSTALL_DIR}/docker/nginx/nginx.conf" 2>/dev/null || true
         # Restore Authelia config if backup exists
         if [[ -f "${RESTORE_DIR}/authelia.tar.gz" ]]; then
-            echo -e "${YELLOW}Восстановление Authelia конфигурации...${NC}"
+            echo -e "${YELLOW}Restoring Authelia configuration...${NC}"
             mkdir -p "${INSTALL_DIR}/docker/authelia"
             tar xzf "${RESTORE_DIR}/authelia.tar.gz" -C "${INSTALL_DIR}/docker/authelia/"
-            echo -e "${GREEN}Authelia конфигурация восстановлена${NC}"
+            echo -e "${GREEN}Authelia configuration restored${NC}"
         fi
         # Restore age encryption keys if backup exists
         if [[ -d "${RESTORE_DIR}/age_keys" ]]; then
-            echo -e "${YELLOW}Восстановление ключей шифрования...${NC}"
+            echo -e "${YELLOW}Restoring encryption keys...${NC}"
             mkdir -p "${INSTALL_DIR}/.age"
             cp -r "${RESTORE_DIR}/age_keys/"* "${INSTALL_DIR}/.age/"
             chmod 700 "${INSTALL_DIR}/.age"
             chmod 600 "${INSTALL_DIR}/.age/"* 2>/dev/null || true
-            echo -e "${GREEN}Ключи шифрования восстановлены${NC}"
+            echo -e "${GREEN}Encryption keys restored${NC}"
         fi
-        echo -e "${GREEN}Конфигурация восстановлена${NC}"
+        echo -e "${GREEN}Configuration restored${NC}"
     fi
 fi
 
@@ -338,7 +339,7 @@ fi
 rm -rf "$RESTORE_TMP" 2>/dev/null || true
 
 # Start all services (rebuild COMPOSE_PROFILES from .env settings)
-echo -e "${YELLOW}Запуск контейнеров...${NC}"
+echo -e "${YELLOW}Starting containers...${NC}"
 RESTORE_PROFILES=""
 ENV_FILE="${INSTALL_DIR}/docker/.env"
 if [[ -f "$ENV_FILE" ]]; then
@@ -360,5 +361,5 @@ fi
 SERVICES_DOWN=false
 
 echo ""
-echo -e "${GREEN}=== Восстановление завершено ===${NC}"
-echo "Проверьте состояние: docker compose -f ${COMPOSE_FILE} ps"
+echo -e "${GREEN}=== Restore complete ===${NC}"
+echo "Check status: docker compose -f ${COMPOSE_FILE} ps"

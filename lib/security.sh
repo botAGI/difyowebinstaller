@@ -1,49 +1,64 @@
 #!/usr/bin/env bash
-# AGMind Security Hardening Module
+# security.sh — UFW, fail2ban (SSH jail), SOPS/age encryption, Docker hardening.
+# Dependencies: common.sh (log_*, generate_random)
+# Functions: setup_security(), configure_ufw(), configure_fail2ban(),
+#            encrypt_secrets(), harden_docker_compose()
+# Expects: INSTALL_DIR, DEPLOY_PROFILE, ENABLE_UFW, ENABLE_FAIL2BAN, ENABLE_SOPS,
+#          MONITORING_MODE
+set -euo pipefail
 
-# Colors (may be inherited from install.sh)
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; BOLD="${BOLD:-\033[1m}"; NC="${NC:-\033[0m}"
+INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
+
+# ============================================================================
+# UFW FIREWALL
+# ============================================================================
 
 configure_ufw() {
     if [[ "${ENABLE_UFW:-false}" != "true" ]]; then return 0; fi
+
     if ! command -v ufw &>/dev/null; then
-        echo -e "${YELLOW}UFW не найден — пропускаем firewall. Установите: apt install ufw${NC}"
+        log_warn "UFW not found — skipping firewall. Install: apt install ufw"
         return 0
     fi
-    echo -e "${CYAN}→ configure_ufw: настройка файрвола...${NC}"
 
-    # Backup existing UFW rules before reset
+    log_info "Configuring UFW firewall..."
+
+    # Backup existing rules
     if ufw status 2>/dev/null | grep -q "active"; then
         ufw status numbered > "/tmp/ufw-backup-$(date +%s).txt" 2>/dev/null || true
     fi
-    ufw --force reset
 
+    ufw --force reset
     ufw default deny incoming
     ufw default allow outgoing
     ufw allow ssh comment "SSH"
     ufw allow 80/tcp comment "AGMind HTTP"
     ufw allow 443/tcp comment "AGMind HTTPS"
 
-    if [[ "${DEPLOY_PROFILE}" == "lan" ]]; then
+    if [[ "${DEPLOY_PROFILE:-}" == "lan" ]]; then
         ufw allow from "${LAN_SUBNET:-192.168.0.0/16}" comment "LAN access"
     fi
-    if [[ "${DEPLOY_PROFILE}" == "vpn" ]]; then
+    if [[ "${DEPLOY_PROFILE:-}" == "vpn" ]]; then
         ufw allow in on "${VPN_INTERFACE:-tun0}" comment "VPN access"
     fi
-    # Monitoring ports (if local monitoring enabled)
-    if [[ "${MONITORING_MODE}" == "local" ]]; then
+    if [[ "${MONITORING_MODE:-none}" == "local" ]]; then
         ufw allow 3001/tcp comment "Grafana"
         ufw allow 9443/tcp comment "Portainer"
     fi
+
     ufw --force enable
-    echo -e "${GREEN}✓ configure_ufw: done${NC}"
+    log_success "UFW configured"
     ufw status numbered
 }
 
+# ============================================================================
+# FAIL2BAN (SSH JAIL ONLY)
+# ============================================================================
+
 configure_fail2ban() {
     if [[ "${ENABLE_FAIL2BAN:-false}" != "true" ]]; then return 0; fi
-    echo -e "${CYAN}→ configure_fail2ban: настройка защиты от bruteforce...${NC}"
+
+    log_info "Configuring fail2ban (SSH jail)..."
 
     # Install if missing
     if ! command -v fail2ban-server &>/dev/null; then
@@ -54,12 +69,12 @@ configure_fail2ban() {
         elif command -v yum &>/dev/null; then
             yum install -y fail2ban >/dev/null 2>&1
         else
-            echo -e "${YELLOW}Не удалось установить fail2ban автоматически${NC}"
+            log_warn "Cannot install fail2ban automatically"
             return 0
         fi
     fi
 
-    # Create jail config — SSH only (nginx jail removed: Docker logpath mismatch makes it non-functional)
+    # SSH jail only — nginx rate limiting handles API protection
     cat > /etc/fail2ban/jail.d/agmind.conf << 'EOF'
 [sshd]
 enabled = true
@@ -70,17 +85,20 @@ EOF
 
     systemctl enable fail2ban >/dev/null 2>&1
     systemctl restart fail2ban >/dev/null 2>&1
-    echo -e "${GREEN}✓ configure_fail2ban: done${NC}"
+    log_success "Fail2ban configured (SSH jail, maxretry=3, bantime=10d)"
 }
+
+# ============================================================================
+# SOPS / AGE ENCRYPTION
+# ============================================================================
 
 encrypt_secrets() {
     if [[ "${ENABLE_SOPS:-false}" != "true" ]]; then return 0; fi
-    echo -e "${CYAN}→ encrypt_secrets: настройка шифрования...${NC}"
 
-    local install_dir="${INSTALL_DIR:-/opt/agmind}"
+    log_info "Setting up SOPS encryption..."
 
-    # Validate INSTALL_DIR is absolute path
-    [[ "${install_dir}" == /* ]] || { echo -e "${RED}INSTALL_DIR must be absolute${NC}"; return 1; }
+    local install_dir="${INSTALL_DIR}"
+    [[ "${install_dir}" == /* ]] || { log_error "INSTALL_DIR must be absolute"; return 1; }
 
     local age_dir="${install_dir}/.age"
     local age_key="${age_dir}/agmind.key"
@@ -90,7 +108,7 @@ encrypt_secrets() {
         if command -v apt-get &>/dev/null; then
             apt-get install -y age >/dev/null 2>&1
         else
-            echo -e "${YELLOW}Установите age вручную: https://github.com/FiloSottile/age${NC}"
+            log_warn "Install age manually: https://github.com/FiloSottile/age"
             return 0
         fi
     fi
@@ -101,27 +119,25 @@ encrypt_secrets() {
         [[ "$(uname -m)" == "aarch64" || "$(uname -m)" == "arm64" ]] && arch="arm64"
         local sops_url="https://github.com/getsops/sops/releases/download/v3.9.4/sops-v3.9.4.linux.${arch}"
         if curl -sSL "$sops_url" -o /usr/local/bin/sops; then
-            # Verify SHA256 checksum — HARD FAIL if hash is set and doesn't match
+            # Verify checksum if provided
             if [[ -n "${SOPS_EXPECTED_SHA256:-}" ]]; then
                 if ! echo "${SOPS_EXPECTED_SHA256}  /usr/local/bin/sops" | sha256sum -c - >/dev/null 2>&1; then
-                    echo -e "${RED}SECURITY FAIL: SOPS binary checksum mismatch!${NC}"
-                    echo -e "${RED}Expected: ${SOPS_EXPECTED_SHA256}${NC}"
-                    echo -e "${RED}Got:      $(sha256sum /usr/local/bin/sops | cut -d' ' -f1)${NC}"
+                    log_error "SOPS binary checksum mismatch!"
                     rm -f /usr/local/bin/sops
                     return 1
                 fi
-                echo -e "${GREEN}✓ SOPS checksum verified${NC}"
+                log_success "SOPS checksum verified"
             else
-                echo -e "${YELLOW}⚠ SOPS checksum not verified (set SOPS_EXPECTED_SHA256 to enable)${NC}"
+                log_warn "SOPS checksum not verified (set SOPS_EXPECTED_SHA256 to enable)"
             fi
             chmod +x /usr/local/bin/sops
         else
-            echo -e "${YELLOW}Не удалось скачать sops${NC}"
+            log_warn "Failed to download sops"
             return 0
         fi
     fi
 
-    # Generate age keypair (umask prevents TOCTOU: files created with correct perms)
+    # Generate age keypair (umask ensures correct perms from creation)
     (
         umask 077
         mkdir -p "$age_dir"
@@ -132,7 +148,7 @@ encrypt_secrets() {
     )
 
     local pub_key
-    pub_key=$(grep 'public key:' "$age_key" | cut -d: -f2- | tr -d ' ')
+    pub_key="$(grep 'public key:' "$age_key" | cut -d: -f2- | tr -d ' ')"
 
     # Create .sops.yaml
     cat > "${install_dir}/.sops.yaml" << EOF
@@ -145,10 +161,9 @@ EOF
     local env_file="${install_dir}/docker/.env"
     if [[ -f "$env_file" ]]; then
         (umask 077; SOPS_AGE_KEY_FILE="$age_key" sops --encrypt --age "$pub_key" "$env_file" > "${env_file}.enc")
-        echo -e "${GREEN}✓ encrypt_secrets: .env зашифрован → .env.enc${NC}"
-        echo -e "${YELLOW}⚠ ВАЖНО: Сохраните ключ ${age_key} в безопасное место!${NC}"
-        echo -e "${YELLOW}  Без него невозможно расшифровать секреты.${NC}"
-        echo -e "${YELLOW}WARNING: Plaintext .env file still exists. Consider running: shred -u ${env_file}${NC}"
+        log_success ".env encrypted → .env.enc"
+        log_warn "IMPORTANT: Back up ${age_key} — without it, secrets cannot be decrypted"
+        log_warn "Plaintext .env still exists. Consider: shred -u ${env_file}"
     fi
 
     # Add .env to .gitignore
@@ -158,35 +173,34 @@ EOF
     fi
 }
 
+# ============================================================================
+# DOCKER HARDENING
+# ============================================================================
+
 harden_docker_compose() {
     if [[ "${SKIP_DOCKER_HARDENING:-false}" == "true" ]]; then return 0; fi
-    echo -e "${CYAN}→ harden_docker_compose: применение security defaults...${NC}"
+
+    log_info "Applying Docker security defaults..."
 
     local compose_file="${INSTALL_DIR}/docker/docker-compose.yml"
     [[ ! -f "$compose_file" ]] && return 0
 
-    # Add security_opt: no-new-privileges to all services EXCEPT:
-    #   - cadvisor: requires privileged mode to read cgroups/proc/sys
-    #   - sandbox: needs cap_add which conflicts with no-new-privileges
-    # Only add if not already present (idempotent)
+    # no-new-privileges on all services EXCEPT cadvisor (needs privileged) and sandbox (needs cap_add)
     if grep -q 'no-new-privileges' "$compose_file" 2>/dev/null; then
-        echo -e "${GREEN}✓ security_opt уже применён${NC}"
+        log_success "security_opt already applied"
         return 0
     fi
 
-    # Use Python for reliable YAML-aware line insertion (avoid sed portability issues)
     python3 -c "
 import re, sys
 with open('$compose_file', 'r') as f:
     lines = f.readlines()
-# Skip list: containers that need elevated privileges
 skip = {'agmind-cadvisor', 'agmind-sandbox'}
 result = []
 for i, line in enumerate(lines):
     result.append(line)
     m = re.match(r'^(\s+)container_name:\s+(\S+)', line)
     if m and m.group(2) not in skip:
-        # Check if next lines already have security_opt
         upcoming = ''.join(lines[i+1:i+5]) if i+1 < len(lines) else ''
         if 'security_opt' not in upcoming and 'no-new-privileges' not in upcoming:
             indent = m.group(1)
@@ -195,18 +209,30 @@ for i, line in enumerate(lines):
 with open('$compose_file', 'w') as f:
     f.writelines(result)
 " 2>/dev/null || {
-        echo -e "${YELLOW}⚠ Не удалось применить security_opt автоматически${NC}"
+        log_warn "Could not apply security_opt automatically"
         return 0
     }
 
-    echo -e "${GREEN}✓ harden_docker_compose: no-new-privileges applied${NC}"
+    log_success "Docker hardening: no-new-privileges applied"
 }
 
+# ============================================================================
+# MAIN ENTRY
+# ============================================================================
+
 setup_security() {
-    echo -e "${BOLD}Настройка безопасности...${NC}"
+    log_info "Setting up security..."
     configure_ufw
     configure_fail2ban
     harden_docker_compose
     encrypt_secrets
     echo ""
 }
+
+# Standalone
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    # shellcheck source=common.sh
+    source "${SCRIPT_DIR}/common.sh"
+    setup_security
+fi
