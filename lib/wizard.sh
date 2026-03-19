@@ -348,27 +348,33 @@ _wizard_ollama_model() {
 _wizard_vllm_model() {
     echo "Выберите модель vLLM:"
     echo ""
-    echo " -- 7-8B [14GB+ VRAM] --"
-    echo "  1) Qwen/Qwen2.5-7B-Instruct"
-    echo "  2) mistralai/Mistral-7B-Instruct-v0.3"
-    echo "  3) meta-llama/Llama-3.1-8B-Instruct  (нужен HF_TOKEN)"
+    echo " -- AWQ квантизация [8-16GB VRAM] --"
+    echo "  1) Qwen/Qwen2.5-7B-Instruct-AWQ          [8GB+ VRAM]"
+    echo "  2) Qwen/Qwen2.5-14B-Instruct-AWQ         [12GB+ VRAM]"
     echo ""
-    echo " -- 14B [24GB+ VRAM] --"
-    echo "  4) Qwen/Qwen2.5-14B-Instruct           [рекомендуется]"
-    echo "  5) Qwen/Qwen3-14B"
-    echo "  6) microsoft/phi-4"
+    echo " -- 7-8B bf16 [16GB+ VRAM] --"
+    echo "  3) Qwen/Qwen2.5-7B-Instruct"
+    echo "  4) mistralai/Mistral-7B-Instruct-v0.3"
+    echo "  5) meta-llama/Llama-3.1-8B-Instruct  (нужен HF_TOKEN)"
     echo ""
-    echo " -- 32B+ [48GB+ VRAM] --"
-    echo "  7) Qwen/Qwen2.5-32B-Instruct"
-    echo "  8) meta-llama/Llama-3.3-70B-Instruct  (нужен HF_TOKEN)"
+    echo " -- 14B bf16 [24GB+ VRAM] --"
+    echo "  6) Qwen/Qwen2.5-14B-Instruct              [рекомендуется]"
+    echo "  7) Qwen/Qwen3-14B"
+    echo "  8) microsoft/phi-4"
+    echo ""
+    echo " -- 32B+ bf16 [48GB+ VRAM] --"
+    echo "  9) Qwen/Qwen2.5-32B-Instruct"
+    echo " 10) meta-llama/Llama-3.3-70B-Instruct  (нужен HF_TOKEN)"
     echo ""
     echo " -- Своя модель --"
-    echo "  9) Ввести HuggingFace репозиторий (org/model-name)"
+    echo " 11) Ввести HuggingFace репозиторий (org/model-name)"
     echo ""
 
-    _ask_choice "Модель [1-9, Enter=4]: " 1 9 4
+    _ask_choice "Модель [1-11, Enter=6]: " 1 11 6
     local vllm_models=(
         ""  # 0 placeholder
+        "Qwen/Qwen2.5-7B-Instruct-AWQ"
+        "Qwen/Qwen2.5-14B-Instruct-AWQ"
         "Qwen/Qwen2.5-7B-Instruct"
         "mistralai/Mistral-7B-Instruct-v0.3"
         "meta-llama/Llama-3.1-8B-Instruct"
@@ -378,9 +384,9 @@ _wizard_vllm_model() {
         "Qwen/Qwen2.5-32B-Instruct"
         "meta-llama/Llama-3.3-70B-Instruct"
     )
-    if [[ "$REPLY" -ge 1 && "$REPLY" -le 8 ]]; then
+    if [[ "$REPLY" -ge 1 && "$REPLY" -le 10 ]]; then
         VLLM_MODEL="${vllm_models[$REPLY]}"
-    elif [[ "$REPLY" -eq 9 ]]; then
+    elif [[ "$REPLY" -eq 11 ]]; then
         _ask "HuggingFace репозиторий (org/model):" "Qwen/Qwen2.5-14B-Instruct"
         VLLM_MODEL="${REPLY:-Qwen/Qwen2.5-14B-Instruct}"
     fi
