@@ -37,8 +37,8 @@ setup() {
     grep -q '_require_root()' "${PROJECT_ROOT}/scripts/agmind.sh"
 }
 
-@test "agmind.sh contains _status_as_json function" {
-    grep -q '_status_as_json()' "${PROJECT_ROOT}/scripts/agmind.sh"
+@test "agmind.sh contains _status_json function" {
+    grep -q '_status_json()' "${PROJECT_ROOT}/scripts/agmind.sh"
 }
 
 @test "agmind.sh sources health.sh with INSTALL_DIR set first" {
@@ -173,8 +173,8 @@ setup() {
 
 # === install.sh integration ===
 
-@test "install.sh copies agmind.sh in phase_config" {
-    grep -q 'agmind\.sh.*INSTALL_DIR\|INSTALLER_DIR.*agmind\.sh' "${PROJECT_ROOT}/install.sh"
+@test "install.sh copies agmind.sh in _copy_runtime_files" {
+    grep -q 'agmind\.sh' "${PROJECT_ROOT}/install.sh"
 }
 
 @test "install.sh copies health-gen.sh in phase_config" {

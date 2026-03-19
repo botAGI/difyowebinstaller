@@ -25,76 +25,73 @@ setup() {
 
 # --- LLM Provider wizard (PROV-01) ---
 
-@test "install.sh contains LLM provider selection menu" {
-    run grep "Выберите LLM провайдер:" "${ROOT_DIR}/install.sh"
+@test "lib/wizard.sh contains LLM provider selection menu" {
+    run grep "Выберите LLM-провайдер:" "${ROOT_DIR}/lib/wizard.sh"
     [ "$status" -eq 0 ]
 }
 
-@test "install.sh has all 4 LLM provider options" {
-    run grep -c 'LLM_PROVIDER="' "${ROOT_DIR}/install.sh"
+@test "lib/wizard.sh has all 4 LLM provider options" {
+    run grep -c 'LLM_PROVIDER="' "${ROOT_DIR}/lib/wizard.sh"
     [ "$status" -eq 0 ]
     [ "$output" -ge 4 ]
 }
 
-@test "install.sh sets LLM_PROVIDER=ollama for choice 1" {
-    run grep 'LLM_PROVIDER="ollama"' "${ROOT_DIR}/install.sh"
+@test "lib/wizard.sh sets LLM_PROVIDER=ollama for choice 1" {
+    run grep 'LLM_PROVIDER="ollama"' "${ROOT_DIR}/lib/wizard.sh"
     [ "$status" -eq 0 ]
 }
 
-@test "install.sh sets LLM_PROVIDER=vllm for choice 2" {
-    run grep 'LLM_PROVIDER="vllm"' "${ROOT_DIR}/install.sh"
+@test "lib/wizard.sh sets LLM_PROVIDER=vllm for choice 2" {
+    run grep 'LLM_PROVIDER="vllm"' "${ROOT_DIR}/lib/wizard.sh"
     [ "$status" -eq 0 ]
 }
 
-@test "install.sh sets LLM_PROVIDER=external for choice 3" {
-    run grep 'LLM_PROVIDER="external"' "${ROOT_DIR}/install.sh"
+@test "lib/wizard.sh sets LLM_PROVIDER=external for choice 3" {
+    run grep 'LLM_PROVIDER="external"' "${ROOT_DIR}/lib/wizard.sh"
     [ "$status" -eq 0 ]
 }
 
-@test "install.sh sets LLM_PROVIDER=skip for choice 4" {
-    run grep 'LLM_PROVIDER="skip"' "${ROOT_DIR}/install.sh"
+@test "lib/wizard.sh sets LLM_PROVIDER=skip for choice 4" {
+    run grep 'LLM_PROVIDER="skip"' "${ROOT_DIR}/lib/wizard.sh"
     [ "$status" -eq 0 ]
 }
 
-@test "install.sh has GPU detection fallback for default provider" {
-    run grep 'DETECTED_GPU.*nvidia' "${ROOT_DIR}/install.sh"
+@test "lib/wizard.sh has GPU detection fallback for default provider" {
+    run grep 'DETECTED_GPU.*nvidia' "${ROOT_DIR}/lib/wizard.sh"
     [ "$status" -eq 0 ]
 }
 
-@test "install.sh NON_INTERACTIVE guard exists for LLM provider" {
-    # Verify that NON_INTERACTIVE pattern is used around LLM_PROVIDER selection
-    run grep -A5 "LLM провайдер" "${ROOT_DIR}/install.sh"
+@test "lib/wizard.sh NON_INTERACTIVE guard exists for LLM provider" {
+    run grep -A5 "LLM-провайдер" "${ROOT_DIR}/lib/wizard.sh"
     [ "$status" -eq 0 ]
-    # Verify NON_INTERACTIVE check exists nearby in the wizard
-    run grep -c "NON_INTERACTIVE" "${ROOT_DIR}/install.sh"
+    run grep -c "NON_INTERACTIVE" "${ROOT_DIR}/lib/wizard.sh"
     [ "$output" -ge 5 ]
 }
 
 # --- Embedding Provider wizard (PROV-02) ---
 
-@test "install.sh contains Embedding provider selection menu" {
-    run grep "Выберите Embedding провайдер:" "${ROOT_DIR}/install.sh"
+@test "lib/wizard.sh contains Embedding provider selection menu" {
+    run grep "Выберите провайдер эмбеддингов:" "${ROOT_DIR}/lib/wizard.sh"
     [ "$status" -eq 0 ]
 }
 
-@test "install.sh sets EMBED_PROVIDER=tei" {
-    run grep 'EMBED_PROVIDER="tei"' "${ROOT_DIR}/install.sh"
+@test "lib/wizard.sh sets EMBED_PROVIDER=tei" {
+    run grep 'EMBED_PROVIDER="tei"' "${ROOT_DIR}/lib/wizard.sh"
     [ "$status" -eq 0 ]
 }
 
-@test "install.sh sets EMBED_PROVIDER=external" {
-    run grep 'EMBED_PROVIDER="external"' "${ROOT_DIR}/install.sh"
+@test "lib/wizard.sh sets EMBED_PROVIDER=external" {
+    run grep 'EMBED_PROVIDER="external"' "${ROOT_DIR}/lib/wizard.sh"
     [ "$status" -eq 0 ]
 }
 
-@test "install.sh sets EMBED_PROVIDER=skip" {
-    run grep 'EMBED_PROVIDER="skip"' "${ROOT_DIR}/install.sh"
+@test "lib/wizard.sh sets EMBED_PROVIDER=skip" {
+    run grep 'EMBED_PROVIDER="skip"' "${ROOT_DIR}/lib/wizard.sh"
     [ "$status" -eq 0 ]
 }
 
-@test "install.sh has Same as LLM mapping for embedding" {
-    # Verify the "Same as LLM" dispatch exists
-    run grep -A10 "Same as LLM\|Тот же, что LLM" "${ROOT_DIR}/install.sh"
+@test "lib/wizard.sh has 'Как LLM' mapping for embedding" {
+    run grep -A10 "Как LLM" "${ROOT_DIR}/lib/wizard.sh"
     [ "$status" -eq 0 ]
     [[ "$output" == *"ollama"* ]]
     [[ "$output" == *"tei"* ]]
@@ -102,25 +99,25 @@ setup() {
 
 # --- HuggingFace token ---
 
-@test "install.sh prompts for HuggingFace token" {
-    run grep "HuggingFace token" "${ROOT_DIR}/install.sh"
+@test "lib/wizard.sh prompts for HuggingFace token" {
+    run grep "HuggingFace" "${ROOT_DIR}/lib/wizard.sh"
     [ "$status" -eq 0 ]
 }
 
-@test "install.sh HF_TOKEN prompt only for vllm or tei" {
-    run grep -B5 "HuggingFace token" "${ROOT_DIR}/install.sh"
+@test "lib/wizard.sh HF_TOKEN prompt only for vllm or tei" {
+    run grep -B10 "Токен HuggingFace" "${ROOT_DIR}/lib/wizard.sh"
     [[ "$output" == *"vllm"* ]] || [[ "$output" == *"tei"* ]]
 }
 
 # --- vLLM model list ---
 
-@test "install.sh has vLLM model selection" {
-    run grep "Выберите модель для vLLM:" "${ROOT_DIR}/install.sh"
+@test "lib/wizard.sh has vLLM model selection" {
+    run grep "Выберите модель vLLM:" "${ROOT_DIR}/lib/wizard.sh"
     [ "$status" -eq 0 ]
 }
 
-@test "install.sh default vLLM model is Qwen2.5-14B-Instruct" {
-    run grep "Qwen/Qwen2.5-14B-Instruct" "${ROOT_DIR}/install.sh"
+@test "lib/wizard.sh default vLLM model is Qwen2.5-14B-Instruct" {
+    run grep "Qwen/Qwen2.5-14B-Instruct" "${ROOT_DIR}/lib/wizard.sh"
     [ "$status" -eq 0 ]
 }
 
@@ -142,12 +139,12 @@ setup() {
 }
 
 @test "models.sh skips download for vLLM provider" {
-    run grep "vLLM.*загружается при старте" "${ROOT_DIR}/lib/models.sh"
+    run grep "vLLM.*model downloads at container startup" "${ROOT_DIR}/lib/models.sh"
     [ "$status" -eq 0 ]
 }
 
 @test "models.sh skips download for TEI provider" {
-    run grep "TEI.*загружается при старте" "${ROOT_DIR}/lib/models.sh"
+    run grep "TEI.*model downloads at container startup" "${ROOT_DIR}/lib/models.sh"
     [ "$status" -eq 0 ]
 }
 

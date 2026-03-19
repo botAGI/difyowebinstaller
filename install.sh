@@ -186,6 +186,12 @@ _install_crons() {
         echo "* * * * * root ${INSTALL_DIR}/scripts/health-gen.sh >> ${INSTALL_DIR}/health-gen.log 2>&1" > /etc/cron.d/agmind-health
         chmod 644 /etc/cron.d/agmind-health
     fi
+    # Create initial health.json placeholder so nginx /health works before first cron tick
+    local health_dir="${INSTALL_DIR}/docker/nginx"
+    mkdir -p "$health_dir"
+    if [[ ! -f "${health_dir}/health.json" ]]; then
+        echo '{"status": "starting", "timestamp": "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}' > "${health_dir}/health.json"
+    fi
 }
 
 _show_final_summary() {

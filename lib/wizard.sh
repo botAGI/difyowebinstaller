@@ -243,11 +243,11 @@ _wizard_ollama_model() {
     # Determine recommended model marker
     local rec_idx=6
     case "${RECOMMENDED_MODEL:-}" in
-        *4b*)  rec_idx=1;;
-        *7b*)  rec_idx=2;;
         *14b*) rec_idx=6;;
         *32b*) rec_idx=10;;
         *72b*) rec_idx=13;;
+        *4b*)  rec_idx=1;;
+        *7b*)  rec_idx=2;;
     esac
 
     echo "Выберите LLM-модель:"

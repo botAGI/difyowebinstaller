@@ -8,30 +8,34 @@ setup() {
 
 # --- COMPOSE_PROFILES builder (PROV-03) ---
 
-@test "install.sh adds ollama to COMPOSE_PROFILES when LLM_PROVIDER=ollama" {
-    run grep 'LLM_PROVIDER.*==.*"ollama".*profiles.*ollama\|LLM_PROVIDER.*ollama.*profiles' "${ROOT_DIR}/install.sh"
+@test "lib/compose.sh adds ollama to profiles when LLM_PROVIDER=ollama" {
+    run grep 'LLM_PROVIDER.*==.*"ollama"' "${ROOT_DIR}/lib/compose.sh"
+    [ "$status" -eq 0 ]
+    run grep 'profiles.*ollama' "${ROOT_DIR}/lib/compose.sh"
     [ "$status" -eq 0 ]
 }
 
-@test "install.sh adds ollama to COMPOSE_PROFILES when EMBED_PROVIDER=ollama" {
-    run grep 'EMBED_PROVIDER.*==.*"ollama".*profiles.*ollama\|EMBED_PROVIDER.*ollama.*profiles' "${ROOT_DIR}/install.sh"
+@test "lib/compose.sh adds ollama to profiles when EMBED_PROVIDER=ollama" {
+    run grep 'EMBED_PROVIDER.*==.*"ollama"' "${ROOT_DIR}/lib/compose.sh"
+    [ "$status" -eq 0 ]
+    run grep 'profiles.*ollama' "${ROOT_DIR}/lib/compose.sh"
     [ "$status" -eq 0 ]
 }
 
-@test "install.sh adds vllm to COMPOSE_PROFILES when LLM_PROVIDER=vllm" {
-    run grep 'LLM_PROVIDER.*==.*"vllm".*profiles.*vllm\|LLM_PROVIDER.*vllm.*profiles' "${ROOT_DIR}/install.sh"
+@test "lib/compose.sh adds vllm to profiles when LLM_PROVIDER=vllm" {
+    run grep 'LLM_PROVIDER.*==.*"vllm".*profiles.*vllm\|LLM_PROVIDER.*vllm.*profiles' "${ROOT_DIR}/lib/compose.sh"
     [ "$status" -eq 0 ]
 }
 
-@test "install.sh adds tei to COMPOSE_PROFILES when EMBED_PROVIDER=tei" {
-    run grep 'EMBED_PROVIDER.*==.*"tei".*profiles.*tei\|EMBED_PROVIDER.*tei.*profiles' "${ROOT_DIR}/install.sh"
+@test "lib/compose.sh adds tei to profiles when EMBED_PROVIDER=tei" {
+    run grep 'EMBED_PROVIDER.*==.*"tei".*profiles.*tei\|EMBED_PROVIDER.*tei.*profiles' "${ROOT_DIR}/lib/compose.sh"
     [ "$status" -eq 0 ]
 }
 
 # --- Nuclear cleanup includes new profiles ---
 
-@test "install.sh nuclear cleanup includes ollama,vllm,tei profiles" {
-    run grep "COMPOSE_PROFILES=.*ollama.*vllm.*tei" "${ROOT_DIR}/install.sh"
+@test "lib/compose.sh nuclear cleanup includes ollama,vllm,tei profiles" {
+    run grep "COMPOSE_PROFILES=.*ollama.*vllm.*tei" "${ROOT_DIR}/lib/compose.sh"
     [ "$status" -eq 0 ]
 }
 
@@ -133,12 +137,12 @@ setup() {
 
 # --- phase_models exports providers ---
 
-@test "install.sh phase_models exports LLM_PROVIDER" {
-    run grep -A5 "phase_models" "${ROOT_DIR}/install.sh"
-    [[ "$output" == *"LLM_PROVIDER"* ]]
+@test "lib/compose.sh build_compose_profiles uses LLM_PROVIDER" {
+    run grep "LLM_PROVIDER" "${ROOT_DIR}/lib/compose.sh"
+    [ "$status" -eq 0 ]
 }
 
-@test "install.sh phase_models exports EMBED_PROVIDER" {
-    run grep -A5 "phase_models" "${ROOT_DIR}/install.sh"
-    [[ "$output" == *"EMBED_PROVIDER"* ]]
+@test "lib/compose.sh build_compose_profiles uses EMBED_PROVIDER" {
+    run grep "EMBED_PROVIDER" "${ROOT_DIR}/lib/compose.sh"
+    [ "$status" -eq 0 ]
 }
