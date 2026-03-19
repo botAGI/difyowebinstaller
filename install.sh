@@ -131,7 +131,7 @@ phase_start()       { compose_up; create_openwebui_admin; }
 phase_health()      { wait_healthy 300; _check_critical_services; }
 phase_models()      { download_models; }
 phase_backups()     { setup_backups; setup_tunnel; }
-phase_complete()    { _save_credentials; _install_cli; _install_crons; _show_final_summary; }
+phase_complete()    { create_openwebui_admin; _save_credentials; _install_cli; _install_crons; _show_final_summary; }
 
 _confirm_continue() {
     if [[ "$NON_INTERACTIVE" == "true" ]]; then log_warn "Non-interactive: continuing despite: $1"; return 0; fi
@@ -197,6 +197,11 @@ _save_credentials() {
         echo "Open WebUI:  ${url}"
         echo "WebUI pass:  ${owui_pass:-N/A}"
         echo "Dify Console: http://${DOMAIN:-$ip}:3000"
+        if [[ "${MONITORING_MODE:-}" == "local" ]]; then
+            echo "Grafana:     http://${ip}:${GRAFANA_PORT:-3001}"
+            echo "Grafana pass: ${GRAFANA_ADMIN_PASSWORD:-admin}"
+            echo "Portainer:   https://${ip}:${PORTAINER_PORT:-9443}"
+        fi
     } > "${INSTALL_DIR}/credentials.txt"
     chmod 600 "${INSTALL_DIR}/credentials.txt"
     log_info "Credentials: ${INSTALL_DIR}/credentials.txt"
@@ -241,6 +246,10 @@ _show_final_summary() {
     echo -e "${NC}"
     echo -e "  ${BOLD}Open WebUI:${NC}      ${GREEN}${url}${NC}"
     echo -e "  ${BOLD}Dify Console:${NC}    ${GREEN}${dify_url}${NC}"
+    if [[ "${MONITORING_MODE:-}" == "local" ]]; then
+        echo -e "  ${BOLD}Grafana:${NC}         ${GREEN}http://${ip}:${GRAFANA_PORT:-3001}${NC}"
+        echo -e "  ${BOLD}Portainer:${NC}       ${GREEN}https://${ip}:${PORTAINER_PORT:-9443}${NC}"
+    fi
     echo ""
     echo -e "  ${BOLD}Логин:${NC}           admin@agmind.local"
     echo -e "  ${BOLD}Пароль:${NC}          ${owui_pass:-см. ${INSTALL_DIR}/credentials.txt}"
