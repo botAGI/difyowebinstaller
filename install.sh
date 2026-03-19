@@ -190,7 +190,7 @@ _copy_runtime_files() {
 
 _save_credentials() {
     local ip; ip="$(_get_ip)"
-    local url="http://${ip}"; [[ "$DEPLOY_PROFILE" == "vps" && -n "${DOMAIN:-}" ]] && url="https://${DOMAIN}"
+    local url="http://${ip}"; [[ "${DEPLOY_PROFILE:-}" == "vps" && -n "${DOMAIN:-}" ]] && url="https://${DOMAIN}"
     local owui_pass=""; [[ -f "${INSTALL_DIR}/.admin_password" ]] && owui_pass="$(cat "${INSTALL_DIR}/.admin_password")"
     {
         echo "# AGMind Credentials — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
