@@ -229,6 +229,7 @@ ensure_bind_mount_files() {
         "monitoring/loki-config.yml"
         "monitoring/promtail-config.yml"
         "nginx/nginx.conf"
+        "nginx/health.json"
         "volumes/redis/redis.conf"
         "volumes/ssrf_proxy/squid.conf"
         "volumes/sandbox/conf/config.yaml"

@@ -57,11 +57,11 @@ _pull_with_progress() {
     local total=${#images[@]}
     [[ $total -eq 0 ]] && return 0
 
-    # Start pull in background (quiet — we show our own progress)
+    # Start pull in background (fully silenced — we show our own progress)
     if [[ -n "$profiles" ]]; then
-        COMPOSE_PROFILES="$profiles" docker compose pull -q >/dev/null 2>&1 &
+        COMPOSE_PROFILES="$profiles" docker compose pull --quiet </dev/null >/dev/null 2>/dev/null &
     else
-        docker compose pull -q >/dev/null 2>&1 &
+        docker compose pull --quiet </dev/null >/dev/null 2>/dev/null &
     fi
     local pull_pid=$!
 
@@ -72,10 +72,13 @@ _pull_with_progress() {
     done
     wait "$pull_pid" || true
 
-    # Final line
-    _print_pull_status images "$total"
-    echo ""
-    log_success "All ${total} images ready"
+    # Clear progress line, print final result
+    printf "\r%-80s\r" ""
+    local ready=0
+    for img in "${images[@]}"; do
+        docker image inspect "$img" >/dev/null 2>&1 && ready=$((ready + 1))
+    done
+    log_success "Images ready: ${ready}/${total}"
 }
 
 _print_pull_status() {

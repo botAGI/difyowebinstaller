@@ -72,8 +72,13 @@ get_service_list() {
 
 check_container() {
     local name="$1"
+    # Map service names to container name suffixes
+    # ssrf_proxy → ssrf-proxy, plugin_daemon → plugin-daemon, open-webui → openwebui
+    local cname="${name//_/-}"
+    [[ "$cname" == "open-webui" ]] && cname="openwebui"
+
     local status
-    status="$(docker ps -a --filter "name=agmind-${name}" --format '{{.Status}}' 2>/dev/null | head -1)"
+    status="$(docker ps -a --filter "name=agmind-${cname}" --format '{{.Status}}' 2>/dev/null | head -1)"
     [[ -z "$status" ]] && status="not found"
 
     if echo "$status" | grep -qi "up\|healthy"; then

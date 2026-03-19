@@ -222,6 +222,8 @@ _install_crons() {
     # Create initial health.json placeholder so nginx /health works before first cron tick
     local health_dir="${INSTALL_DIR}/docker/nginx"
     mkdir -p "$health_dir"
+    # Docker creates a directory if the file didn't exist at bind mount time
+    [[ -d "${health_dir}/health.json" ]] && rm -rf "${health_dir}/health.json"
     if [[ ! -f "${health_dir}/health.json" ]]; then
         echo '{"status": "starting", "timestamp": "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}' > "${health_dir}/health.json"
     fi
