@@ -1,9 +1,14 @@
-# Roadmap: AGmind Installer v2.0
+# Roadmap: AGmind Installer
 
-**Created:** 2026-03-17
-**Milestone:** v2.0 MVP
-**Phases:** 5
-**Core Value:** One command installs, secures, and monitors a production-ready AI stack
+## Milestones
+
+- ✅ **v2.0 MVP** — Phases 1-5 (shipped 2026-03-18)
+- 🚧 **v2.1 Bugfixes + Improvements** — Phases 6-8 (in progress)
+
+---
+
+<details>
+<summary>✅ v2.0 MVP (Phases 1-5) — SHIPPED 2026-03-18</summary>
 
 ## Phase 1: Surgery — Remove Dify API Automation
 
@@ -16,14 +21,6 @@
 Plans:
 - [x] 01-01-PLAN.md — Delete files, restructure install.sh to 9 phases, remove wizard fields, clean downstream configs
 - [x] 01-02-PLAN.md — Create workflows/README.md with import instructions, final stale-reference sweep
-
-**Key deliverables:**
-- import.py deleted
-- build_difypkg_from_github deleted
-- install.sh reduced from 11 to 9 phases
-- Wizard simplified (no ADMIN_EMAIL/PASSWORD/COMPANY_NAME)
-- rag-assistant.json kept as template + README
-- TASK-012/013/014/015 become irrelevant (code deleted)
 
 **Success criteria:**
 - `install.sh` runs clean without import.py
@@ -49,15 +46,6 @@ Plans:
 - [x] 02-03-PLAN.md — Backup/restore fixes + BATS test (SECV-06)
 - [x] 02-04-PLAN.md — Gap closure: SECV-02 documentation drift fix (SECV-02)
 
-**Key deliverables:**
-- Portainer/Grafana on 127.0.0.1 by default, wizard opt-in to open
-- Authelia 2FA on /console/* (human login); API routes bypass Authelia (Dify API key auth + rate limiting)
-- credentials.txt (chmod 600) — terminal shows path only
-- Squid ACL denies RFC1918 + link-local + 169.254.169.254
-- Fail2ban reads Docker nginx logs (or replaced with limit_req_zone)
-- Backup restore via tmpdir, parser flags fixed, full cycle test
-- Rate limiting on /v1/chat/completions and /console/api/
-
 **Success criteria:**
 - `ss -tlnp | grep 9443` shows 127.0.0.1 (not 0.0.0.0)
 - `grep -r "password\|DIFY_API" install.log` returns nothing
@@ -82,14 +70,6 @@ Plans:
 - [x] 03-02-PLAN.md — Wizard provider selection, config.sh, models.sh dispatcher, BATS tests (PROV-01, PROV-02, PROV-03)
 - [x] 03-03-PLAN.md — Provider-aware phase_complete() hints + workflows/README.md docs (PROV-04)
 
-**Key deliverables:**
-- Wizard: LLM provider selection (Ollama/vLLM/External/Skip)
-- Wizard: Embedding provider selection (Ollama/TEI/External/Same)
-- docker-compose profiles: `--profile ollama`, `--profile vllm`, `--profile tei`
-- Plugin documentation README per provider
-- vLLM container with GPU passthrough + model preload
-- TEI container for production embeddings
-
 **Success criteria:**
 - Each provider choice results in correct containers running (and nothing extra)
 - `docker compose --profile vllm up` starts vLLM, not Ollama
@@ -113,14 +93,6 @@ Plans:
 - [x] 04-01-PLAN.md — run_phase() wrapper, checkpoint/resume, tee logging, --force-restart flag (INST-01, INST-02, INST-03)
 - [x] 04-02-PLAN.md — Timeout/retry for phases 5/6/7, named volumes agmind_ prefix, v1 migration (INST-04, INST-01)
 
-**Key deliverables:**
-- 9 phases: diagnostics -> wizard -> docker -> config -> start -> health -> models -> backups -> complete
-- Checkpoint file /opt/agmind/.install_phase — resume on failure
-- Full log /opt/agmind/install.log with timestamps
-- Timeout per phase (configurable) + retry + fallback message
-- Compose profiles integration (from Phase 3)
-- Named volumes with agmind_ prefix
-
 **Success criteria:**
 - Kill install at phase 5, restart -> resumes from phase 5
 - install.log contains every phase with timestamps
@@ -143,48 +115,91 @@ Plans:
 - [x] 05-01-PLAN.md — agmind CLI entry point with status dashboard, --json output, doctor diagnostics (DEVX-01, DEVX-02, DEVX-04)
 - [x] 05-02-PLAN.md — health-gen.sh + nginx /health endpoint + install.sh integration + BATS tests (DEVX-03)
 
-**Key deliverables:**
-- `agmind status`: containers, GPU, models, endpoints, credentials path
-- `agmind status --json`: machine-parseable JSON (same schema as /health)
-- `agmind doctor`: DNS, GPU driver, Docker version, ports, disk, network with [OK]/[WARN]/[FAIL]
-- `agmind doctor --json`: machine-parseable diagnostics
-- Health endpoint /health: nginx serves static JSON, cron-updated every minute
-- Full CLI hub: status, doctor, backup, restore, update, uninstall, rotate-secrets, logs, help
-- `/usr/local/bin/agmind` symlink created during install
-- Integration with existing health.sh and detect.sh checks
-
 **Success criteria:**
 - `agmind status` shows all containers, GPU util, loaded models, HTTP status of each endpoint
 - `agmind status --json` outputs valid JSON with services/gpu/endpoints/backup fields
 - `agmind doctor` catches: wrong Docker version, port conflict, DNS failure, low disk
-- `agmind doctor --json` outputs valid JSON with checks array
 - `curl localhost/health` returns JSON with per-service status
-- Non-zero exit code from doctor when issues found (exit 1 for warnings, exit 2 for failures)
-- BATS tests pass for CLI syntax and structural validation
+- Non-zero exit code from doctor when issues found
 
 **Depends on:** Phase 4
 
+</details>
+
 ---
 
-## Execution Order
+## 🚧 v2.1 Bugfixes + Improvements (In Progress)
 
-```
-Phase 1 --> Phase 2 --> Phase 3 --> Phase 4 --> Phase 5
-(surgery)   (security)   (providers)  (installer)  (devops)
-```
+**Milestone Goal:** Fix critical runtime bugs that affect production reliability, add component-level update workflow, and improve post-install feedback and operator guidance.
 
-Phases 2 and 3 can run in parallel after Phase 1 (no mutual dependency), but sequential execution is simpler for a solo developer.
+### Phase 6: Runtime Stability
 
-## Milestones
+**Goal:** The stack survives real-world conditions — plugin-daemon starts reliably after PostgreSQL is ready, Redis stale locks never block a second startup, and GPU containers come back automatically after a host reboot.
 
-| Checkpoint | After Phase | What to verify |
-|------------|-------------|----------------|
-| Clean slate | 1 | Stack works without import.py, no Dify API calls |
-| Secure | 2 | All security gaps closed, credentials protected |
-| Provider choice | 3 | Each provider starts correct containers |
-| Reliable install | 4 | Resume, logging, timeouts all working |
-| v2.0 MVP | 5 | Full stack with CLI tools, ready for users |
+**Depends on:** Phase 5
+**Requirements:** STAB-01, STAB-02, STAB-03
+**Success Criteria** (what must be TRUE):
+  1. `docker compose up` after a fresh boot never fails with "plugin-daemon DB not ready" — plugin-daemon waits for `dify_plugin` database to exist
+  2. Running `docker compose up` a second time after a crash clears any stale Redis lock (older than 15 min) automatically, without manual `redis-cli DEL`
+  3. After `sudo reboot`, all GPU containers (vLLM / Ollama) are running within 2 minutes without any manual intervention
+  4. `agmind status` confirms healthy GPU containers post-reboot
+
+**Plans:** TBD
+
+### Phase 7: Update System
+
+**Goal:** Operators can check for available version updates and update any single component without touching the rest of the stack, with automatic rollback if the updated container fails its healthcheck.
+
+**Depends on:** Phase 6
+**Requirements:** UPDT-01, UPDT-02, UPDT-03
+**Success Criteria** (what must be TRUE):
+  1. `agmind update --check` prints a table of current vs. available image tags for all managed components
+  2. `agmind update --component dify-api --version 1.4.0` pulls the new image, restarts only that container, and runs its healthcheck
+  3. If the healthcheck fails after update, the previous image tag is restored and the container is restarted — no manual steps needed
+  4. `agmind update` records what was updated and the outcome in install.log with a timestamp
+
+**Plans:** TBD
+
+### Phase 8: Health Verification & UX Polish
+
+**Goal:** Post-install summary confirms real service reachability (not just container health), and two recurring operator pain points — SSH lockout risk and Portainer tunnel access — are resolved with clear guidance.
+
+**Depends on:** Phase 6
+**Requirements:** HLTH-01, UXPL-01, UXPL-02
+**Success Criteria** (what must be TRUE):
+  1. After `install.sh` completes, the summary block shows a per-service HTTP status (OK / FAIL) based on real `curl` calls to vLLM `/v1/models`, TEI `/info`, and Dify `/console/api/setup`
+  2. When the installer disables SSH `PasswordAuthentication`, the terminal outputs a warning and SSH public key setup instructions before making the change
+  3. `credentials.txt` and the post-install summary both include the Portainer SSH tunnel command (`ssh -L 9443:127.0.0.1:9443 user@host`)
+  4. An operator on a fresh server can access Portainer on the first attempt by following only the on-screen instructions
+
+**Plans:** TBD
+
+---
+
+## Phases
+
+- [x] **Phase 1: Surgery** — Remove Dify API automation and enforce three-layer boundary
+- [x] **Phase 2: Security Hardening v2** — Close security gaps, protect credentials
+- [x] **Phase 3: Provider Architecture** — Wizard + Compose profiles per LLM/embedding provider
+- [x] **Phase 4: Installer Redesign** — 9-phase install with resume, logging, timeouts
+- [x] **Phase 5: DevOps & UX** — agmind CLI, status, doctor, health endpoint
+- [ ] **Phase 6: Runtime Stability** — Fix plugin-daemon ordering, Redis stale locks, GPU reboot survival
+- [ ] **Phase 7: Update System** — Component-level update with healthcheck + rollback
+- [ ] **Phase 8: Health Verification & UX Polish** — Real endpoint checks in summary, SSH and Portainer guidance
+
+## Progress
+
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 1. Surgery | v2.0 | 2/2 | Complete | 2026-03-18 |
+| 2. Security Hardening v2 | v2.0 | 4/4 | Complete | 2026-03-18 |
+| 3. Provider Architecture | v2.0 | 3/3 | Complete | 2026-03-18 |
+| 4. Installer Redesign | v2.0 | 2/2 | Complete | 2026-03-18 |
+| 5. DevOps & UX | v2.0 | 2/2 | Complete | 2026-03-18 |
+| 6. Runtime Stability | v2.1 | 0/TBD | Not started | - |
+| 7. Update System | v2.1 | 0/TBD | Not started | - |
+| 8. Health Verification & UX Polish | v2.1 | 0/TBD | Not started | - |
 
 ---
 *Roadmap created: 2026-03-17*
-*Last updated: 2026-03-18 — All 5 phases complete, v2.0 MVP delivered*
+*Last updated: 2026-03-20 — v2.1 phases 6-8 added*

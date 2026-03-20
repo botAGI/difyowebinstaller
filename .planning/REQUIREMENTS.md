@@ -96,22 +96,22 @@ All 24 requirements shipped and confirmed working in v2.0. See git history for d
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| STAB-01 | — | Pending |
-| STAB-02 | — | Pending |
-| STAB-03 | — | Pending |
-| UPDT-01 | — | Pending |
-| UPDT-02 | — | Pending |
-| UPDT-03 | — | Pending |
-| HLTH-01 | — | Pending |
-| UXPL-01 | — | Pending |
-| UXPL-02 | — | Pending |
+| STAB-01 | Phase 6 | Pending |
+| STAB-02 | Phase 6 | Pending |
+| STAB-03 | Phase 6 | Pending |
+| UPDT-01 | Phase 7 | Pending |
+| UPDT-02 | Phase 7 | Pending |
+| UPDT-03 | Phase 7 | Pending |
+| HLTH-01 | Phase 8 | Pending |
+| UXPL-01 | Phase 8 | Pending |
+| UXPL-02 | Phase 8 | Pending |
 
 **Coverage:**
 
 - v2.1 requirements: 9 total
-- Mapped to phases: 0
-- Unmapped: 9 (pending roadmap)
+- Mapped to phases: 9
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-20*
-*Last updated: 2026-03-20 after initial definition*
+*Last updated: 2026-03-20 — traceability filled after roadmap creation*
