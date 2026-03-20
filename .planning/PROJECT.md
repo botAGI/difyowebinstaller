@@ -8,11 +8,24 @@ Automated Docker Compose installer for Dify + Open WebUI + Ollama/vLLM + monitor
 
 One command installs, secures, and monitors a production-ready AI stack. The installer handles infrastructure — AI configuration is the user's job in Dify UI.
 
+## Current Milestone: v2.1 Bugfixes + Improvements
+
+**Goal:** Fix critical runtime bugs (plugin-daemon ordering, GPU reboot survival) and improve day-2 operations (component updates, post-install health verify, Redis lock cleanup).
+
+**Target features:**
+
+- Fix plugin-daemon → PostgreSQL startup ordering + Redis stale lock cleanup
+- Fix GPU containers not surviving host reboot (systemd service)
+- Auto-configure model providers in Dify via Console API after install
+- Component-level `agmind update --component` with healthcheck + rollback
+- Post-install health verify with real endpoint checks (curl)
+- Minor UX: SSH hardening docs, Portainer access warning
+
 ## Requirements
 
 ### Validated
 
-<!-- Shipped in v1.0 and confirmed working -->
+<!-- Shipped in v2.0 and confirmed working -->
 
 - Docker Compose stack: 23+ containers, all healthy
 - Security: secret generation, Redis/PG hardening, container isolation, nginx headers
@@ -82,4 +95,4 @@ One command installs, secures, and monitors a production-ready AI stack. The ins
 | Compose profiles over monolith | User enables what they need, rest stays down | -- Pending |
 
 ---
-*Last updated: 2026-03-17 after v2.0 milestone initialization*
+*Last updated: 2026-03-20 after v2.1 milestone initialization*
