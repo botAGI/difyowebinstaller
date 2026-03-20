@@ -1,134 +1,117 @@
-# Requirements: AGmind Installer v2.0
+# Requirements: AGmind Installer v2.1
 
-**Defined:** 2026-03-17
+**Defined:** 2026-03-20
 **Core Value:** One command installs, secures, and monitors a production-ready AI stack
 
-## v1 Requirements
+## v2.1 Requirements
 
-Requirements for v2.0 MVP release. Each maps to roadmap phases.
+Requirements for v2.1 Bugfixes + Improvements. Each maps to roadmap phases.
+
+### Runtime Stability
+
+- [ ] **STAB-01**: plugin-daemon стартует только после PostgreSQL с готовой БД `dify_plugin` (healthcheck + depends_on) — BUG-V3-022
+- [ ] **STAB-02**: Stale Redis locks (`plugin_daemon:env_init_lock:*`) автоудаляются при старте, если старше 15 мин — WISH-003
+- [ ] **STAB-03**: GPU-контейнеры автоматически поднимаются после ребута хоста (systemd service или cron @reboot) — BUG-V3-027
+
+### Update System
+
+- [ ] **UPDT-01**: `agmind update --component <name> --version <tag>` обновляет отдельный компонент (pull + restart + healthcheck) — BUG-V3-024 + WISH-001
+- [ ] **UPDT-02**: `agmind update --check` показывает текущие vs доступные версии из Docker Hub/GHCR
+- [ ] **UPDT-03**: Rollback при неудачном healthcheck после обновления компонента
+
+### Health Verification
+
+- [ ] **HLTH-01**: Post-install verify проверяет реальную доступность сервисов через curl (vLLM /v1/models, TEI /info, Dify /console/api/setup), результат в summary — WISH-002
+
+### UX Polish
+
+- [ ] **UXPL-01**: При отключении SSH PasswordAuthentication — предупреждение + инструкция по SSH-ключам — BUG-V3-025
+- [ ] **UXPL-02**: Portainer tunnel-доступ (`ssh -L 9443:127.0.0.1:9443`) указан в credentials summary — BUG-V3-026
+
+## v2.0 Requirements (Validated)
+
+All 24 requirements shipped and confirmed working in v2.0. See git history for details.
 
 ### Surgery
 
-- [x] **SURG-01**: Remove import.py and all Dify API automation (setup_account, login, CSRF, save_api_key, add_model)
-- [ ] **SURG-02**: Remove live plugin download from GitHub (build_difypkg_from_github)
-- [x] **SURG-03**: Remove wizard fields no longer needed (ADMIN_EMAIL, ADMIN_PASSWORD, COMPANY_NAME)
-- [x] **SURG-04**: Keep rag-assistant.json as template + README with import instructions
+- [x] **SURG-01**: Remove import.py and all Dify API automation
+- [x] **SURG-02**: Remove live plugin download from GitHub
+- [x] **SURG-03**: Remove wizard fields no longer needed
+- [x] **SURG-04**: Keep rag-assistant.json as template + README
 - [x] **SURG-05**: Installation reduced from 11 to 9 phases
 
 ### Security
 
-- [x] **SECV-01**: Portainer/Grafana bind 127.0.0.1 by default, opt-in to open
-- [x] **SECV-02**: Authelia 2FA on /console/* (human login). API routes (/api/, /v1/, /files/) bypass Authelia — protected by Dify API key auth + nginx rate limiting (10r/s).
-- [x] **SECV-03**: Credentials written only to credentials.txt (chmod 600), not printed to stdout
-- [x] **SECV-04**: SSRF sandbox blocks RFC1918 + link-local + cloud metadata (169.254.169.254)
-- [x] **SECV-05**: Fail2ban fixed (mount nginx access.log to host) or replaced with nginx rate limiting
-- [x] **SECV-06**: Backup/restore fixed (restore via tmpdir copy, parser flags corrected)
-- [x] **SECV-07**: Rate limiting on nginx API routes (/v1/chat/completions, /console/api/)
+- [x] **SECV-01**: Portainer/Grafana bind 127.0.0.1 by default
+- [x] **SECV-02**: Authelia 2FA on /console/*, API routes bypass with rate limiting
+- [x] **SECV-03**: Credentials only in credentials.txt (chmod 600)
+- [x] **SECV-04**: SSRF sandbox blocks RFC1918 + link-local + cloud metadata
+- [x] **SECV-05**: Nginx rate limiting replaces fail2ban
+- [x] **SECV-06**: Backup/restore fixed
+- [x] **SECV-07**: Rate limiting on nginx API routes
 
 ### Provider Architecture
 
-- [x] **PROV-01**: LLM provider wizard (Ollama / vLLM / External API / Skip)
-- [x] **PROV-02**: Embedding provider wizard (Ollama / TEI / External / Same as LLM)
-- [x] **PROV-03**: Compose profiles per provider choice (ollama, vllm, external)
-- [x] **PROV-04**: Plugin documentation per provider (README with install commands)
+- [x] **PROV-01**: LLM provider wizard
+- [x] **PROV-02**: Embedding provider wizard
+- [x] **PROV-03**: Compose profiles per provider
+- [x] **PROV-04**: Plugin documentation per provider
 
 ### Installer
 
-- [x] **INST-01**: 9-phase installation structure (diagnostics → wizard → docker → config → start → health → models → backups → complete)
-- [x] **INST-02**: Resume from checkpoint on failure (/opt/agmind/.install_phase)
-- [x] **INST-03**: Installation log with timestamps (/opt/agmind/install.log)
-- [x] **INST-04**: Timeout + retry on each installation phase with fallback messages
+- [x] **INST-01**: 9-phase installation structure
+- [x] **INST-02**: Resume from checkpoint
+- [x] **INST-03**: Installation log with timestamps
+- [x] **INST-04**: Timeout + retry per phase
 
 ### DevOps
 
-- [x] **DEVX-01**: agmind status — containers, GPU, models, endpoints, credentials path
-- [x] **DEVX-02**: agmind doctor — DNS, GPU driver, Docker version, port conflicts, disk, network
-- [x] **DEVX-03**: Health endpoint /health — JSON with status of all services
+- [x] **DEVX-01**: agmind status
+- [x] **DEVX-02**: agmind doctor
+- [x] **DEVX-03**: Health endpoint /health
 - [x] **DEVX-04**: Named volumes with agmind_ prefix
 
-## v2 Requirements
+## Deferred
 
-Deferred to v2.1 release. Tracked but not in current roadmap.
+### v2.2+
 
-### TLS & Updates
-
-- **TLSU-01**: TLS out of box — LAN: mkcert self-signed, VPS: Let's Encrypt auto-cert
-- **TLSU-02**: agmind update — update Dify + services preserving data
-- **TLSU-03**: agmind rollback — revert to previous version from release-manifest.json
-- **TLSU-04**: Changelog / breaking changes warning on update
-
-### Monitoring v2
-
-- **MONV-01**: Victoria Metrics replacing Prometheus (lighter for single-node)
-- **MONV-02**: GPU monitoring via nvidia-smi exporter
-- **MONV-03**: vLLM metrics from built-in Prometheus endpoint
-- **MONV-04**: Alerts: disk >80%, GPU OOM, container restart loop
-
-### Installer Enhancements
-
-- **INSE-01**: Non-interactive mode (config.yaml / env vars, CI/CD ready)
-- **INSE-02**: agmind uninstall with choice (volumes or containers only)
-- **INSE-03**: Dry run mode (--dry-run shows plan without executing)
-- **INSE-04**: Model validation in wizard (check registry before pulling)
-
-## v2.2+ Requirements
-
-Deferred to future. Tracked for planning.
-
-### Advanced Operations
-
-- **ADVX-01**: Graceful shutdown / maintenance mode (drain requests before stop)
-- **ADVX-02**: GPU memory isolation (vLLM 80% VRAM, embedding 20%)
-- **ADVX-03**: Multi-model support in wizard (fast + powerful)
-- **ADVX-04**: LLM request logging / billing (structured log via Loki)
-- **ADVX-05**: Documentation: limits and recommendations (file size, KB count, VRAM per user)
-- **ADVX-06**: Resource limits on all containers (memory limits on API, worker, nginx)
-- **INSE-05**: RAM validation in wizard — sum default mem_limits vs DETECTED_RAM, warn if >80%, optional auto-downscale
+- **BUG-V3-023**: Авто-настройка model providers через Dify Console API — нарушает boundary, defer
+- **TLSU-01**: TLS out of box (mkcert / Let's Encrypt)
+- **TLSU-03**: agmind rollback
+- **TLSU-04**: Changelog / breaking changes warning
+- **MONV-01..04**: Victoria Metrics, GPU monitoring, vLLM metrics, alerts
+- **INSE-01..04**: Non-interactive mode, uninstall, dry-run, model validation
+- **ADVX-01..06**: Graceful shutdown, GPU isolation, multi-model, billing, docs, resource limits
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Dify API automation (import workflows, create KB) | Boundary violation; source of 50% bugs; user configures AI in Dify UI |
-| GUI/web installer | CLI sufficient for target audience (sysadmins, DevOps) |
-| Multi-node / cluster | Single-node focus; Kubernetes is a different product |
-| Mobile app / web dashboard | Not an application, it's an installer |
-| OAuth/SSO beyond Authelia+LDAP | Already shipped in v1 enterprise |
+| Dify API automation (import workflows, create KB) | Boundary violation; source of 50% bugs |
+| GUI/web installer | CLI sufficient for target audience |
+| Multi-node / cluster | Single-node focus |
+| Auto model provider config (BUG-V3-023) | Violates three-layer boundary; deferred to v2.2 |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SURG-01 | Phase 1 | Pending |
-| SURG-02 | Phase 1 | Pending |
-| SURG-03 | Phase 1 | Pending |
-| SURG-04 | Phase 1 | Complete |
-| SURG-05 | Phase 1 | Pending |
-| SECV-01 | Phase 2 | Complete |
-| SECV-02 | Phase 2 | Complete |
-| SECV-03 | Phase 2 | Complete |
-| SECV-04 | Phase 2 | Complete |
-| SECV-05 | Phase 2 | Complete |
-| SECV-06 | Phase 2 | Complete |
-| SECV-07 | Phase 2 | Complete |
-| PROV-01 | Phase 3 | Complete |
-| PROV-02 | Phase 3 | Complete |
-| PROV-03 | Phase 3 | Complete |
-| PROV-04 | Phase 3 | Complete |
-| INST-01 | Phase 4 | Complete |
-| INST-02 | Phase 4 | Complete |
-| INST-03 | Phase 4 | Complete |
-| INST-04 | Phase 4 | Complete |
-| DEVX-01 | Phase 5 | Complete |
-| DEVX-02 | Phase 5 | Complete |
-| DEVX-03 | Phase 5 | Complete |
-| DEVX-04 | Phase 5 | Complete |
+| STAB-01 | — | Pending |
+| STAB-02 | — | Pending |
+| STAB-03 | — | Pending |
+| UPDT-01 | — | Pending |
+| UPDT-02 | — | Pending |
+| UPDT-03 | — | Pending |
+| HLTH-01 | — | Pending |
+| UXPL-01 | — | Pending |
+| UXPL-02 | — | Pending |
 
 **Coverage:**
-- v1 requirements: 24 total
-- Mapped to phases: 24
-- Unmapped: 0
+
+- v2.1 requirements: 9 total
+- Mapped to phases: 0
+- Unmapped: 9 (pending roadmap)
 
 ---
-*Requirements defined: 2026-03-17*
-*Last updated: 2026-03-18 after Phase 2 gap closure — SECV-02 text aligned with Authelia bypass design*
+*Requirements defined: 2026-03-20*
+*Last updated: 2026-03-20 after initial definition*
