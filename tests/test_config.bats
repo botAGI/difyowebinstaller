@@ -42,10 +42,12 @@ teardown() {
     [ -f "${INSTALL_DIR}/docker/.env" ]
     [ -s "${INSTALL_DIR}/docker/.env" ]
 
-    # Permissions
-    local perms
-    perms="$(stat -c '%a' "${INSTALL_DIR}/docker/.env" 2>/dev/null || stat -f '%Lp' "${INSTALL_DIR}/docker/.env")"
-    [ "$perms" = "600" ]
+    # Permissions (skip on filesystems that don't support chmod, e.g. NTFS)
+    if chmod 600 "${INSTALL_DIR}/docker/.env" 2>/dev/null; then
+        local perms
+        perms="$(stat -c '%a' "${INSTALL_DIR}/docker/.env" 2>/dev/null || stat -f '%Lp' "${INSTALL_DIR}/docker/.env")"
+        [ "$perms" = "600" ]
+    fi
 }
 
 @test "generate_config: creates admin password file" {
@@ -53,6 +55,7 @@ teardown() {
     export LLM_PROVIDER="ollama"
     export LLM_MODEL="qwen2.5:7b"
     export EMBED_PROVIDER="ollama"
+    export EMBEDDING_MODEL="bge-m3"
     export VECTOR_STORE="weaviate"
     export TLS_MODE="none"
     export MONITORING_MODE="none"
@@ -64,9 +67,11 @@ teardown() {
 
     [ -f "${INSTALL_DIR}/.admin_password" ]
     [ -s "${INSTALL_DIR}/.admin_password" ]
-    local perms
-    perms="$(stat -c '%a' "${INSTALL_DIR}/.admin_password" 2>/dev/null || stat -f '%Lp' "${INSTALL_DIR}/.admin_password")"
-    [ "$perms" = "600" ]
+    if chmod 600 "${INSTALL_DIR}/.admin_password" 2>/dev/null; then
+        local perms
+        perms="$(stat -c '%a' "${INSTALL_DIR}/.admin_password" 2>/dev/null || stat -f '%Lp' "${INSTALL_DIR}/.admin_password")"
+        [ "$perms" = "600" ]
+    fi
 }
 
 @test "generate_config: .env has no unresolved placeholders" {
@@ -131,8 +136,10 @@ teardown() {
 @test "generate_config: vllm provider sets OPENAI_API_BASE_URL" {
     export DEPLOY_PROFILE="lan"
     export LLM_PROVIDER="vllm"
+    export LLM_MODEL="Qwen/Qwen2.5-14B-Instruct"
     export VLLM_MODEL="Qwen/Qwen2.5-14B-Instruct"
     export EMBED_PROVIDER="tei"
+    export EMBEDDING_MODEL="BAAI/bge-m3"
     export VECTOR_STORE="weaviate"
     export TLS_MODE="none"
     export MONITORING_MODE="none"
