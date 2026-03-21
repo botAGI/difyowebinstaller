@@ -26,9 +26,9 @@ Requirements for v2.1 Bugfixes + Improvements. Each maps to roadmap phases.
 
 ### UX Polish
 
-- [ ] **UXPL-01**: При отключении SSH PasswordAuthentication — предупреждение + инструкция по SSH-ключам — BUG-V3-025
+- [x] **UXPL-01**: При отключении SSH PasswordAuthentication — предупреждение + инструкция по SSH-ключам — BUG-V3-025
 - [x] **UXPL-02**: Portainer tunnel-доступ (`ssh -L 9443:127.0.0.1:9443`) указан в credentials summary — BUG-V3-026
-- [ ] **UXPL-03**: LICENSE файл (Apache 2.0) в корне репозитория — WISH-006
+- [x] **UXPL-03**: LICENSE файл (Apache 2.0) в корне репозитория — WISH-006
 
 ### Operator Makefile
 
@@ -113,9 +113,9 @@ All 24 requirements shipped and confirmed working in v2.0. See git history for d
 | UPDT-03 | Phase 7 | Complete |
 | HLTH-01 | Phase 8 | Complete |
 | HLTH-02 | Phase 8 | Pending |
-| UXPL-01 | Phase 8 | Pending |
+| UXPL-01 | Phase 8 | Complete |
 | UXPL-02 | Phase 8 | Complete |
-| UXPL-03 | Phase 8 | Pending |
+| UXPL-03 | Phase 8 | Complete |
 | MAKE-01 | Phase 9 | Pending |
 | MAKE-02 | Phase 9 | Pending |
 
