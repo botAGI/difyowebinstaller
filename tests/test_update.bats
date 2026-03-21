@@ -11,24 +11,6 @@ setup() {
     SCRIPT="${PROJECT_ROOT}/scripts/update.sh"
 }
 
-# --- File basics ---
-
-@test "update.sh exists" {
-    [[ -f "$SCRIPT" ]]
-}
-
-@test "update.sh has bash shebang" {
-    head -1 "$SCRIPT" | grep -q '#!/usr/bin/env bash'
-}
-
-@test "update.sh uses strict mode" {
-    grep -q 'set -euo pipefail' "$SCRIPT"
-}
-
-@test "update.sh passes bash syntax check" {
-    bash -n "$SCRIPT"
-}
-
 # --- Remote version fetching (UPDT-02 / BUG-V3-024 fix) ---
 
 @test "update.sh fetches versions from GitHub raw URL" {

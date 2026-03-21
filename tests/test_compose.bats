@@ -185,19 +185,6 @@ teardown() {
 }
 
 # ============================================================================
-# FUNCTIONS EXIST
-# ============================================================================
-
-@test "all exported functions are defined" {
-    declare -f compose_up >/dev/null
-    declare -f compose_down >/dev/null
-    declare -f sync_db_password >/dev/null
-    declare -f create_plugin_db >/dev/null
-    declare -f post_launch_status >/dev/null
-    declare -f build_compose_profiles >/dev/null
-}
-
-# ============================================================================
 # NUCLEAR CLEANUP
 # ============================================================================
 

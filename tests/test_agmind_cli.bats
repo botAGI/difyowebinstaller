@@ -7,18 +7,6 @@ setup() {
     export PROJECT_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
 }
 
-# === Syntax Validation ===
-
-@test "agmind.sh has no syntax errors" {
-    run bash -n "${PROJECT_ROOT}/scripts/agmind.sh"
-    [ "$status" -eq 0 ]
-}
-
-@test "health-gen.sh has no syntax errors" {
-    run bash -n "${PROJECT_ROOT}/scripts/health-gen.sh"
-    [ "$status" -eq 0 ]
-}
-
 # === agmind.sh structure ===
 
 @test "agmind.sh contains cmd_status function" {

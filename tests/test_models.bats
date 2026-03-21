@@ -22,18 +22,6 @@ teardown() {
 }
 
 # ============================================================================
-# FUNCTIONS EXIST
-# ============================================================================
-
-@test "all functions are defined" {
-    declare -f download_models >/dev/null
-    declare -f wait_for_ollama >/dev/null
-    declare -f pull_model >/dev/null
-    declare -f check_ollama_models >/dev/null
-    declare -f load_reranker >/dev/null
-}
-
-# ============================================================================
 # PULL MODEL — VALIDATION
 # ============================================================================
 

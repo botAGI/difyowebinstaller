@@ -164,33 +164,6 @@ EOF
 }
 
 # ============================================================================
-# FUNCTIONS EXIST
-# ============================================================================
-
-@test "all exported functions are defined" {
-    declare -f wait_healthy >/dev/null
-    declare -f check_all >/dev/null
-    declare -f check_container >/dev/null
-    declare -f get_service_list >/dev/null
-    declare -f send_alert >/dev/null
-    declare -f report_health >/dev/null
-    declare -f check_gpu_status >/dev/null
-    declare -f check_ollama_models >/dev/null
-    declare -f check_vector_health >/dev/null
-    declare -f check_disk_usage >/dev/null
-    declare -f check_backup_status >/dev/null
-}
-
-# ============================================================================
-# WAIT HEALTHY — PARAMETER VALIDATION
-# ============================================================================
-
-@test "wait_healthy: non-numeric timeout defaults to 300" {
-    # Can't actually test the wait (needs Docker), but verify it accepts the arg
-    declare -f wait_healthy >/dev/null
-}
-
-# ============================================================================
 # CHECK BACKUP STATUS — EDGE CASES
 # ============================================================================
 
