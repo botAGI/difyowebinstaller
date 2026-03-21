@@ -131,7 +131,7 @@ phase_start()       { compose_up; create_openwebui_admin; }
 phase_health()      { wait_healthy 300; _check_critical_services; }
 phase_models()      { download_models; }
 phase_backups()     { setup_backups; setup_tunnel; }
-phase_complete()    { create_openwebui_admin; _init_dify_admin; _save_credentials; _install_cli; _install_crons; _install_systemd_service; _show_final_summary; }
+phase_complete()    { create_openwebui_admin; _init_dify_admin; _save_credentials; _install_cli; _install_crons; _install_systemd_service; verify_services || true; _show_final_summary; }
 
 _confirm_continue() {
     if [[ "$NON_INTERACTIVE" == "true" ]]; then log_warn "Non-interactive: continuing despite: $1"; return 0; fi
@@ -265,6 +265,12 @@ _save_credentials() {
             echo ""
             echo "Portainer: https://${ip}:${PORTAINER_PORT:-9443}"
             echo "  (создайте admin при первом входе)"
+            if [[ "${ADMIN_UI_OPEN:-false}" != "true" ]]; then
+                echo ""
+                echo "Portainer SSH tunnel (если Portainer недоступен извне):"
+                echo "  ssh -L 9443:127.0.0.1:9443 $(whoami)@${ip}"
+                echo "  Затем откройте: https://localhost:9443"
+            fi
         fi
     } > "${INSTALL_DIR}/credentials.txt"
     chmod 600 "${INSTALL_DIR}/credentials.txt"
@@ -347,8 +353,27 @@ _show_final_summary() {
         echo ""
         echo -e "  ${BOLD}Portainer:${NC}       ${GREEN}https://${ip}:${PORTAINER_PORT:-9443}${NC}"
         echo -e "    (создайте admin при первом входе)"
+        if [[ "${ADMIN_UI_OPEN:-false}" != "true" ]]; then
+            echo ""
+            echo -e "  ${YELLOW}${BOLD}Portainer доступен только через SSH tunnel:${NC}"
+            echo -e "  ${CYAN}ssh -L 9443:127.0.0.1:9443 $(whoami)@${ip}${NC}"
+            echo -e "  Затем откройте: ${GREEN}https://localhost:9443${NC}"
+        fi
     fi
     echo ""
+    # Service verification results (populated by verify_services)
+    if [[ ${#VERIFY_RESULTS[@]} -gt 0 ]]; then
+        echo -e "  ${BOLD}Проверка сервисов:${NC}"
+        for entry in "${VERIFY_RESULTS[@]}"; do
+            IFS='|' read -r name url status <<< "$entry"
+            if [[ "$status" == "OK" ]]; then
+                echo -e "    ${GREEN}[OK]${NC}   ${name}"
+            else
+                echo -e "    ${RED}[FAIL]${NC} ${name} — проверьте: agmind logs"
+            fi
+        done
+        echo ""
+    fi
     echo -e "  ${BOLD}Профиль:${NC}         ${DEPLOY_PROFILE:-lan}"
     echo -e "  ${BOLD}LLM:${NC}             ${LLM_PROVIDER:-ollama} ${LLM_MODEL:-}${VLLM_MODEL:+ (${VLLM_MODEL})}"
     echo -e "  ${BOLD}Эмбеддинги:${NC}      ${EMBED_PROVIDER:-ollama} ${EMBEDDING_MODEL:-bge-m3}"
