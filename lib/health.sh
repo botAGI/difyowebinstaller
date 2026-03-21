@@ -201,6 +201,101 @@ check_all() {
 }
 
 # ============================================================================
+# VERIFY SERVICES (HTTP liveness checks)
+# ============================================================================
+
+# verify_services — performs real HTTP liveness checks against profile-specific endpoints.
+# Populates global VERIFY_RESULTS array: "Name|URL|OK|FAIL" per service.
+# Returns: number of failed checks (0 = all OK).
+# Usable from both install.sh (post-install) and scripts/agmind.sh (agmind doctor).
+verify_services() {
+    local compose_dir="${INSTALL_DIR}/docker"
+    local env_file="${compose_dir}/.env"
+    local ip
+    ip="$(hostname -I 2>/dev/null | awk '{print $1}' || echo "127.0.0.1")"
+    local domain="${DOMAIN:-$ip}"
+
+    # Service check definitions: name|url|profile_condition
+    local -a svc_checks=()
+
+    # Always check core services
+    svc_checks+=("Open WebUI|http://${domain}/|always")
+    svc_checks+=("Dify Console|http://${domain}:3000/console/api/setup|always")
+
+    # Profile-conditional services
+    if [[ -f "$env_file" ]]; then
+        local llm_prov embed_prov vector_store
+        llm_prov="$(grep '^LLM_PROVIDER=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "")"
+        embed_prov="$(grep '^EMBED_PROVIDER=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "")"
+        vector_store="$(grep '^VECTOR_STORE=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "weaviate")"
+
+        [[ "$llm_prov" == "vllm" ]] && svc_checks+=("vLLM|http://127.0.0.1:8000/v1/models|vllm")
+        [[ "$llm_prov" == "ollama" || "$embed_prov" == "ollama" ]] && svc_checks+=("Ollama|http://127.0.0.1:11434/api/tags|ollama")
+        [[ "$embed_prov" == "tei" ]] && svc_checks+=("TEI|http://127.0.0.1:8081/info|tei")
+        [[ "$vector_store" == "weaviate" ]] && svc_checks+=("Weaviate|http://127.0.0.1:8080/v1/.well-known/ready|weaviate")
+        [[ "$vector_store" == "qdrant" ]] && svc_checks+=("Qdrant|http://127.0.0.1:6333/readyz|qdrant")
+    fi
+
+    # Global results array (accessible to caller)
+    VERIFY_RESULTS=()
+    local total=0 ok=0 fail=0
+
+    for entry in "${svc_checks[@]}"; do
+        IFS='|' read -r name url _cond <<< "$entry"
+        total=$((total + 1))
+        local status="FAIL"
+        local http_code
+
+        # First attempt
+        http_code="$(curl -sf --max-time 5 -o /dev/null -w '%{http_code}' "$url" 2>/dev/null || echo "000")"
+        if [[ "$http_code" =~ ^[23] ]]; then
+            status="OK"
+        else
+            # Retry after 10s
+            sleep 10
+            http_code="$(curl -sf --max-time 5 -o /dev/null -w '%{http_code}' "$url" 2>/dev/null || echo "000")"
+            [[ "$http_code" =~ ^[23] ]] && status="OK"
+        fi
+
+        if [[ "$status" == "OK" ]]; then
+            ok=$((ok + 1))
+        else
+            fail=$((fail + 1))
+        fi
+
+        VERIFY_RESULTS+=("${name}|${url}|${status}")
+    done
+
+    echo -e "${CYAN}=== Service Verification ===${NC}"
+    for entry in "${VERIFY_RESULTS[@]}"; do
+        IFS='|' read -r name url status <<< "$entry"
+        if [[ "$status" == "OK" ]]; then
+            echo -e "  ${GREEN}[OK]${NC}   ${name}  ${url}"
+        else
+            # Per-service troubleshoot hints
+            local hint=""
+            case "$name" in
+                vLLM)           hint="Модель ещё грузится. Проверьте: agmind logs vllm" ;;
+                Ollama)         hint="Проверьте: agmind logs ollama" ;;
+                TEI)            hint="Проверьте: agmind logs tei" ;;
+                "Dify Console") hint="Проверьте: agmind logs api" ;;
+                "Open WebUI")   hint="Проверьте: agmind logs open-webui" ;;
+                Weaviate)       hint="Проверьте: agmind logs weaviate" ;;
+                Qdrant)         hint="Проверьте: agmind logs qdrant" ;;
+                *)              hint="Проверьте логи сервиса" ;;
+            esac
+            echo -e "  ${RED}[FAIL]${NC} ${name}  ${url}"
+            echo -e "         ${CYAN}-> ${hint}${NC}"
+        fi
+    done
+    echo ""
+    echo -e "  Итого: ${ok}/${total} сервисов доступны"
+    echo ""
+
+    return "$fail"
+}
+
+# ============================================================================
 # SEND ALERT
 # ============================================================================
 
