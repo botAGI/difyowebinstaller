@@ -15,7 +15,7 @@ ENV_FILE="${INSTALL_DIR}/docker/.env"
 LOG_FILE="${INSTALL_DIR}/logs/update_history.log"
 BACKUP_SCRIPT="${INSTALL_DIR}/scripts/backup.sh"
 HEALTH_SCRIPT="${INSTALL_DIR}/scripts/health.sh"
-REMOTE_VERSIONS_URL="https://raw.githubusercontent.com/botAGI/difyowebinstaller/main/versions.env"
+REMOTE_VERSIONS_URL="https://raw.githubusercontent.com/botAGI/difyowebinstaller/main/templates/versions.env"
 REMOTE_FETCH_TIMEOUT=15
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
