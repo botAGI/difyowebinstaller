@@ -98,46 +98,31 @@ sudo DEPLOY_PROFILE=lan LLM_PROVIDER=ollama LLM_MODEL=qwen2.5:14b \
 ## Архитектура
 
 ```
-+-----------------------------------------------------------------+
-|  Infra Layer (installer)   |  install.sh, lib/*.sh              |
-|  -> Разворачивает и защищает инфраструктуру                     |
-+-----------------------------------------------------------------+
-|  AI Config Layer (user)    |  Dify UI, Open WebUI               |
-|  -> Пользователь настраивает workflow, KB, модели через UI      |
-+-----------------------------------------------------------------+
-|  Operations Layer (CLI)    |  agmind status/doctor/backup/...   |
-|  -> Day-2 операции и мониторинг                                 |
-+-----------------------------------------------------------------+
+                         +-----------+
+                         |   nginx   |  :80 / :443
+                         +-----+-----+
+                           /       \
+                +---------+         +-----------+
+                | Open    |         | Dify Web  |
+                | WebUI   |         | + Console |
+                +---------+         +-----+-----+
+                                      /       \
+                              +------+    +--------+
+                              |  API |    | Worker |
+                              +--+---+    +---+----+
+                                 |            |
+                    +------------+------------+----------+
+                    |            |            |          |
+               +----+---+  +----+---+  +-----+----+ +--+------+
+               |Postgres|  | Redis  |  |Ollama/   | |Weaviate/|
+               +--------+  +--------+  |vLLM/TEI  | |Qdrant   |
+                                       +----------+ +---------+
+
+  Мониторинг (опционально): Prometheus -> Grafana, Loki -> Promtail,
+                             cAdvisor, Alertmanager, Portainer
 ```
 
-Инсталлер **не трогает Dify API** — не создаёт аккаунты, не импортирует workflow, не устанавливает плагины. Вся AI-конфигурация — через UI.
-
-### Сервисы (23-34 контейнера)
-
-```
-+------------------------- agmind-frontend -------------------------+
-|                            nginx :80/:443                         |
-|                        +--------+--------+                        |
-|                   Open WebUI :8080   Dify Web :3000               |
-|  Grafana :3001    Portainer :9443                                 |
-+-------------------------------------------------------------------+
-+------------------------- agmind-backend --------------------------+
-|  Dify API :5001    Dify Worker    Plugin Daemon :5002             |
-|  PostgreSQL :5432  Redis :6379                                    |
-|  Ollama :11434 / vLLM :8000 / TEI :8080                          |
-|  Weaviate :8080 / Qdrant :6333    Sandbox :8194                  |
-|  Docling :8765     Xinference :9997                               |
-|  Prometheus  Alertmanager  cAdvisor  Loki  Promtail  Authelia     |
-+-------------------------------------------------------------------+
-+------------- ssrf-network ---------------+
-|  sandbox  ssrf_proxy :3128  api  worker  |
-+------------------------------------------+
-```
-
-**Сети:**
-- `agmind-frontend` — bridge: nginx, grafana, portainer
-- `agmind-backend` — bridge, **internal**: все core-сервисы (порты не открыты наружу)
-- `ssrf-network` — bridge, **internal**: sandbox + ssrf_proxy + api + worker (изоляция SSRF)
+Инсталлер разворачивает только инфраструктуру. Вся AI-конфигурация (workflow, базы знаний, подключение моделей) — через UI Dify и Open WebUI.
 
 ---
 
@@ -285,15 +270,15 @@ agmind doctor --json | jq '.checks[] | select(.severity == "FAIL")'
 
 Автоматическое определение через `lib/detect.sh`.
 
-| GPU | RAM GPU | Рекомендуемые модели | Ориентировочная цена (РФ) |
-|-----|---------|---------------------|--------------------------|
-| RTX 3060 12GB | 12 ГБ | Ollama: qwen2.5:7b, qwen3:8b | ~30 000 руб |
-| RTX 3090 24GB | 24 ГБ | Ollama: qwen2.5:14b, vLLM: qwen2.5:7b | ~80 000 руб |
-| RTX 4060 Ti 16GB | 16 ГБ | Ollama: qwen2.5:14b | ~40 000 руб |
-| RTX 4090 24GB | 24 ГБ | vLLM: qwen2.5:14b, Ollama: qwen2.5:32b | ~180 000 руб |
-| A100 40GB/80GB | 40-80 ГБ | vLLM: qwen2.5:72b, tensor parallelism | серверное оборудование |
-| AMD RX 7900 XTX | 24 ГБ | Ollama: qwen2.5:14b (ROCm) | ~90 000 руб |
-| CPU only | -- | Ollama: qwen2.5:7b (медленнее в 5-10x) | -- |
+| GPU | VRAM | Рекомендуемые модели |
+|-----|------|---------------------|
+| RTX 3060 | 12 ГБ | Ollama: qwen2.5:7b, qwen3:8b |
+| RTX 3090 | 24 ГБ | Ollama: qwen2.5:14b, vLLM: qwen2.5:7b |
+| RTX 4060 Ti | 16 ГБ | Ollama: qwen2.5:14b |
+| RTX 4090 | 24 ГБ | vLLM: qwen2.5:14b, Ollama: qwen2.5:32b |
+| A100 40/80GB | 40-80 ГБ | vLLM: qwen2.5:72b, tensor parallelism |
+| AMD RX 7900 XTX | 24 ГБ | Ollama: qwen2.5:14b (ROCm) |
+| CPU only | -- | Ollama: qwen2.5:7b (медленнее в 5-10x) |
 
 **Принудительная настройка GPU:**
 
@@ -429,8 +414,6 @@ difyowebinstaller/
 3. Все `.sh` файлы должны проходить ShellCheck
 4. Тесты: `bats tests/`
 5. Pull request с описанием изменений
-
-Подробнее: файлы в `.planning/` описывают архитектурные решения и конвенции проекта.
 
 ---
 
