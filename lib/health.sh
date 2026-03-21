@@ -77,8 +77,10 @@ check_container() {
     local cname="${name//_/-}"
     [[ "$cname" == "open-webui" ]] && cname="openwebui"
 
+    # Exact name match to avoid confusion with init-containers (BUG-V3-039)
+    # e.g. "agmind-redis" must not match "agmind-redis-lock-cleaner"
     local status
-    status="$(docker ps -a --filter "name=agmind-${cname}" --format '{{.Status}}' 2>/dev/null | head -1)"
+    status="$(docker ps -a --filter "name=^agmind-${cname}$" --format '{{.Status}}' 2>/dev/null | head -1)"
     [[ -z "$status" ]] && status="not found"
 
     if echo "$status" | grep -qi "up\|healthy"; then
@@ -99,7 +101,9 @@ check_container() {
 
 wait_healthy() {
     local timeout="${1:-300}"
+    local gpu_timeout="${2:-${TIMEOUT_GPU_HEALTH:-600}}"
     [[ "$timeout" =~ ^[0-9]+$ ]] || timeout=300
+    [[ "$gpu_timeout" =~ ^[0-9]+$ ]] || gpu_timeout=600
     local interval=5
     local elapsed=0
     local compose_file="${INSTALL_DIR}/docker/docker-compose.yml"
@@ -107,21 +111,36 @@ wait_healthy() {
     # Critical services: exit of any of these = immediate failure
     local critical_services="db redis sandbox ssrf_proxy api worker web plugin_daemon nginx"
 
-    log_info "Waiting for containers to be healthy (timeout: ${timeout}s)..."
-    echo ""
+    # GPU services: extended startup time for model loading / CUDA init
+    local gpu_services=" vllm tei ollama "
 
     local services
     read -ra services <<< "$(get_service_list)"
 
+    # Split into core and GPU lists
+    local -a core_svcs=()
+    local -a gpu_svcs=()
+    for svc in "${services[@]}"; do
+        if [[ "$gpu_services" == *" $svc "* ]]; then
+            gpu_svcs+=("$svc")
+        else
+            core_svcs+=("$svc")
+        fi
+    done
+
     local optional_exited=""
+
+    # === Phase 1: Core services (strict timeout) ===
+    log_info "Waiting for core containers to be healthy (timeout: ${timeout}s)..."
+    echo ""
 
     while [[ $elapsed -lt $timeout ]]; do
         local all_ok=true
 
-        for svc in "${services[@]}"; do
+        for svc in "${core_svcs[@]}"; do
             local status
             status="$(docker compose -f "$compose_file" ps --format '{{.Status}}' "$svc" 2>/dev/null || echo "")"
-            # Fail fast: critical container exited — no point waiting
+            # Fail fast: critical container exited
             if echo "$status" | grep -qi "exited"; then
                 if echo " $critical_services " | grep -q " $svc "; then
                     echo ""
@@ -132,7 +151,6 @@ wait_healthy() {
                     check_all
                     return 1
                 else
-                    # Optional service exited — warn once, skip from wait loop
                     if ! echo "$optional_exited" | grep -q " $svc "; then
                         optional_exited="${optional_exited} ${svc} "
                         log_warn "Optional service '${svc}' exited (non-critical, continuing)"
@@ -148,22 +166,99 @@ wait_healthy() {
         done
 
         if [[ "$all_ok" == "true" ]]; then
-            log_success "All containers are up!"
-            echo ""
-            check_all
-            return 0
+            log_success "Core services are up!"
+            break
         fi
 
         sleep "$interval"
         elapsed=$((elapsed + interval))
-        echo -ne "\r  Waiting... ${elapsed}/${timeout}s"
+        echo -ne "\r  Waiting for core services... ${elapsed}/${timeout}s"
+    done
+
+    if [[ $elapsed -ge $timeout && "$all_ok" != "true" ]]; then
+        echo ""
+        log_error "Timeout! Core containers not ready within ${timeout}s"
+        echo ""
+        check_all
+        return 1
+    fi
+
+    # === Phase 2: GPU services (extended timeout, non-blocking) ===
+    if [[ ${#gpu_svcs[@]} -eq 0 ]]; then
+        echo ""
+        check_all
+        return 0
+    fi
+
+    echo ""
+    log_info "⏳ Ожидание GPU сервисов — загрузка моделей (timeout: ${gpu_timeout}s)..."
+
+    local gpu_elapsed=0
+    local gpu_done=""
+
+    while [[ $gpu_elapsed -lt $gpu_timeout ]]; do
+        local gpu_ready=0
+
+        for svc in "${gpu_svcs[@]}"; do
+            # Already resolved — skip
+            [[ "$gpu_done" == *" $svc "* ]] && { gpu_ready=$((gpu_ready + 1)); continue; }
+
+            local status
+            status="$(docker compose -f "$compose_file" ps --format '{{.Status}}' "$svc" 2>/dev/null || echo "")"
+
+            if echo "$status" | grep -qi "exited"; then
+                if ! echo "$optional_exited" | grep -q " $svc "; then
+                    optional_exited="${optional_exited} ${svc} "
+                    log_warn "GPU service '${svc}' exited (non-critical)"
+                    docker compose -f "$compose_file" logs --tail=5 "$svc" 2>/dev/null || true
+                fi
+                gpu_done="${gpu_done} ${svc} "
+                gpu_ready=$((gpu_ready + 1))
+                continue
+            fi
+
+            if echo "$status" | grep -qi "healthy"; then
+                gpu_done="${gpu_done} ${svc} "
+                log_success "${svc} is healthy"
+                gpu_ready=$((gpu_ready + 1))
+                continue
+            fi
+
+            # Still starting — that's expected for GPU containers
+        done
+
+        [[ $gpu_ready -ge ${#gpu_svcs[@]} ]] && break
+
+        sleep "$interval"
+        gpu_elapsed=$((gpu_elapsed + interval))
+
+        # Show which GPU services are still loading
+        local waiting_for=""
+        for svc in "${gpu_svcs[@]}"; do
+            [[ "$gpu_done" == *" $svc "* ]] || waiting_for="${waiting_for:+${waiting_for}, }${svc}"
+        done
+        echo -ne "\r  ⏳ GPU загрузка моделей... ${gpu_elapsed}/${gpu_timeout}s [${waiting_for}]    "
     done
 
     echo ""
-    log_error "Timeout! Not all containers started within ${timeout}s"
+
+    # GPU timeout is a WARNING, not a failure — installation continues
+    local still_waiting=""
+    for svc in "${gpu_svcs[@]}"; do
+        [[ "$gpu_done" == *" $svc "* ]] || still_waiting="${still_waiting:+${still_waiting}, }${svc}"
+    done
+
+    if [[ -n "$still_waiting" ]]; then
+        log_warn "GPU сервисы ещё загружаются: ${still_waiting}"
+        log_warn "Установка продолжится — модели догрузятся в фоне"
+        log_warn "Проверьте позже: agmind status"
+    else
+        log_success "All GPU services ready!"
+    fi
+
     echo ""
     check_all
-    return 1
+    return 0
 }
 
 # ============================================================================
@@ -273,15 +368,29 @@ verify_services() {
             _do_check() { curl -sf --max-time 5 -o /dev/null -w '%{http_code}' "$url" 2>/dev/null || echo "000"; }
         fi
 
+        # GPU services need extended retries (model loading / CUDA init)
+        local max_retries=1 retry_interval=10
+        case "$name" in
+            vLLM|TEI|Ollama) max_retries=5; retry_interval=15 ;;
+        esac
+
         # First attempt
         http_code="$(_do_check)"
         if [[ "$http_code" =~ ^[23] ]]; then
             status="OK"
         else
-            # Retry after 10s
-            sleep 10
-            http_code="$(_do_check)"
-            [[ "$http_code" =~ ^[23] ]] && status="OK"
+            local attempt=0
+            while [[ $attempt -lt $max_retries ]]; do
+                attempt=$((attempt + 1))
+                [[ "$max_retries" -gt 1 ]] && echo -ne "\r  ⏳ ${name}: retry ${attempt}/${max_retries}...          "
+                sleep "$retry_interval"
+                http_code="$(_do_check)"
+                if [[ "$http_code" =~ ^[23] ]]; then
+                    status="OK"
+                    break
+                fi
+            done
+            [[ "$max_retries" -gt 1 ]] && echo -ne "\r                                              \r"
         fi
 
         if [[ "$status" == "OK" ]]; then

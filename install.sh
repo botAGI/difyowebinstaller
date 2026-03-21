@@ -37,6 +37,7 @@ NON_INTERACTIVE="${NON_INTERACTIVE:-false}"
 FORCE_RESTART="${FORCE_RESTART:-false}"
 TIMEOUT_START="${TIMEOUT_START:-300}"
 TIMEOUT_HEALTH="${TIMEOUT_HEALTH:-300}"
+TIMEOUT_GPU_HEALTH="${TIMEOUT_GPU_HEALTH:-600}"
 TIMEOUT_MODELS="${TIMEOUT_MODELS:-1200}"
 
 # --- Exclusive lock ---
@@ -128,7 +129,7 @@ phase_wizard()      { run_wizard; }
 phase_docker()      { setup_docker; }
 phase_config()      { ensure_bind_mount_files; export INSTALL_DIR; generate_config "$DEPLOY_PROFILE" "$TEMPLATE_DIR"; enable_gpu_compose; setup_security; [[ "$ENABLE_AUTHELIA" == "true" ]] && configure_authelia "$TEMPLATE_DIR"; _copy_runtime_files; }
 phase_start()       { compose_up; create_openwebui_admin; }
-phase_health()      { wait_healthy 300; _check_critical_services; }
+phase_health()      { wait_healthy "$TIMEOUT_HEALTH" "$TIMEOUT_GPU_HEALTH"; _check_critical_services; }
 phase_models()      { download_models; }
 phase_backups()     { setup_backups; setup_tunnel; }
 phase_complete()    { create_openwebui_admin; _init_dify_admin; _save_credentials; _install_cli; _install_crons; _install_systemd_service; verify_services || true; _show_final_summary; }

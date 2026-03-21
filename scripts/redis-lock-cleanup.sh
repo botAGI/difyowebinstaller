@@ -21,6 +21,22 @@ redis_cmd() {
     redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" $AUTH_ARGS "$@"
 }
 
+# Wait for Redis to be reachable (DNS + TCP), up to 30s (BUG-V3-037)
+attempt=0
+max_attempts=6
+while [ "$attempt" -lt "$max_attempts" ]; do
+    if redis_cmd PING 2>/dev/null | grep -qi "PONG"; then
+        break
+    fi
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge "$max_attempts" ]; then
+        echo "[redis-lock-cleaner] Redis not reachable after ${max_attempts} attempts, skipping cleanup"
+        exit 0
+    fi
+    echo "[redis-lock-cleaner] Waiting for Redis DNS/connection... (${attempt}/${max_attempts})"
+    sleep 5
+done
+
 echo "[redis-lock-cleaner] Scanning for stale plugin_daemon locks..."
 cursor=0
 deleted=0

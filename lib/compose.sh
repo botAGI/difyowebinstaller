@@ -20,7 +20,10 @@ build_compose_profiles() {
     [[ "${DEPLOY_PROFILE:-}" == "vps" ]] && profiles="vps"
     [[ "${VECTOR_STORE:-weaviate}" == "qdrant" ]] && profiles="${profiles:+$profiles,}qdrant"
     [[ "${VECTOR_STORE:-weaviate}" == "weaviate" ]] && profiles="${profiles:+$profiles,}weaviate"
-    [[ "${ETL_ENHANCED:-false}" == "true" ]] && profiles="${profiles:+$profiles,}etl"
+    # ETL: check both wizard var (ETL_ENHANCED) and .env var (ETL_TYPE) for resume support (BUG-V3-038)
+    if [[ "${ETL_ENHANCED:-false}" == "true" || "${ETL_TYPE:-dify}" == "unstructured_api" ]]; then
+        profiles="${profiles:+$profiles,}etl"
+    fi
     [[ "${MONITORING_MODE:-none}" == "local" ]] && profiles="${profiles:+$profiles,}monitoring"
     [[ "${ENABLE_AUTHELIA:-false}" == "true" ]] && profiles="${profiles:+$profiles,}authelia"
 
@@ -333,11 +336,19 @@ create_plugin_db() {
 # ============================================================================
 
 post_launch_status() {
+    # GPU containers have long model-loading startup — exclude from stabilization wait
+    local gpu_containers=" agmind-vllm agmind-tei agmind-ollama "
+
     log_info "Waiting for containers to stabilize..."
     local elapsed=0
     while [[ $elapsed -lt 120 ]]; do
-        local starting
-        starting="$(docker ps --filter "name=agmind-" --filter "health=starting" -q 2>/dev/null | wc -l || echo "0")"
+        local starting=0
+        while IFS= read -r cname; do
+            [[ -z "$cname" ]] && continue
+            # Skip GPU containers — they load models for minutes, not seconds
+            [[ "$gpu_containers" == *" $cname "* ]] && continue
+            starting=$((starting + 1))
+        done < <(docker ps --filter "name=agmind-" --filter "health=starting" --format "{{.Names}}" 2>/dev/null || true)
         [[ "$starting" -eq 0 ]] && break
         sleep 5
         elapsed=$((elapsed + 5))
@@ -345,6 +356,7 @@ post_launch_status() {
     done
     echo ""
 
+    # Check for unhealthy/restarting (real failures, not slow GPU startup)
     local bad
     bad="$(docker ps --filter "name=agmind-" --format "{{.Names}}\t{{.Status}}" 2>/dev/null | grep -iE "unhealthy|restarting" || true)"
     if [[ -n "$bad" ]]; then
@@ -361,6 +373,17 @@ post_launch_status() {
         echo "  Use 'docker logs <container>' for details"
     else
         log_success "All containers running"
+    fi
+
+    # Report GPU containers still loading models (informational, not error)
+    local gpu_loading=""
+    while IFS= read -r cname; do
+        [[ -z "$cname" ]] && continue
+        [[ "$gpu_containers" == *" $cname "* ]] && gpu_loading="${gpu_loading:+${gpu_loading}, }${cname}"
+    done < <(docker ps --filter "name=agmind-" --filter "health=starting" --format "{{.Names}}" 2>/dev/null || true)
+
+    if [[ -n "$gpu_loading" ]]; then
+        log_info "⏳ GPU контейнеры загружают модели (это нормально): ${gpu_loading}"
     fi
 }
 

@@ -190,19 +190,9 @@ Plans:
 - [ ] 08-02-PLAN.md — Doctor enhancement: container health, HTTP endpoints, disk/RAM %, .env completeness (HLTH-02)
 - [ ] 08-03-PLAN.md — SSH lockout prevention with warning + Apache 2.0 LICENSE (UXPL-01, UXPL-03)
 
-### Phase 9: Operator Makefile
+### ~~Phase 9: Operator Makefile~~ — SKIPPED
 
-**Goal:** Operators have a `Makefile` with human-friendly commands for daily operations instead of memorizing `docker compose -p agmind ...` invocations.
-
-**Depends on:** Phase 7
-**Requirements:** MAKE-01, MAKE-02
-**Success Criteria** (what must be TRUE):
-  1. `make status` shows container state, `make logs` / `make logs s=vllm` shows logs, `make restart` / `make stop` / `make start` manage the stack
-  2. `make doctor` delegates to `agmind doctor`, `make update` / `make update-preview` delegate to `agmind update`
-  3. `make clean` runs Docker prune (without volumes), `make show-restarts` shows container restart counts
-  4. `make help` lists all available targets with descriptions
-
-**Plans:** TBD
+**Reason:** agmind CLI already covers all operator commands (status, logs, doctor, update, restart). Makefile would be redundant.
 
 ---
 
@@ -216,7 +206,7 @@ Plans:
 - [x] **Phase 6: Runtime Stability** — Fix plugin-daemon ordering, Redis stale locks, GPU reboot survival (gap closure in progress) (completed 2026-03-21)
 - [x] **Phase 7: Update System** — Component-level update with healthcheck + rollback (completed 2026-03-21)
 - [x] **Phase 8: Health Verification & UX Polish** — Real endpoint checks, doctor enhancement, LICENSE, SSH/Portainer guidance (completed 2026-03-21)
-- [ ] **Phase 9: Operator Makefile** — Human-friendly make targets for daily operations
+- [~] ~~**Phase 9: Operator Makefile**~~ — SKIPPED: agmind CLI covers all operations
 
 ## Progress
 
@@ -230,8 +220,8 @@ Plans:
 | 6. Runtime Stability | 3/3 | Complete   | 2026-03-21 | - |
 | 7. Update System | 2/2 | Complete   | 2026-03-21 | - |
 | 8. Health Verification & UX Polish | 3/3 | Complete   | 2026-03-21 | - |
-| 9. Operator Makefile | v2.1 | 0/TBD | Not started | - |
+| 9. Operator Makefile | v2.1 | — | Skipped | — |
 
 ---
 *Roadmap created: 2026-03-17*
-*Last updated: 2026-03-21 — Phase 8 planned: 3 plans in 2 waves*
+*Last updated: 2026-03-21 — Phase 9 skipped (agmind CLI covers all operations)*

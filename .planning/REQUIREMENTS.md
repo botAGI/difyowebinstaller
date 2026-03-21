@@ -30,10 +30,10 @@ Requirements for v2.1 Bugfixes + Improvements. Each maps to roadmap phases.
 - [x] **UXPL-02**: Portainer tunnel-доступ (`ssh -L 9443:127.0.0.1:9443`) указан в credentials summary — BUG-V3-026
 - [x] **UXPL-03**: LICENSE файл (Apache 2.0) в корне репозитория — WISH-006
 
-### Operator Makefile
+### Operator Makefile — SKIPPED
 
-- [ ] **MAKE-01**: Makefile с командами: status, logs, restart, stop, start, doctor, update, update-preview, clean, show-restarts, help — WISH-004
-- [ ] **MAKE-02**: `make help` выводит список всех targets с описаниями
+- [~] **MAKE-01**: ~~Makefile с командами~~ — SKIPPED: agmind CLI уже покрывает все операции, Makefile избыточен
+- [~] **MAKE-02**: ~~`make help`~~ — SKIPPED: см. MAKE-01
 
 ## v2.0 Requirements (Validated)
 

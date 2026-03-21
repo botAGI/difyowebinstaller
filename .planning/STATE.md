@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: Bugfixes + Improvements
-status: planning
-stopped_at: Completed 08-02-PLAN.md
-last_updated: "2026-03-21T17:16:14.784Z"
-last_activity: 2026-03-20 — Roadmap created, v2.1 phases 6-8 defined
+status: active
+stopped_at: BUG-V3-036/037/038/039 implemented
+last_updated: "2026-03-21"
+last_activity: 2026-03-21 — 4 bugfixes (V3-036..039), Phase 9 skipped
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 8
   completed_plans: 8
-  percent: 0
+  percent: 100
 ---
 
 # State: AGmind Installer v2.1
@@ -21,16 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-20)
 
 **Core value:** One command installs, secures, and monitors a production-ready AI stack
-**Current focus:** Phase 6 — Runtime Stability (plugin-daemon ordering, Redis locks, GPU reboot)
+**Current focus:** Hotfix BUG-V3-036 — GPU startup timeout during installation
 
 ## Current Position
 
-Phase: 6 of 8 (Runtime Stability)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-03-20 — Roadmap created, v2.1 phases 6-8 defined
+Phase: 8 of 8 (all phases complete, Phase 9 skipped)
+Status: Hotfix BUG-V3-036 in progress
+Last activity: 2026-03-21 — BUG-V3-036 GPU startup timeout fix
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██████████] 100% (phases) + hotfix
 
 ## Performance Metrics
 
@@ -84,17 +83,24 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 08-health-verification-ux-polish]: verify_services() output suppressed in doctor (>/dev/null) — cmd_doctor uses _check for its own formatted output
 - [Phase 08-health-verification-ux-polish]: lock-cleaner init-container skipped in exited check — expected to exit after one-shot Redis lock cleanup
 - [Phase 08-health-verification-ux-polish]: Docker Disk summary rendered in text-only mode — docker system df table not parseable as JSON
+- [BUG-V3-036]: wait_healthy() split into 2 phases: core services (300s strict) + GPU services (600s non-blocking warning)
+- [BUG-V3-036]: post_launch_status() excludes GPU containers from 120s stabilization wait — shows info instead of blocking
+- [BUG-V3-036]: verify_services() GPU endpoints get 5 retries × 15s (vs 1 × 10s for core) for model loading tolerance
+- [BUG-V3-036]: TIMEOUT_GPU_HEALTH env var (default 600s) allows operators to tune GPU wait independently
+- [BUG-V3-037]: redis-lock-cleanup.sh gets retry loop (6×5s) with PING check before SCAN — graceful exit 0 on persistent failure
+- [BUG-V3-038]: build_compose_profiles() now checks ETL_TYPE=="unstructured_api" in addition to ETL_ENHANCED — survives resume when .env is sourced
+- [BUG-V3-039]: check_container() uses exact name anchor "^agmind-${cname}$" — prevents redis-lock-cleaner matching redis filter
 
 ### Pending Todos
 
-None yet.
+None.
 
 ### Blockers/Concerns
 
-None yet.
+None.
 
 ## Session Continuity
 
-Last session: 2026-03-21T17:11:19.737Z
-Stopped at: Completed 08-02-PLAN.md
+Last session: 2026-03-21
+Stopped at: BUG-V3-036 implemented — awaiting commit
 Resume file: None
