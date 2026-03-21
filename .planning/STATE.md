@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: Bugfixes + Improvements
 status: planning
-stopped_at: Phase 7 context gathered
-last_updated: "2026-03-21T13:17:28.717Z"
+stopped_at: Completed 07-update-system-01-PLAN.md
+last_updated: "2026-03-21T13:39:12.186Z"
 last_activity: 2026-03-20 — Roadmap created, v2.1 phases 6-8 defined
 progress:
   total_phases: 3
   completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  total_plans: 5
+  completed_plans: 4
   percent: 0
 ---
 
@@ -50,6 +50,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 06-v3-bugfixes P01 | 15 | 2 tasks | 3 files |
 | Phase 06-v3-bugfixes P02 | 12 | 2 tasks | 3 files |
 | Phase 06-v3-bugfixes P03 | 15 | 2 tasks | 3 files |
+| Phase 07-update-system P01 | 20 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -65,6 +66,9 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 06-v3-bugfixes]: agmind-stack.service uses Type=oneshot+RemainAfterExit=yes so systemctl status shows active after one-shot command completes
 - [Phase 06-v3-bugfixes]: EnvironmentFile uses '-' prefix so systemd does not fail before first installer run
 - [Phase 06-v3-bugfixes]: sed -i dedup removes existing COMPOSE_PROFILES before append to avoid duplicates on re-runs
+- [Phase 07-update-system]: fetch_remote_versions() replaces load_new_versions() — fetches from GitHub raw URL, not local versions.env
+- [Phase 07-update-system]: NAME_TO_VERSION_KEY maps 28 component short names; shared-image groups (dify-*) trigger group confirmation
+- [Phase 07-update-system]: Offline graceful degradation: shows current versions + suggests --version flag for manual update
 
 ### Pending Todos
 
@@ -76,6 +80,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-21T13:17:28.715Z
-Stopped at: Phase 7 context gathered
-Resume file: .planning/phases/07-update-system/07-CONTEXT.md
+Last session: 2026-03-21T13:39:12.184Z
+Stopped at: Completed 07-update-system-01-PLAN.md
+Resume file: None
