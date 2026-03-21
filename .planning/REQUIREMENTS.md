@@ -22,11 +22,18 @@ Requirements for v2.1 Bugfixes + Improvements. Each maps to roadmap phases.
 ### Health Verification
 
 - [ ] **HLTH-01**: Post-install verify проверяет реальную доступность сервисов через curl (vLLM /v1/models, TEI /info, Dify /console/api/setup), результат в summary — WISH-002
+- [ ] **HLTH-02**: `agmind doctor` расширен: disk/RAM usage, Docker daemon, unhealthy/exited/high-restart контейнеры, GPU (nvidia-smi), HTTP endpoints ключевых сервисов, .env completeness — цветной summary + exit code 0/1 — WISH-005
 
 ### UX Polish
 
 - [ ] **UXPL-01**: При отключении SSH PasswordAuthentication — предупреждение + инструкция по SSH-ключам — BUG-V3-025
 - [ ] **UXPL-02**: Portainer tunnel-доступ (`ssh -L 9443:127.0.0.1:9443`) указан в credentials summary — BUG-V3-026
+- [ ] **UXPL-03**: LICENSE файл (Apache 2.0) в корне репозитория — WISH-006
+
+### Operator Makefile
+
+- [ ] **MAKE-01**: Makefile с командами: status, logs, restart, stop, start, doctor, update, update-preview, clean, show-restarts, help — WISH-004
+- [ ] **MAKE-02**: `make help` выводит список всех targets с описаниями
 
 ## v2.0 Requirements (Validated)
 
@@ -76,6 +83,8 @@ All 24 requirements shipped and confirmed working in v2.0. See git history for d
 ### v2.2+
 
 - **BUG-V3-023**: Авто-настройка model providers через Dify Console API — нарушает boundary, defer
+- **WISH-007**: Update preview с docker manifest digest comparison (базовый `--check` уже в Phase 7)
+- **WISH-008**: Welcome page после установки — HTML с URL-ами сервисов и credentials
 - **TLSU-01**: TLS out of box (mkcert / Let's Encrypt)
 - **TLSU-03**: agmind rollback
 - **TLSU-04**: Changelog / breaking changes warning
@@ -103,15 +112,19 @@ All 24 requirements shipped and confirmed working in v2.0. See git history for d
 | UPDT-02 | Phase 7 | Complete |
 | UPDT-03 | Phase 7 | Complete |
 | HLTH-01 | Phase 8 | Pending |
+| HLTH-02 | Phase 8 | Pending |
 | UXPL-01 | Phase 8 | Pending |
 | UXPL-02 | Phase 8 | Pending |
+| UXPL-03 | Phase 8 | Pending |
+| MAKE-01 | Phase 9 | Pending |
+| MAKE-02 | Phase 9 | Pending |
 
 **Coverage:**
 
-- v2.1 requirements: 9 total
-- Mapped to phases: 9
+- v2.1 requirements: 14 total
+- Mapped to phases: 14
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-20*
-*Last updated: 2026-03-20 — traceability filled after roadmap creation*
+*Last updated: 2026-03-21 — added HLTH-02, UXPL-03, MAKE-01, MAKE-02 from wishlist*

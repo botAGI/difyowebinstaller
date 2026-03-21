@@ -3,7 +3,7 @@
 ## Milestones
 
 - ✅ **v2.0 MVP** — Phases 1-5 (shipped 2026-03-18)
-- 🚧 **v2.1 Bugfixes + Improvements** — Phases 6-8 (in progress)
+- 🚧 **v2.1 Bugfixes + Improvements** — Phases 6-9 (in progress)
 
 ---
 
@@ -171,15 +171,31 @@ Plans:
 
 ### Phase 8: Health Verification & UX Polish
 
-**Goal:** Post-install summary confirms real service reachability (not just container health), and two recurring operator pain points — SSH lockout risk and Portainer tunnel access — are resolved with clear guidance.
+**Goal:** Post-install summary confirms real service reachability (not just container health), `agmind doctor` becomes a comprehensive diagnostics tool, operator pain points (SSH lockout, Portainer tunnel) are resolved, and the repo has a license for public release.
 
 **Depends on:** Phase 6
-**Requirements:** HLTH-01, UXPL-01, UXPL-02
+**Requirements:** HLTH-01, HLTH-02, UXPL-01, UXPL-02, UXPL-03
 **Success Criteria** (what must be TRUE):
   1. After `install.sh` completes, the summary block shows a per-service HTTP status (OK / FAIL) based on real `curl` calls to vLLM `/v1/models`, TEI `/info`, and Dify `/console/api/setup`
   2. When the installer disables SSH `PasswordAuthentication`, the terminal outputs a warning and SSH public key setup instructions before making the change
   3. `credentials.txt` and the post-install summary both include the Portainer SSH tunnel command (`ssh -L 9443:127.0.0.1:9443 user@host`)
   4. An operator on a fresh server can access Portainer on the first attempt by following only the on-screen instructions
+  5. `agmind doctor` checks disk/RAM usage, Docker daemon, unhealthy/exited/high-restart containers, GPU availability, key service HTTP endpoints, and .env completeness — outputs colored summary with exit code 0/1
+  6. `LICENSE` file (Apache 2.0) exists in repo root
+
+**Plans:** TBD
+
+### Phase 9: Operator Makefile
+
+**Goal:** Operators have a `Makefile` with human-friendly commands for daily operations instead of memorizing `docker compose -p agmind ...` invocations.
+
+**Depends on:** Phase 7
+**Requirements:** MAKE-01, MAKE-02
+**Success Criteria** (what must be TRUE):
+  1. `make status` shows container state, `make logs` / `make logs s=vllm` shows logs, `make restart` / `make stop` / `make start` manage the stack
+  2. `make doctor` delegates to `agmind doctor`, `make update` / `make update-preview` delegate to `agmind update`
+  3. `make clean` runs Docker prune (without volumes), `make show-restarts` shows container restart counts
+  4. `make help` lists all available targets with descriptions
 
 **Plans:** TBD
 
@@ -194,7 +210,8 @@ Plans:
 - [x] **Phase 5: DevOps & UX** — agmind CLI, status, doctor, health endpoint
 - [x] **Phase 6: Runtime Stability** — Fix plugin-daemon ordering, Redis stale locks, GPU reboot survival (gap closure in progress) (completed 2026-03-21)
 - [x] **Phase 7: Update System** — Component-level update with healthcheck + rollback (completed 2026-03-21)
-- [ ] **Phase 8: Health Verification & UX Polish** — Real endpoint checks in summary, SSH and Portainer guidance
+- [ ] **Phase 8: Health Verification & UX Polish** — Real endpoint checks, doctor enhancement, LICENSE, SSH/Portainer guidance
+- [ ] **Phase 9: Operator Makefile** — Human-friendly make targets for daily operations
 
 ## Progress
 
@@ -208,7 +225,8 @@ Plans:
 | 6. Runtime Stability | 3/3 | Complete   | 2026-03-21 | - |
 | 7. Update System | 2/2 | Complete   | 2026-03-21 | - |
 | 8. Health Verification & UX Polish | v2.1 | 0/TBD | Not started | - |
+| 9. Operator Makefile | v2.1 | 0/TBD | Not started | - |
 
 ---
 *Roadmap created: 2026-03-17*
-*Last updated: 2026-03-21 — Phase 7 plans created (2 plans in 2 waves)*
+*Last updated: 2026-03-21 — Added WISH-004..008, Phase 9 (Makefile)*
