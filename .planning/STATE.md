@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: Bugfixes + Improvements
 status: planning
-stopped_at: Phase 8 context gathered
-last_updated: "2026-03-21T16:42:34.785Z"
+stopped_at: Completed 08-01-PLAN.md
+last_updated: "2026-03-21T17:06:59.522Z"
 last_activity: 2026-03-20 — Roadmap created, v2.1 phases 6-8 defined
 progress:
   total_phases: 4
   completed_phases: 2
-  total_plans: 5
-  completed_plans: 5
+  total_plans: 8
+  completed_plans: 7
   percent: 0
 ---
 
@@ -52,6 +52,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 06-v3-bugfixes P03 | 15 | 2 tasks | 3 files |
 | Phase 07-update-system P01 | 20 | 2 tasks | 2 files |
 | Phase 07-update-system P02 | 2 | 2 tasks | 2 files |
+| Phase 08-health-verification-ux-polish P01 | 16 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -72,6 +73,9 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 07-update-system]: Offline graceful degradation: shows current versions + suggests --version flag for manual update
 - [Phase 07-update-system]: rollback_component() reads version from .rollback/dot-env.bak — ensures rollback is to pre-update state, not current
 - [Phase 07-update-system]: MANUAL_ROLLBACK log prefix distinguishes user-initiated rollbacks from automatic healthcheck-triggered rollbacks (ROLLBACK prefix)
+- [Phase 08-health-verification-ux-polish]: verify_services() returns failure count; caller uses '|| true' — failed checks never abort install
+- [Phase 08-health-verification-ux-polish]: VERIFY_RESULTS global array avoids re-running curl in summary — checks run once in phase_complete
+- [Phase 08-health-verification-ux-polish]: Portainer SSH tunnel hint skipped when ADMIN_UI_OPEN=true — direct 0.0.0.0:9443 access available in that case
 
 ### Pending Todos
 
@@ -83,6 +87,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-21T16:42:34.783Z
-Stopped at: Phase 8 context gathered
-Resume file: .planning/phases/08-health-verification-ux-polish/08-CONTEXT.md
+Last session: 2026-03-21T17:06:59.520Z
+Stopped at: Completed 08-01-PLAN.md
+Resume file: None

@@ -21,13 +21,13 @@ Requirements for v2.1 Bugfixes + Improvements. Each maps to roadmap phases.
 
 ### Health Verification
 
-- [ ] **HLTH-01**: Post-install verify проверяет реальную доступность сервисов через curl (vLLM /v1/models, TEI /info, Dify /console/api/setup), результат в summary — WISH-002
+- [x] **HLTH-01**: Post-install verify проверяет реальную доступность сервисов через curl (vLLM /v1/models, TEI /info, Dify /console/api/setup), результат в summary — WISH-002
 - [ ] **HLTH-02**: `agmind doctor` расширен: disk/RAM usage, Docker daemon, unhealthy/exited/high-restart контейнеры, GPU (nvidia-smi), HTTP endpoints ключевых сервисов, .env completeness — цветной summary + exit code 0/1 — WISH-005
 
 ### UX Polish
 
 - [ ] **UXPL-01**: При отключении SSH PasswordAuthentication — предупреждение + инструкция по SSH-ключам — BUG-V3-025
-- [ ] **UXPL-02**: Portainer tunnel-доступ (`ssh -L 9443:127.0.0.1:9443`) указан в credentials summary — BUG-V3-026
+- [x] **UXPL-02**: Portainer tunnel-доступ (`ssh -L 9443:127.0.0.1:9443`) указан в credentials summary — BUG-V3-026
 - [ ] **UXPL-03**: LICENSE файл (Apache 2.0) в корне репозитория — WISH-006
 
 ### Operator Makefile
@@ -111,10 +111,10 @@ All 24 requirements shipped and confirmed working in v2.0. See git history for d
 | UPDT-01 | Phase 7 | Complete |
 | UPDT-02 | Phase 7 | Complete |
 | UPDT-03 | Phase 7 | Complete |
-| HLTH-01 | Phase 8 | Pending |
+| HLTH-01 | Phase 8 | Complete |
 | HLTH-02 | Phase 8 | Pending |
 | UXPL-01 | Phase 8 | Pending |
-| UXPL-02 | Phase 8 | Pending |
+| UXPL-02 | Phase 8 | Complete |
 | UXPL-03 | Phase 8 | Pending |
 | MAKE-01 | Phase 9 | Pending |
 | MAKE-02 | Phase 9 | Pending |
