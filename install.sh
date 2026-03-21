@@ -178,7 +178,7 @@ _check_critical_services() {
 }
 
 _copy_runtime_files() {
-    local scripts=(backup.sh restore.sh uninstall.sh update.sh agmind.sh health-gen.sh rotate_secrets.sh dr-drill.sh build-offline-bundle.sh generate-manifest.sh)
+    local scripts=(backup.sh restore.sh uninstall.sh update.sh agmind.sh health-gen.sh rotate_secrets.sh dr-drill.sh build-offline-bundle.sh generate-manifest.sh redis-lock-cleanup.sh)
     for s in "${scripts[@]}"; do
         [[ -f "${INSTALLER_DIR}/scripts/${s}" ]] && cp "${INSTALLER_DIR}/scripts/${s}" "${INSTALL_DIR}/scripts/"
     done

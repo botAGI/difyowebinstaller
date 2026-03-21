@@ -112,6 +112,14 @@ compose_up() {
     build_compose_profiles
     local profiles="$COMPOSE_PROFILE_STRING"
 
+    # Persist COMPOSE_PROFILES to .env for systemd reboot support (BUG-V3-029)
+    local env_file="${INSTALL_DIR}/docker/.env"
+    if [[ -f "$env_file" ]]; then
+        # Remove any existing COMPOSE_PROFILES line first
+        sed -i '/^COMPOSE_PROFILES=/d' "$env_file"
+        echo "COMPOSE_PROFILES=${profiles}" >> "$env_file"
+    fi
+
     # --- Cleanup stale containers ---
     _cleanup_stale_containers
 
