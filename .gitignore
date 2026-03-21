@@ -12,6 +12,12 @@ __pycache__/
 *.key
 .age/
 
+# Internal dev artifacts (kept locally, not in repo)
+.planning/
+CLAUDE.md
+SPEC.md
+references/
+
 # Editor
 *.swp
 *.swo
