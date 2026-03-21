@@ -215,25 +215,25 @@ verify_services() {
     ip="$(hostname -I 2>/dev/null | awk '{print $1}' || echo "127.0.0.1")"
     local domain="${DOMAIN:-$ip}"
 
-    # Service check definitions: name|url|profile_condition
+    # Service check definitions: name|url|container(empty=host curl)|profile_condition
     local -a svc_checks=()
 
-    # Always check core services
-    svc_checks+=("Open WebUI|http://${domain}/|always")
-    svc_checks+=("Dify Console|http://${domain}:3000/console/api/setup|always")
+    # Always check core services (nginx proxied — accessible from host)
+    svc_checks+=("Open WebUI|http://${domain}/||always")
+    svc_checks+=("Dify Console|http://${domain}:3000/console/api/setup||always")
 
-    # Profile-conditional services
+    # Profile-conditional services — internal ports, use docker exec
     if [[ -f "$env_file" ]]; then
         local llm_prov embed_prov vector_store
         llm_prov="$(grep '^LLM_PROVIDER=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "")"
         embed_prov="$(grep '^EMBED_PROVIDER=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "")"
         vector_store="$(grep '^VECTOR_STORE=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "weaviate")"
 
-        [[ "$llm_prov" == "vllm" ]] && svc_checks+=("vLLM|http://127.0.0.1:8000/v1/models|vllm")
-        [[ "$llm_prov" == "ollama" || "$embed_prov" == "ollama" ]] && svc_checks+=("Ollama|http://127.0.0.1:11434/api/tags|ollama")
-        [[ "$embed_prov" == "tei" ]] && svc_checks+=("TEI|http://127.0.0.1:8081/info|tei")
-        [[ "$vector_store" == "weaviate" ]] && svc_checks+=("Weaviate|http://127.0.0.1:8080/v1/.well-known/ready|weaviate")
-        [[ "$vector_store" == "qdrant" ]] && svc_checks+=("Qdrant|http://127.0.0.1:6333/readyz|qdrant")
+        [[ "$llm_prov" == "vllm" ]] && svc_checks+=("vLLM|http://localhost:8000/v1/models|agmind-vllm|vllm")
+        [[ "$llm_prov" == "ollama" || "$embed_prov" == "ollama" ]] && svc_checks+=("Ollama|http://localhost:11434/api/tags|agmind-ollama|ollama")
+        [[ "$embed_prov" == "tei" ]] && svc_checks+=("TEI|http://localhost:8081/info|agmind-tei|tei")
+        [[ "$vector_store" == "weaviate" ]] && svc_checks+=("Weaviate|http://localhost:8080/v1/.well-known/ready|agmind-weaviate|weaviate")
+        [[ "$vector_store" == "qdrant" ]] && svc_checks+=("Qdrant|http://localhost:6333/readyz|agmind-qdrant|qdrant")
     fi
 
     # Global results array (accessible to caller)
@@ -241,19 +241,27 @@ verify_services() {
     local total=0 ok=0 fail=0
 
     for entry in "${svc_checks[@]}"; do
-        IFS='|' read -r name url _cond <<< "$entry"
+        IFS='|' read -r name url container _cond <<< "$entry"
         total=$((total + 1))
         local status="FAIL"
         local http_code
 
+        # Build curl command — docker exec for internal services, host curl for proxied
+        local curl_cmd
+        if [[ -n "$container" ]]; then
+            curl_cmd="docker exec $container curl -sf --max-time 5 -o /dev/null -w '%{http_code}' $url"
+        else
+            curl_cmd="curl -sf --max-time 5 -o /dev/null -w '%{http_code}' $url"
+        fi
+
         # First attempt
-        http_code="$(curl -sf --max-time 5 -o /dev/null -w '%{http_code}' "$url" 2>/dev/null || echo "000")"
+        http_code="$(eval "$curl_cmd" 2>/dev/null || echo "000")"
         if [[ "$http_code" =~ ^[23] ]]; then
             status="OK"
         else
             # Retry after 10s
             sleep 10
-            http_code="$(curl -sf --max-time 5 -o /dev/null -w '%{http_code}' "$url" 2>/dev/null || echo "000")"
+            http_code="$(eval "$curl_cmd" 2>/dev/null || echo "000")"
             [[ "$http_code" =~ ^[23] ]] && status="OK"
         fi
 
