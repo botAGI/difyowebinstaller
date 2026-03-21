@@ -15,8 +15,8 @@ Requirements for v2.1 Bugfixes + Improvements. Each maps to roadmap phases.
 
 ### Update System
 
-- [ ] **UPDT-01**: `agmind update --component <name> --version <tag>` обновляет отдельный компонент (pull + restart + healthcheck) — BUG-V3-024 + WISH-001
-- [ ] **UPDT-02**: `agmind update --check` показывает текущие vs доступные версии из Docker Hub/GHCR
+- [x] **UPDT-01**: `agmind update --component <name> --version <tag>` обновляет отдельный компонент (pull + restart + healthcheck) — BUG-V3-024 + WISH-001
+- [x] **UPDT-02**: `agmind update --check` показывает текущие vs доступные версии из Docker Hub/GHCR
 - [ ] **UPDT-03**: Rollback при неудачном healthcheck после обновления компонента
 
 ### Health Verification
@@ -99,8 +99,8 @@ All 24 requirements shipped and confirmed working in v2.0. See git history for d
 | STAB-01 | Phase 6 | Complete |
 | STAB-02 | Phase 6 | Complete |
 | STAB-03 | Phase 6 | Complete |
-| UPDT-01 | Phase 7 | Pending |
-| UPDT-02 | Phase 7 | Pending |
+| UPDT-01 | Phase 7 | Complete |
+| UPDT-02 | Phase 7 | Complete |
 | UPDT-03 | Phase 7 | Pending |
 | HLTH-01 | Phase 8 | Pending |
 | UXPL-01 | Phase 8 | Pending |
