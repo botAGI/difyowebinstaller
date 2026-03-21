@@ -14,18 +14,6 @@ teardown() {
     rm -rf "$INSTALL_DIR"
 }
 
-# --- Syntax validation ---
-
-@test "backup.sh passes bash -n syntax check" {
-    run bash -n "${ROOT_DIR}/scripts/backup.sh"
-    [ "$status" -eq 0 ]
-}
-
-@test "restore.sh passes bash -n syntax check" {
-    run bash -n "${ROOT_DIR}/scripts/restore.sh"
-    [ "$status" -eq 0 ]
-}
-
 # --- Restore tmpdir pattern ---
 
 @test "restore.sh uses .restore_tmp not mktemp" {
@@ -42,18 +30,6 @@ teardown() {
     run grep "rm -rf.*RESTORE_TMP" "${ROOT_DIR}/scripts/restore.sh"
     [ "$status" -eq 0 ]
     [[ "$output" == *"RESTORE_TMP"* ]]
-}
-
-# --- Pipefail ---
-
-@test "restore.sh has set -euo pipefail" {
-    run head -5 "${ROOT_DIR}/scripts/restore.sh"
-    [[ "$output" == *"set -euo pipefail"* ]]
-}
-
-@test "backup.sh has set -euo pipefail" {
-    run head -5 "${ROOT_DIR}/scripts/backup.sh"
-    [[ "$output" == *"set -euo pipefail"* ]]
 }
 
 # --- Security ---

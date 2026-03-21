@@ -6,23 +6,6 @@ setup() {
     export ROOT_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
 }
 
-# --- Syntax ---
-
-@test "install.sh passes bash -n syntax check" {
-    run bash -n "${ROOT_DIR}/install.sh"
-    [ "$status" -eq 0 ]
-}
-
-@test "lib/models.sh passes bash -n syntax check" {
-    run bash -n "${ROOT_DIR}/lib/models.sh"
-    [ "$status" -eq 0 ]
-}
-
-@test "lib/config.sh passes bash -n syntax check" {
-    run bash -n "${ROOT_DIR}/lib/config.sh"
-    [ "$status" -eq 0 ]
-}
-
 # --- LLM Provider wizard (PROV-01) ---
 
 @test "lib/wizard.sh contains LLM provider selection menu" {

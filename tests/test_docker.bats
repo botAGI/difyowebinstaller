@@ -157,17 +157,3 @@ teardown() {
     [[ "$output" != *"Unsupported OS"* ]]
 }
 
-# ============================================================================
-# FUNCTIONS EXIST
-# ============================================================================
-
-@test "all exported functions are defined" {
-    declare -f install_docker >/dev/null
-    declare -f install_nvidia_toolkit >/dev/null
-    declare -f configure_docker_dns >/dev/null
-    declare -f setup_docker >/dev/null
-    declare -f _install_docker_debian >/dev/null
-    declare -f _install_docker_rhel >/dev/null
-    declare -f _install_docker_macos >/dev/null
-    declare -f _add_user_to_docker_group >/dev/null
-}

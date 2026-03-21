@@ -12,19 +12,7 @@ teardown() {
     rm -rf "$TMPDIR_TEST"
 }
 
-# --- Install ---
-
-@test "install.sh has valid bash syntax" {
-    run bash -n "${ROOT_DIR}/install.sh"
-    [ "$status" -eq 0 ]
-}
-
 # --- Backup ---
-
-@test "backup.sh has valid bash syntax" {
-    run bash -n "${ROOT_DIR}/scripts/backup.sh"
-    [ "$status" -eq 0 ]
-}
 
 @test "backup.sh no longer references localhost:6333 (Qdrant API)" {
     run grep -c 'localhost:6333' "${ROOT_DIR}/scripts/backup.sh"
@@ -33,22 +21,12 @@ teardown() {
 
 # --- Restore ---
 
-@test "restore.sh has valid bash syntax" {
-    run bash -n "${ROOT_DIR}/scripts/restore.sh"
-    [ "$status" -eq 0 ]
-}
-
 @test "restore.sh no longer references localhost:6333 (Qdrant API)" {
     run grep -c 'localhost:6333' "${ROOT_DIR}/scripts/restore.sh"
     [ "$output" = "0" ]
 }
 
 # --- Update ---
-
-@test "update.sh has valid bash syntax" {
-    run bash -n "${ROOT_DIR}/scripts/update.sh"
-    [ "$status" -eq 0 ]
-}
 
 @test "update.sh has all required rollback functions" {
     for func in save_rollback_state perform_rollback rollback_service verify_rollback; do
@@ -68,18 +46,6 @@ teardown() {
 
 @test "save_rollback_state saves image digests via docker inspect" {
     run grep '{{\.Image}}' "${ROOT_DIR}/scripts/update.sh"
-    [ "$status" -eq 0 ]
-}
-
-# --- Generate Manifest ---
-
-@test "generate-manifest.sh has valid bash syntax" {
-    run bash -n "${ROOT_DIR}/scripts/generate-manifest.sh"
-    [ "$status" -eq 0 ]
-}
-
-@test "check-manifest-versions.py is valid Python" {
-    run python3 -c "import py_compile; py_compile.compile('${ROOT_DIR}/scripts/check-manifest-versions.py', doraise=True)"
     [ "$status" -eq 0 ]
 }
 

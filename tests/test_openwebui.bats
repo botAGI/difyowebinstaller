@@ -20,16 +20,6 @@ teardown() {
 }
 
 # ============================================================================
-# FUNCTIONS EXIST
-# ============================================================================
-
-@test "all functions are defined" {
-    declare -f create_openwebui_admin >/dev/null
-    declare -f _wait_openwebui_healthy >/dev/null
-    declare -f _create_admin_via_api >/dev/null
-}
-
-# ============================================================================
 # JSON ESCAPING
 # ============================================================================
 

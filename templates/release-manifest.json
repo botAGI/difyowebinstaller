@@ -171,6 +171,27 @@
       "tag": "v0.27.0",
       "digest": "",
       "platforms": ["linux/amd64", "linux/arm64"]
+    },
+    "vllm": {
+      "registry": "docker.io",
+      "image": "vllm/vllm-openai",
+      "tag": "v0.17.1",
+      "digest": "",
+      "platforms": ["linux/amd64"]
+    },
+    "tei": {
+      "registry": "ghcr.io",
+      "image": "huggingface/text-embeddings-inference",
+      "tag": "cuda-1.9.2",
+      "digest": "",
+      "platforms": ["linux/amd64"]
+    },
+    "pipelines": {
+      "registry": "ghcr.io",
+      "image": "open-webui/pipelines",
+      "tag": "main",
+      "digest": "",
+      "platforms": ["linux/amd64", "linux/arm64"]
     }
   },
   "compatibility": {

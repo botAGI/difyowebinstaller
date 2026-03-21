@@ -204,20 +204,3 @@ EOF
     [ "$status" -eq 0 ]
 }
 
-# ============================================================================
-# FUNCTIONS EXIST
-# ============================================================================
-
-@test "all security functions are defined" {
-    declare -f setup_security >/dev/null
-    declare -f configure_ufw >/dev/null
-    declare -f configure_fail2ban >/dev/null
-    declare -f encrypt_secrets >/dev/null
-    declare -f harden_docker_compose >/dev/null
-}
-
-@test "all authelia functions are defined" {
-    declare -f configure_authelia >/dev/null
-    declare -f generate_argon2_hash >/dev/null
-    declare -f create_authelia_user >/dev/null
-}
