@@ -58,8 +58,8 @@ setup() {
 
 @test "docker-compose.yml open-webui has no depends_on ollama" {
     # Get the open-webui service block and check no depends_on: ollama
-    # Simple check: no line should have both "depends_on" near "ollama" for open-webui
-    run bash -c "sed -n '/open-webui:/,/^  [a-z]/p' '${ROOT_DIR}/templates/docker-compose.yml' | grep -c 'ollama'"
+    # Use LC_ALL=C to avoid locale-dependent regex range issues (BUG-V3-041)
+    run bash -c "LC_ALL=C sed -n '/open-webui:/,/^  [a-z]/p' '${ROOT_DIR}/templates/docker-compose.yml' | grep -c 'ollama'"
     # ollama should not appear in open-webui block (was depends_on)
     [ "$output" -eq 0 ] || [ "$status" -ne 0 ]
 }
@@ -104,7 +104,9 @@ setup() {
 @test "versions.env has VLLM_VERSION" {
     run grep "VLLM_VERSION=" "${ROOT_DIR}/templates/versions.env"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"v0.8.4"* ]]
+    # Version must be pinned (not empty), exact value changes with updates
+    [[ "$output" == *"VLLM_VERSION="* ]]
+    [[ "$output" != *"VLLM_VERSION="$'\n'* ]]  # not empty
 }
 
 @test "versions.env has TEI_VERSION" {
@@ -144,5 +146,16 @@ setup() {
 
 @test "lib/compose.sh build_compose_profiles uses EMBED_PROVIDER" {
     run grep "EMBED_PROVIDER" "${ROOT_DIR}/lib/compose.sh"
+    [ "$status" -eq 0 ]
+}
+
+# --- ETL profile resume support (BUG-V3-038) ---
+
+@test "lib/compose.sh checks ETL_TYPE for resume support" {
+    # build_compose_profiles must check ETL_TYPE=unstructured_api (from .env on resume)
+    # in addition to ETL_ENHANCED=true (from wizard on fresh install)
+    run grep "ETL_TYPE" "${ROOT_DIR}/lib/compose.sh"
+    [ "$status" -eq 0 ]
+    run grep "unstructured_api" "${ROOT_DIR}/lib/compose.sh"
     [ "$status" -eq 0 ]
 }

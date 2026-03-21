@@ -274,7 +274,7 @@ _copy_versions() {
         [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*_VERSION$ ]] || continue
         [[ "$value" =~ ^[a-zA-Z0-9._:-]+$ ]] || continue
         echo "${key}=${value}" >> "$env_file"
-    done < <(grep -E '^[A-Z].*_VERSION=' "$versions_file")
+    done < <(LC_ALL=C grep -E '^[A-Z].*_VERSION=' "$versions_file")
 }
 
 _copy_release_manifest() {

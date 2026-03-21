@@ -5,6 +5,7 @@
 #        [--version <tag>] [--rollback <name>]
 # ============================================================================
 set -euo pipefail
+export LC_ALL=C  # Ensure consistent regex behavior across locales (BUG-V3-041)
 
 INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
 COMPOSE_FILE="${INSTALL_DIR}/docker/docker-compose.yml"
