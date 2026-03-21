@@ -183,7 +183,7 @@ Plans:
   5. `agmind doctor` checks disk/RAM usage, Docker daemon, unhealthy/exited/high-restart containers, GPU availability, key service HTTP endpoints, and .env completeness — outputs colored summary with exit code 0/1
   6. `LICENSE` file (Apache 2.0) exists in repo root
 
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 - [ ] 08-01-PLAN.md — verify_services() HTTP liveness checks + Portainer SSH tunnel in credentials/summary (HLTH-01, UXPL-02)
@@ -215,7 +215,7 @@ Plans:
 - [x] **Phase 5: DevOps & UX** — agmind CLI, status, doctor, health endpoint
 - [x] **Phase 6: Runtime Stability** — Fix plugin-daemon ordering, Redis stale locks, GPU reboot survival (gap closure in progress) (completed 2026-03-21)
 - [x] **Phase 7: Update System** — Component-level update with healthcheck + rollback (completed 2026-03-21)
-- [ ] **Phase 8: Health Verification & UX Polish** — Real endpoint checks, doctor enhancement, LICENSE, SSH/Portainer guidance
+- [x] **Phase 8: Health Verification & UX Polish** — Real endpoint checks, doctor enhancement, LICENSE, SSH/Portainer guidance (completed 2026-03-21)
 - [ ] **Phase 9: Operator Makefile** — Human-friendly make targets for daily operations
 
 ## Progress
@@ -229,7 +229,7 @@ Plans:
 | 5. DevOps & UX | v2.0 | 2/2 | Complete | 2026-03-18 |
 | 6. Runtime Stability | 3/3 | Complete   | 2026-03-21 | - |
 | 7. Update System | 2/2 | Complete   | 2026-03-21 | - |
-| 8. Health Verification & UX Polish | 2/3 | In Progress|  | - |
+| 8. Health Verification & UX Polish | 3/3 | Complete   | 2026-03-21 | - |
 | 9. Operator Makefile | v2.1 | 0/TBD | Not started | - |
 
 ---

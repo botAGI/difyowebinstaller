@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: Bugfixes + Improvements
 status: planning
-stopped_at: Completed 08-03-PLAN.md
-last_updated: "2026-03-21T17:07:28.774Z"
+stopped_at: Completed 08-02-PLAN.md
+last_updated: "2026-03-21T17:11:19.739Z"
 last_activity: 2026-03-20 — Roadmap created, v2.1 phases 6-8 defined
 progress:
   total_phases: 4
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 8
-  completed_plans: 7
+  completed_plans: 8
   percent: 0
 ---
 
@@ -54,6 +54,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 07-update-system P02 | 2 | 2 tasks | 2 files |
 | Phase 08-health-verification-ux-polish P01 | 16 | 2 tasks | 2 files |
 | Phase 08-health-verification-ux-polish P03 | 2 | 2 tasks | 2 files |
+| Phase 08-health-verification-ux-polish P02 | 2 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -80,6 +81,9 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 08-health-verification-ux-polish]: ENABLE_SSH_HARDENING defaults to true (opt-out) — SSH key-only auth is a security best practice, skips safely in non-interactive if no authorized_keys found
 - [Phase 08-health-verification-ux-polish]: systemctl reload (not restart) used for sshd after hardening — keeps existing SSH sessions alive
 - [Phase 08-health-verification-ux-polish]: Apache 2.0 LICENSE created with AGMind Contributors copyright 2024-2026 for public GitHub release
+- [Phase 08-health-verification-ux-polish]: verify_services() output suppressed in doctor (>/dev/null) — cmd_doctor uses _check for its own formatted output
+- [Phase 08-health-verification-ux-polish]: lock-cleaner init-container skipped in exited check — expected to exit after one-shot Redis lock cleanup
+- [Phase 08-health-verification-ux-polish]: Docker Disk summary rendered in text-only mode — docker system df table not parseable as JSON
 
 ### Pending Todos
 
@@ -91,6 +95,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-21T17:07:28.772Z
-Stopped at: Completed 08-03-PLAN.md
+Last session: 2026-03-21T17:11:19.737Z
+Stopped at: Completed 08-02-PLAN.md
 Resume file: None

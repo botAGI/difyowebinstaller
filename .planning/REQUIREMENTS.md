@@ -22,7 +22,7 @@ Requirements for v2.1 Bugfixes + Improvements. Each maps to roadmap phases.
 ### Health Verification
 
 - [x] **HLTH-01**: Post-install verify проверяет реальную доступность сервисов через curl (vLLM /v1/models, TEI /info, Dify /console/api/setup), результат в summary — WISH-002
-- [ ] **HLTH-02**: `agmind doctor` расширен: disk/RAM usage, Docker daemon, unhealthy/exited/high-restart контейнеры, GPU (nvidia-smi), HTTP endpoints ключевых сервисов, .env completeness — цветной summary + exit code 0/1 — WISH-005
+- [x] **HLTH-02**: `agmind doctor` расширен: disk/RAM usage, Docker daemon, unhealthy/exited/high-restart контейнеры, GPU (nvidia-smi), HTTP endpoints ключевых сервисов, .env completeness — цветной summary + exit code 0/1 — WISH-005
 
 ### UX Polish
 
@@ -112,7 +112,7 @@ All 24 requirements shipped and confirmed working in v2.0. See git history for d
 | UPDT-02 | Phase 7 | Complete |
 | UPDT-03 | Phase 7 | Complete |
 | HLTH-01 | Phase 8 | Complete |
-| HLTH-02 | Phase 8 | Pending |
+| HLTH-02 | Phase 8 | Complete |
 | UXPL-01 | Phase 8 | Complete |
 | UXPL-02 | Phase 8 | Complete |
 | UXPL-03 | Phase 8 | Complete |
