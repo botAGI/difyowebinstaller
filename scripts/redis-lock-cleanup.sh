@@ -1,37 +1,48 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # Redis stale lock cleanup — runs as init-container before plugin-daemon
 # Deletes all plugin_daemon lock keys unconditionally (any lock present at
 # startup is guaranteed stale since the daemon hasn't started yet)
-set -euo pipefail
+#
+# POSIX sh compatible — redis:alpine uses ash, not bash
+set -eu
 
 REDIS_HOST="${REDIS_HOST:-redis}"
 REDIS_PORT="${REDIS_PORT:-6379}"
 REDIS_PASSWORD="${REDIS_PASSWORD:-}"
 
-AUTH_ARGS=()
-if [[ -n "$REDIS_PASSWORD" ]]; then
-    AUTH_ARGS=(-a "$REDIS_PASSWORD" --no-auth-warning)
+# Build auth arguments as a single string (no bash arrays)
+AUTH_ARGS=""
+if [ -n "$REDIS_PASSWORD" ]; then
+    AUTH_ARGS="-a ${REDIS_PASSWORD} --no-auth-warning"
 fi
 
-echo "Scanning for stale plugin_daemon locks..."
+# shellcheck disable=SC2086
+redis_cmd() {
+    redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" $AUTH_ARGS "$@"
+}
+
+echo "[redis-lock-cleaner] Scanning for stale plugin_daemon locks..."
 cursor=0
 deleted=0
-while true; do
-    result=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" "${AUTH_ARGS[@]}" \
-        SCAN "$cursor" MATCH 'plugin_daemon:*lock*' COUNT 100)
+
+while :; do
+    result=$(redis_cmd SCAN "$cursor" MATCH 'plugin_daemon:*lock*' COUNT 100)
     cursor=$(echo "$result" | head -1)
     keys=$(echo "$result" | tail -n +2)
+
     for key in $keys; do
-        redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" "${AUTH_ARGS[@]}" DEL "$key" >/dev/null
-        echo "  Deleted stale lock: $key"
+        [ -z "$key" ] && continue
+        redis_cmd DEL "$key" >/dev/null
+        echo "[redis-lock-cleaner] Deleted: $key"
         deleted=$((deleted + 1))
     done
-    [[ "$cursor" == "0" ]] && break
+
+    [ "$cursor" = "0" ] && break
 done
 
-if [[ $deleted -gt 0 ]]; then
-    echo "Cleaned $deleted stale lock(s)"
+if [ "$deleted" -gt 0 ]; then
+    echo "[redis-lock-cleaner] Cleaned $deleted stale lock(s)"
 else
-    echo "No stale locks found"
+    echo "[redis-lock-cleaner] No stale locks found"
 fi
-echo "Lock cleanup complete"
+echo "[redis-lock-cleaner] Lock cleanup complete"
