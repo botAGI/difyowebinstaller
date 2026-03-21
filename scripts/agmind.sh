@@ -164,8 +164,10 @@ cmd_doctor() {
     fi
     if docker compose version &>/dev/null; then
         local cv; cv="$(docker compose version --short 2>/dev/null | sed 's/^v//')"
-        local cm; cm="$(echo "$cv" | cut -d. -f2)"
-        if [[ "${cm:-0}" -ge 20 ]] 2>/dev/null; then _check OK "Compose v${cv}"
+        local cmaj; cmaj="$(echo "$cv" | cut -d. -f1)"
+        local cmin; cmin="$(echo "$cv" | cut -d. -f2)"
+        if [[ "${cmaj:-0}" -ge 3 ]] 2>/dev/null; then _check OK "Compose v${cv}"
+        elif [[ "${cmaj:-0}" -eq 2 && "${cmin:-0}" -ge 20 ]] 2>/dev/null; then _check OK "Compose v${cv}"
         else _check WARN "Compose v${cv}" "2.20+ recommended"; fi
     elif command -v docker &>/dev/null; then
         _check FAIL "Docker Compose" "not installed"
@@ -202,8 +204,8 @@ cmd_doctor() {
     else _check FAIL "Disk: ${free_gb}GB free (${disk_pct}% used)" "Мало места" "docker system prune -af"; fi
 
     local ram_gb ram_total ram_used ram_pct
-    ram_gb="$(free -g 2>/dev/null | awk '/^Mem:/{print $2}' || echo "0")"
-    ram_used="$(free -g 2>/dev/null | awk '/^Mem:/{print $3}' || echo "0")"
+    ram_gb="$(LANG=C free -g 2>/dev/null | awk '/^Mem:/{print $2}' || echo "0")"
+    ram_used="$(LANG=C free -g 2>/dev/null | awk '/^Mem:/{print $3}' || echo "0")"
     if [[ "${ram_gb:-0}" -gt 0 ]] 2>/dev/null; then
         ram_pct=$(( (ram_used * 100) / ram_gb ))
     else
