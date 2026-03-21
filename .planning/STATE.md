@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: Bugfixes + Improvements
 status: planning
-stopped_at: Completed 07-update-system-01-PLAN.md
-last_updated: "2026-03-21T13:39:12.186Z"
+stopped_at: Completed 07-update-system-02-PLAN.md
+last_updated: "2026-03-21T13:44:17.402Z"
 last_activity: 2026-03-20 — Roadmap created, v2.1 phases 6-8 defined
 progress:
   total_phases: 3
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 5
-  completed_plans: 4
+  completed_plans: 5
   percent: 0
 ---
 
@@ -51,6 +51,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 06-v3-bugfixes P02 | 12 | 2 tasks | 3 files |
 | Phase 06-v3-bugfixes P03 | 15 | 2 tasks | 3 files |
 | Phase 07-update-system P01 | 20 | 2 tasks | 2 files |
+| Phase 07-update-system P02 | 2 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -69,6 +70,8 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 07-update-system]: fetch_remote_versions() replaces load_new_versions() — fetches from GitHub raw URL, not local versions.env
 - [Phase 07-update-system]: NAME_TO_VERSION_KEY maps 28 component short names; shared-image groups (dify-*) trigger group confirmation
 - [Phase 07-update-system]: Offline graceful degradation: shows current versions + suggests --version flag for manual update
+- [Phase 07-update-system]: rollback_component() reads version from .rollback/dot-env.bak — ensures rollback is to pre-update state, not current
+- [Phase 07-update-system]: MANUAL_ROLLBACK log prefix distinguishes user-initiated rollbacks from automatic healthcheck-triggered rollbacks (ROLLBACK prefix)
 
 ### Pending Todos
 
@@ -80,6 +83,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-21T13:39:12.184Z
-Stopped at: Completed 07-update-system-01-PLAN.md
+Last session: 2026-03-21T13:44:17.400Z
+Stopped at: Completed 07-update-system-02-PLAN.md
 Resume file: None

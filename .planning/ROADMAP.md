@@ -163,7 +163,7 @@ Plans:
   3. If the healthcheck fails after update, the previous image tag is restored and the container is restarted — no manual steps needed
   4. `agmind update` records what was updated and the outcome in install.log with a timestamp
 
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 07-01-PLAN.md — Remote version fetching from GitHub + component targeting with short-name mapping (UPDT-01, UPDT-02)
@@ -193,7 +193,7 @@ Plans:
 - [x] **Phase 4: Installer Redesign** — 9-phase install with resume, logging, timeouts
 - [x] **Phase 5: DevOps & UX** — agmind CLI, status, doctor, health endpoint
 - [x] **Phase 6: Runtime Stability** — Fix plugin-daemon ordering, Redis stale locks, GPU reboot survival (gap closure in progress) (completed 2026-03-21)
-- [ ] **Phase 7: Update System** — Component-level update with healthcheck + rollback
+- [x] **Phase 7: Update System** — Component-level update with healthcheck + rollback (completed 2026-03-21)
 - [ ] **Phase 8: Health Verification & UX Polish** — Real endpoint checks in summary, SSH and Portainer guidance
 
 ## Progress
@@ -206,7 +206,7 @@ Plans:
 | 4. Installer Redesign | v2.0 | 2/2 | Complete | 2026-03-18 |
 | 5. DevOps & UX | v2.0 | 2/2 | Complete | 2026-03-18 |
 | 6. Runtime Stability | 3/3 | Complete   | 2026-03-21 | - |
-| 7. Update System | 1/2 | In Progress|  | - |
+| 7. Update System | 2/2 | Complete   | 2026-03-21 | - |
 | 8. Health Verification & UX Polish | v2.1 | 0/TBD | Not started | - |
 
 ---
