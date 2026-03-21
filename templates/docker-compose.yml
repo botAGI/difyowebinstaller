@@ -400,8 +400,9 @@ services:
                -c 'log_min_duration_statement=1000'
     volumes:
       - ./volumes/db/data:/var/lib/postgresql/data
+      - ../templates/init-dify-plugin-db.sql:/docker-entrypoint-initdb.d/01-create-plugin-db.sql:ro
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "${DB_USERNAME:-postgres}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-postgres} && psql -U ${DB_USERNAME:-postgres} -d ${PLUGIN_DB_DATABASE:-dify_plugin} -c 'SELECT 1' >/dev/null 2>&1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -605,6 +606,25 @@ services:
       - ssrf-network
       - agmind-backend
 
+  # ==================== Redis Lock Cleaner (init-container) ====================
+  redis-lock-cleaner:
+    image: redis:${REDIS_VERSION:-7.4.1-alpine}
+    container_name: agmind-redis-lock-cleaner
+    restart: "no"
+    mem_limit: 64m
+    volumes:
+      - ../scripts/redis-lock-cleanup.sh:/cleanup.sh:ro
+    environment:
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    entrypoint: ["sh", "/cleanup.sh"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - agmind-backend
+
   # ==================== Plugin Daemon ====================
   plugin_daemon:
     <<: *security-defaults
@@ -685,6 +705,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      redis-lock-cleaner:
+        condition: service_completed_successfully
     networks:
       - agmind-backend
 
