@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# security.sh — UFW, fail2ban (SSH jail), SOPS/age encryption, Docker hardening.
+# security.sh — UFW, fail2ban (SSH jail), SSH hardening, SOPS/age encryption, Docker hardening.
 # Dependencies: common.sh (log_*, generate_random)
-# Functions: setup_security(), configure_ufw(), configure_fail2ban(),
+# Functions: setup_security(), configure_ufw(), configure_fail2ban(), harden_ssh(),
 #            encrypt_secrets(), harden_docker_compose()
 # Expects: INSTALL_DIR, DEPLOY_PROFILE, ENABLE_UFW, ENABLE_FAIL2BAN, ENABLE_SOPS,
-#          MONITORING_MODE
+#          ENABLE_SSH_HARDENING, MONITORING_MODE, NON_INTERACTIVE
 set -euo pipefail
 
 INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
@@ -86,6 +86,104 @@ EOF
     systemctl enable fail2ban >/dev/null 2>&1
     systemctl restart fail2ban >/dev/null 2>&1
     log_success "Fail2ban configured (SSH jail, maxretry=3, bantime=10d)"
+}
+
+# ============================================================================
+# SSH HARDENING
+# ============================================================================
+
+harden_ssh() {
+    if [[ "${ENABLE_SSH_HARDENING:-true}" == "false" ]]; then return 0; fi
+
+    local sshd_config="/etc/ssh/sshd_config"
+    [[ -f "$sshd_config" ]] || { log_warn "sshd_config not found — skipping SSH hardening"; return 0; }
+
+    # Check if PasswordAuthentication is already disabled
+    if grep -qE '^\s*PasswordAuthentication\s+no' "$sshd_config" 2>/dev/null; then
+        log_info "SSH PasswordAuthentication already disabled"
+        return 0
+    fi
+
+    # Check if any SSH keys are authorized for current login user
+    local login_user
+    login_user="$(logname 2>/dev/null || echo "${SUDO_USER:-root}")"
+    local user_home
+    user_home="$(eval echo "~${login_user}" 2>/dev/null || echo "/root")"
+    local has_keys=false
+    if [[ -f "${user_home}/.ssh/authorized_keys" ]] && [[ -s "${user_home}/.ssh/authorized_keys" ]]; then
+        has_keys=true
+    fi
+
+    # ====== PROMINENT WARNING ======
+    echo ""
+    echo -e "${RED}${BOLD}  ╔════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${RED}${BOLD}  ║           ВНИМАНИЕ: ОТКЛЮЧЕНИЕ SSH ПАРОЛЕЙ                ║${NC}"
+    echo -e "${RED}${BOLD}  ╚════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "  Сейчас будет отключён вход по паролю через SSH."
+    echo -e "  ${RED}Если у вас нет SSH-ключа — вы потеряете удалённый доступ!${NC}"
+    echo ""
+
+    if [[ "$has_keys" == "true" ]]; then
+        echo -e "  ${GREEN}[OK] SSH-ключ найден:${NC} ${user_home}/.ssh/authorized_keys"
+    else
+        echo -e "  ${RED}[!!] SSH-ключ НЕ НАЙДЕН${NC} для пользователя ${login_user}"
+        echo ""
+        echo -e "  ${BOLD}Как настроить SSH-ключ (выполните на ЛОКАЛЬНОЙ машине):${NC}"
+        echo ""
+        echo -e "  ${CYAN}1. Сгенерируйте ключ (если нет):${NC}"
+        echo -e "     ssh-keygen -t ed25519 -C \"your_email@example.com\""
+        echo ""
+        echo -e "  ${CYAN}2. Скопируйте ключ на сервер:${NC}"
+        echo -e "     ssh-copy-id ${login_user}@$(hostname -I 2>/dev/null | awk '{print $1}' || echo 'SERVER_IP')"
+        echo ""
+        echo -e "  ${CYAN}3. Проверьте вход по ключу (в новом терминале!):${NC}"
+        echo -e "     ssh ${login_user}@$(hostname -I 2>/dev/null | awk '{print $1}' || echo 'SERVER_IP')"
+        echo ""
+    fi
+
+    # Ask confirmation (unless non-interactive)
+    if [[ "${NON_INTERACTIVE:-false}" != "true" ]]; then
+        local answer
+        echo -e "  Отключить вход по паролю? (yes/no): \c"
+        read -r answer
+        if [[ "$answer" != "yes" && "$answer" != "y" ]]; then
+            log_warn "SSH hardening пропущен по выбору пользователя"
+            return 0
+        fi
+    else
+        if [[ "$has_keys" != "true" ]]; then
+            log_warn "Non-interactive: SSH-ключ не найден, пропускаем отключение паролей"
+            return 0
+        fi
+        log_info "Non-interactive: SSH-ключ найден, отключаем пароли"
+    fi
+
+    # Backup sshd_config
+    cp "$sshd_config" "${sshd_config}.bak.$(date +%s)"
+
+    # Disable PasswordAuthentication
+    if grep -qE '^\s*#?\s*PasswordAuthentication' "$sshd_config"; then
+        sed -i 's/^\s*#\?\s*PasswordAuthentication.*/PasswordAuthentication no/' "$sshd_config"
+    else
+        echo "PasswordAuthentication no" >> "$sshd_config"
+    fi
+
+    # Also disable ChallengeResponseAuthentication (prevents password fallback)
+    if grep -qE '^\s*#?\s*ChallengeResponseAuthentication' "$sshd_config"; then
+        sed -i 's/^\s*#\?\s*ChallengeResponseAuthentication.*/ChallengeResponseAuthentication no/' "$sshd_config"
+    fi
+
+    # Reload sshd (do NOT restart to keep existing sessions alive)
+    if systemctl is-active sshd >/dev/null 2>&1; then
+        systemctl reload sshd
+    elif systemctl is-active ssh >/dev/null 2>&1; then
+        systemctl reload ssh
+    fi
+
+    log_success "SSH: PasswordAuthentication отключён"
+    echo -e "  ${YELLOW}Резервная копия: ${sshd_config}.bak.*${NC}"
+    echo ""
 }
 
 # ============================================================================
@@ -224,6 +322,7 @@ setup_security() {
     log_info "Setting up security..."
     configure_ufw
     configure_fail2ban
+    harden_ssh
     harden_docker_compose
     encrypt_secrets
     echo ""
