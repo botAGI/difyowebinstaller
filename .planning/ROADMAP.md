@@ -144,11 +144,12 @@ Plans:
   3. After `sudo reboot`, all GPU containers (vLLM / Ollama) are running within 2 minutes without any manual intervention
   4. `agmind status` confirms healthy GPU containers post-reboot
 
-**Plans:** 2/2 plans complete
+**Plans:** 3/3 plans complete
 
 Plans:
-- [ ] 06-01-PLAN.md — PostgreSQL init SQL + enhanced healthcheck, Redis lock-cleaner init-container, plugin_daemon dependency chain (STAB-01, STAB-02)
-- [ ] 06-02-PLAN.md — systemd auto-start service + GPU container restart policy change to unless-stopped (STAB-03)
+- [x] 06-01-PLAN.md — PostgreSQL init SQL + enhanced healthcheck, Redis lock-cleaner init-container, plugin_daemon dependency chain (STAB-01, STAB-02)
+- [x] 06-02-PLAN.md — systemd auto-start service + GPU container restart policy change to unless-stopped (STAB-03)
+- [ ] 06-03-PLAN.md — Gap closure: copy redis-lock-cleanup.sh in installer + persist COMPOSE_PROFILES for systemd reboot (STAB-02, STAB-03)
 
 ### Phase 7: Update System
 
@@ -187,7 +188,7 @@ Plans:
 - [x] **Phase 3: Provider Architecture** — Wizard + Compose profiles per LLM/embedding provider
 - [x] **Phase 4: Installer Redesign** — 9-phase install with resume, logging, timeouts
 - [x] **Phase 5: DevOps & UX** — agmind CLI, status, doctor, health endpoint
-- [x] **Phase 6: Runtime Stability** — Fix plugin-daemon ordering, Redis stale locks, GPU reboot survival (completed 2026-03-21)
+- [x] **Phase 6: Runtime Stability** — Fix plugin-daemon ordering, Redis stale locks, GPU reboot survival (gap closure in progress) (completed 2026-03-21)
 - [ ] **Phase 7: Update System** — Component-level update with healthcheck + rollback
 - [ ] **Phase 8: Health Verification & UX Polish** — Real endpoint checks in summary, SSH and Portainer guidance
 
@@ -200,10 +201,10 @@ Plans:
 | 3. Provider Architecture | v2.0 | 3/3 | Complete | 2026-03-18 |
 | 4. Installer Redesign | v2.0 | 2/2 | Complete | 2026-03-18 |
 | 5. DevOps & UX | v2.0 | 2/2 | Complete | 2026-03-18 |
-| 6. Runtime Stability | 2/2 | Complete   | 2026-03-21 | - |
+| 6. Runtime Stability | 3/3 | Complete   | 2026-03-21 | - |
 | 7. Update System | v2.1 | 0/TBD | Not started | - |
 | 8. Health Verification & UX Polish | v2.1 | 0/TBD | Not started | - |
 
 ---
 *Roadmap created: 2026-03-17*
-*Last updated: 2026-03-21 — Phase 6 plans created (2 plans)*
+*Last updated: 2026-03-21 — Phase 6 gap closure plan 03 added (redis-lock-cleanup copy + COMPOSE_PROFILES persistence)*
