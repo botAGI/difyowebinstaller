@@ -231,7 +231,7 @@ verify_services() {
 
         [[ "$llm_prov" == "vllm" ]] && svc_checks+=("vLLM|http://localhost:8000/v1/models|agmind-vllm|vllm")
         [[ "$llm_prov" == "ollama" || "$embed_prov" == "ollama" ]] && svc_checks+=("Ollama|http://localhost:11434/api/tags|agmind-ollama|ollama")
-        [[ "$embed_prov" == "tei" ]] && svc_checks+=("TEI|http://localhost:8081/info|agmind-tei|tei")
+        [[ "$embed_prov" == "tei" ]] && svc_checks+=("TEI|http://localhost:80/info|agmind-tei|tei")
         [[ "$vector_store" == "weaviate" ]] && svc_checks+=("Weaviate|http://localhost:8080/v1/.well-known/ready|agmind-weaviate|weaviate")
         [[ "$vector_store" == "qdrant" ]] && svc_checks+=("Qdrant|http://localhost:6333/readyz|agmind-qdrant|qdrant")
     fi
@@ -246,22 +246,41 @@ verify_services() {
         local status="FAIL"
         local http_code
 
-        # Build curl command — docker exec for internal services, host curl for proxied
-        local curl_cmd
+        # Build check command — docker exec for internal services, host curl for proxied
+        # Fallback: if container has no curl, resolve container IP and curl from host
+        local _do_check
         if [[ -n "$container" ]]; then
-            curl_cmd="docker exec $container curl -sf --max-time 5 -o /dev/null -w '%{http_code}' $url"
+            if docker exec "$container" command -v curl &>/dev/null 2>&1; then
+                _do_check() { docker exec "$container" curl -sf --max-time 5 -o /dev/null -w '%{http_code}' "$url" 2>/dev/null || echo "000"; }
+            elif docker exec "$container" command -v wget &>/dev/null 2>&1; then
+                _do_check() { docker exec "$container" wget -qO /dev/null --timeout=5 "$url" 2>/dev/null && echo "200" || echo "000"; }
+            else
+                # No curl/wget in container — get container IP and curl from host
+                local cip
+                cip="$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$container" 2>/dev/null | head -1)"
+                if [[ -n "$cip" ]]; then
+                    local port path
+                    port="$(echo "$url" | sed -E 's|https?://[^:/]+:?([0-9]*)/.*|\1|')"
+                    path="$(echo "$url" | sed -E 's|https?://[^/]+(/.*)|\1|')"
+                    [[ -z "$port" || "$port" == "$url" ]] && port=80
+                    local host_url="http://${cip}:${port}${path}"
+                    _do_check() { curl -sf --max-time 5 -o /dev/null -w '%{http_code}' "$host_url" 2>/dev/null || echo "000"; }
+                else
+                    _do_check() { echo "000"; }
+                fi
+            fi
         else
-            curl_cmd="curl -sf --max-time 5 -o /dev/null -w '%{http_code}' $url"
+            _do_check() { curl -sf --max-time 5 -o /dev/null -w '%{http_code}' "$url" 2>/dev/null || echo "000"; }
         fi
 
         # First attempt
-        http_code="$(eval "$curl_cmd" 2>/dev/null || echo "000")"
+        http_code="$(_do_check)"
         if [[ "$http_code" =~ ^[23] ]]; then
             status="OK"
         else
             # Retry after 10s
             sleep 10
-            http_code="$(eval "$curl_cmd" 2>/dev/null || echo "000")"
+            http_code="$(_do_check)"
             [[ "$http_code" =~ ^[23] ]] && status="OK"
         fi
 
