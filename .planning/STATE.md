@@ -4,7 +4,7 @@ milestone: v2.1
 milestone_name: Bugfixes + Improvements
 status: planning
 stopped_at: Completed 06-02-PLAN.md
-last_updated: "2026-03-21T01:21:25.652Z"
+last_updated: "2026-03-21T01:25:01.768Z"
 last_activity: 2026-03-20 — Roadmap created, v2.1 phases 6-8 defined
 progress:
   total_phases: 3
