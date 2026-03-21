@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: Bugfixes + Improvements
 status: planning
-stopped_at: Completed 06-02-PLAN.md
-last_updated: "2026-03-21T01:25:01.768Z"
+stopped_at: Completed 06-03-PLAN.md
+last_updated: "2026-03-21T02:21:48.773Z"
 last_activity: 2026-03-20 — Roadmap created, v2.1 phases 6-8 defined
 progress:
   total_phases: 3
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 3
+  completed_plans: 3
   percent: 0
 ---
 
@@ -49,6 +49,7 @@ Progress: [░░░░░░░░░░] 0%
 *Updated after each plan completion*
 | Phase 06-v3-bugfixes P01 | 15 | 2 tasks | 3 files |
 | Phase 06-v3-bugfixes P02 | 12 | 2 tasks | 3 files |
+| Phase 06-v3-bugfixes P03 | 15 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -62,6 +63,8 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 06-v3-bugfixes]: healthcheck upgraded to psql query verifying dify_plugin DB existence before plugin-daemon starts
 - [Phase 06-v3-bugfixes]: GPU containers get unless-stopped (not always) so manual docker stop works without systemd fighting back
 - [Phase 06-v3-bugfixes]: agmind-stack.service uses Type=oneshot+RemainAfterExit=yes so systemctl status shows active after one-shot command completes
+- [Phase 06-v3-bugfixes]: EnvironmentFile uses '-' prefix so systemd does not fail before first installer run
+- [Phase 06-v3-bugfixes]: sed -i dedup removes existing COMPOSE_PROFILES before append to avoid duplicates on re-runs
 
 ### Pending Todos
 
@@ -73,6 +76,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-21T01:21:25.650Z
-Stopped at: Completed 06-02-PLAN.md
+Last session: 2026-03-21T02:21:48.771Z
+Stopped at: Completed 06-03-PLAN.md
 Resume file: None
