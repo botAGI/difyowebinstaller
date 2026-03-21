@@ -183,7 +183,12 @@ Plans:
   5. `agmind doctor` checks disk/RAM usage, Docker daemon, unhealthy/exited/high-restart containers, GPU availability, key service HTTP endpoints, and .env completeness — outputs colored summary with exit code 0/1
   6. `LICENSE` file (Apache 2.0) exists in repo root
 
-**Plans:** TBD
+**Plans:** 3 plans
+
+Plans:
+- [ ] 08-01-PLAN.md — verify_services() HTTP liveness checks + Portainer SSH tunnel in credentials/summary (HLTH-01, UXPL-02)
+- [ ] 08-02-PLAN.md — Doctor enhancement: container health, HTTP endpoints, disk/RAM %, .env completeness (HLTH-02)
+- [ ] 08-03-PLAN.md — SSH lockout prevention with warning + Apache 2.0 LICENSE (UXPL-01, UXPL-03)
 
 ### Phase 9: Operator Makefile
 
@@ -224,9 +229,9 @@ Plans:
 | 5. DevOps & UX | v2.0 | 2/2 | Complete | 2026-03-18 |
 | 6. Runtime Stability | 3/3 | Complete   | 2026-03-21 | - |
 | 7. Update System | 2/2 | Complete   | 2026-03-21 | - |
-| 8. Health Verification & UX Polish | v2.1 | 0/TBD | Not started | - |
+| 8. Health Verification & UX Polish | v2.1 | 0/3 | Planning complete | - |
 | 9. Operator Makefile | v2.1 | 0/TBD | Not started | - |
 
 ---
 *Roadmap created: 2026-03-17*
-*Last updated: 2026-03-21 — Added WISH-004..008, Phase 9 (Makefile)*
+*Last updated: 2026-03-21 — Phase 8 planned: 3 plans in 2 waves*
