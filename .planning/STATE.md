@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: Bugfixes + Improvements
 status: planning
-stopped_at: Completed 08-01-PLAN.md
-last_updated: "2026-03-21T17:06:59.522Z"
+stopped_at: Completed 08-03-PLAN.md
+last_updated: "2026-03-21T17:07:28.774Z"
 last_activity: 2026-03-20 — Roadmap created, v2.1 phases 6-8 defined
 progress:
   total_phases: 4
@@ -53,6 +53,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 07-update-system P01 | 20 | 2 tasks | 2 files |
 | Phase 07-update-system P02 | 2 | 2 tasks | 2 files |
 | Phase 08-health-verification-ux-polish P01 | 16 | 2 tasks | 2 files |
+| Phase 08-health-verification-ux-polish P03 | 2 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -76,6 +77,9 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 08-health-verification-ux-polish]: verify_services() returns failure count; caller uses '|| true' — failed checks never abort install
 - [Phase 08-health-verification-ux-polish]: VERIFY_RESULTS global array avoids re-running curl in summary — checks run once in phase_complete
 - [Phase 08-health-verification-ux-polish]: Portainer SSH tunnel hint skipped when ADMIN_UI_OPEN=true — direct 0.0.0.0:9443 access available in that case
+- [Phase 08-health-verification-ux-polish]: ENABLE_SSH_HARDENING defaults to true (opt-out) — SSH key-only auth is a security best practice, skips safely in non-interactive if no authorized_keys found
+- [Phase 08-health-verification-ux-polish]: systemctl reload (not restart) used for sshd after hardening — keeps existing SSH sessions alive
+- [Phase 08-health-verification-ux-polish]: Apache 2.0 LICENSE created with AGMind Contributors copyright 2024-2026 for public GitHub release
 
 ### Pending Todos
 
@@ -87,6 +91,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-21T17:06:59.520Z
-Stopped at: Completed 08-01-PLAN.md
+Last session: 2026-03-21T17:07:28.772Z
+Stopped at: Completed 08-03-PLAN.md
 Resume file: None

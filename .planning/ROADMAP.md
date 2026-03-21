@@ -183,7 +183,7 @@ Plans:
   5. `agmind doctor` checks disk/RAM usage, Docker daemon, unhealthy/exited/high-restart containers, GPU availability, key service HTTP endpoints, and .env completeness — outputs colored summary with exit code 0/1
   6. `LICENSE` file (Apache 2.0) exists in repo root
 
-**Plans:** 3 plans
+**Plans:** 2/3 plans executed
 
 Plans:
 - [ ] 08-01-PLAN.md — verify_services() HTTP liveness checks + Portainer SSH tunnel in credentials/summary (HLTH-01, UXPL-02)
@@ -229,7 +229,7 @@ Plans:
 | 5. DevOps & UX | v2.0 | 2/2 | Complete | 2026-03-18 |
 | 6. Runtime Stability | 3/3 | Complete   | 2026-03-21 | - |
 | 7. Update System | 2/2 | Complete   | 2026-03-21 | - |
-| 8. Health Verification & UX Polish | v2.1 | 0/3 | Planning complete | - |
+| 8. Health Verification & UX Polish | 2/3 | In Progress|  | - |
 | 9. Operator Makefile | v2.1 | 0/TBD | Not started | - |
 
 ---
