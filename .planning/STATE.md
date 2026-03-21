@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: Bugfixes + Improvements
 status: planning
-stopped_at: Phase 6 context gathered
-last_updated: "2026-03-21T01:06:39.320Z"
+stopped_at: Completed 06-01-PLAN.md
+last_updated: "2026-03-21T01:17:22.426Z"
 last_activity: 2026-03-20 — Roadmap created, v2.1 phases 6-8 defined
 progress:
   total_phases: 3
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 2
+  completed_plans: 1
   percent: 0
 ---
 
@@ -47,6 +47,7 @@ Progress: [░░░░░░░░░░] 0%
 | 8. Health & UX Polish | TBD | - | - |
 
 *Updated after each plan completion*
+| Phase 06-v3-bugfixes P01 | 15 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -56,6 +57,8 @@ Progress: [░░░░░░░░░░] 0%
 - v2.0: credentials only in credentials.txt, never stdout
 - v2.1: BUG-V3-024 merged into UPDT-01 (component update command)
 - v2.1: BUG-V3-023 (auto model provider config) deferred to v2.2 — boundary violation
+- [Phase 06-v3-bugfixes]: redis-lock-cleaner reuses redis image (no new pull for offline profile)
+- [Phase 06-v3-bugfixes]: healthcheck upgraded to psql query verifying dify_plugin DB existence before plugin-daemon starts
 
 ### Pending Todos
 
@@ -67,6 +70,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-21T01:06:39.318Z
-Stopped at: Phase 6 context gathered
-Resume file: .planning/phases/06-v3-bugfixes/06-CONTEXT.md
+Last session: 2026-03-21T01:17:22.424Z
+Stopped at: Completed 06-01-PLAN.md
+Resume file: None

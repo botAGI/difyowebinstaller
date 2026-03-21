@@ -144,7 +144,11 @@ Plans:
   3. After `sudo reboot`, all GPU containers (vLLM / Ollama) are running within 2 minutes without any manual intervention
   4. `agmind status` confirms healthy GPU containers post-reboot
 
-**Plans:** TBD
+**Plans:** 1/2 plans executed
+
+Plans:
+- [ ] 06-01-PLAN.md — PostgreSQL init SQL + enhanced healthcheck, Redis lock-cleaner init-container, plugin_daemon dependency chain (STAB-01, STAB-02)
+- [ ] 06-02-PLAN.md — systemd auto-start service + GPU container restart policy change to unless-stopped (STAB-03)
 
 ### Phase 7: Update System
 
@@ -196,10 +200,10 @@ Plans:
 | 3. Provider Architecture | v2.0 | 3/3 | Complete | 2026-03-18 |
 | 4. Installer Redesign | v2.0 | 2/2 | Complete | 2026-03-18 |
 | 5. DevOps & UX | v2.0 | 2/2 | Complete | 2026-03-18 |
-| 6. Runtime Stability | v2.1 | 0/TBD | Not started | - |
+| 6. Runtime Stability | 1/2 | In Progress|  | - |
 | 7. Update System | v2.1 | 0/TBD | Not started | - |
 | 8. Health Verification & UX Polish | v2.1 | 0/TBD | Not started | - |
 
 ---
 *Roadmap created: 2026-03-17*
-*Last updated: 2026-03-20 — v2.1 phases 6-8 added*
+*Last updated: 2026-03-21 — Phase 6 plans created (2 plans)*

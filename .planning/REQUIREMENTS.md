@@ -9,8 +9,8 @@ Requirements for v2.1 Bugfixes + Improvements. Each maps to roadmap phases.
 
 ### Runtime Stability
 
-- [ ] **STAB-01**: plugin-daemon стартует только после PostgreSQL с готовой БД `dify_plugin` (healthcheck + depends_on) — BUG-V3-022
-- [ ] **STAB-02**: Stale Redis locks (`plugin_daemon:env_init_lock:*`) автоудаляются при старте, если старше 15 мин — WISH-003
+- [x] **STAB-01**: plugin-daemon стартует только после PostgreSQL с готовой БД `dify_plugin` (healthcheck + depends_on) — BUG-V3-022
+- [x] **STAB-02**: Stale Redis locks (`plugin_daemon:env_init_lock:*`) автоудаляются при старте, если старше 15 мин — WISH-003
 - [ ] **STAB-03**: GPU-контейнеры автоматически поднимаются после ребута хоста (systemd service или cron @reboot) — BUG-V3-027
 
 ### Update System
@@ -96,8 +96,8 @@ All 24 requirements shipped and confirmed working in v2.0. See git history for d
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| STAB-01 | Phase 6 | Pending |
-| STAB-02 | Phase 6 | Pending |
+| STAB-01 | Phase 6 | Complete |
+| STAB-02 | Phase 6 | Complete |
 | STAB-03 | Phase 6 | Pending |
 | UPDT-01 | Phase 7 | Pending |
 | UPDT-02 | Phase 7 | Pending |
