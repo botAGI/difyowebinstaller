@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # ============================================================================
 # AGMind Update System — Rolling updates with rollback
-# Usage: /opt/agmind/scripts/update.sh [--auto] [--check-only]
+# Usage: /opt/agmind/scripts/update.sh [--auto] [--check] [--component <name>]
+#        [--version <tag>] [--rollback <name>]
 # ============================================================================
 set -euo pipefail
 
@@ -14,15 +15,86 @@ ENV_FILE="${INSTALL_DIR}/docker/.env"
 LOG_FILE="${INSTALL_DIR}/logs/update_history.log"
 BACKUP_SCRIPT="${INSTALL_DIR}/scripts/backup.sh"
 HEALTH_SCRIPT="${INSTALL_DIR}/scripts/health.sh"
+REMOTE_VERSIONS_URL="https://raw.githubusercontent.com/botAGI/difyowebinstaller/main/versions.env"
+REMOTE_FETCH_TIMEOUT=15
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 
+# Short name -> versions.env key
+declare -A NAME_TO_VERSION_KEY=(
+    [dify-api]=DIFY_VERSION
+    [dify-worker]=DIFY_VERSION
+    [dify-web]=DIFY_VERSION
+    [openwebui]=OPENWEBUI_VERSION
+    [pipelines]=PIPELINES_VERSION
+    [ollama]=OLLAMA_VERSION
+    [vllm]=VLLM_VERSION
+    [tei]=TEI_VERSION
+    [postgres]=POSTGRES_VERSION
+    [redis]=REDIS_VERSION
+    [weaviate]=WEAVIATE_VERSION
+    [qdrant]=QDRANT_VERSION
+    [docling]=DOCLING_SERVE_VERSION
+    [xinference]=XINFERENCE_VERSION
+    [sandbox]=SANDBOX_VERSION
+    [nginx]=NGINX_VERSION
+    [plugin-daemon]=PLUGIN_DAEMON_VERSION
+    [grafana]=GRAFANA_VERSION
+    [portainer]=PORTAINER_VERSION
+    [prometheus]=PROMETHEUS_VERSION
+    [alertmanager]=ALERTMANAGER_VERSION
+    [loki]=LOKI_VERSION
+    [promtail]=PROMTAIL_VERSION
+    [node-exporter]=NODE_EXPORTER_VERSION
+    [cadvisor]=CADVISOR_VERSION
+    [authelia]=AUTHELIA_VERSION
+    [certbot]=CERTBOT_VERSION
+    [squid]=SQUID_VERSION
+)
+
+# Short name -> compose service name(s)
+declare -A NAME_TO_SERVICES=(
+    [dify-api]="api worker web sandbox plugin_daemon"
+    [dify-worker]="api worker web sandbox plugin_daemon"
+    [dify-web]="api worker web sandbox plugin_daemon"
+    [openwebui]="open-webui"
+    [pipelines]="pipelines"
+    [ollama]="ollama"
+    [vllm]="vllm"
+    [tei]="tei"
+    [postgres]="db"
+    [redis]="redis"
+    [weaviate]="weaviate"
+    [qdrant]="qdrant"
+    [docling]="docling"
+    [xinference]="xinference"
+    [sandbox]="api worker web sandbox plugin_daemon"
+    [nginx]="nginx"
+    [plugin-daemon]="api worker web sandbox plugin_daemon"
+    [grafana]="grafana"
+    [portainer]="portainer"
+    [prometheus]="prometheus"
+    [alertmanager]="alertmanager"
+    [loki]="loki"
+    [promtail]="promtail"
+    [node-exporter]="node-exporter"
+    [cadvisor]="cadvisor"
+    [authelia]="authelia"
+    [certbot]="certbot"
+    [squid]="ssrf_proxy"
+)
+
+# Service groups: components sharing the same image
+declare -A SERVICE_GROUPS=(
+    [dify]="dify-api dify-worker dify-web sandbox plugin-daemon"
+)
+
 # Define log functions BEFORE flock block that uses them
-log_info() { echo -e "${CYAN}→ $*${NC}"; }
-log_success() { echo -e "${GREEN}✓ $*${NC}"; }
-log_warn() { echo -e "${YELLOW}⚠ $*${NC}"; }
-log_error() { echo -e "${RED}✗ $*${NC}"; }
+log_info()    { echo -e "${CYAN}-> $*${NC}"; }
+log_success() { echo -e "${GREEN}OK $*${NC}"; }
+log_warn()    { echo -e "${YELLOW}!! $*${NC}"; }
+log_error()   { echo -e "${RED}!! $*${NC}"; }
 
 # Exclusive lock — prevent parallel operations
 LOCK_FILE="/var/lock/agmind-operation.lock"
@@ -55,12 +127,20 @@ trap cleanup_on_failure EXIT INT TERM
 
 AUTO_UPDATE="${AUTO_UPDATE:-false}"
 CHECK_ONLY=false
+COMPONENT=""
+TARGET_VERSION=""
+ROLLBACK_TARGET=""
 
 # Parse arguments
-for arg in "$@"; do
-    case "$arg" in
-        --auto) AUTO_UPDATE=true ;;
-        --check-only) CHECK_ONLY=true ;;
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --auto)       AUTO_UPDATE=true; shift ;;
+        --check)      CHECK_ONLY=true; shift ;;
+        --check-only) CHECK_ONLY=true; shift ;;
+        --component)  COMPONENT="${2:-}"; shift 2 ;;
+        --version)    TARGET_VERSION="${2:-}"; shift 2 ;;
+        --rollback)   ROLLBACK_TARGET="${2:-}"; shift 2 ;;
+        *)            log_error "Unknown option: $1"; exit 1 ;;
     esac
 done
 
@@ -146,7 +226,7 @@ create_update_backup() {
             log_success "Backup created: ${tag}" || \
             log_warn "Backup completed with errors (continuing)"
     else
-        log_warn "Backup script not found — skipping"
+        log_warn "Backup script not found -- skipping"
     fi
 }
 
@@ -159,12 +239,27 @@ load_current_versions() {
     fi
 }
 
-load_new_versions() {
+fetch_remote_versions() {
     declare -gA NEW_VERSIONS
-    if [[ -f "$VERSIONS_FILE" ]]; then
+    local tmp_versions
+    tmp_versions="$(mktemp)"
+    # shellcheck disable=SC2064
+    trap "rm -f '${tmp_versions}'" RETURN
+
+    log_info "Fetching available versions from GitHub..."
+    if curl -sfL --max-time "$REMOTE_FETCH_TIMEOUT" "$REMOTE_VERSIONS_URL" -o "$tmp_versions" 2>/dev/null; then
         while IFS='=' read -r key value; do
+            [[ -z "$key" || "$key" =~ ^# ]] && continue
             [[ "$key" =~ _VERSION$ ]] && NEW_VERSIONS["$key"]="$value"
-        done < <(grep '_VERSION=' "$VERSIONS_FILE" 2>/dev/null | grep -v '^#')
+        done < "$tmp_versions"
+        log_success "Remote versions fetched (${#NEW_VERSIONS[@]} components)"
+    else
+        log_warn "Cannot reach GitHub -- showing current versions only"
+        log_warn "Use --component <name> --version <tag> for manual update"
+        # Copy current as new so display_version_diff shows all OK
+        for key in "${!CURRENT_VERSIONS[@]}"; do
+            NEW_VERSIONS["$key"]="${CURRENT_VERSIONS[$key]}"
+        done
     fi
 }
 
@@ -215,7 +310,7 @@ perform_rollback() {
     docker compose -f "$COMPOSE_FILE" up -d 2>/dev/null || true
 
     log_success "Rollback complete"
-    send_notification "⚠️ AGMind Update ROLLBACK — previous versions restored"
+    send_notification "AGMind Update ROLLBACK -- previous versions restored"
 }
 
 # Verify rollback by comparing running images against saved state
@@ -248,15 +343,26 @@ verify_rollback() {
 display_version_diff() {
     echo ""
     echo -e "${BOLD}Version comparison:${NC}"
-    printf "  %-30s %-20s %-20s %s\n" "COMPONENT" "CURRENT" "NEW" "STATUS"
-    echo "  $(printf '%.0s─' {1..85})"
+    printf "  %-25s %-20s %-20s %s\n" "COMPONENT" "CURRENT" "AVAILABLE" "STATUS"
+    echo "  $(printf '%.0s-' {1..80})"
 
     local has_updates=false
-    for key in "${!NEW_VERSIONS[@]}"; do
-        local current="${CURRENT_VERSIONS[$key]:-unknown}"
-        local new="${NEW_VERSIONS[$key]}"
-        local status=""
-        local name="${key%_VERSION}"
+    # Build reverse map: version_key -> short name (pick shortest)
+    declare -A KEY_TO_SHORT
+    local name vk
+    for name in "${!NAME_TO_VERSION_KEY[@]}"; do
+        vk="${NAME_TO_VERSION_KEY[$name]}"
+        if [[ -z "${KEY_TO_SHORT[$vk]+_}" ]] || [[ ${#name} -lt ${#KEY_TO_SHORT[$vk]} ]]; then
+            KEY_TO_SHORT["$vk"]="$name"
+        fi
+    done
+
+    local key current new status short
+    for key in $(echo "${!NEW_VERSIONS[@]}" | tr ' ' '\n' | sort); do
+        current="${CURRENT_VERSIONS[$key]:-unknown}"
+        new="${NEW_VERSIONS[$key]}"
+        status=""
+        short="${KEY_TO_SHORT[$key]:-${key%_VERSION}}"
 
         if [[ "$current" == "$new" ]]; then
             status="${GREEN}OK${NC}"
@@ -264,7 +370,7 @@ display_version_diff() {
             status="${YELLOW}UPDATE${NC}"
             has_updates=true
         fi
-        printf "  %-30s %-20s %-20s %b\n" "$name" "$current" "$new" "$status"
+        printf "  %-25s %-20s %-20s %b\n" "$short" "$current" "$new" "$status"
     done
     echo ""
 
@@ -334,7 +440,6 @@ update_service() {
             return 0
         elif echo "$status" | grep -qi "unhealthy\|exit"; then
             log_error "${service}: unhealthy after update"
-            # Rollback
             rollback_service "$service" "$old_image"
             return 1
         fi
@@ -342,7 +447,7 @@ update_service() {
         wait=$((wait + 5))
     done
 
-    # Timeout — check if at least running
+    # Timeout -- check if at least running
     local status
     status=$(docker compose -f "$COMPOSE_FILE" ps --format '{{.Status}}' "$service" 2>/dev/null | head -1)
     if echo "$status" | grep -qi "up\|running"; then
@@ -364,7 +469,7 @@ rollback_service() {
         return 1
     fi
 
-    log_warn "Rolling back ${service} → ${old_image}..."
+    log_warn "Rolling back ${service} -> ${old_image}..."
 
     # Restore pre-update config so compose reads OLD version tags
     if [[ -f "${ROLLBACK_DIR}/dot-env.bak" ]]; then
@@ -378,7 +483,99 @@ rollback_service() {
     docker compose -f "$COMPOSE_FILE" stop "$service" 2>/dev/null
     docker compose -f "$COMPOSE_FILE" up -d "$service" 2>/dev/null
 
-    send_notification "⚠️ AGMind update FAILED for ${service}, rolled back to ${old_image}"
+    send_notification "AGMind update FAILED for ${service}, rolled back to ${old_image}"
+}
+
+# Validate short name and show service group confirmation if needed
+resolve_component() {
+    local name="$1"
+    if [[ -z "${NAME_TO_VERSION_KEY[$name]+_}" ]]; then
+        log_error "Unknown component: ${name}"
+        echo ""
+        echo "Available components:"
+        printf "  %s\n" "${!NAME_TO_VERSION_KEY[@]}" | sort
+        exit 1
+    fi
+
+    local version_key="${NAME_TO_VERSION_KEY[$name]}"
+    local services="${NAME_TO_SERVICES[$name]}"
+    local service_count
+    service_count=$(echo "$services" | wc -w)
+
+    if [[ "$service_count" -gt 1 && "$AUTO_UPDATE" != "true" ]]; then
+        log_warn "Component '${name}' shares image with: ${services}"
+        read -rp "Also updating these services. Continue? (yes/no): " confirm
+        if [[ "$confirm" != "yes" ]]; then
+            echo "Cancelled."
+            exit 0
+        fi
+    fi
+
+    echo "${version_key}|${services}"
+}
+
+# Update a single component to a specific version
+update_component() {
+    local name="$1"
+    local version="$2"
+
+    local resolved
+    resolved="$(resolve_component "$name")"
+    local version_key="${resolved%%|*}"
+    local services="${resolved#*|}"
+
+    local current_version="${CURRENT_VERSIONS[$version_key]:-unknown}"
+    log_info "Updating ${name}: ${current_version} -> ${version}"
+
+    # Save rollback state
+    save_rollback_state
+
+    # Update version in .env
+    local env_tmp="${ENV_FILE}.tmp"
+    grep -v "^${version_key}=" "$ENV_FILE" > "$env_tmp"
+    echo "${version_key}=${version}" >> "$env_tmp"
+    mv "$env_tmp" "$ENV_FILE"
+    chmod 600 "$ENV_FILE"
+
+    # Update each service
+    cd "${INSTALL_DIR}/docker"
+    local failed=0 updated=0
+    local svc
+    for svc in $services; do
+        # Check if service is running (skip if not in active profile)
+        if ! docker compose -f "$COMPOSE_FILE" ps --format '{{.Name}}' "$svc" 2>/dev/null | grep -q .; then
+            log_info "${svc}: not running (skipped)"
+            continue
+        fi
+
+        if update_service "$svc"; then
+            updated=$((updated + 1))
+        else
+            failed=$((failed + 1))
+            log_error "${name}: ${svc} failed -- rolling back all"
+            # Restore .env from rollback
+            if [[ -f "${ROLLBACK_DIR}/dot-env.bak" ]]; then
+                cp "${ROLLBACK_DIR}/dot-env.bak" "$ENV_FILE"
+                chmod 600 "$ENV_FILE"
+            fi
+            # Restart all affected services with old version
+            local rollback_svc
+            for rollback_svc in $services; do
+                if docker compose -f "$COMPOSE_FILE" ps --format '{{.Name}}' "$rollback_svc" 2>/dev/null | grep -q .; then
+                    docker compose -f "$COMPOSE_FILE" up -d "$rollback_svc" 2>/dev/null || true
+                fi
+            done
+            log_error "${name}: rolled back to ${current_version}"
+            send_notification "AGMind update FAILED for ${name}, rolled back to ${current_version}"
+            log_update "ROLLBACK" "${name}: ${version} failed, rolled back to ${current_version}"
+            return 1
+        fi
+    done
+
+    log_success "${name}: updated to ${version} (${updated} service(s))"
+    log_update "SUCCESS" "${name}: ${current_version} -> ${version}"
+    send_notification "AGMind ${name} updated: ${current_version} -> ${version}"
+    return 0
 }
 
 perform_rolling_update() {
@@ -389,17 +586,34 @@ perform_rolling_update() {
         "api"
         "worker"
         "web"
+        "sandbox"
         "plugin_daemon"
-        "pipeline"
+        "pipelines"
         "ollama"
+        "vllm"
+        "tei"
         "nginx"
         "open-webui"
+        "weaviate"
+        "qdrant"
+        "docling"
+        "xinference"
+        "grafana"
+        "portainer"
+        "prometheus"
+        "alertmanager"
+        "loki"
+        "promtail"
+        "node-exporter"
+        "cadvisor"
+        "authelia"
     )
 
     local failed=0
     local updated=0
     local skipped=0
 
+    local service
     for service in "${update_order[@]}"; do
         # Check if service is running
         if ! docker compose -f "$COMPOSE_FILE" ps --format '{{.Name}}' "$service" 2>/dev/null | grep -q .; then
@@ -437,9 +651,9 @@ log_update() {
 # ============================================================================
 main() {
     echo ""
-    echo -e "${BOLD}${CYAN}═══════════════════════════════════════${NC}"
+    echo -e "${BOLD}${CYAN}=======================================${NC}"
     echo -e "${BOLD}${CYAN}  AGMind Update System${NC}"
-    echo -e "${BOLD}${CYAN}═══════════════════════════════════════${NC}"
+    echo -e "${BOLD}${CYAN}=======================================${NC}"
     echo ""
 
     # Pre-flight
@@ -448,9 +662,29 @@ main() {
         exit 1
     fi
 
-    # Load versions
+    # Handle --rollback
+    if [[ -n "$ROLLBACK_TARGET" ]]; then
+        log_info "Manual rollback: ${ROLLBACK_TARGET}"
+        if [[ ! -f "${ROLLBACK_DIR}/dot-env.bak" ]]; then
+            log_error "No rollback state found in ${ROLLBACK_DIR}"
+            exit 1
+        fi
+        perform_rollback
+        log_update "MANUAL_ROLLBACK" "${ROLLBACK_TARGET}"
+        exit 0
+    fi
+
+    # Load current versions from .env
     load_current_versions
-    load_new_versions
+
+    # Handle --component with --version (no remote fetch needed)
+    if [[ -n "$COMPONENT" && -n "$TARGET_VERSION" ]]; then
+        update_component "$COMPONENT" "$TARGET_VERSION"
+        exit $?
+    fi
+
+    # For --check or full update: fetch remote versions
+    fetch_remote_versions
 
     # Display diff
     if ! display_version_diff; then
@@ -462,9 +696,25 @@ main() {
         exit 0
     fi
 
-    # Confirm
+    # Handle --component without --version (use remote version)
+    if [[ -n "$COMPONENT" ]]; then
+        local version_key="${NAME_TO_VERSION_KEY[$COMPONENT]:-}"
+        if [[ -z "$version_key" ]]; then
+            log_error "Unknown component: ${COMPONENT}"
+            exit 1
+        fi
+        local remote_version="${NEW_VERSIONS[$version_key]:-}"
+        if [[ -z "$remote_version" ]]; then
+            log_error "No remote version found for ${COMPONENT}"
+            exit 1
+        fi
+        update_component "$COMPONENT" "$remote_version"
+        exit $?
+    fi
+
+    # Full update (all components)
     if [[ "$AUTO_UPDATE" != "true" ]]; then
-        read -rp "Start update? (yes/no): " confirm
+        read -rp "Update all components? (yes/no): " confirm
         if [[ "$confirm" != "yes" ]]; then
             echo "Cancelled."
             exit 0
@@ -481,7 +731,21 @@ main() {
     cp "$ENV_FILE" "${ENV_FILE}.pre-update"
     chmod 600 "${ENV_FILE}.pre-update"
 
-    # Rolling update (versions in .env are updated AFTER success to allow rollback)
+    # Apply new versions to .env BEFORE rolling update
+    # (rolling update reads image tags from .env via compose)
+    local key new current
+    for key in "${!NEW_VERSIONS[@]}"; do
+        new="${NEW_VERSIONS[$key]}"
+        current="${CURRENT_VERSIONS[$key]:-}"
+        [[ "$new" == "$current" ]] && continue
+        [[ -z "$new" ]] && continue
+        [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+        grep -v "^${key}=" "$ENV_FILE" > "${ENV_FILE}.tmp"
+        echo "${key}=${new}" >> "${ENV_FILE}.tmp"
+        mv "${ENV_FILE}.tmp" "$ENV_FILE"
+        chmod 600 "$ENV_FILE"
+    done
+
     echo ""
     log_info "Starting rolling update..."
     echo ""
@@ -489,30 +753,15 @@ main() {
     cd "${INSTALL_DIR}/docker"
 
     if perform_rolling_update; then
-        # Update versions in .env only after all services are healthy
-        if [[ -f "$VERSIONS_FILE" && -f "$ENV_FILE" ]]; then
-            while IFS='=' read -r key value; do
-                [[ "$key" =~ _VERSION$ ]] || continue
-                [[ -z "$value" ]] && continue
-                # Validate key format to prevent injection
-                [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
-                # Safe replacement: remove old line, append new one
-                grep -v "^${key}=" "$ENV_FILE" > "${ENV_FILE}.tmp"
-                echo "${key}=${value}" >> "${ENV_FILE}.tmp"
-                mv "${ENV_FILE}.tmp" "$ENV_FILE"
-                chmod 600 "$ENV_FILE"
-            done < <(grep '_VERSION=' "$VERSIONS_FILE" 2>/dev/null | grep -v '^#')
-        fi
         log_success "Update completed successfully!"
         log_update "SUCCESS" "Rolling update completed"
-        send_notification "✅ AGMind updated successfully on $(hostname 2>/dev/null || echo 'server')"
+        send_notification "AGMind updated successfully on $(hostname 2>/dev/null || echo 'server')"
     else
         log_error "Update completed with errors"
-        # Rollback to previous state
         perform_rollback
         verify_rollback || log_warn "Some services may not have rolled back correctly"
         log_update "PARTIAL_FAILURE" "Some services failed to update"
-        send_notification "⚠️ AGMind update completed with errors on $(hostname 2>/dev/null || echo 'server')"
+        send_notification "AGMind update completed with errors on $(hostname 2>/dev/null || echo 'server')"
         exit 1
     fi
 }
