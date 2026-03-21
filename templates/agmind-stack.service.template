@@ -12,6 +12,7 @@ Wants=network-online.target
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=__INSTALL_DIR__/docker
+EnvironmentFile=-__INSTALL_DIR__/docker/.env
 # Pre-check: wait for Docker daemon to be responsive (up to 30s)
 ExecStartPre=/bin/bash -c 'for i in $(seq 1 30); do docker info >/dev/null 2>&1 && exit 0; sleep 1; done; exit 1'
 # Optional: wait for nvidia-smi if GPU is expected
