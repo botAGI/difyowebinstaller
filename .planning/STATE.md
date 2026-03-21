@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: Bugfixes + Improvements
 status: planning
-stopped_at: Completed 06-01-PLAN.md
-last_updated: "2026-03-21T01:17:22.426Z"
+stopped_at: Completed 06-02-PLAN.md
+last_updated: "2026-03-21T01:21:25.652Z"
 last_activity: 2026-03-20 — Roadmap created, v2.1 phases 6-8 defined
 progress:
   total_phases: 3
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -48,6 +48,7 @@ Progress: [░░░░░░░░░░] 0%
 
 *Updated after each plan completion*
 | Phase 06-v3-bugfixes P01 | 15 | 2 tasks | 3 files |
+| Phase 06-v3-bugfixes P02 | 12 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -59,6 +60,8 @@ Progress: [░░░░░░░░░░] 0%
 - v2.1: BUG-V3-023 (auto model provider config) deferred to v2.2 — boundary violation
 - [Phase 06-v3-bugfixes]: redis-lock-cleaner reuses redis image (no new pull for offline profile)
 - [Phase 06-v3-bugfixes]: healthcheck upgraded to psql query verifying dify_plugin DB existence before plugin-daemon starts
+- [Phase 06-v3-bugfixes]: GPU containers get unless-stopped (not always) so manual docker stop works without systemd fighting back
+- [Phase 06-v3-bugfixes]: agmind-stack.service uses Type=oneshot+RemainAfterExit=yes so systemctl status shows active after one-shot command completes
 
 ### Pending Todos
 
@@ -70,6 +73,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-21T01:17:22.424Z
-Stopped at: Completed 06-01-PLAN.md
+Last session: 2026-03-21T01:21:25.650Z
+Stopped at: Completed 06-02-PLAN.md
 Resume file: None
