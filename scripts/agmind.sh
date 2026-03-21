@@ -192,15 +192,26 @@ cmd_doctor() {
 
     # Resources
     [[ "$output_json" != "true" ]] && echo -e "\n${BOLD}Resources:${NC}"
-    local free_gb; free_gb="$(df -BG / 2>/dev/null | tail -1 | awk '{print $4}' | tr -d 'G' || echo "0")"
-    if [[ "${free_gb:-0}" -ge 20 ]] 2>/dev/null; then _check OK "Disk: ${free_gb}GB free"
-    elif [[ "${free_gb:-0}" -ge 10 ]] 2>/dev/null; then _check WARN "Disk: ${free_gb}GB" "20GB+ recommended"
-    else _check FAIL "Disk: ${free_gb}GB" "Low space" "docker system prune -af"; fi
+    local free_gb disk_total disk_used disk_pct
+    free_gb="$(df -BG / 2>/dev/null | tail -1 | awk '{print $4}' | tr -d 'G' || echo "0")"
+    disk_total="$(df -BG / 2>/dev/null | tail -1 | awk '{print $2}' | tr -d 'G' || echo "0")"
+    disk_used="$(df -BG / 2>/dev/null | tail -1 | awk '{print $3}' | tr -d 'G' || echo "0")"
+    disk_pct="$(df / 2>/dev/null | tail -1 | awk '{print $5}' | tr -d '%' || echo "0")"
+    if [[ "${free_gb:-0}" -ge 20 ]] 2>/dev/null; then _check OK "Disk: ${free_gb}GB free (${disk_pct}% used of ${disk_total}GB)"
+    elif [[ "${free_gb:-0}" -ge 10 ]] 2>/dev/null; then _check WARN "Disk: ${free_gb}GB free (${disk_pct}% used)" "20GB+ recommended" "docker system prune"
+    else _check FAIL "Disk: ${free_gb}GB free (${disk_pct}% used)" "Мало места" "docker system prune -af"; fi
 
-    local ram_gb; ram_gb="$(free -g 2>/dev/null | awk '/^Mem:/{print $2}' || echo "0")"
-    if [[ "${ram_gb:-0}" -ge 8 ]] 2>/dev/null; then _check OK "RAM: ${ram_gb}GB"
-    elif [[ "${ram_gb:-0}" -ge 4 ]] 2>/dev/null; then _check WARN "RAM: ${ram_gb}GB" "8GB+ recommended"
-    else _check FAIL "RAM: ${ram_gb}GB" "4GB minimum required"; fi
+    local ram_gb ram_total ram_used ram_pct
+    ram_gb="$(free -g 2>/dev/null | awk '/^Mem:/{print $2}' || echo "0")"
+    ram_used="$(free -g 2>/dev/null | awk '/^Mem:/{print $3}' || echo "0")"
+    if [[ "${ram_gb:-0}" -gt 0 ]] 2>/dev/null; then
+        ram_pct=$(( (ram_used * 100) / ram_gb ))
+    else
+        ram_pct=0
+    fi
+    if [[ "${ram_gb:-0}" -ge 8 ]] 2>/dev/null; then _check OK "RAM: ${ram_gb}GB total (${ram_pct}% used)"
+    elif [[ "${ram_gb:-0}" -ge 4 ]] 2>/dev/null; then _check WARN "RAM: ${ram_gb}GB (${ram_pct}% used)" "8GB+ recommended"
+    else _check FAIL "RAM: ${ram_gb}GB (${ram_pct}% used)" "Минимум 4GB"; fi
 
     for port in 80 443; do
         local pp; pp="$(ss -tlnp 2>/dev/null | grep ":${port} " | head -1 || true)"
@@ -208,6 +219,112 @@ cmd_doctor() {
         elif echo "$pp" | grep -q "agmind\|nginx\|docker"; then _check OK "Port ${port} (AGMind)"
         else _check FAIL "Port ${port}" "In use by another process"; fi
     done
+
+    # Docker disk usage summary
+    local docker_disk
+    docker_disk="$(docker system df --format 'table {{.Type}}\t{{.Size}}\t{{.Reclaimable}}' 2>/dev/null || true)"
+    if [[ -n "$docker_disk" ]]; then
+        [[ "$output_json" != "true" ]] && echo -e "\n${BOLD}Docker Disk:${NC}"
+        while IFS= read -r line; do
+            [[ "$output_json" != "true" ]] && echo "  $line"
+        done <<< "$docker_disk"
+    fi
+
+    # Container Health
+    if [[ -f "${AGMIND_DIR}/.agmind_installed" ]]; then
+        [[ "$output_json" != "true" ]] && echo -e "\n${BOLD}Container Health:${NC}"
+
+        # Unhealthy containers
+        local unhealthy
+        unhealthy="$(docker ps --filter "name=agmind-" --filter "health=unhealthy" --format '{{.Names}}' 2>/dev/null || true)"
+        if [[ -n "$unhealthy" ]]; then
+            while IFS= read -r c; do
+                _check FAIL "Unhealthy: ${c}" "Контейнер нездоров" "docker logs --tail 20 ${c}"
+            done <<< "$unhealthy"
+        else
+            _check OK "Нет unhealthy контейнеров"
+        fi
+
+        # Exited containers
+        local exited
+        exited="$(docker ps -a --filter "name=agmind-" --filter "status=exited" --format '{{.Names}}' 2>/dev/null || true)"
+        if [[ -n "$exited" ]]; then
+            while IFS= read -r c; do
+                # Skip init-containers (expected to exit)
+                [[ "$c" == *"lock-cleaner"* ]] && continue
+                _check WARN "Exited: ${c}" "Контейнер остановлен" "docker start ${c}"
+            done <<< "$exited"
+        fi
+
+        # High restart count (>3)
+        local restarts
+        restarts="$(docker ps --filter "name=agmind-" --format '{{.Names}}\t{{.Status}}' 2>/dev/null || true)"
+        if [[ -n "$restarts" ]]; then
+            while IFS=$'\t' read -r cname cstatus; do
+                local rcount
+                rcount="$(docker inspect --format '{{.RestartCount}}' "$cname" 2>/dev/null || echo "0")"
+                if [[ "${rcount:-0}" -gt 3 ]] 2>/dev/null; then
+                    _check WARN "Restarts: ${cname}" "${rcount} перезапусков" "docker logs --tail 30 ${cname}"
+                fi
+            done <<< "$restarts"
+        fi
+    fi
+
+    # HTTP Endpoints
+    if [[ -f "${AGMIND_DIR}/.agmind_installed" ]]; then
+        [[ "$output_json" != "true" ]] && echo -e "\n${BOLD}HTTP Endpoints:${NC}"
+        verify_services >/dev/null 2>&1 || true
+        if [[ ${#VERIFY_RESULTS[@]} -gt 0 ]]; then
+            for entry in "${VERIFY_RESULTS[@]}"; do
+                IFS='|' read -r name url status <<< "$entry"
+                if [[ "$status" == "OK" ]]; then
+                    _check OK "${name} (${url})"
+                else
+                    local hint=""
+                    case "$name" in
+                        vLLM)           hint="agmind logs vllm" ;;
+                        Ollama)         hint="agmind logs ollama" ;;
+                        TEI)            hint="agmind logs tei" ;;
+                        "Dify Console") hint="agmind logs api" ;;
+                        "Open WebUI")   hint="agmind logs open-webui" ;;
+                        Weaviate)       hint="agmind logs weaviate" ;;
+                        Qdrant)         hint="agmind logs qdrant" ;;
+                        *)              hint="Проверьте логи сервиса" ;;
+                    esac
+                    _check FAIL "${name} (${url})" "Сервис не отвечает" "$hint"
+                fi
+            done
+        fi
+
+        # .env Completeness
+        if [[ -f "$ENV_FILE" ]]; then
+            [[ "$output_json" != "true" ]] && echo -e "\n${BOLD}.env Completeness:${NC}"
+            local mandatory_vars=(
+                DOMAIN
+                LLM_PROVIDER
+                EMBED_PROVIDER
+                DIFY_SECRET_KEY
+                POSTGRES_PASSWORD
+                REDIS_PASSWORD
+                INIT_PASSWORD
+                DEPLOY_PROFILE
+            )
+            local env_ok=0 env_missing=0
+            for var in "${mandatory_vars[@]}"; do
+                local val
+                val="$(_read_env "$var" "")"
+                if [[ -n "$val" ]]; then
+                    env_ok=$((env_ok + 1))
+                else
+                    _check FAIL ".env: ${var}" "Не задан" "Проверьте ${ENV_FILE}"
+                    env_missing=$((env_missing + 1))
+                fi
+            done
+            if [[ $env_missing -eq 0 ]]; then
+                _check OK ".env: все ${env_ok} обязательных переменных заданы"
+            fi
+        fi
+    fi
 
     # Post-install
     if [[ -f "${AGMIND_DIR}/.agmind_installed" ]]; then
