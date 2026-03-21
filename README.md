@@ -262,7 +262,6 @@ difyowebinstaller/
 ├── workflows/          # Dify workflow templates and setup guide
 ├── monitoring/         # Prometheus, Grafana dashboards, Loki, alert rules
 ├── branding/           # Open WebUI white-label assets (logo, theme)
-├── tests/              # BATS unit tests
 ├── docs/               # Docusaurus documentation site
 └── LICENSE             # Apache 2.0
 ```
@@ -274,10 +273,10 @@ difyowebinstaller/
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/my-change`)
 3. Make your changes
-4. Run tests: `bats tests/`
+4. Run `bash -n` on changed scripts
 5. Submit a pull request
 
-All shell scripts must pass `shellcheck`. CI runs lint + BATS + Trivy security scan on every PR.
+All shell scripts must pass `shellcheck` and `bash -n`. CI runs lint + syntax check + Trivy security scan on every PR.
 
 ---
 

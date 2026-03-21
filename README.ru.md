@@ -400,7 +400,6 @@ difyowebinstaller/
 +-- workflows/              # Шаблоны Dify workflow
 +-- monitoring/             # Конфиги Prometheus, Grafana, Loki
 +-- branding/               # Ресурсы white-label
-+-- tests/                  # BATS unit-тесты
 +-- docs/                   # Документация (Docusaurus)
 +-- LICENSE                 # Apache 2.0
 ```
@@ -412,7 +411,7 @@ difyowebinstaller/
 1. Fork репозитория
 2. Ветка от `main`: `git checkout -b feature/my-feature`
 3. Все `.sh` файлы должны проходить ShellCheck
-4. Тесты: `bats tests/`
+4. Проверка: `bash -n` на изменённых скриптах
 5. Pull request с описанием изменений
 
 ---

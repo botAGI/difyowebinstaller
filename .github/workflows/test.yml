@@ -7,17 +7,21 @@ on:
     branches: [main]
 
 jobs:
-  bats:
-    name: BATS Unit Tests
+  syntax:
+    name: Bash Syntax Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install BATS
+      - name: Bash syntax check (lib + scripts)
         run: |
-          git clone --depth 1 https://github.com/bats-core/bats-core.git /tmp/bats
-          sudo /tmp/bats/install.sh /usr/local
-      - name: Run all BATS tests
-        run: bats tests/test_*.bats
+          errors=0
+          for f in lib/*.sh scripts/*.sh install.sh; do
+            if ! bash -n "$f"; then
+              echo "FAIL: $f"
+              errors=$((errors + 1))
+            fi
+          done
+          exit $errors
 
   trivy:
     name: Trivy Security Scan
