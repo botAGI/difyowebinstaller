@@ -486,6 +486,60 @@ rollback_service() {
     send_notification "AGMind update FAILED for ${service}, rolled back to ${old_image}"
 }
 
+# Manual rollback: restore a specific component to the version saved in .rollback/
+rollback_component() {
+    local name="$1"
+
+    if [[ -z "${NAME_TO_VERSION_KEY[$name]+_}" ]]; then
+        log_error "Unknown component: ${name}"
+        printf "  Available: %s\n" "$(echo "${!NAME_TO_VERSION_KEY[@]}" | tr ' ' '\n' | sort | tr '\n' ' ')"
+        exit 1
+    fi
+
+    if [[ ! -f "${ROLLBACK_DIR}/dot-env.bak" ]]; then
+        log_error "No rollback state found in ${ROLLBACK_DIR}/"
+        log_error "Rollback is only available after a failed or recent update"
+        exit 1
+    fi
+
+    local version_key="${NAME_TO_VERSION_KEY[$name]}"
+    local services="${NAME_TO_SERVICES[$name]}"
+
+    # Read old version from rollback backup
+    local old_version
+    old_version="$(grep "^${version_key}=" "${ROLLBACK_DIR}/dot-env.bak" 2>/dev/null | cut -d'=' -f2-)"
+    if [[ -z "$old_version" ]]; then
+        log_error "Cannot find ${version_key} in rollback state"
+        exit 1
+    fi
+
+    local current_version="${CURRENT_VERSIONS[$version_key]:-unknown}"
+    log_info "MANUAL_ROLLBACK: ${name} ${current_version} -> ${old_version}"
+
+    # Restore version key in .env
+    local env_tmp="${ENV_FILE}.tmp"
+    grep -v "^${version_key}=" "$ENV_FILE" > "$env_tmp"
+    echo "${version_key}=${old_version}" >> "$env_tmp"
+    mv "$env_tmp" "$ENV_FILE"
+    chmod 600 "$ENV_FILE"
+
+    # Restart affected services
+    cd "${INSTALL_DIR}/docker"
+    local restarted=0
+    for svc in $services; do
+        if docker compose -f "$COMPOSE_FILE" ps --format '{{.Name}}' "$svc" 2>/dev/null | grep -q .; then
+            docker compose -f "$COMPOSE_FILE" pull "$svc" 2>/dev/null || true
+            docker compose -f "$COMPOSE_FILE" stop "$svc" 2>/dev/null
+            docker compose -f "$COMPOSE_FILE" up -d "$svc" 2>/dev/null
+            restarted=$((restarted + 1))
+        fi
+    done
+
+    log_success "${name}: rolled back to ${old_version} (${restarted} service(s) restarted)"
+    log_update "MANUAL_ROLLBACK" "${name}: ${current_version} -> ${old_version}"
+    send_notification "AGMind ${name} rolled back: ${current_version} -> ${old_version}"
+}
+
 # Validate short name and show service group confirmation if needed
 resolve_component() {
     local name="$1"
@@ -567,7 +621,7 @@ update_component() {
             done
             log_error "${name}: rolled back to ${current_version}"
             send_notification "AGMind update FAILED for ${name}, rolled back to ${current_version}"
-            log_update "ROLLBACK" "${name}: ${version} failed, rolled back to ${current_version}"
+            log_update "ROLLBACK" "${name}: ${version} failed healthcheck, rolled back to ${current_version}"
             return 1
         fi
     done
@@ -612,6 +666,7 @@ perform_rolling_update() {
     local failed=0
     local updated=0
     local skipped=0
+    local total_attempted=0
 
     local service
     for service in "${update_order[@]}"; do
@@ -621,11 +676,15 @@ perform_rolling_update() {
             continue
         fi
 
+        total_attempted=$((total_attempted + 1))
         if update_service "$service"; then
             updated=$((updated + 1))
         else
             failed=$((failed + 1))
             log_error "Update aborted due to error in ${service}"
+            if [[ $failed -gt 0 ]]; then
+                log_error "${updated}/${total_attempted} updated, ${service} failed, remaining skipped"
+            fi
             break
         fi
     done
@@ -664,14 +723,9 @@ main() {
 
     # Handle --rollback
     if [[ -n "$ROLLBACK_TARGET" ]]; then
-        log_info "Manual rollback: ${ROLLBACK_TARGET}"
-        if [[ ! -f "${ROLLBACK_DIR}/dot-env.bak" ]]; then
-            log_error "No rollback state found in ${ROLLBACK_DIR}"
-            exit 1
-        fi
-        perform_rollback
-        log_update "MANUAL_ROLLBACK" "${ROLLBACK_TARGET}"
-        exit 0
+        load_current_versions
+        rollback_component "$ROLLBACK_TARGET"
+        exit $?
     fi
 
     # Load current versions from .env
