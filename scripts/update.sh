@@ -579,6 +579,23 @@ update_component() {
     local services="${resolved#*|}"
 
     local current_version="${CURRENT_VERSIONS[$version_key]:-unknown}"
+
+    # Pre-flight: check if any service for this component is actually running
+    cd "${INSTALL_DIR}/docker"
+    local running_count=0
+    local svc
+    for svc in $services; do
+        if docker compose -f "$COMPOSE_FILE" ps --format '{{.Name}}' "$svc" 2>/dev/null | grep -q .; then
+            running_count=$((running_count + 1))
+        fi
+    done
+    if [[ "$running_count" -eq 0 ]]; then
+        log_warn "${name}: not in active profile — no running services found"
+        log_warn "Enable the profile first, then retry: agmind update --component ${name} --version ${version}"
+        log_update "SKIP" "${name}: not in active profile, no services running"
+        return 1
+    fi
+
     log_info "Updating ${name}: ${current_version} -> ${version}"
 
     # Save rollback state
@@ -591,10 +608,8 @@ update_component() {
     mv "$env_tmp" "$ENV_FILE"
     chmod 600 "$ENV_FILE"
 
-    # Update each service
-    cd "${INSTALL_DIR}/docker"
+    # Update each service (already cd'd in pre-flight)
     local failed=0 updated=0
-    local svc
     for svc in $services; do
         # Check if service is running (skip if not in active profile)
         if ! docker compose -f "$COMPOSE_FILE" ps --format '{{.Name}}' "$svc" 2>/dev/null | grep -q .; then
