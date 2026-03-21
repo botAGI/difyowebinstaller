@@ -277,7 +277,7 @@ services:
     <<: *logging-defaults
     image: ollama/ollama:${OLLAMA_VERSION:-0.6.2}
     container_name: agmind-ollama
-    restart: on-failure:5
+    restart: unless-stopped
     mem_limit: ${OLLAMA_MEM_LIMIT:-8g}
     profiles:
       - ollama
@@ -311,7 +311,7 @@ services:
     <<: *logging-defaults
     image: vllm/vllm-openai:${VLLM_VERSION:-v0.17.1}${VLLM_CUDA_SUFFIX:-}
     container_name: agmind-vllm
-    restart: on-failure:5
+    restart: unless-stopped
     mem_limit: ${VLLM_MEM_LIMIT:-16g}
     profiles:
       - vllm
@@ -343,7 +343,7 @@ services:
     <<: *logging-defaults
     image: ghcr.io/huggingface/text-embeddings-inference:${TEI_VERSION:-cuda-1.9.2}
     container_name: agmind-tei
-    restart: on-failure:5
+    restart: unless-stopped
     mem_limit: ${TEI_MEM_LIMIT:-8g}
     profiles:
       - tei
@@ -517,7 +517,7 @@ services:
     <<: *logging-defaults
     image: xprobe/xinference:${XINFERENCE_VERSION:-v0.16.3}
     container_name: agmind-xinference
-    restart: on-failure:5
+    restart: unless-stopped
     mem_limit: ${XINFERENCE_MEM_LIMIT:-4g}
     profiles:
       - etl
