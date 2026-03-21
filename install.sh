@@ -131,7 +131,7 @@ phase_start()       { compose_up; create_openwebui_admin; }
 phase_health()      { wait_healthy 300; _check_critical_services; }
 phase_models()      { download_models; }
 phase_backups()     { setup_backups; setup_tunnel; }
-phase_complete()    { create_openwebui_admin; _init_dify_admin; _save_credentials; _install_cli; _install_crons; _show_final_summary; }
+phase_complete()    { create_openwebui_admin; _init_dify_admin; _save_credentials; _install_cli; _install_crons; _install_systemd_service; _show_final_summary; }
 
 _confirm_continue() {
     if [[ "$NON_INTERACTIVE" == "true" ]]; then log_warn "Non-interactive: continuing despite: $1"; return 0; fi
@@ -291,6 +291,28 @@ _install_crons() {
     if [[ ! -f "${health_dir}/health.json" ]]; then
         echo '{"status": "starting", "timestamp": "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}' > "${health_dir}/health.json"
     fi
+}
+
+_install_systemd_service() {
+    # Install systemd service for auto-start after reboot
+    if ! command -v systemctl >/dev/null 2>&1; then
+        log_warn "systemctl not found — skipping auto-start service"
+        return 0
+    fi
+
+    local service_src="${TEMPLATE_DIR}/agmind-stack.service.template"
+    local service_dst="/etc/systemd/system/agmind-stack.service"
+
+    if [[ ! -f "$service_src" ]]; then
+        log_warn "Service template not found: ${service_src}"
+        return 0
+    fi
+
+    sed "s|__INSTALL_DIR__|${INSTALL_DIR}|g" "$service_src" > "$service_dst"
+    chmod 644 "$service_dst"
+    systemctl daemon-reload
+    systemctl enable agmind-stack.service
+    log_success "Auto-start service installed (agmind-stack.service)"
 }
 
 _show_final_summary() {
