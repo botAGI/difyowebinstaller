@@ -24,11 +24,17 @@ jobs:
           bats tests/test_docker.bats
           bats tests/test_config.bats
           bats tests/test_compose.bats
+          bats tests/test_compose_profiles.bats
           bats tests/test_health.bats
           bats tests/test_openwebui.bats
           bats tests/test_models.bats
           bats tests/test_security.bats
           bats tests/test_backup.bats
+          bats tests/test_agmind_cli.bats
+          bats tests/test_wizard_provider.bats
+          bats tests/test_update.bats
+          bats tests/test_manifest.bats
+          bats tests/test_lifecycle.bats
 
   trivy:
     name: Trivy Security Scan
