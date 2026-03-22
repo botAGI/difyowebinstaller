@@ -630,6 +630,9 @@ rollback_component() {
     # shellcheck disable=SC2086
     docker compose -f "$COMPOSE_FILE" up -d --force-recreate $services 2>/dev/null || true
 
+    # Ensure entire stack is healthy — picks up anything that fell over via depends_on
+    docker compose -f "$COMPOSE_FILE" up -d 2>/dev/null || true
+
     log_success "${name}: rolled back to ${old_version}"
     log_update "MANUAL_ROLLBACK" "${name}: ${current_version} -> ${old_version}"
     send_notification "AGMind ${name} rolled back: ${current_version} -> ${old_version}"
