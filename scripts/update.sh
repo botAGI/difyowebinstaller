@@ -621,19 +621,16 @@ rollback_component() {
     mv "$env_tmp" "$ENV_FILE"
     chmod 600 "$ENV_FILE"
 
-    # Restart affected services
+    # Restart affected services (pull all, then recreate together)
     cd "${INSTALL_DIR}/docker"
-    local restarted=0
+    local svc
     for svc in $services; do
-        if docker compose -f "$COMPOSE_FILE" ps --format '{{.Name}}' "$svc" 2>/dev/null | grep -q .; then
-            docker compose -f "$COMPOSE_FILE" pull "$svc" 2>/dev/null || true
-            docker compose -f "$COMPOSE_FILE" stop "$svc" 2>/dev/null
-            docker compose -f "$COMPOSE_FILE" up -d "$svc" 2>/dev/null
-            restarted=$((restarted + 1))
-        fi
+        docker compose -f "$COMPOSE_FILE" pull "$svc" 2>/dev/null || true
     done
+    # shellcheck disable=SC2086
+    docker compose -f "$COMPOSE_FILE" up -d --force-recreate $services 2>/dev/null || true
 
-    log_success "${name}: rolled back to ${old_version} (${restarted} service(s) restarted)"
+    log_success "${name}: rolled back to ${old_version}"
     log_update "MANUAL_ROLLBACK" "${name}: ${current_version} -> ${old_version}"
     send_notification "AGMind ${name} rolled back: ${current_version} -> ${old_version}"
 }
