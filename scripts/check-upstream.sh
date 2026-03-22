@@ -244,7 +244,7 @@ check_dedup() {
         return 1  # can't check, assume no dupe
     fi
     local count
-    count=$(github_curl "https://api.github.com/repos/botAGI/difyowebinstaller/issues?labels=upstream-update&state=open&per_page=1" \
+    count=$(github_curl "https://api.github.com/repos/botAGI/AGmind/issues?labels=upstream-update&state=open&per_page=1" \
         | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null) || return 1
     [[ "$count" -gt 0 ]]
 }
