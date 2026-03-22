@@ -16,7 +16,7 @@ ENV_FILE="${INSTALL_DIR}/docker/.env"
 LOG_FILE="${INSTALL_DIR}/logs/update_history.log"
 BACKUP_SCRIPT="${INSTALL_DIR}/scripts/backup.sh"
 HEALTH_SCRIPT="${INSTALL_DIR}/scripts/health.sh"
-GITHUB_API_URL="https://api.github.com/repos/botAGI/difyowebinstaller/releases/latest"
+GITHUB_API_URL="https://api.github.com/repos/botAGI/AGmind/releases/latest"
 RELEASE_FILE="${INSTALL_DIR}/RELEASE"
 REMOTE_FETCH_TIMEOUT=15
 

@@ -157,7 +157,7 @@ manifest=$(jq -n \
             docker_min_version: "24.0",
             compose_min_version: "2.20"
         },
-        changelog_url: "https://github.com/botAGI/difyowebinstaller/blob/main/CHANGELOG.md"
+        changelog_url: "https://github.com/botAGI/AGmind/blob/main/CHANGELOG.md"
     }')
 
 echo "$manifest" > "$MANIFEST_FILE"

@@ -7,8 +7,8 @@
 <p align="center">Production-ready AI stack in one command</p>
 
 <p align="center">
-  <a href="https://github.com/botAGI/difyowebinstaller/actions/workflows/lint.yml"><img src="https://github.com/botAGI/difyowebinstaller/actions/workflows/lint.yml/badge.svg" alt="Lint"></a>
-  <a href="https://github.com/botAGI/difyowebinstaller/actions/workflows/test.yml"><img src="https://github.com/botAGI/difyowebinstaller/actions/workflows/test.yml/badge.svg" alt="Tests"></a>
+  <a href="https://github.com/botAGI/AGmind/actions/workflows/lint.yml"><img src="https://github.com/botAGI/AGmind/actions/workflows/lint.yml/badge.svg" alt="Lint"></a>
+  <a href="https://github.com/botAGI/AGmind/actions/workflows/test.yml"><img src="https://github.com/botAGI/AGmind/actions/workflows/test.yml/badge.svg" alt="Tests"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License"></a>
 </p>
 
@@ -38,8 +38,8 @@
 ## Quick Start
 
 ```bash
-git clone https://github.com/botAGI/difyowebinstaller.git
-cd difyowebinstaller
+git clone https://github.com/botAGI/AGmind.git
+cd AGmind
 sudo bash install.sh
 ```
 
@@ -254,7 +254,7 @@ The bundle includes all Docker images, models, and installer files. No internet 
 ## Project Structure
 
 ```
-difyowebinstaller/
+AGmind/
 ├── install.sh          # Main installer: 9 phases, checkpoint/resume
 ├── lib/                # Modular Bash libraries (detect, config, health, security, ...)
 ├── scripts/            # Day-2 ops scripts (agmind CLI, backup, restore, update, ...)

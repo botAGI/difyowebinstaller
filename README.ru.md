@@ -7,8 +7,8 @@
 <p align="center">Production-ready AI-стек одной командой</p>
 
 <p align="center">
-  <a href="https://github.com/botAGI/difyowebinstaller/actions/workflows/lint.yml"><img src="https://github.com/botAGI/difyowebinstaller/actions/workflows/lint.yml/badge.svg" alt="Lint"></a>
-  <a href="https://github.com/botAGI/difyowebinstaller/actions/workflows/test.yml"><img src="https://github.com/botAGI/difyowebinstaller/actions/workflows/test.yml/badge.svg" alt="Tests"></a>
+  <a href="https://github.com/botAGI/AGmind/actions/workflows/lint.yml"><img src="https://github.com/botAGI/AGmind/actions/workflows/lint.yml/badge.svg" alt="Lint"></a>
+  <a href="https://github.com/botAGI/AGmind/actions/workflows/test.yml"><img src="https://github.com/botAGI/AGmind/actions/workflows/test.yml/badge.svg" alt="Tests"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License"></a>
 </p>
 
@@ -38,8 +38,8 @@
 ## Быстрый старт
 
 ```bash
-git clone https://github.com/botAGI/difyowebinstaller.git
-cd difyowebinstaller
+git clone https://github.com/botAGI/AGmind.git
+cd AGmind
 sudo bash install.sh
 ```
 
@@ -373,7 +373,7 @@ sudo DEPLOY_PROFILE=offline bash install.sh
 ## Структура проекта
 
 ```
-difyowebinstaller/
+AGmind/
 +-- install.sh              # Главный инсталлер (9 фаз, checkpoint/resume)
 +-- lib/                    # Модульные библиотеки
 |   +-- common.sh           # Логирование, валидация, утилиты
