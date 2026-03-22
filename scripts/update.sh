@@ -671,10 +671,10 @@ rollback_bundle() {
 resolve_component() {
     local name="$1"
     if [[ -z "${NAME_TO_VERSION_KEY[$name]+_}" ]]; then
-        log_error "Unknown component: ${name}"
-        echo ""
-        echo "Available components:"
-        printf "  %s\n" "${!NAME_TO_VERSION_KEY[@]}" | sort
+        log_error "Unknown component: ${name}" >&2
+        echo "" >&2
+        echo "Available components:" >&2
+        printf "  %s\n" "${!NAME_TO_VERSION_KEY[@]}" | sort >&2
         exit 1
     fi
 
@@ -684,10 +684,10 @@ resolve_component() {
     service_count=$(echo "$services" | wc -w)
 
     if [[ "$service_count" -gt 1 && "$AUTO_UPDATE" != "true" ]]; then
-        log_warn "Component '${name}' shares image with: ${services}"
+        log_warn "Component '${name}' shares image with: ${services}" >&2
         read -rp "Also updating these services. Continue? (yes/no): " confirm
         if [[ "$confirm" != "yes" ]]; then
-            echo "Cancelled."
+            echo "Cancelled." >&2
             exit 0
         fi
     fi
