@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ============================================================================
-# AGMind Update System — Rolling updates with rollback
+# AGMind Update System — Bundle updates via GitHub Releases
 # Usage: /opt/agmind/scripts/update.sh [--auto] [--check] [--component <name>]
-#        [--version <tag>] [--rollback <name>]
+#        [--version <tag>] [--rollback [<component>]] [--force]
 # ============================================================================
 set -euo pipefail
 export LC_ALL=C  # Ensure consistent regex behavior across locales (BUG-V3-041)
@@ -16,7 +16,8 @@ ENV_FILE="${INSTALL_DIR}/docker/.env"
 LOG_FILE="${INSTALL_DIR}/logs/update_history.log"
 BACKUP_SCRIPT="${INSTALL_DIR}/scripts/backup.sh"
 HEALTH_SCRIPT="${INSTALL_DIR}/scripts/health.sh"
-REMOTE_VERSIONS_URL="https://raw.githubusercontent.com/botAGI/difyowebinstaller/main/templates/versions.env"
+GITHUB_API_URL="https://api.github.com/repos/botAGI/difyowebinstaller/releases/latest"
+RELEASE_FILE="${INSTALL_DIR}/RELEASE"
 REMOTE_FETCH_TIMEOUT=15
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -131,6 +132,8 @@ CHECK_ONLY=false
 COMPONENT=""
 TARGET_VERSION=""
 ROLLBACK_TARGET=""
+ROLLBACK_MODE=false
+FORCE=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -140,7 +143,16 @@ while [[ $# -gt 0 ]]; do
         --check-only) CHECK_ONLY=true; shift ;;
         --component)  COMPONENT="${2:-}"; shift 2 ;;
         --version)    TARGET_VERSION="${2:-}"; shift 2 ;;
-        --rollback)   ROLLBACK_TARGET="${2:-}"; shift 2 ;;
+        --rollback)
+            ROLLBACK_MODE=true
+            # Next arg is optional component name (if not a flag)
+            if [[ -n "${2:-}" && "${2:-}" != --* ]]; then
+                ROLLBACK_TARGET="$2"; shift 2
+            else
+                ROLLBACK_TARGET=""; shift
+            fi
+            ;;
+        --force)      FORCE=true; shift ;;
         *)            log_error "Unknown option: $1"; exit 1 ;;
     esac
 done
@@ -240,28 +252,146 @@ load_current_versions() {
     fi
 }
 
-fetch_remote_versions() {
-    declare -gA NEW_VERSIONS
-    local tmp_versions
-    tmp_versions="$(mktemp)"
-    # shellcheck disable=SC2064
-    trap "rm -f '${tmp_versions}'" RETURN
-
-    log_info "Fetching available versions from GitHub..."
-    if curl -sfL --max-time "$REMOTE_FETCH_TIMEOUT" "$REMOTE_VERSIONS_URL" -o "$tmp_versions" 2>/dev/null; then
-        while IFS='=' read -r key value; do
-            [[ -z "$key" || "$key" =~ ^# ]] && continue
-            [[ "$key" =~ _VERSION$ ]] && NEW_VERSIONS["$key"]="$value"
-        done < "$tmp_versions"
-        log_success "Remote versions fetched (${#NEW_VERSIONS[@]} components)"
+# Get current release tag from RELEASE file
+get_current_release() {
+    if [[ -f "$RELEASE_FILE" ]]; then
+        cat "$RELEASE_FILE" 2>/dev/null | tr -d '[:space:]'
     else
-        log_warn "Cannot reach GitHub -- showing current versions only"
-        log_warn "Use --component <name> --version <tag> for manual update"
-        # Copy current as new so display_version_diff shows all OK
-        for key in "${!CURRENT_VERSIONS[@]}"; do
-            NEW_VERSIONS["$key"]="${CURRENT_VERSIONS[$key]}"
-        done
+        echo "unknown"
     fi
+}
+
+# Fetch latest release info from GitHub Releases API
+# Sets globals: RELEASE_TAG, RELEASE_NAME, RELEASE_DATE, RELEASE_NOTES,
+#               RELEASE_VERSIONS_URL, DOWNLOADED_VERSIONS_FILE, NEW_VERSIONS
+fetch_release_info() {
+    log_info "Fetching latest release from GitHub..."
+
+    local json_data
+    json_data=$(curl -sf --max-time "$REMOTE_FETCH_TIMEOUT" "$GITHUB_API_URL") || {
+        log_error "Cannot reach GitHub Releases API"
+        log_error "Check network or try: agmind update --component <name> --version <tag>"
+        return 1
+    }
+
+    # Parse all fields in a single python3 call
+    eval "$(echo "$json_data" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+tag = d.get('tag_name', '')
+name = d.get('name', '')
+date = d.get('published_at', '')[:10]
+body = d.get('body', '').replace(\"'\", \"'\\\\''\")
+assets = d.get('assets', [])
+url = ''
+for a in assets:
+    if a.get('name') == 'versions.env':
+        url = a.get('browser_download_url', '')
+        break
+print(f\"RELEASE_TAG='{tag}'\")
+print(f\"RELEASE_NAME='{name}'\")
+print(f\"RELEASE_DATE='{date}'\")
+print(f\"RELEASE_NOTES='{body}'\")
+print(f\"RELEASE_VERSIONS_URL='{url}'\")
+")" || { log_error "Failed to parse GitHub API response"; return 1; }
+
+    if [[ -z "${RELEASE_TAG:-}" ]]; then
+        log_error "GitHub API returned empty release tag"
+        return 1
+    fi
+
+    if [[ -z "${RELEASE_VERSIONS_URL:-}" ]]; then
+        log_error "Release ${RELEASE_TAG} has no versions.env asset"
+        return 1
+    fi
+
+    # Download versions.env asset into temp file
+    local tmp_versions
+    tmp_versions=$(mktemp)
+    curl -sfL --max-time "$REMOTE_FETCH_TIMEOUT" "$RELEASE_VERSIONS_URL" -o "$tmp_versions" || {
+        log_error "Failed to download versions.env from release ${RELEASE_TAG}"
+        rm -f "$tmp_versions"
+        return 1
+    }
+
+    # CRITICAL: expose temp file path as global for main() to copy to VERSIONS_FILE
+    DOWNLOADED_VERSIONS_FILE="$tmp_versions"
+
+    # Parse into NEW_VERSIONS associative array
+    declare -gA NEW_VERSIONS
+    while IFS='=' read -r key value; do
+        [[ -z "$key" || "$key" =~ ^# ]] && continue
+        key=$(echo "$key" | tr -d '[:space:]')
+        value=$(echo "$value" | tr -d '[:space:]')
+        NEW_VERSIONS["$key"]="$value"
+    done < "$tmp_versions"
+
+    log_success "Release info fetched: ${RELEASE_TAG} (${#NEW_VERSIONS[@]} versions)"
+}
+
+# Display bundle diff between current and latest release
+# Returns 0 if updates available, 1 if already up to date
+display_bundle_diff() {
+    local current_release
+    current_release="$(get_current_release)"
+
+    # If current == latest: no updates
+    if [[ "$current_release" == "${RELEASE_TAG}" ]]; then
+        log_success "You are up to date (${current_release})"
+        return 1
+    fi
+
+    echo ""
+    echo -e "Current release: ${BOLD}${current_release}${NC}"
+    echo -e "Latest release:  ${BOLD}${RELEASE_TAG}${NC} (${RELEASE_DATE})"
+    echo ""
+    echo "Changes:"
+
+    # Build reverse map: version_key -> shortest short name
+    declare -A KEY_TO_SHORT
+    local name vk
+    for name in "${!NAME_TO_VERSION_KEY[@]}"; do
+        vk="${NAME_TO_VERSION_KEY[$name]}"
+        if [[ -z "${KEY_TO_SHORT[$vk]+_}" ]] || [[ ${#name} -lt ${#KEY_TO_SHORT[$vk]} ]]; then
+            KEY_TO_SHORT["$vk"]="$name"
+        fi
+    done
+
+    local changed_count=0
+    local unchanged_count=0
+    local key current_ver new_ver short_name
+
+    # First pass: show changed components
+    for key in $(echo "${!NEW_VERSIONS[@]}" | tr ' ' '\n' | sort); do
+        new_ver="${NEW_VERSIONS[$key]}"
+        current_ver="${CURRENT_VERSIONS[$key]:-unknown}"
+        short_name="${KEY_TO_SHORT[$key]:-${key%_VERSION}}"
+
+        if [[ "$current_ver" != "$new_ver" ]]; then
+            printf "  %-25s %-10s ->  %s\n" "$short_name" "$current_ver" "$new_ver"
+            changed_count=$((changed_count + 1))
+        else
+            unchanged_count=$((unchanged_count + 1))
+        fi
+    done
+
+    if [[ $unchanged_count -gt 0 ]]; then
+        echo "  (${unchanged_count} components unchanged)"
+    fi
+
+    # Show first line of release notes (truncated to 80 chars)
+    if [[ -n "${RELEASE_NOTES:-}" ]]; then
+        local first_line
+        first_line=$(echo "${RELEASE_NOTES}" | head -1)
+        if [[ ${#first_line} -gt 80 ]]; then
+            first_line="${first_line:0:77}..."
+        fi
+        echo ""
+        echo "Release notes: ${first_line}"
+    fi
+    echo ""
+
+    return 0
 }
 
 # Save current state for rollback
@@ -289,6 +419,9 @@ save_rollback_state() {
         done
     fi
 
+    # Save current RELEASE tag
+    [[ -f "$RELEASE_FILE" ]] && cp "$RELEASE_FILE" "${ROLLBACK_DIR}/RELEASE.bak"
+
     log_success "Rollback state saved to ${ROLLBACK_DIR}"
 }
 
@@ -305,6 +438,9 @@ perform_rollback() {
     fi
     if [[ -f "${ROLLBACK_DIR}/release-manifest.json.bak" ]]; then
         cp "${ROLLBACK_DIR}/release-manifest.json.bak" "$MANIFEST_FILE"
+    fi
+    if [[ -f "${ROLLBACK_DIR}/RELEASE.bak" ]]; then
+        cp "${ROLLBACK_DIR}/RELEASE.bak" "$RELEASE_FILE"
     fi
 
     cd "${INSTALL_DIR}/docker"
@@ -339,47 +475,6 @@ verify_rollback() {
     done < "$saved"
 
     return "$mismatches"
-}
-
-display_version_diff() {
-    echo ""
-    echo -e "${BOLD}Version comparison:${NC}"
-    printf "  %-25s %-20s %-20s %s\n" "COMPONENT" "CURRENT" "AVAILABLE" "STATUS"
-    echo "  $(printf '%.0s-' {1..80})"
-
-    local has_updates=false
-    # Build reverse map: version_key -> short name (pick shortest)
-    declare -A KEY_TO_SHORT
-    local name vk
-    for name in "${!NAME_TO_VERSION_KEY[@]}"; do
-        vk="${NAME_TO_VERSION_KEY[$name]}"
-        if [[ -z "${KEY_TO_SHORT[$vk]+_}" ]] || [[ ${#name} -lt ${#KEY_TO_SHORT[$vk]} ]]; then
-            KEY_TO_SHORT["$vk"]="$name"
-        fi
-    done
-
-    local key current new status short
-    for key in $(echo "${!NEW_VERSIONS[@]}" | tr ' ' '\n' | sort); do
-        current="${CURRENT_VERSIONS[$key]:-unknown}"
-        new="${NEW_VERSIONS[$key]}"
-        status=""
-        short="${KEY_TO_SHORT[$key]:-${key%_VERSION}}"
-
-        if [[ "$current" == "$new" ]]; then
-            status="${GREEN}OK${NC}"
-        else
-            status="${YELLOW}UPDATE${NC}"
-            has_updates=true
-        fi
-        printf "  %-25s %-20s %-20s %b\n" "$short" "$current" "$new" "$status"
-    done
-    echo ""
-
-    if [[ "$has_updates" == "false" ]]; then
-        log_success "All versions are up to date"
-        return 1
-    fi
-    return 0
 }
 
 # Get image name for a service from docker compose
@@ -541,6 +636,35 @@ rollback_component() {
     send_notification "AGMind ${name} rolled back: ${current_version} -> ${old_version}"
 }
 
+# Bundle rollback: restore entire stack to state saved in .rollback/
+rollback_bundle() {
+    if [[ ! -f "${ROLLBACK_DIR}/dot-env.bak" ]]; then
+        log_error "No rollback state found in ${ROLLBACK_DIR}/"
+        log_error "Rollback is only available after a failed or recent update"
+        exit 1
+    fi
+
+    local current_release
+    current_release="$(get_current_release)"
+    local rollback_release="unknown"
+    if [[ -f "${ROLLBACK_DIR}/RELEASE.bak" ]]; then
+        rollback_release="$(cat "${ROLLBACK_DIR}/RELEASE.bak" 2>/dev/null | tr -d '[:space:]')"
+    fi
+
+    log_warn "Rolling back: ${current_release} -> ${rollback_release}"
+
+    perform_rollback
+
+    # Restore RELEASE file (perform_rollback already does this, but be explicit)
+    if [[ -f "${ROLLBACK_DIR}/RELEASE.bak" ]]; then
+        cp "${ROLLBACK_DIR}/RELEASE.bak" "$RELEASE_FILE"
+    fi
+
+    verify_rollback || log_warn "Some services may not have rolled back correctly"
+    log_update "MANUAL_ROLLBACK" "Bundle rollback: ${current_release} -> ${rollback_release}"
+    send_notification "AGMind rolled back: ${current_release} -> ${rollback_release}"
+}
+
 # Validate short name and show service group confirmation if needed
 resolve_component() {
     local name="$1"
@@ -648,59 +772,56 @@ update_component() {
     return 0
 }
 
-perform_rolling_update() {
-    # Update order: infrastructure first, then app, then frontend
+# Perform bundle update: pull and restart only changed services
+perform_bundle_update() {
     local update_order=(
-        "db"
-        "redis"
-        "api"
-        "worker"
-        "web"
-        "sandbox"
-        "plugin_daemon"
-        "pipelines"
-        "ollama"
-        "vllm"
-        "tei"
-        "nginx"
-        "open-webui"
-        "weaviate"
-        "qdrant"
-        "docling"
-        "xinference"
-        "grafana"
-        "portainer"
-        "prometheus"
-        "alertmanager"
-        "loki"
-        "promtail"
-        "node-exporter"
-        "cadvisor"
-        "authelia"
+        "db" "redis"
+        "api" "worker" "web" "sandbox" "plugin_daemon"
+        "pipelines" "ollama" "vllm" "tei"
+        "nginx" "open-webui"
+        "weaviate" "qdrant" "docling" "xinference"
+        "grafana" "portainer" "prometheus" "alertmanager"
+        "loki" "promtail" "node-exporter" "cadvisor" "authelia"
     )
 
-    local failed=0
-    local updated=0
-    local skipped=0
-    local total_attempted=0
+    # Build set of services that need updating
+    declare -A SERVICES_TO_UPDATE
+    local key name svc
+    for key in "${!NEW_VERSIONS[@]}"; do
+        [[ "${NEW_VERSIONS[$key]}" == "${CURRENT_VERSIONS[$key]:-}" ]] && continue
+        # Find all short names mapping to this key, then their services
+        for name in "${!NAME_TO_VERSION_KEY[@]}"; do
+            [[ "${NAME_TO_VERSION_KEY[$name]}" == "$key" ]] || continue
+            for svc in ${NAME_TO_SERVICES[$name]}; do
+                SERVICES_TO_UPDATE["$svc"]=1
+            done
+        done
+    done
 
+    if [[ ${#SERVICES_TO_UPDATE[@]} -eq 0 ]]; then
+        log_success "No services need updating"
+        return 0
+    fi
+
+    log_info "Services to update: ${!SERVICES_TO_UPDATE[*]}"
+
+    local failed=0 updated=0 skipped=0
     local service
     for service in "${update_order[@]}"; do
-        # Check if service is running
+        # Skip if not in changed set
+        [[ -z "${SERVICES_TO_UPDATE[$service]+_}" ]] && continue
+
+        # Skip if not running
         if ! docker compose -f "$COMPOSE_FILE" ps --format '{{.Name}}' "$service" 2>/dev/null | grep -q .; then
             skipped=$((skipped + 1))
             continue
         fi
 
-        total_attempted=$((total_attempted + 1))
         if update_service "$service"; then
             updated=$((updated + 1))
         else
             failed=$((failed + 1))
-            log_error "Update aborted due to error in ${service}"
-            if [[ $failed -gt 0 ]]; then
-                log_error "${updated}/${total_attempted} updated, ${service} failed, remaining skipped"
-            fi
+            log_error "Bundle update aborted at ${service}"
             break
         fi
     done
@@ -709,7 +830,7 @@ perform_rolling_update() {
     echo -e "${BOLD}Result:${NC}"
     echo "  Updated: ${updated}"
     echo "  Skipped: ${skipped}"
-    echo "  Errors: ${failed}"
+    echo "  Errors:  ${failed}"
 
     return $failed
 }
@@ -737,28 +858,39 @@ main() {
         exit 1
     fi
 
-    # Handle --rollback
-    if [[ -n "$ROLLBACK_TARGET" ]]; then
-        load_current_versions
-        rollback_component "$ROLLBACK_TARGET"
+    # Load current versions from .env
+    load_current_versions
+    local CURRENT_RELEASE
+    CURRENT_RELEASE="$(get_current_release)"
+
+    # Handle --rollback (no argument = bundle rollback)
+    if [[ "$ROLLBACK_MODE" == "true" ]]; then
+        if [[ -n "$ROLLBACK_TARGET" ]]; then
+            # Legacy per-component rollback (kept for compatibility)
+            rollback_component "$ROLLBACK_TARGET"
+        else
+            rollback_bundle
+        fi
         exit $?
     fi
 
-    # Load current versions from .env
-    load_current_versions
-
-    # Handle --component with --version (no remote fetch needed)
+    # Handle --component with --version (emergency single-component update)
     if [[ -n "$COMPONENT" && -n "$TARGET_VERSION" ]]; then
         update_component "$COMPONENT" "$TARGET_VERSION"
         exit $?
     fi
 
-    # For --check or full update: fetch remote versions
-    fetch_remote_versions
+    # === Bundle update flow ===
 
-    # Display diff
-    if ! display_version_diff; then
-        log_update "SKIP" "All versions up to date"
+    # Fetch latest release info from GitHub
+    if ! fetch_release_info; then
+        exit 1
+    fi
+
+    # Display bundle diff
+    if ! display_bundle_diff; then
+        # current == latest, no updates
+        log_update "SKIP" "Already up to date (${CURRENT_RELEASE})"
         exit 0
     fi
 
@@ -766,26 +898,10 @@ main() {
         exit 0
     fi
 
-    # Handle --component without --version (use remote version)
-    if [[ -n "$COMPONENT" ]]; then
-        local version_key="${NAME_TO_VERSION_KEY[$COMPONENT]:-}"
-        if [[ -z "$version_key" ]]; then
-            log_error "Unknown component: ${COMPONENT}"
-            exit 1
-        fi
-        local remote_version="${NEW_VERSIONS[$version_key]:-}"
-        if [[ -z "$remote_version" ]]; then
-            log_error "No remote version found for ${COMPONENT}"
-            exit 1
-        fi
-        update_component "$COMPONENT" "$remote_version"
-        exit $?
-    fi
-
-    # Full update (all components)
+    # Confirm update
     if [[ "$AUTO_UPDATE" != "true" ]]; then
-        read -rp "Update all components? (yes/no): " confirm
-        if [[ "$confirm" != "yes" ]]; then
+        read -rp "Update to ${RELEASE_TAG}? [y/N]: " confirm
+        if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
             echo "Cancelled."
             exit 0
         fi
@@ -794,15 +910,14 @@ main() {
     # Backup
     create_update_backup
 
-    # Save rollback state (images + configs)
+    # Save rollback state (images + configs + RELEASE)
     save_rollback_state
 
     # Save .env backup for rollback
     cp "$ENV_FILE" "${ENV_FILE}.pre-update"
     chmod 600 "${ENV_FILE}.pre-update"
 
-    # Apply new versions to .env BEFORE rolling update
-    # (rolling update reads image tags from .env via compose)
+    # Apply new versions to .env
     local key new current
     for key in "${!NEW_VERSIONS[@]}"; do
         new="${NEW_VERSIONS[$key]}"
@@ -816,22 +931,30 @@ main() {
         chmod 600 "$ENV_FILE"
     done
 
+    # Update versions.env from downloaded release asset
+    if [[ -n "${DOWNLOADED_VERSIONS_FILE:-}" && -f "$DOWNLOADED_VERSIONS_FILE" ]]; then
+        cp "$DOWNLOADED_VERSIONS_FILE" "$VERSIONS_FILE"
+    fi
+
     echo ""
-    log_info "Starting rolling update..."
+    log_info "Starting bundle update to ${RELEASE_TAG}..."
     echo ""
 
     cd "${INSTALL_DIR}/docker"
 
-    if perform_rolling_update; then
-        log_success "Update completed successfully!"
-        log_update "SUCCESS" "Rolling update completed"
-        send_notification "AGMind updated successfully on $(hostname 2>/dev/null || echo 'server')"
+    if perform_bundle_update; then
+        # Update RELEASE file
+        echo "$RELEASE_TAG" > "$RELEASE_FILE"
+
+        log_success "Update to ${RELEASE_TAG} completed successfully!"
+        log_update "SUCCESS" "Bundle update to ${RELEASE_TAG}"
+        send_notification "AGMind updated to ${RELEASE_TAG} on $(hostname 2>/dev/null || echo 'server')"
     else
-        log_error "Update completed with errors"
+        log_error "Update to ${RELEASE_TAG} failed — rolling back"
         perform_rollback
         verify_rollback || log_warn "Some services may not have rolled back correctly"
-        log_update "PARTIAL_FAILURE" "Some services failed to update"
-        send_notification "AGMind update completed with errors on $(hostname 2>/dev/null || echo 'server')"
+        log_update "ROLLBACK" "Bundle update to ${RELEASE_TAG} failed, rolled back"
+        send_notification "AGMind update to ${RELEASE_TAG} FAILED, rolled back on $(hostname 2>/dev/null || echo 'server')"
         exit 1
     fi
 }
