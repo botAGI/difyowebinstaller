@@ -259,7 +259,6 @@ AGmind/
 ├── lib/                # Modular Bash libraries (detect, config, health, security, ...)
 ├── scripts/            # Day-2 ops scripts (agmind CLI, backup, restore, update, ...)
 ├── templates/          # Docker Compose, versions.env, .env templates, nginx configs
-├── workflows/          # Dify workflow templates and setup guide
 ├── monitoring/         # Prometheus, Grafana dashboards, Loki, alert rules
 ├── branding/           # Open WebUI white-label assets (logo, theme)
 ├── docs/               # Docusaurus documentation site

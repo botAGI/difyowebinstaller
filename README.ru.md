@@ -397,7 +397,6 @@ AGmind/
 |   +-- docker-compose.yml  # 25+ сервисов, 3 сети
 |   +-- versions.env        # Зафиксированные версии образов
 |   +-- nginx/              # Конфиги Nginx
-+-- workflows/              # Шаблоны Dify workflow
 +-- monitoring/             # Конфиги Prometheus, Grafana, Loki
 +-- branding/               # Ресурсы white-label
 +-- docs/                   # Документация (Docusaurus)
