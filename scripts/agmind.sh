@@ -402,12 +402,14 @@ Commands:
   restart            Restart all containers
   backup             Create backup (root)
   restore <path>     Restore from backup (root)
-  update [options]     Update AGMind stack (root)
-    --check              Show available updates without changing anything
-    --component <name>   Update single component (e.g., dify-api, ollama, vllm)
-    --version <tag>      Target version (use with --component)
-    --rollback <name>    Rollback component to previous version
-    --auto               Skip confirmation prompts
+  update [options]       Update AGMind stack (root)
+    --check                Check for new bundle release (GitHub Releases)
+    --component <name>     Emergency: update single component (shows warning)
+    --version <tag>        Target version (use with --component)
+    --force                Skip emergency mode confirmation
+    --rollback             Rollback to previous bundle version
+    --rollback <name>      Rollback single component (legacy)
+    --auto                 Skip all confirmation prompts
   uninstall          Remove AGMind (root)
   rotate-secrets     Rotate passwords and keys (root)
   help               Show this help
