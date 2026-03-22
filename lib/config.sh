@@ -351,9 +351,9 @@ generate_redis_config() {
 bind 0.0.0.0
 protected-mode no
 
-# Authentication via ACL (Redis 7+ recommended approach)
-user default on >${redis_pass} ~* &* +@all -@dangerous
-user agmind on >${redis_pass} ~* &* +@all -@dangerous
+# Authentication via ACL (Redis 7+ — explicit blocklist instead of category-based block; allows CONFIG/INFO/KEYS)
+user default on >${redis_pass} ~* &* +@all -FLUSHALL -FLUSHDB -SHUTDOWN -BGREWRITEAOF -BGSAVE -DEBUG -MIGRATE -CLUSTER -FAILOVER -REPLICAOF -SLAVEOF -SWAPDB
+user agmind on >${redis_pass} ~* &* +@all -FLUSHALL -FLUSHDB -SHUTDOWN -BGREWRITEAOF -BGSAVE -DEBUG -MIGRATE -CLUSTER -FAILOVER -REPLICAOF -SLAVEOF -SWAPDB
 
 maxmemory 512mb
 maxmemory-policy allkeys-lru
