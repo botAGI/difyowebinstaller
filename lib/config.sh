@@ -113,6 +113,55 @@ _ADMIN_PASSWORD_PLAIN=""
 _ADMIN_PASSWORD_B64=""
 _AUTHELIA_JWT_SECRET=""
 
+# _restore_secrets_from_backup — restore volume-bound secrets when PG data exists (IREL-03)
+# Returns 0 if any secrets were restored, 1 if nothing restored.
+# Must be called AFTER fresh secrets are generated so they serve as a safe fallback.
+_restore_secrets_from_backup() {
+    local pg_version_file="${INSTALL_DIR}/docker/volumes/db/data/PG_VERSION"
+
+    # No PG data: fresh install — nothing to restore
+    if [[ ! -f "$pg_version_file" ]]; then
+        return 1
+    fi
+
+    # PG data exists — find the most recent .env backup
+    local latest_backup
+    latest_backup="$(ls -t "${INSTALL_DIR}/docker/.env.backup."* 2>/dev/null | head -1)"
+
+    if [[ -z "$latest_backup" ]]; then
+        log_warn "PG data exists but no .env backup found — generating new password (sync_db_password will fix)"
+        return 1
+    fi
+
+    local restored=false
+
+    local saved_db_pass
+    saved_db_pass="$(grep '^DB_PASSWORD=' "$latest_backup" | cut -d'=' -f2-)"
+    if [[ -n "$saved_db_pass" ]]; then
+        _DB_PASSWORD="$saved_db_pass"
+        restored=true
+    fi
+
+    local saved_redis_pass
+    saved_redis_pass="$(grep '^REDIS_PASSWORD=' "$latest_backup" | cut -d'=' -f2-)"
+    if [[ -n "$saved_redis_pass" ]]; then
+        _REDIS_PASSWORD="$saved_redis_pass"
+        restored=true
+    fi
+
+    local saved_secret_key
+    saved_secret_key="$(grep '^SECRET_KEY=' "$latest_backup" | cut -d'=' -f2-)"
+    if [[ -n "$saved_secret_key" ]]; then
+        _SECRET_KEY="$saved_secret_key"
+        restored=true
+    fi
+
+    if [[ "$restored" == "true" ]]; then
+        return 0
+    fi
+    return 1
+}
+
 _generate_secrets() {
     _SECRET_KEY="$(generate_random 64)"
     _DB_PASSWORD="$(generate_random 32)"
@@ -127,6 +176,11 @@ _generate_secrets() {
 
     _ADMIN_PASSWORD_PLAIN="$(generate_random 16)"
     _ADMIN_PASSWORD_B64="$(echo -n "$_ADMIN_PASSWORD_PLAIN" | base64)"
+
+    # Override volume-bound secrets from backup if PG data exists (IREL-03)
+    if _restore_secrets_from_backup; then
+        log_info "Restored DB_PASSWORD, REDIS_PASSWORD, SECRET_KEY from previous installation"
+    fi
 
     # Fatal check
     if [[ -z "$_SECRET_KEY" || -z "$_DB_PASSWORD" || -z "$_REDIS_PASSWORD" || -z "$_ADMIN_PASSWORD_PLAIN" ]]; then
