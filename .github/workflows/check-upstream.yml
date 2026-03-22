@@ -1,0 +1,32 @@
+name: Check Upstream Versions
+
+on:
+  schedule:
+    - cron: '0 9 * * *'    # daily (core AI + vector + UI)
+    - cron: '0 9 1 * *'    # monthly 1st (utilities)
+    - cron: '0 9 1 1,7 *'  # semi-annual Jan 1 + Jul 1 (infra)
+  workflow_dispatch: {}     # manual: run all tiers
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check upstream versions
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/check-upstream.sh
+
+      - name: Create issue if updates found
+        if: steps.check.outputs.has_updates == 'true'
+        uses: peter-evans/create-issue-from-file@v5
+        with:
+          title: "New upstream versions available (${{ steps.check.outputs.date }})"
+          content-filepath: /tmp/upstream-report.md
+          labels: upstream-update
