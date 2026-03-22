@@ -1,59 +1,57 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.3
-milestone_name: Stability & Reliability Bugfixes
-status: Roadmap ready, awaiting plan-phase 12
-stopped_at: Completed 15-pull-download-ux-01-PLAN.md
-last_updated: "2026-03-22T22:02:15.896Z"
-last_activity: 2026-03-22 — Roadmap phases 12-15 created
+milestone: v2.4
+milestone_name: Wizard Models + GPU Management
+status: Roadmap ready, awaiting plan-phase 16
+stopped_at: Completed 16-critical-bugfixes-01-PLAN.md
+last_updated: "2026-03-22T23:44:24.254Z"
+last_activity: "2026-03-23 — Roadmap v2.4 created: Phases 16-18"
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 5
-  completed_plans: 5
+  total_phases: 3
+  completed_phases: 1
+  total_plans: 1
+  completed_plans: 1
   percent: 0
 ---
 
-# State: AGmind Installer v2.3
+# State: AGmind Installer v2.4
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-22)
+See: .planning/PROJECT.md (updated 2026-03-23)
 
 **Core value:** One command installs, secures, and monitors a production-ready AI stack
-**Current focus:** Stability & Reliability Bugfixes — fix BUG-035–040 + WISH-010/011
+
+**Current focus:** Wizard Models + GPU Management
 
 ## Current Position
 
-Phase: 12 (not started)
-Plan: —
-Status: Roadmap ready, awaiting plan-phase 12
-Last activity: 2026-03-22 — Roadmap phases 12-15 created
+Phase: 16 (next to execute)
+Plan: — (not yet planned)
+Status: Roadmap ready, awaiting plan-phase 16
+Last activity: 2026-03-23 — Roadmap v2.4 created: Phases 16-18
 
-Progress: [░░░░░░░░░░] 0%
+Progress: `[░░░░░░░░░░] 0% (0/3 phases)`
 
 ## Performance Metrics
 
-**Velocity (historical):**
+### Velocity (historical)
+
 - v2.0 phases: 5 complete (13 plans)
-- v2.1 phases: 4 complete (8 plans), Phase 9 skipped
+- v2.1 phases: 4 complete (8 plans)
 - v2.2 phases: 2 complete (4 plans)
+- v2.3 phases: 4 complete (5 plans)
 
-**By Phase (v2.3):**
+### By Phase (v2.4)
 
-| Phase | Plans | Total | Avg/Plan |
-| --- | --- | --- | --- |
-| 12. Isolated Bugfixes | TBD | — | — |
-| 13. VRAM Guard in Wizard | TBD | — | — |
-| 14. DB Password Resume Safety | TBD | — | — |
-| 15. Pull & Download UX | TBD | — | — |
+| Phase                        | Plans | Total | Avg/Plan |
+|------------------------------|-------|-------|----------|
+| 16. Critical Bugfixes        | TBD   | —     | —        |
+| 17. Wizard Model List Update | TBD   | —     | —        |
+| 18. GPU Management CLI       | TBD   | —     | —        |
 
-*Updated after each plan completion*
-| Phase 12 P02 | 2min | 2 tasks | 2 files |
-| Phase 12-isolated-bugfixes P01 | 15 | 2 tasks | 2 files |
-| Phase 13-vram-guard-in-wizard P01 | 8 | 2 tasks | 1 files |
-| Phase 14-db-password-resume-safety P01 | 80 | 2 tasks | 2 files |
-| Phase 15-pull-download-ux P01 | 20 | 2 tasks | 3 files |
+Updated after each plan completion.
+| Phase 16-critical-bugfixes P01 | 15 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -61,44 +59,52 @@ Progress: [░░░░░░░░░░] 0%
 
 - v2.0: installer never touches Dify API (three-layer boundary)
 - v2.0: credentials only in credentials.txt, never stdout
-- v2.1: Phase 7 implemented per-component update with rollback — v2.2 replaces with bundle-based
-- v2.2: Bundle-based updates via GitHub Releases API (Coolify-style)
-- v2.2: --component kept as emergency mode with warning (EMRG-01, EMRG-02)
-- v2.2: Phase 10+11 complete: GitHub Release v2.1.0, bundle update rewrite
-- v2.3: Phase 12 groups 4 isolated bugfixes (lowest risk, no UX flow changes)
-- v2.3: Phase 13 isolated — VRAM guard changes wizard UX flow, medium complexity
-- v2.3: Phase 14 isolated — DB_PASSWORD resume touches critical install path
-- v2.3: Phase 15 groups pull/download UX improvements (low risk, additive only)
-- [Phase 12]: NO_V_PREFIX array in check-upstream.sh: strip v-prefix at report write time, not at comparison — preserves is_newer/classify_change logic
-- [Phase 12]: Dify init fallback in _save_credentials: prints grep INIT_PASSWORD as operator instruction, not executed — consistent with credentials-only-in-file policy
-- [Phase 12-isolated-bugfixes]: OPUX-01: SKIP (not FAIL) when .env is unreadable without sudo avoids false positives in diagnostics
-- [Phase 12-isolated-bugfixes]: OPUX-02: Explicit Redis ACL blocklist (12 commands) instead of -@dangerous so CONFIG/INFO/KEYS remain allowed for monitoring
-- [Phase 13]: IREL-02: TEI offset -2 GB for [recommended] only, not for OOM warning threshold
-- [Phase 13]: IREL-02: Custom model (option 11) intentionally skips VRAM check — unknown model size
-- [Phase 14]: IREL-03: Check PG_VERSION file (not directory) as PG data indicator; generate fresh secrets first then override with backup for safe fallback
-- [Phase 14]: IREL-03: Restore only DB_PASSWORD/REDIS_PASSWORD/SECRET_KEY — other secrets not persisted in volumes, always fresh
-- [Phase 15-pull-download-ux]: DLUX-01: Missing Docker images produce per-image ERROR with image:tag, installation continues with warning (not abort)
-- [Phase 15-pull-download-ux]: DLUX-02: MODEL_SIZES hardcoded table for zero-overhead size hints; TTY passthrough via docker exec -t with fallback; phase_models_graceful() + timeout handler cooperate for non-fatal model phase
+- v2.3: Phase 13 added VRAM guard in `_wizard_vllm_model()` — but NON_INTERACTIVE path bypasses it (BUG-041, fixed in Phase 16)
+- v2.3: Phase 14 added `_restore_secrets_from_backup()` — resume preserves DB_PASSWORD
+- v2.3: Phase 15 added graceful model timeout — `phase_models_graceful()`
+- v2.4: Phase 16 fixes NON_INTERACTIVE VRAM guard + resume diagnostics (2 isolated bugfixes)
+- v2.4: Phase 17 updates wizard model list — Qwen3, MoE, corrected VRAM req (14B AWQ: 12→10 GB)
+- v2.4: Phase 18 adds agmind gpu subcommand — status + assign + docker-compose env vars
+- [Phase 16-critical-bugfixes]: BFIX-41: Unknown custom vLLM models in NON_INTERACTIVE get warning only (no exit) -- matches interactive behavior
+- [Phase 16-critical-bugfixes]: BFIX-42: On resume use run_diagnostics (not phase_diagnostics) to avoid preflight_checks user prompts; || true for partial GPU detection
 
 ### Architecture Notes
 
-- check-upstream.sh: check_component() writes raw tag_name — needs v-prefix strip for Weaviate/Postgres/Redis/Grafana (IREL-01)
-- wizard.sh: _wizard_vllm_model() has no VRAM gate — detect.sh exposes DETECTED_GPU_VRAM (IREL-02)
-- lib/config.sh: _generate_env_file() regenerates DB_PASSWORD unconditionally on resume (IREL-03)
-- lib/compose.sh: sync_db_password() alternative path — also needs guard (IREL-03)
-- install.sh: _init_dify_admin() has 150s timeout (30 retries x 5s) — needs 300s (60 retries) (IREL-04)
-- scripts/agmind.sh: cmd_doctor() .env Completeness block reads .env without root check — causes false FAIL (OPUX-01)
-- lib/config.sh: generate_redis_config() uses -@dangerous blocklist — blocks CONFIG/INFO/KEYS (OPUX-02)
-- lib/compose.sh: _pull_with_progress() swallows pull errors (|| true) — missing image goes unnoticed (DLUX-01)
-- lib/models.sh: pull_model() runs without tty passthrough — no progress visible (DLUX-02)
-- install.sh: run_phase_with_timeout() calls fatal on model timeout — should be warning (DLUX-02)
+- `wizard.sh`: `_wizard_llm_model()` returns early for NON_INTERACTIVE — VRAM guard never reached (fix: Phase 16)
+- `wizard.sh`: default `VLLM_MODEL=Qwen2.5-14B-Instruct` assigned without VRAM check (fix: Phase 16)
+- `install.sh`: resume with start >= 2 skips `phase_diagnostics` → DETECTED_OS/DETECTED_GPU_VRAM unset (fix: Phase 16)
+- `wizard.sh`: `_wizard_vllm_model()` model list needs Qwen3-8B, Qwen3-8B-AWQ, Qwen3-14B-AWQ, Qwen3-Coder-Next MoE AWQ, Nemotron Nano MoE AWQ (Phase 17)
+- `lib/models.sh`: MODEL_SIZES needs entries for all new models (Phase 17)
+- `docker-compose.yml:320`: CUDA_VISIBLE_DEVICES hardcoded "0" for vLLM → `${VLLM_CUDA_DEVICE:-0}` (Phase 18)
+- `docker-compose.yml:352`: CUDA_VISIBLE_DEVICES hardcoded "0" for TEI → `${TEI_CUDA_DEVICE:-0}` (Phase 18)
+- `agmind.sh`: no gpu subcommand exists — `cmd_gpu` + `_gpu_status` + `_gpu_assign` + `_gpu_auto_assign` needed (Phase 18)
+
+### Key Files Per Phase
+
+**Phase 16 (BFIX-41, BFIX-42):**
+
+- `lib/wizard.sh` — `_wizard_llm_model` NON_INTERACTIVE path + default VRAM check
+- `install.sh` — resume logic before phase table (always call run_diagnostics)
+
+**Phase 17 (WMOD-01, WMOD-02):**
+
+- `lib/wizard.sh` — `_wizard_vllm_model` model list + vram_req array
+- `lib/models.sh` — MODEL_SIZES associative array
+
+**Phase 18 (GPUM-01, GPUM-02, GPUM-03):**
+
+- `scripts/agmind.sh` — new `cmd_gpu` + `_gpu_status` + `_gpu_assign` + `_gpu_auto_assign`
+- `templates/docker-compose.yml` — CUDA_VISIBLE_DEVICES lines → env var substitution
 
 ### Pending Todos
 
-- [ ] Plan Phase 12: Isolated Bugfixes (IREL-01, IREL-04, OPUX-01, OPUX-02)
-- [ ] Plan Phase 13: VRAM Guard in Wizard (IREL-02)
-- [ ] Plan Phase 14: DB Password Resume Safety (IREL-03)
-- [ ] Plan Phase 15: Pull & Download UX (DLUX-01, DLUX-02)
+- [ ] Plan Phase 16: Critical Bugfixes
+- [ ] Execute Phase 16
+- [ ] Plan Phase 17: Wizard Model List Update
+- [ ] Execute Phase 17
+- [ ] Plan Phase 18: GPU Management CLI
+- [ ] Execute Phase 18
+- [ ] Tag GitHub Release v2.4.0
 
 ### Blockers/Concerns
 
@@ -106,6 +112,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-22T22:02:15.894Z
-Stopped at: Completed 15-pull-download-ux-01-PLAN.md
+Last session: 2026-03-22T23:44:24.251Z
+Stopped at: Completed 16-critical-bugfixes-01-PLAN.md
 Resume file: None
