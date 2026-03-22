@@ -10,7 +10,7 @@ jobs:
     name: Lifecycle Smoke Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install bats-core
         run: |
           git clone --depth 1 https://github.com/bats-core/bats-core.git /tmp/bats
