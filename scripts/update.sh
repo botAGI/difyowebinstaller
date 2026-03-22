@@ -698,6 +698,23 @@ update_component() {
     local name="$1"
     local version="$2"
 
+    # Emergency mode warning (EMRG-01, EMRG-02)
+    if [[ "$FORCE" != "true" ]]; then
+        echo ""
+        echo -e "${YELLOW}=========================================${NC}"
+        echo -e "${YELLOW}  WARNING: Single-component update${NC}"
+        echo -e "${YELLOW}  bypasses release compatibility.${NC}"
+        echo -e "${YELLOW}=========================================${NC}"
+        echo ""
+        echo "  Recommended: use 'agmind update' for tested bundle updates."
+        echo ""
+        read -rp "  Continue anyway? [y/N]: " confirm
+        if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+            echo "Cancelled."
+            exit 0
+        fi
+    fi
+
     local resolved
     resolved="$(resolve_component "$name")"
     local version_key="${resolved%%|*}"
@@ -877,6 +894,25 @@ main() {
     # Handle --component with --version (emergency single-component update)
     if [[ -n "$COMPONENT" && -n "$TARGET_VERSION" ]]; then
         update_component "$COMPONENT" "$TARGET_VERSION"
+        exit $?
+    fi
+
+    # Handle --component without --version (use latest release version)
+    if [[ -n "$COMPONENT" && -z "$TARGET_VERSION" ]]; then
+        if ! fetch_release_info; then
+            exit 1
+        fi
+        local version_key="${NAME_TO_VERSION_KEY[$COMPONENT]:-}"
+        if [[ -z "$version_key" ]]; then
+            log_error "Unknown component: ${COMPONENT}"
+            exit 1
+        fi
+        local remote_version="${NEW_VERSIONS[$version_key]:-}"
+        if [[ -z "$remote_version" ]]; then
+            log_error "No version found for ${COMPONENT} in latest release"
+            exit 1
+        fi
+        update_component "$COMPONENT" "$remote_version"
         exit $?
     fi
 
