@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: Stability & Reliability Bugfixes
 status: Roadmap ready, awaiting plan-phase 12
-stopped_at: Completed 13-vram-guard-in-wizard-01-PLAN.md
-last_updated: "2026-03-22T21:39:10.872Z"
+stopped_at: Completed 14-db-password-resume-safety-01-PLAN.md
+last_updated: "2026-03-22T21:50:15.199Z"
 last_activity: 2026-03-22 — Roadmap phases 12-15 created
 progress:
   total_phases: 4
-  completed_phases: 2
-  total_plans: 3
-  completed_plans: 3
+  completed_phases: 3
+  total_plans: 4
+  completed_plans: 4
   percent: 0
 ---
 
@@ -52,6 +52,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 12 P02 | 2min | 2 tasks | 2 files |
 | Phase 12-isolated-bugfixes P01 | 15 | 2 tasks | 2 files |
 | Phase 13-vram-guard-in-wizard P01 | 8 | 2 tasks | 1 files |
+| Phase 14-db-password-resume-safety P01 | 80 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -73,6 +74,8 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 12-isolated-bugfixes]: OPUX-02: Explicit Redis ACL blocklist (12 commands) instead of -@dangerous so CONFIG/INFO/KEYS remain allowed for monitoring
 - [Phase 13]: IREL-02: TEI offset -2 GB for [recommended] only, not for OOM warning threshold
 - [Phase 13]: IREL-02: Custom model (option 11) intentionally skips VRAM check — unknown model size
+- [Phase 14]: IREL-03: Check PG_VERSION file (not directory) as PG data indicator; generate fresh secrets first then override with backup for safe fallback
+- [Phase 14]: IREL-03: Restore only DB_PASSWORD/REDIS_PASSWORD/SECRET_KEY — other secrets not persisted in volumes, always fresh
 
 ### Architecture Notes
 
@@ -100,6 +103,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-22T21:39:10.870Z
-Stopped at: Completed 13-vram-guard-in-wizard-01-PLAN.md
+Last session: 2026-03-22T21:50:15.197Z
+Stopped at: Completed 14-db-password-resume-safety-01-PLAN.md
 Resume file: None

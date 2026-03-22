@@ -320,7 +320,10 @@ Plans:
 2. После resume `docker compose up` стартует без ошибок аутентификации PostgreSQL (`FATAL: password authentication failed` отсутствует в логах)
 3. При отсутствии PG volume (чистая установка) поведение не изменилось — `DB_PASSWORD` генерируется как раньше
 
-**Plans:** TBD
+**Plans:** 1/1 plans complete
+
+Plans:
+- [ ] 14-01-PLAN.md — Preserve secrets from .env backup on resume + harden sync_db_password timeout/errors (IREL-03)
 
 ---
 
@@ -356,7 +359,7 @@ Plans:
 - [x] **Phase 11: Bundle Update Rewrite** — Переписать update.sh на bundle workflow через GitHub Releases API + emergency mode + rollback (completed 2026-03-22)
 - [x] **Phase 12: Isolated Bugfixes** — Doctor SKIP без root, Redis ACL точечный blocklist, v-prefix strip, Dify init timeout 5 мин (completed 2026-03-22)
 - [x] **Phase 13: VRAM Guard in Wizard** — Показ требований VRAM в wizard vLLM + предупреждение при выборе слишком большой модели (completed 2026-03-22)
-- [ ] **Phase 14: DB Password Resume Safety** — Preserve DB_PASSWORD при resume если PG volume существует
+- [x] **Phase 14: DB Password Resume Safety** — Preserve DB_PASSWORD при resume если PG volume существует (completed 2026-03-22)
 - [ ] **Phase 15: Pull & Download UX** — Pre-pull валидация образов + прогресс скачивания моделей + graceful timeout
 
 ## Progress
@@ -375,10 +378,10 @@ Plans:
 | 10. Release Foundation | v2.2 | 2/2 | Complete | 2026-03-22 |
 | 11. Bundle Update Rewrite | v2.2 | 2/2 | Complete | 2026-03-22 |
 | 12. Isolated Bugfixes | 2/2 | Complete    | 2026-03-22 | — |
-| 13. VRAM Guard in Wizard | 1/1 | Complete   | 2026-03-22 | — |
-| 14. DB Password Resume Safety | v2.3 | 0/? | Not started | — |
+| 13. VRAM Guard in Wizard | 1/1 | Complete    | 2026-03-22 | — |
+| 14. DB Password Resume Safety | 1/1 | Complete   | 2026-03-22 | — |
 | 15. Pull & Download UX | v2.3 | 0/? | Not started | — |
 
 ---
 *Roadmap created: 2026-03-17*
-*Last updated: 2026-03-23 — Phase 13 planned (1 plan, wave 1)*
+*Last updated: 2026-03-23 — Phase 14 planned (1 plan, wave 1)*

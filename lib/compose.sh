@@ -73,7 +73,8 @@ _pull_with_progress() {
         _print_pull_status images "$total"
         sleep 3
     done
-    wait "$pull_pid" || true
+    local pull_rc=0
+    wait "$pull_pid" || pull_rc=$?
 
     # Clear progress line, print final result
     printf "\r%-80s\r" ""
@@ -81,7 +82,17 @@ _pull_with_progress() {
     for img in "${images[@]}"; do
         docker image inspect "$img" >/dev/null 2>&1 && ready=$((ready + 1))
     done
-    log_success "Images ready: ${ready}/${total}"
+
+    if [[ $ready -eq $total ]]; then
+        log_success "Images ready: ${ready}/${total}"
+    else
+        log_warn "Images ready: ${ready}/${total}"
+        _validate_pulled_images images "$total" || true
+    fi
+
+    # Return non-zero if any images are missing (caller decides severity)
+    [[ $ready -lt $total ]] && return 1
+    return 0
 }
 
 _print_pull_status() {
@@ -102,6 +113,23 @@ _print_pull_status() {
     # Truncate to fit terminal
     [[ ${#names} -gt 64 ]] && names="${names:0:61}..."
     printf "\r  ⬇️  Pulling images... %d/%d [%s]   " "$ready" "$total" "$names"
+}
+
+# Check each image after pull; print error for each missing one.
+# Returns count of missing images (non-zero = some missing).
+_validate_pulled_images() {
+    local -n _vimgs=$1
+    local total="$2"
+    local missing=0
+
+    for img in "${_vimgs[@]}"; do
+        if ! docker image inspect "$img" >/dev/null 2>&1; then
+            log_error "Образ не найден: ${img}. Проверьте тег в versions.env"
+            missing=$((missing + 1))
+        fi
+    done
+
+    return "$missing"
 }
 
 # ============================================================================
@@ -133,7 +161,7 @@ compose_up() {
 
     # --- Pull with progress (skip for offline) ---
     if [[ "${DEPLOY_PROFILE:-}" != "offline" ]]; then
-        _pull_with_progress "$profiles"
+        _pull_with_progress "$profiles" || log_warn "Не все образы загружены — установка продолжается"
     fi
 
     # --- Up (--pull missing as safety net for anything _pull missed) ---

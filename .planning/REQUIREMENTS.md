@@ -11,7 +11,7 @@ Requirements for v2.3 Stability & Reliability Bugfixes. Each maps to roadmap pha
 
 - [x] **IREL-01**: check-upstream.sh стрипает v-prefix для компонентов, чьи Docker-образы без v (Weaviate, Postgres, Redis, Grafana) перед записью в отчёт (BUG-035)
 - [x] **IREL-02**: Wizard показывает требуемый VRAM рядом с каждой моделью vLLM и ставит `[рекомендуется]` только если VRAM >= требуемого; предупреждение при выборе слишком большой модели (BUG-036)
-- [ ] **IREL-03**: При resume установки, если PG volume уже существует, DB_PASSWORD берётся из существующего .env backup вместо генерации нового (BUG-037)
+- [x] **IREL-03**: При resume установки, если PG volume уже существует, DB_PASSWORD берётся из существующего .env backup вместо генерации нового (BUG-037)
 - [x] **IREL-04**: Dify admin init ждёт до 5 минут (60 retries); если не удалось — в credentials.txt пишется fallback инструкция с INIT_PASSWORD (BUG-039)
 
 ### Operator UX
@@ -205,7 +205,7 @@ All 24 requirements shipped and confirmed working in v2.0. See git history for d
 | OPUX-01 | Phase 12 | Complete |
 | OPUX-02 | Phase 12 | Complete |
 | IREL-02 | Phase 13 | Complete |
-| IREL-03 | Phase 14 | Pending |
+| IREL-03 | Phase 14 | Complete |
 | DLUX-01 | Phase 15 | Pending |
 | DLUX-02 | Phase 15 | Pending |
 
