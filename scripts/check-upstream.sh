@@ -1,0 +1,347 @@
+#!/usr/bin/env bash
+# ============================================================================
+# Upstream Version Checker
+# Compares pinned versions in templates/versions.env against latest releases.
+# Creates /tmp/upstream-report.md if updates are found.
+# ============================================================================
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+VERSIONS_FILE="${REPO_DIR}/templates/versions.env"
+REPORT_FILE="/tmp/upstream-report.md"
+TODAY=$(date +%Y-%m-%d)
+DAY=$(date +%d)
+MONTH=$(date +%m)
+
+# --- Component definitions: "Name|VERSION_VAR|repo|source" ---
+# source: gh = GitHub Releases (default), hub = Docker Hub tags
+
+DAILY_CHECKS=(
+    "Dify|DIFY_VERSION|langgenius/dify|gh"
+    "Open WebUI|OPENWEBUI_VERSION|open-webui/open-webui|gh"
+    "Ollama|OLLAMA_VERSION|ollama/ollama|gh"
+    "vLLM|VLLM_VERSION|vllm-project/vllm|gh"
+    "TEI|TEI_VERSION|huggingface/text-embeddings-inference|gh"
+    "Weaviate|WEAVIATE_VERSION|weaviate/weaviate|gh"
+    "Qdrant|QDRANT_VERSION|qdrant/qdrant|gh"
+    "Docling|DOCLING_SERVE_VERSION|docling-project/docling-serve|gh"
+    "Xinference|XINFERENCE_VERSION|xorbitsai/inference|gh"
+)
+
+MONTHLY_CHECKS=(
+    "Authelia|AUTHELIA_VERSION|authelia/authelia|gh"
+    "Certbot|CERTBOT_VERSION|certbot/certbot|gh"
+    "Portainer|PORTAINER_VERSION|portainer/portainer-ce|hub"
+    "Squid|SQUID_VERSION|ubuntu/squid|hub"
+)
+
+SEMIANNUAL_CHECKS=(
+    "PostgreSQL|POSTGRES_VERSION|postgres|hub"
+    "Redis|REDIS_VERSION|redis|hub"
+    "Nginx|NGINX_VERSION|nginx|hub"
+    "Prometheus|PROMETHEUS_VERSION|prometheus/prometheus|gh"
+    "Alertmanager|ALERTMANAGER_VERSION|prometheus/alertmanager|gh"
+    "Grafana|GRAFANA_VERSION|grafana/grafana|gh"
+    "Loki|LOKI_VERSION|grafana/loki|gh"
+    "Promtail|PROMTAIL_VERSION|grafana/promtail|gh"
+    "Node Exporter|NODE_EXPORTER_VERSION|prometheus/node_exporter|gh"
+    "cAdvisor|CADVISOR_VERSION|google/cadvisor|gh"
+)
+
+# --- State ---
+declare -A CURRENT_VERSIONS
+UPDATES=()  # "name|current|latest|change"
+
+# ============================================================================
+# Version helpers
+# ============================================================================
+
+# Strip prefixes (v, cuda-) and suffixes (-alpine, -local, -edge, etc.)
+# Returns bare numeric version: 1.13.0, 16, 7.4.1
+normalize_version() {
+    local v="$1"
+    v="${v#v}"
+    v="${v#cuda-}"
+    # Extract leading digits[.digits]* pattern
+    echo "$v" | sed 's/^\([0-9][0-9.]*\).*/\1/'
+}
+
+# Compare two versions → major|minor|patch|same
+classify_change() {
+    local current="$1" latest="$2"
+    local c l
+    c=$(normalize_version "$current")
+    l=$(normalize_version "$latest")
+
+    [[ "$c" == "$l" ]] && echo "same" && return
+
+    IFS='.' read -ra cp <<< "$c"
+    IFS='.' read -ra lp <<< "$l"
+
+    if [[ "${cp[0]:-0}" != "${lp[0]:-0}" ]]; then
+        echo "major"
+    elif [[ "${cp[1]:-0}" != "${lp[1]:-0}" ]]; then
+        echo "minor"
+    else
+        echo "patch"
+    fi
+}
+
+# True if latest > current (numeric comparison of normalized versions)
+is_newer() {
+    local current="$1" latest="$2"
+    local c l
+    c=$(normalize_version "$current")
+    l=$(normalize_version "$latest")
+
+    [[ "$c" == "$l" ]] && return 1
+
+    # Compare using sort -V (version sort)
+    local highest
+    highest=$(printf '%s\n%s\n' "$c" "$l" | sort -V | tail -1)
+    [[ "$highest" == "$l" ]]
+}
+
+# ============================================================================
+# API checkers
+# ============================================================================
+
+github_curl() {
+    local -a args=(curl -sf --max-time 15)
+    if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+        args+=(-H "Authorization: token ${GITHUB_TOKEN}")
+    fi
+    "${args[@]}" "$@"
+}
+
+# Get latest release tag from GitHub Releases API
+check_github_latest() {
+    local repo="$1"
+    local tag
+    tag=$(github_curl "https://api.github.com/repos/${repo}/releases?per_page=5" \
+        | python3 -c "
+import sys, json
+releases = json.load(sys.stdin)
+for r in releases:
+    if not r.get('prerelease') and not r.get('draft'):
+        print(r.get('tag_name', ''))
+        break
+" 2>/dev/null) || return 1
+    echo "$tag"
+}
+
+# Get latest matching tag from Docker Hub
+check_dockerhub_latest() {
+    local repo="$1" current="$2"
+
+    # Determine suffix from current version (-alpine, etc.)
+    local suffix=""
+    if [[ "$current" == *-alpine* ]]; then suffix="-alpine"; fi
+
+    # Build Docker Hub URL
+    local url
+    if [[ "$repo" == */* ]]; then
+        url="https://hub.docker.com/v2/repositories/${repo}/tags?page_size=50&ordering=last_updated"
+    else
+        url="https://hub.docker.com/v2/repositories/library/${repo}/tags?page_size=50&ordering=last_updated"
+    fi
+
+    curl -sf --max-time 15 "$url" \
+        | python3 -c "
+import sys, json, re
+
+data = json.load(sys.stdin)
+suffix = '${suffix}'
+skip = {'rc', 'beta', 'alpha', 'dev', 'test', 'latest', 'slim', 'bullseye', 'bookworm', 'jammy', 'noble'}
+
+tags = []
+for r in data.get('results', []):
+    t = r['name']
+    if any(s in t.lower() for s in skip):
+        continue
+    if suffix and not t.endswith(suffix):
+        continue
+    base = t[:-len(suffix)] if suffix else t
+    if not base or not base[0].isdigit():
+        continue
+    tags.append(t)
+
+def ver_key(tag):
+    base = tag[:-len(suffix)] if suffix else tag
+    parts = re.split(r'[\.\-]', base)
+    return [int(p) if p.isdigit() else 0 for p in parts]
+
+tags.sort(key=ver_key, reverse=True)
+print(tags[0] if tags else '')
+" 2>/dev/null || return 1
+}
+
+# ============================================================================
+# Core logic
+# ============================================================================
+
+load_current_versions() {
+    while IFS='=' read -r key value; do
+        [[ -z "$key" || "$key" =~ ^# ]] && continue
+        key=$(echo "$key" | tr -d '[:space:]')
+        value=$(echo "$value" | tr -d '[:space:]')
+        CURRENT_VERSIONS["$key"]="$value"
+    done < "$VERSIONS_FILE"
+}
+
+check_component() {
+    local name="$1" var="$2" repo="$3" source="${4:-gh}"
+    local current="${CURRENT_VERSIONS[$var]:-}"
+
+    if [[ -z "$current" ]]; then
+        echo "  SKIP: ${name} — ${var} not found in versions.env" >&2
+        return
+    fi
+
+    # Skip branch-based versions
+    if [[ "$current" =~ ^[a-z]+$ ]]; then
+        echo "  SKIP: ${name} — branch ref '${current}'" >&2
+        return
+    fi
+
+    local latest=""
+    if [[ "$source" == "hub" ]]; then
+        latest=$(check_dockerhub_latest "$repo" "$current") || true
+    else
+        latest=$(check_github_latest "$repo") || true
+    fi
+
+    if [[ -z "$latest" ]]; then
+        echo "  WARN: ${name} — could not fetch latest from ${source}:${repo}" >&2
+        return
+    fi
+
+    if is_newer "$current" "$latest"; then
+        local change
+        change=$(classify_change "$current" "$latest")
+        UPDATES+=("${name}|${current}|${latest}|${change}")
+        echo "  UPDATE: ${name} ${current} -> ${latest} (${change})" >&2
+    else
+        echo "  OK: ${name} ${current} (up to date)" >&2
+    fi
+}
+
+run_checks() {
+    local tier="$1"
+    shift
+    local components=("$@")
+
+    echo "--- ${tier} checks ---" >&2
+    for entry in "${components[@]}"; do
+        IFS='|' read -r name var repo source <<< "$entry"
+        check_component "$name" "$var" "$repo" "${source:-gh}"
+    done
+}
+
+check_dedup() {
+    if [[ -z "${GITHUB_TOKEN:-}" ]]; then
+        return 1  # can't check, assume no dupe
+    fi
+    local count
+    count=$(github_curl "https://api.github.com/repos/botAGI/difyowebinstaller/issues?labels=upstream-update&state=open&per_page=1" \
+        | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null) || return 1
+    [[ "$count" -gt 0 ]]
+}
+
+generate_report() {
+    {
+        echo "## Upstream Version Check — ${TODAY}"
+        echo ""
+        echo "| Component | Current | Latest | Change |"
+        echo "|-----------|---------|--------|--------|"
+        for u in "${UPDATES[@]}"; do
+            IFS='|' read -r name current latest change <<< "$u"
+            local badge="$change"
+            if [[ "$change" == "major" ]]; then
+                badge="⚠️ major"
+            fi
+            echo "| ${name} | ${current} | ${latest} | ${badge} |"
+        done
+        echo ""
+        echo "### Recommendations"
+        echo "- **patch**: Safe to update. Test and release."
+        echo "- **minor**: Review changelog. Test before release."
+        echo "- **⚠️ major**: Breaking changes possible. Careful testing required."
+        echo ""
+        echo "### How to update"
+        echo "1. On test server: \`agmind update --component <name> --version <latest> --force\`"
+        echo "2. Run \`agmind doctor\` — verify 0 errors"
+        echo "3. If OK — update \`templates/versions.env\` — commit — create Release"
+        echo "4. If FAIL — \`agmind update --rollback\`"
+    } > "$REPORT_FILE"
+}
+
+set_output() {
+    local key="$1" value="$2"
+    if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+        echo "${key}=${value}" >> "$GITHUB_OUTPUT"
+    fi
+}
+
+# ============================================================================
+# Main
+# ============================================================================
+main() {
+    load_current_versions
+
+    local run_monthly=false
+    local run_semiannual=false
+
+    # Determine tiers based on date
+    if [[ "$DAY" == "01" ]]; then
+        run_monthly=true
+    fi
+    if [[ "$DAY" == "01" && ("$MONTH" == "01" || "$MONTH" == "07") ]]; then
+        run_semiannual=true
+    fi
+    # workflow_dispatch: run all tiers
+    if [[ "${GITHUB_EVENT_NAME:-}" == "workflow_dispatch" ]]; then
+        run_monthly=true
+        run_semiannual=true
+    fi
+
+    echo "=== Upstream Version Check (${TODAY}) ===" >&2
+    echo "  Tiers: daily=true monthly=${run_monthly} semiannual=${run_semiannual}" >&2
+    echo "" >&2
+
+    run_checks "DAILY" "${DAILY_CHECKS[@]}"
+
+    if [[ "$run_monthly" == "true" ]]; then
+        run_checks "MONTHLY" "${MONTHLY_CHECKS[@]}"
+    fi
+
+    if [[ "$run_semiannual" == "true" ]]; then
+        run_checks "SEMI-ANNUAL" "${SEMIANNUAL_CHECKS[@]}"
+    fi
+
+    echo "" >&2
+
+    if [[ ${#UPDATES[@]} -eq 0 ]]; then
+        echo "All versions up to date." >&2
+        set_output "has_updates" "false"
+        set_output "date" "$TODAY"
+        return
+    fi
+
+    # Dedup: skip if open issue already exists
+    if check_dedup; then
+        echo "Open upstream-update issue already exists — skipping." >&2
+        set_output "has_updates" "false"
+        set_output "date" "$TODAY"
+        return
+    fi
+
+    echo "${#UPDATES[@]} update(s) found. Generating report..." >&2
+    generate_report
+    set_output "has_updates" "true"
+    set_output "date" "$TODAY"
+    echo "Report: ${REPORT_FILE}" >&2
+}
+
+main "$@"
