@@ -202,13 +202,13 @@ _init_dify_admin() {
 
     # Wait for Dify API to be ready
     local attempts=0
-    while [[ $attempts -lt 30 ]]; do
+    while [[ $attempts -lt 60 ]]; do
         docker exec agmind-api curl -sf http://localhost:5001/health >/dev/null 2>&1 && break
         sleep 5
         attempts=$((attempts + 1))
     done
-    if [[ $attempts -ge 30 ]]; then
-        log_warn "Dify API not ready, skipping init"
+    if [[ $attempts -ge 60 ]]; then
+        log_warn "Dify API not ready after 5 min, skipping init"
         return 0
     fi
 
@@ -271,6 +271,13 @@ _save_credentials() {
                 echo "  ssh -L 9443:127.0.0.1:9443 $(whoami)@${ip}"
                 echo "  Затем откройте: https://localhost:9443"
             fi
+        fi
+        if [[ ! -f "${INSTALL_DIR}/.dify_initialized" ]]; then
+            echo ""
+            echo "Dify Admin (ручная настройка):"
+            echo "  Dify не был инициализирован автоматически."
+            echo "  Откройте http://${DOMAIN:-$ip}:3000/install"
+            echo "  Пароль инициализации: grep INIT_PASSWORD ${INSTALL_DIR}/docker/.env | cut -d= -f2-"
         fi
     } > "${INSTALL_DIR}/credentials.txt"
     chmod 600 "${INSTALL_DIR}/credentials.txt"
