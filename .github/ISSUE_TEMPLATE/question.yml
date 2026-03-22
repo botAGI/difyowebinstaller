@@ -1,0 +1,21 @@
+name: "\u2753 Question"
+description: Ask a question about AGMind
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For general discussions, use [Discussions](https://github.com/botAGI/difyowebinstaller/discussions) instead.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Version, OS, what you're trying to do

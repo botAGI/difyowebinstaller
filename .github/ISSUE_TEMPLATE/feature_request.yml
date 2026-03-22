@@ -1,0 +1,33 @@
+name: "\U0001F4A1 Feature Request"
+description: Suggest an idea
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem does this solve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Installer / Wizard
+        - Update System
+        - CLI (agmind)
+        - Docker Compose / Services
+        - GPU / vLLM / TEI
+        - Monitoring
+        - Security
+        - Backup / DR
+        - Other
