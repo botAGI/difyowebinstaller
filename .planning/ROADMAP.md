@@ -300,7 +300,10 @@ Plans:
 2. При выборе модели с VRAM > обнаруженного GPU wizard выводит явное предупреждение с цифрами (требуется X GB, доступно Y GB) и запрашивает подтверждение `[y/N]` перед продолжением
 3. При DETECTED_GPU_VRAM=0 (GPU не обнаружен) — все модели показываются без метки `[рекомендуется]`, предупреждение о неизвестном VRAM выводится один раз в начале списка
 
-**Plans:** TBD
+**Plans:** 1/1 plans complete
+
+Plans:
+- [ ] 13-01-PLAN.md — VRAM-aware vLLM model selection with dynamic [recommended] tag and oversized warning (IREL-02)
 
 ---
 
@@ -352,7 +355,7 @@ Plans:
 - [x] **Phase 10: Release Foundation** — Locale bugfix, GitHub Release v2.1.0 с versions.env asset, COMPONENTS.md (completed 2026-03-22)
 - [x] **Phase 11: Bundle Update Rewrite** — Переписать update.sh на bundle workflow через GitHub Releases API + emergency mode + rollback (completed 2026-03-22)
 - [x] **Phase 12: Isolated Bugfixes** — Doctor SKIP без root, Redis ACL точечный blocklist, v-prefix strip, Dify init timeout 5 мин (completed 2026-03-22)
-- [ ] **Phase 13: VRAM Guard in Wizard** — Показ требований VRAM в wizard vLLM + предупреждение при выборе слишком большой модели
+- [x] **Phase 13: VRAM Guard in Wizard** — Показ требований VRAM в wizard vLLM + предупреждение при выборе слишком большой модели (completed 2026-03-22)
 - [ ] **Phase 14: DB Password Resume Safety** — Preserve DB_PASSWORD при resume если PG volume существует
 - [ ] **Phase 15: Pull & Download UX** — Pre-pull валидация образов + прогресс скачивания моделей + graceful timeout
 
@@ -371,11 +374,11 @@ Plans:
 | 9. Operator Makefile | v2.1 | — | Skipped | — |
 | 10. Release Foundation | v2.2 | 2/2 | Complete | 2026-03-22 |
 | 11. Bundle Update Rewrite | v2.2 | 2/2 | Complete | 2026-03-22 |
-| 12. Isolated Bugfixes | 2/2 | Complete   | 2026-03-22 | — |
-| 13. VRAM Guard in Wizard | v2.3 | 0/? | Not started | — |
+| 12. Isolated Bugfixes | 2/2 | Complete    | 2026-03-22 | — |
+| 13. VRAM Guard in Wizard | 1/1 | Complete   | 2026-03-22 | — |
 | 14. DB Password Resume Safety | v2.3 | 0/? | Not started | — |
 | 15. Pull & Download UX | v2.3 | 0/? | Not started | — |
 
 ---
 *Roadmap created: 2026-03-17*
-*Last updated: 2026-03-23 — Phase 12 planned (2 plans, wave 1)*
+*Last updated: 2026-03-23 — Phase 13 planned (1 plan, wave 1)*

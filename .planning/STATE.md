@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: Stability & Reliability Bugfixes
 status: Roadmap ready, awaiting plan-phase 12
-stopped_at: Completed 12-isolated-bugfixes-01-PLAN.md
-last_updated: "2026-03-22T21:26:37.459Z"
+stopped_at: Completed 13-vram-guard-in-wizard-01-PLAN.md
+last_updated: "2026-03-22T21:39:10.872Z"
 last_activity: 2026-03-22 — Roadmap phases 12-15 created
 progress:
   total_phases: 4
-  completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  completed_phases: 2
+  total_plans: 3
+  completed_plans: 3
   percent: 0
 ---
 
@@ -51,6 +51,7 @@ Progress: [░░░░░░░░░░] 0%
 *Updated after each plan completion*
 | Phase 12 P02 | 2min | 2 tasks | 2 files |
 | Phase 12-isolated-bugfixes P01 | 15 | 2 tasks | 2 files |
+| Phase 13-vram-guard-in-wizard P01 | 8 | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -70,6 +71,8 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 12]: Dify init fallback in _save_credentials: prints grep INIT_PASSWORD as operator instruction, not executed — consistent with credentials-only-in-file policy
 - [Phase 12-isolated-bugfixes]: OPUX-01: SKIP (not FAIL) when .env is unreadable without sudo avoids false positives in diagnostics
 - [Phase 12-isolated-bugfixes]: OPUX-02: Explicit Redis ACL blocklist (12 commands) instead of -@dangerous so CONFIG/INFO/KEYS remain allowed for monitoring
+- [Phase 13]: IREL-02: TEI offset -2 GB for [recommended] only, not for OOM warning threshold
+- [Phase 13]: IREL-02: Custom model (option 11) intentionally skips VRAM check — unknown model size
 
 ### Architecture Notes
 
@@ -97,6 +100,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-22T21:26:37.457Z
-Stopped at: Completed 12-isolated-bugfixes-01-PLAN.md
+Last session: 2026-03-22T21:39:10.870Z
+Stopped at: Completed 13-vram-guard-in-wizard-01-PLAN.md
 Resume file: None
