@@ -346,31 +346,71 @@ _wizard_ollama_model() {
 }
 
 _wizard_vllm_model() {
+    # VRAM requirements in GB per model (indices 1-10 match menu numbers)
+    local -a vram_req=(0 8 12 16 16 16 28 28 28 48 140)
+
+    local vram_gb=0
+    if [[ "${DETECTED_GPU_VRAM:-0}" -gt 0 ]]; then
+        vram_gb=$(( DETECTED_GPU_VRAM / 1024 ))
+    fi
+
+    # TEI offset for [recommended]: vLLM default embed is TEI (~2 GB shared GPU)
+    local effective_vram="$vram_gb"
+    if [[ "$vram_gb" -gt 0 ]]; then
+        effective_vram=$(( vram_gb - 2 ))
+        [[ "$effective_vram" -lt 0 ]] && effective_vram=0
+    fi
+
+    # Find largest fitting model for [recommended] tag
+    local rec_idx=0
+    if [[ "$effective_vram" -gt 0 ]]; then
+        local i
+        for i in 10 9 8 7 6 5 4 3 2 1; do
+            if [[ "${vram_req[$i]}" -le "$effective_vram" ]]; then
+                rec_idx="$i"
+                break
+            fi
+        done
+    fi
+
+    # Helper: print model line with VRAM label + optional [рекомендуется]
+    _vllm_line() {
+        local idx="$1" num="$2" label="$3" suffix="${4:-}"
+        local tag=""
+        [[ "$idx" -eq "$rec_idx" ]] && tag="  ${GREEN}[рекомендуется]${NC}"
+        echo -e "  ${num}) ${label}  [${vram_req[$idx]} GB VRAM]${tag}${suffix}"
+    }
+
     echo "Выберите модель vLLM:"
     echo ""
-    echo " -- AWQ квантизация [8-16GB VRAM] --"
-    echo "  1) Qwen/Qwen2.5-7B-Instruct-AWQ          [8GB+ VRAM]"
-    echo "  2) Qwen/Qwen2.5-14B-Instruct-AWQ         [12GB+ VRAM]"
+    if [[ "$vram_gb" -eq 0 ]]; then
+        echo -e "  ${YELLOW}GPU VRAM не определён — метка [рекомендуется] недоступна${NC}"
+        echo ""
+    fi
+    echo " -- AWQ квантизация --"
+    _vllm_line 1 " 1" "Qwen/Qwen2.5-7B-Instruct-AWQ"
+    _vllm_line 2 " 2" "Qwen/Qwen2.5-14B-Instruct-AWQ"
     echo ""
-    echo " -- 7-8B bf16 [16GB+ VRAM] --"
-    echo "  3) Qwen/Qwen2.5-7B-Instruct"
-    echo "  4) mistralai/Mistral-7B-Instruct-v0.3"
-    echo "  5) meta-llama/Llama-3.1-8B-Instruct  (нужен HF_TOKEN)"
+    echo " -- 7-8B bf16 --"
+    _vllm_line 3 " 3" "Qwen/Qwen2.5-7B-Instruct"
+    _vllm_line 4 " 4" "mistralai/Mistral-7B-Instruct-v0.3"
+    _vllm_line 5 " 5" "meta-llama/Llama-3.1-8B-Instruct" "  (HF_TOKEN)"
     echo ""
-    echo " -- 14B bf16 [24GB+ VRAM] --"
-    echo "  6) Qwen/Qwen2.5-14B-Instruct              [рекомендуется]"
-    echo "  7) Qwen/Qwen3-14B"
-    echo "  8) microsoft/phi-4"
+    echo " -- 14B bf16 --"
+    _vllm_line 6 " 6" "Qwen/Qwen2.5-14B-Instruct"
+    _vllm_line 7 " 7" "Qwen/Qwen3-14B"
+    _vllm_line 8 " 8" "microsoft/phi-4"
     echo ""
-    echo " -- 32B+ bf16 [48GB+ VRAM] --"
-    echo "  9) Qwen/Qwen2.5-32B-Instruct"
-    echo " 10) meta-llama/Llama-3.3-70B-Instruct  (нужен HF_TOKEN)"
+    echo " -- 32B+ bf16 --"
+    _vllm_line 9 " 9" "Qwen/Qwen2.5-32B-Instruct"
+    _vllm_line 10 "10" "meta-llama/Llama-3.3-70B-Instruct" "  (HF_TOKEN)"
     echo ""
     echo " -- Своя модель --"
     echo " 11) Ввести HuggingFace репозиторий (org/model-name)"
     echo ""
 
     _ask_choice "Модель [1-11, Enter=6]: " 1 11 6
+
     local vllm_models=(
         ""  # 0 placeholder
         "Qwen/Qwen2.5-7B-Instruct-AWQ"
@@ -384,13 +424,33 @@ _wizard_vllm_model() {
         "Qwen/Qwen2.5-32B-Instruct"
         "meta-llama/Llama-3.3-70B-Instruct"
     )
+
     if [[ "$REPLY" -ge 1 && "$REPLY" -le 10 ]]; then
         VLLM_MODEL="${vllm_models[$REPLY]}"
+
+        # VRAM guard: warn if selected model exceeds available GPU
+        if [[ "$vram_gb" -gt 0 && "${vram_req[$REPLY]}" -gt "$vram_gb" ]]; then
+            echo ""
+            echo -e "  ${YELLOW}Модель требует ${vram_req[$REPLY]} GB VRAM, доступно ${vram_gb} GB. Возможен OOM.${NC}"
+            if [[ "${NON_INTERACTIVE}" != "true" ]]; then
+                read -rp "  Продолжить? (y/N): " confirm
+                if [[ ! "${confirm}" =~ ^[Yy]$ ]]; then
+                    # Re-show menu
+                    unset -f _vllm_line
+                    _wizard_vllm_model
+                    return
+                fi
+            fi
+        fi
     elif [[ "$REPLY" -eq 11 ]]; then
         _ask "HuggingFace репозиторий (org/model):" "Qwen/Qwen2.5-14B-Instruct"
         VLLM_MODEL="${REPLY:-Qwen/Qwen2.5-14B-Instruct}"
+        # No VRAM check for custom models (per decision)
     fi
     echo ""
+
+    # Clean up nested function
+    unset -f _vllm_line
 }
 
 _wizard_llm_model() {
