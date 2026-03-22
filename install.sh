@@ -458,6 +458,15 @@ main() {
         set +u; source "${INSTALL_DIR}/docker/.env"; set -u
     fi
 
+    # On resume: always re-run diagnostics to populate DETECTED_* vars (BFIX-42)
+    # Only run_diagnostics (lightweight detection, no prompts) -- NOT phase_diagnostics
+    # which would re-run preflight_checks and may prompt the user.
+    # || true: detection may partially fail (e.g. no nvidia-smi) but sets safe defaults.
+    if [[ $start -gt 1 ]]; then
+        log_info "Resume: re-running system diagnostics..."
+        run_diagnostics || true
+    fi
+
     # Phase table
     local t=9
     [[ $start -le 1 ]] && run_phase 1 $t "Diagnostics"   phase_diagnostics
