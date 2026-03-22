@@ -1,0 +1,57 @@
+name: Sync Release to Repo
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download versions.env from release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          echo "Release tag: ${TAG}"
+
+          # Download versions.env asset
+          gh release download "$TAG" --pattern "versions.env" --output /tmp/versions.env
+
+          if [[ ! -s /tmp/versions.env ]]; then
+            echo "::error::versions.env asset not found in release ${TAG}"
+            exit 1
+          fi
+
+          echo "Downloaded versions.env ($(wc -l < /tmp/versions.env) lines)"
+
+      - name: Update repo files
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+
+          cp /tmp/versions.env templates/versions.env
+          echo "$TAG" > RELEASE
+
+          if git diff --quiet; then
+            echo "No changes — repo already matches release ${TAG}"
+            exit 0
+          fi
+
+          echo "changes=true" >> "$GITHUB_ENV"
+          echo "--- Diff ---"
+          git diff
+
+      - name: Commit and push
+        if: env.changes == 'true'
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add templates/versions.env RELEASE
+          git commit -m "chore(release): sync ${TAG} versions.env and RELEASE"
+          git push
