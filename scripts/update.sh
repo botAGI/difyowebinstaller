@@ -323,6 +323,8 @@ print(f\"RELEASE_VERSIONS_URL='{url}'\")
         [[ -z "$key" || "$key" =~ ^# ]] && continue
         key=$(echo "$key" | tr -d '[:space:]')
         value=$(echo "$value" | tr -d '[:space:]')
+        # Only include *_VERSION keys — skip config keys like VLLM_CUDA_SUFFIX (BUG-V3-045)
+        [[ "$key" == *_VERSION ]] || continue
         NEW_VERSIONS["$key"]="$value"
     done < "$tmp_versions"
 

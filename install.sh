@@ -283,6 +283,10 @@ _get_ip() { if [[ "$(uname)" == "Darwin" ]]; then ipconfig getifaddr en0 2>/dev/
 _install_cli() {
     [[ -d /usr/local/bin ]] && ln -sf "${INSTALL_DIR}/scripts/agmind.sh" /usr/local/bin/agmind && log_success "'agmind' command available"
     date -u +%Y-%m-%dT%H:%M:%SZ > "${INSTALL_DIR}/.agmind_installed"
+    # Write current release tag for update system (BUG-V3-044)
+    if [[ -f "${INSTALLER_DIR}/RELEASE" ]]; then
+        cp "${INSTALLER_DIR}/RELEASE" "${INSTALL_DIR}/RELEASE"
+    fi
 }
 
 _install_crons() {
