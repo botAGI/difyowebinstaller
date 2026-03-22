@@ -675,7 +675,7 @@ resolve_component() {
         echo "" >&2
         echo "Available components:" >&2
         printf "  %s\n" "${!NAME_TO_VERSION_KEY[@]}" | sort >&2
-        exit 1
+        return 1
     fi
 
     local version_key="${NAME_TO_VERSION_KEY[$name]}"
@@ -683,12 +683,12 @@ resolve_component() {
     local service_count
     service_count=$(echo "$services" | wc -w)
 
-    if [[ "$service_count" -gt 1 && "$AUTO_UPDATE" != "true" ]]; then
+    if [[ "$service_count" -gt 1 && "$AUTO_UPDATE" != "true" && "$FORCE" != "true" ]]; then
         log_warn "Component '${name}' shares image with: ${services}" >&2
         read -rp "Also updating these services. Continue? (yes/no): " confirm
         if [[ "$confirm" != "yes" ]]; then
             echo "Cancelled." >&2
-            exit 0
+            return 1
         fi
     fi
 
@@ -718,7 +718,11 @@ update_component() {
     fi
 
     local resolved
-    resolved="$(resolve_component "$name")"
+    resolved="$(resolve_component "$name")" || exit $?
+    if [[ -z "$resolved" ]]; then
+        log_error "Failed to resolve component: ${name}"
+        exit 1
+    fi
     local version_key="${resolved%%|*}"
     local services="${resolved#*|}"
 
@@ -805,6 +809,7 @@ perform_bundle_update() {
 
     # Build set of services that need updating
     declare -A SERVICES_TO_UPDATE
+    local svc_count=0
     local key name svc
     for key in "${!NEW_VERSIONS[@]}"; do
         [[ "${NEW_VERSIONS[$key]}" == "${CURRENT_VERSIONS[$key]:-}" ]] && continue
@@ -813,11 +818,12 @@ perform_bundle_update() {
             [[ "${NAME_TO_VERSION_KEY[$name]}" == "$key" ]] || continue
             for svc in ${NAME_TO_SERVICES[$name]}; do
                 SERVICES_TO_UPDATE["$svc"]=1
+                svc_count=$((svc_count + 1))
             done
         done
     done
 
-    if [[ ${#SERVICES_TO_UPDATE[@]} -eq 0 ]]; then
+    if [[ $svc_count -eq 0 ]]; then
         log_success "No services need updating"
         return 0
     fi
