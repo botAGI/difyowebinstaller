@@ -300,33 +300,38 @@ cmd_doctor() {
 
         # .env Completeness
         if [[ -f "$ENV_FILE" ]]; then
-            [[ "$output_json" != "true" ]] && echo -e "\n${BOLD}.env Completeness:${NC}"
-            # Required vars — must always be set
-            local required_vars=(LLM_PROVIDER EMBED_PROVIDER SECRET_KEY DB_PASSWORD REDIS_PASSWORD INIT_PASSWORD)
-            # Optional vars — WARN if missing (normal on some profiles)
-            local optional_vars=(DOMAIN DEPLOY_PROFILE)
-            local env_ok=0 env_missing=0
-            for var in "${required_vars[@]}"; do
-                local val
-                val="$(_read_env "$var" "")"
-                if [[ -n "$val" ]]; then
-                    env_ok=$((env_ok + 1))
-                else
-                    _check FAIL ".env: ${var}" "Не задан" "Проверьте ${ENV_FILE}"
-                    env_missing=$((env_missing + 1))
+            if [[ ! -r "$ENV_FILE" ]]; then
+                [[ "$output_json" != "true" ]] && echo -e "\n${BOLD}.env Completeness:${NC}"
+                _check SKIP ".env" "Нет прав чтения" "Запустите: sudo agmind doctor"
+            else
+                [[ "$output_json" != "true" ]] && echo -e "\n${BOLD}.env Completeness:${NC}"
+                # Required vars — must always be set
+                local required_vars=(LLM_PROVIDER EMBED_PROVIDER SECRET_KEY DB_PASSWORD REDIS_PASSWORD INIT_PASSWORD)
+                # Optional vars — WARN if missing (normal on some profiles)
+                local optional_vars=(DOMAIN DEPLOY_PROFILE)
+                local env_ok=0 env_missing=0
+                for var in "${required_vars[@]}"; do
+                    local val
+                    val="$(_read_env "$var" "")"
+                    if [[ -n "$val" ]]; then
+                        env_ok=$((env_ok + 1))
+                    else
+                        _check FAIL ".env: ${var}" "Не задан" "Проверьте ${ENV_FILE}"
+                        env_missing=$((env_missing + 1))
+                    fi
+                done
+                for var in "${optional_vars[@]}"; do
+                    local val
+                    val="$(_read_env "$var" "")"
+                    if [[ -n "$val" ]]; then
+                        env_ok=$((env_ok + 1))
+                    else
+                        _check WARN ".env: ${var}" "Не задан (опционально для LAN)"
+                    fi
+                done
+                if [[ $env_missing -eq 0 ]]; then
+                    _check OK ".env: все ${env_ok} обязательных переменных заданы"
                 fi
-            done
-            for var in "${optional_vars[@]}"; do
-                local val
-                val="$(_read_env "$var" "")"
-                if [[ -n "$val" ]]; then
-                    env_ok=$((env_ok + 1))
-                else
-                    _check WARN ".env: ${var}" "Не задан (опционально для LAN)"
-                fi
-            done
-            if [[ $env_missing -eq 0 ]]; then
-                _check OK ".env: все ${env_ok} обязательных переменных заданы"
             fi
         fi
     fi
