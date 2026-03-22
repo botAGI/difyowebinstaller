@@ -21,8 +21,8 @@ Requirements for v2.3 Stability & Reliability Bugfixes. Each maps to roadmap pha
 
 ### Pull & Download UX
 
-- [ ] **DLUX-01**: После docker compose pull — проверка каких образов нет локально; для отсутствующих — понятное сообщение с именем образа и тегом (WISH-010)
-- [ ] **DLUX-02**: Скачивание моделей Ollama показывает прогресс (tty passthrough); при таймауте phase_models — warning вместо fatal + инструкция `agmind model pull` (WISH-011)
+- [x] **DLUX-01**: После docker compose pull — проверка каких образов нет локально; для отсутствующих — понятное сообщение с именем образа и тегом (WISH-010)
+- [x] **DLUX-02**: Скачивание моделей Ollama показывает прогресс (tty passthrough); при таймауте phase_models — warning вместо fatal + инструкция `agmind model pull` (WISH-011)
 
 ## v2.2 Requirements (Validated)
 
@@ -206,8 +206,8 @@ All 24 requirements shipped and confirmed working in v2.0. See git history for d
 | OPUX-02 | Phase 12 | Complete |
 | IREL-02 | Phase 13 | Complete |
 | IREL-03 | Phase 14 | Complete |
-| DLUX-01 | Phase 15 | Pending |
-| DLUX-02 | Phase 15 | Pending |
+| DLUX-01 | Phase 15 | Complete |
+| DLUX-02 | Phase 15 | Complete |
 
 **Coverage (v2.2):**
 

@@ -345,6 +345,26 @@ _wizard_ollama_model() {
     echo ""
 }
 
+# Returns VRAM requirement in GB for a known vLLM model name.
+# Usage: req=$(_get_vllm_vram_req "Qwen/Qwen2.5-14B-Instruct")
+# Outputs "0" for unknown models (caller skips the VRAM check).
+_get_vllm_vram_req() {
+    local model="${1:-}"
+    case "$model" in
+        "Qwen/Qwen2.5-7B-Instruct-AWQ")       echo "8"   ;;
+        "Qwen/Qwen2.5-14B-Instruct-AWQ")      echo "12"  ;;
+        "Qwen/Qwen2.5-7B-Instruct")           echo "16"  ;;
+        "mistralai/Mistral-7B-Instruct-v0.3") echo "16"  ;;
+        "meta-llama/Llama-3.1-8B-Instruct")   echo "16"  ;;
+        "Qwen/Qwen2.5-14B-Instruct")          echo "28"  ;;
+        "Qwen/Qwen3-14B")                     echo "28"  ;;
+        "microsoft/phi-4")                     echo "28"  ;;
+        "Qwen/Qwen2.5-32B-Instruct")          echo "48"  ;;
+        "meta-llama/Llama-3.3-70B-Instruct")  echo "140" ;;
+        *)                                     echo "0"   ;;
+    esac
+}
+
 _wizard_vllm_model() {
     # VRAM requirements in GB per model (indices 1-10 match menu numbers)
     local -a vram_req=(0 8 12 16 16 16 28 28 28 48 140)
@@ -454,16 +474,21 @@ _wizard_vllm_model() {
 }
 
 _wizard_llm_model() {
-    # Respect env override only in non-interactive mode
-    if [[ "${NON_INTERACTIVE}" == "true" && ( -n "$LLM_MODEL" || -n "$VLLM_MODEL" ) ]]; then
-        return 0
+    if [[ "${NON_INTERACTIVE}" == "true" ]]; then
+        # Non-vllm providers: no VRAM guard needed, accept env value as-is
+        if [[ "$LLM_PROVIDER" != "vllm" ]]; then
+            return 0
+        fi
+        # vllm + NON_INTERACTIVE: skip interactive menu, fall through to
+        # default assignment and VRAM guard below (BFIX-41)
+    else
+        # Interactive path
+        case "$LLM_PROVIDER" in
+            ollama)   _wizard_ollama_model;;
+            vllm)     _wizard_vllm_model;;
+            # external/skip: no model selection needed
+        esac
     fi
-
-    case "$LLM_PROVIDER" in
-        ollama)   _wizard_ollama_model;;
-        vllm)     _wizard_vllm_model;;
-        # external/skip: no model selection needed
-    esac
 
     # Apply non-interactive defaults if still empty
     if [[ "$LLM_PROVIDER" == "ollama" && -z "$LLM_MODEL" ]]; then
@@ -472,6 +497,27 @@ _wizard_llm_model() {
     fi
     if [[ "$LLM_PROVIDER" == "vllm" && -z "$VLLM_MODEL" ]]; then
         VLLM_MODEL="Qwen/Qwen2.5-14B-Instruct"
+    fi
+
+    # VRAM guard for vllm in NON_INTERACTIVE mode (BFIX-41)
+    # Runs for both user-supplied VLLM_MODEL and the default assigned above.
+    if [[ "${NON_INTERACTIVE}" == "true" && "$LLM_PROVIDER" == "vllm" && -n "${VLLM_MODEL:-}" ]]; then
+        local ni_vram_req
+        ni_vram_req="$(_get_vllm_vram_req "$VLLM_MODEL")"
+        if [[ "$ni_vram_req" -gt 0 ]]; then
+            local ni_vram_gb=0
+            if [[ "${DETECTED_GPU_VRAM:-0}" -gt 0 ]]; then
+                ni_vram_gb=$(( DETECTED_GPU_VRAM / 1024 ))
+            fi
+            if [[ "$ni_vram_gb" -gt 0 && "$ni_vram_req" -gt "$ni_vram_gb" ]]; then
+                log_error "Model ${VLLM_MODEL} requires ${ni_vram_req} GB VRAM, available: ${ni_vram_gb} GB"
+                log_error "Choose a smaller model or set VLLM_MODEL to a model that fits your GPU"
+                exit 1
+            fi
+            if [[ "$ni_vram_gb" -eq 0 ]]; then
+                log_warn "GPU VRAM not detected -- cannot verify model ${VLLM_MODEL} fits (requires ${ni_vram_req} GB)"
+            fi
+        fi
     fi
 }
 

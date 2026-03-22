@@ -340,7 +340,10 @@ Plans:
 2. При скачивании модели Ollama/vLLM в TTY отображается прогресс (слои, размер, процент) — оператор видит активность, а не пустой экран
 3. При превышении таймаута фазы `phase_models` установка продолжается с предупреждением `WARNING: модель не скачана, продолжаем` и инструкцией `agmind model pull <model>` — fatal error не прерывает остальные фазы
 
-**Plans:** TBD
+**Plans:** 1/1 plans complete
+
+Plans:
+- [ ] 15-01-PLAN.md — Post-pull image validation + model TTY progress + graceful timeout (DLUX-01, DLUX-02)
 
 ---
 
@@ -360,7 +363,7 @@ Plans:
 - [x] **Phase 12: Isolated Bugfixes** — Doctor SKIP без root, Redis ACL точечный blocklist, v-prefix strip, Dify init timeout 5 мин (completed 2026-03-22)
 - [x] **Phase 13: VRAM Guard in Wizard** — Показ требований VRAM в wizard vLLM + предупреждение при выборе слишком большой модели (completed 2026-03-22)
 - [x] **Phase 14: DB Password Resume Safety** — Preserve DB_PASSWORD при resume если PG volume существует (completed 2026-03-22)
-- [ ] **Phase 15: Pull & Download UX** — Pre-pull валидация образов + прогресс скачивания моделей + graceful timeout
+- [x] **Phase 15: Pull & Download UX** — Pre-pull валидация образов + прогресс скачивания моделей + graceful timeout (completed 2026-03-22)
 
 ## Progress
 
@@ -377,11 +380,11 @@ Plans:
 | 9. Operator Makefile | v2.1 | — | Skipped | — |
 | 10. Release Foundation | v2.2 | 2/2 | Complete | 2026-03-22 |
 | 11. Bundle Update Rewrite | v2.2 | 2/2 | Complete | 2026-03-22 |
-| 12. Isolated Bugfixes | 2/2 | Complete    | 2026-03-22 | — |
-| 13. VRAM Guard in Wizard | 1/1 | Complete    | 2026-03-22 | — |
-| 14. DB Password Resume Safety | 1/1 | Complete   | 2026-03-22 | — |
-| 15. Pull & Download UX | v2.3 | 0/? | Not started | — |
+| 12. Isolated Bugfixes | v2.3 | 2/2 | Complete | 2026-03-22 |
+| 13. VRAM Guard in Wizard | v2.3 | 1/1 | Complete | 2026-03-22 |
+| 14. DB Password Resume Safety | v2.3 | 1/1 | Complete | 2026-03-22 |
+| 15. Pull & Download UX | 1/1 | Complete   | 2026-03-22 | — |
 
 ---
 *Roadmap created: 2026-03-17*
-*Last updated: 2026-03-23 — Phase 14 planned (1 plan, wave 1)*
+*Last updated: 2026-03-23 — Phase 15 planned (1 plan, wave 1)*
