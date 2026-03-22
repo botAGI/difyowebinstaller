@@ -107,7 +107,16 @@ run_phase_with_timeout() {
             echo -e "${GREEN}[$(date +%H:%M:%S)] === PHASE ${num}/${total}: ${name} DONE (retry) ===${NC}"
             return 0
         fi
-        [[ $rc -eq 124 ]] && { log_error "Phase ${name} timed out after ${retry}s"; return 1; }
+        if [[ $rc -eq 124 ]]; then
+            log_warn "Phase ${name} timed out after ${retry}s"
+            if [[ "$name" == "Models" ]]; then
+                log_warn "Модели не скачаны. Скачайте позже: docker compose -f ${INSTALL_DIR}/docker/docker-compose.yml exec ollama ollama pull <model>"
+                log_warn "Установка продолжается..."
+                return 0
+            fi
+            log_error "Phase ${name} timed out after ${retry}s"
+            return 1
+        fi
     fi
     log_error "Phase ${name} failed (code: ${rc})"
     return "$rc"
@@ -131,6 +140,17 @@ phase_config()      { ensure_bind_mount_files; export INSTALL_DIR; generate_conf
 phase_start()       { compose_up; create_openwebui_admin; }
 phase_health()      { wait_healthy "$TIMEOUT_HEALTH" "$TIMEOUT_GPU_HEALTH"; _check_critical_services; }
 phase_models()      { download_models; }
+phase_models_graceful() {
+    local rc=0
+    phase_models || rc=$?
+    if [[ $rc -ne 0 ]]; then
+        echo ""
+        log_warn "Модели не скачаны или скачаны не полностью."
+        log_warn "Скачайте позже: docker compose -f ${INSTALL_DIR}/docker/docker-compose.yml exec ollama ollama pull <model>"
+        log_warn "Установка продолжается..."
+        return 0  # Do NOT propagate error — installation continues
+    fi
+}
 phase_backups()     { setup_backups; setup_tunnel; }
 phase_complete()    { create_openwebui_admin; _init_dify_admin; _save_credentials; _install_cli; _install_crons; _install_systemd_service; verify_services || true; _show_final_summary; }
 
@@ -446,7 +466,7 @@ main() {
     [[ $start -le 4 ]] && run_phase 4 $t "Configuration" phase_config
     [[ $start -le 5 ]] && run_phase_with_timeout 5 $t "Start"  phase_start  "$TIMEOUT_START"
     [[ $start -le 6 ]] && run_phase_with_timeout 6 $t "Health" phase_health "$TIMEOUT_HEALTH"
-    [[ $start -le 7 ]] && run_phase_with_timeout 7 $t "Models" phase_models "$TIMEOUT_MODELS"
+    [[ $start -le 7 ]] && run_phase_with_timeout 7 $t "Models" phase_models_graceful "$TIMEOUT_MODELS"
     [[ $start -le 8 ]] && run_phase 8 $t "Backups"       phase_backups
     [[ $start -le 9 ]] && run_phase 9 $t "Complete"      phase_complete
 

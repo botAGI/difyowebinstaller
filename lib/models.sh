@@ -9,6 +9,23 @@ set -euo pipefail
 
 INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
 
+# Approximate model download sizes for operator feedback
+declare -A MODEL_SIZES=(
+    ["qwen2.5:14b"]="8.5 GB"
+    ["qwen2.5:7b"]="4.7 GB"
+    ["qwen2.5:3b"]="1.9 GB"
+    ["qwen2.5:32b"]="18 GB"
+    ["qwen2.5:72b"]="41 GB"
+    ["llama3.1:8b"]="4.7 GB"
+    ["llama3.1:70b"]="40 GB"
+    ["mistral:7b"]="4.1 GB"
+    ["gemma2:9b"]="5.4 GB"
+    ["gemma2:27b"]="16 GB"
+    ["bge-m3"]="1.2 GB"
+    ["nomic-embed-text"]="274 MB"
+    ["mxbai-embed-large"]="670 MB"
+)
+
 # ============================================================================
 # OLLAMA READINESS
 # ============================================================================
@@ -43,7 +60,13 @@ pull_model() {
     local model="$1"
     local label="${2:-$model}"
 
-    log_info "Downloading model: ${label}..."
+    # Show approximate size if known
+    local size="${MODEL_SIZES[$model]:-}"
+    if [[ -n "$size" ]]; then
+        log_info "Downloading model: ${label} (~${size})..."
+    else
+        log_info "Downloading model: ${label}..."
+    fi
 
     # Validate model name
     if [[ ! "$model" =~ ^[a-zA-Z0-9.:/_-]+$ ]]; then
@@ -51,8 +74,11 @@ pull_model() {
         return 1
     fi
 
-    if docker exec agmind-ollama ollama pull "$model"; then
+    # Try with TTY for progress display, fallback to non-TTY
+    if docker exec -t agmind-ollama ollama pull "$model"; then
         log_success "Model ${label} downloaded"
+    elif docker exec agmind-ollama ollama pull "$model"; then
+        log_success "Model ${label} downloaded (no progress display)"
     else
         log_error "Failed to download model ${label}"
         return 1
