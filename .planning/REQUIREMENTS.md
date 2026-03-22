@@ -16,8 +16,8 @@ Requirements for v2.3 Stability & Reliability Bugfixes. Each maps to roadmap pha
 
 ### Operator UX
 
-- [ ] **OPUX-01**: `agmind doctor` при отсутствии прав чтения .env показывает SKIP с сообщением "Запустите: sudo agmind doctor" вместо ложных FAIL (BUG-038)
-- [ ] **OPUX-02**: Redis ACL использует точечный blocklist опасных команд (-FLUSHALL -FLUSHDB -SHUTDOWN ...) вместо `-@dangerous`, оставляя CONFIG/INFO/KEYS доступными (BUG-040)
+- [x] **OPUX-01**: `agmind doctor` при отсутствии прав чтения .env показывает SKIP с сообщением "Запустите: sudo agmind doctor" вместо ложных FAIL (BUG-038)
+- [x] **OPUX-02**: Redis ACL использует точечный blocklist опасных команд (-FLUSHALL -FLUSHDB -SHUTDOWN ...) вместо `-@dangerous`, оставляя CONFIG/INFO/KEYS доступными (BUG-040)
 
 ### Pull & Download UX
 
@@ -202,8 +202,8 @@ All 24 requirements shipped and confirmed working in v2.0. See git history for d
 | RBCK-01 | Phase 11 | Complete |
 | IREL-01 | Phase 12 | Complete |
 | IREL-04 | Phase 12 | Complete |
-| OPUX-01 | Phase 12 | Pending |
-| OPUX-02 | Phase 12 | Pending |
+| OPUX-01 | Phase 12 | Complete |
+| OPUX-02 | Phase 12 | Complete |
 | IREL-02 | Phase 13 | Pending |
 | IREL-03 | Phase 14 | Pending |
 | DLUX-01 | Phase 15 | Pending |
