@@ -24,6 +24,23 @@ declare -A MODEL_SIZES=(
     ["bge-m3"]="1.2 GB"
     ["nomic-embed-text"]="274 MB"
     ["mxbai-embed-large"]="670 MB"
+    # vLLM models (HuggingFace names)
+    ["Qwen/Qwen2.5-7B-Instruct-AWQ"]="4 GB"
+    ["Qwen/Qwen3-8B-AWQ"]="4.5 GB"
+    ["Qwen/Qwen2.5-14B-Instruct-AWQ"]="8 GB"
+    ["Qwen/Qwen3-14B-AWQ"]="8 GB"
+    ["Qwen/Qwen2.5-32B-Instruct-AWQ"]="18 GB"
+    ["Qwen/Qwen2.5-7B-Instruct"]="14 GB"
+    ["Qwen/Qwen3-8B"]="16 GB"
+    ["mistralai/Mistral-7B-Instruct-v0.3"]="14 GB"
+    ["meta-llama/Llama-3.1-8B-Instruct"]="15 GB"
+    ["Qwen/Qwen2.5-14B-Instruct"]="28 GB"
+    ["Qwen/Qwen3-14B"]="28 GB"
+    ["microsoft/phi-4"]="28 GB"
+    ["Qwen/Qwen2.5-32B-Instruct"]="60 GB"
+    ["meta-llama/Llama-3.3-70B-Instruct"]="131 GB"
+    ["bullpoint/Qwen3-Coder-Next-AWQ-4bit"]="8 GB"
+    ["stelterlab/NVIDIA-Nemotron-3-Nano-30B-A3B-AWQ"]="2 GB"
 )
 
 # ============================================================================
