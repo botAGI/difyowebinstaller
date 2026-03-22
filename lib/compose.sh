@@ -274,20 +274,22 @@ sync_db_password() {
 
     log_info "Syncing PostgreSQL password..."
     local attempts=0
-    while [[ $attempts -lt 30 ]]; do
+    while [[ $attempts -lt 45 ]]; do
         if docker exec agmind-db pg_isready -U "$db_user" &>/dev/null; then
             if docker exec agmind-db psql -U "$db_user" -c \
                 "ALTER USER ${db_user} WITH PASSWORD '${db_pass}';" &>/dev/null; then
                 log_success "PostgreSQL password synced"
                 return 0
             fi
-            log_error "Failed to update PostgreSQL password"
+            log_error "Failed to sync PostgreSQL password via ALTER USER"
+            log_error "Manual fix: docker exec -it agmind-db psql -U ${db_user} -c \"ALTER USER ${db_user} WITH PASSWORD '\$(grep DB_PASSWORD ${env_file} | cut -d= -f2-)'\;\""
             return 1
         fi
         sleep 2
         attempts=$((attempts + 1))
     done
-    log_error "PostgreSQL not ready after 60s, skipping password sync"
+    log_error "PostgreSQL not ready after 90s — password sync skipped"
+    log_error "If auth fails, run: docker exec -it agmind-db psql -U postgres -c \"ALTER USER postgres WITH PASSWORD '\$(grep DB_PASSWORD ${env_file} | cut -d= -f2-)'\;\""
 }
 
 # ============================================================================
