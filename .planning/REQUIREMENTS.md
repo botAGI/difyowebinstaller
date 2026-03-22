@@ -3,9 +3,29 @@
 **Defined:** 2026-03-20
 **Core Value:** One command installs, secures, and monitors a production-ready AI stack
 
-## v2.3 Requirements
+## v2.4 Requirements
 
-Requirements for v2.3 Stability & Reliability Bugfixes. Each maps to roadmap phases.
+Requirements for v2.4 Wizard Models + GPU Management. Each maps to roadmap phases.
+
+### Bugfixes
+
+- [x] **BFIX-41**: В NON_INTERACTIVE режиме с VLLM_MODEL из env — VRAM guard проверяет модель и exit 1 если превышает доступный VRAM; дефолт Qwen2.5-14B тоже проверяется (BUG-041)
+- [x] **BFIX-42**: При resume с phase >= 2 — run_diagnostics выполняется всегда для инициализации DETECTED_OS/DETECTED_GPU_VRAM (BUG-042)
+
+### Wizard Models
+
+- [ ] **WMOD-01**: Список моделей vLLM обновлён: Qwen3-8B, Qwen3-8B-AWQ, Qwen3-14B-AWQ, Qwen3-Coder-Next MoE AWQ, Nemotron Nano MoE AWQ; vram_req скорректирован; рекомендации обновлены
+- [ ] **WMOD-02**: MODEL_SIZES в lib/models.sh содержит approximate sizes для всех новых моделей
+
+### GPU Management
+
+- [ ] **GPUM-01**: `agmind gpu status` показывает per-GPU name/VRAM/free, привязанные контейнеры, GPU processes
+- [ ] **GPUM-02**: `agmind gpu assign <service> <gpu_id>` назначает GPU через .env + `--auto` для multi-GPU auto-distribute
+- [ ] **GPUM-03**: docker-compose.yml использует `${VLLM_CUDA_DEVICE:-0}` / `${TEI_CUDA_DEVICE:-0}` вместо hardcoded "0"
+
+## v2.3 Requirements (Validated)
+
+Requirements for v2.3 Stability & Reliability Bugfixes.
 
 ### Installer Reliability
 
@@ -208,6 +228,13 @@ All 24 requirements shipped and confirmed working in v2.0. See git history for d
 | IREL-03 | Phase 14 | Complete |
 | DLUX-01 | Phase 15 | Complete |
 | DLUX-02 | Phase 15 | Complete |
+| BFIX-41 | Phase 16 | Complete |
+| BFIX-42 | Phase 16 | Complete |
+| WMOD-01 | Phase 17 | Pending |
+| WMOD-02 | Phase 17 | Pending |
+| GPUM-01 | Phase 18 | Pending |
+| GPUM-02 | Phase 18 | Pending |
+| GPUM-03 | Phase 18 | Pending |
 
 **Coverage (v2.2):**
 
@@ -221,6 +248,12 @@ All 24 requirements shipped and confirmed working in v2.0. See git history for d
 - Mapped to phases: 8
 - Unmapped: 0
 
+**Coverage (v2.4):**
+
+- v2.4 requirements: 7 total
+- Mapped to phases: 7
+- Unmapped: 0
+
 ---
 *Requirements defined: 2026-03-20*
-*Last updated: 2026-03-22 — v2.3 traceability added (IREL-01..04 → Ph12-14, OPUX-01..02 → Ph12, DLUX-01..02 → Ph15)*
+*Last updated: 2026-03-23 — v2.4 traceability added (BFIX-41..42 → Phase 16, WMOD-01..02 → Phase 17, GPUM-01..03 → Phase 18)*

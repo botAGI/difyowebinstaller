@@ -5,7 +5,8 @@
 - ✅ **v2.0 MVP** — Phases 1-5 (shipped 2026-03-18)
 - ✅ **v2.1 Bugfixes + Improvements** — Phases 6-9 (shipped 2026-03-21)
 - ✅ **v2.2 Release Bundle Update System** — Phases 10-11 (shipped 2026-03-22)
-- 🚧 **v2.3 Stability & Reliability Bugfixes** — Phases 12-15 (in progress)
+- ✅ **v2.3 Stability & Reliability Bugfixes** — Phases 12-15 (shipped 2026-03-22)
+- 🚧 **v2.4 Wizard Models + GPU Management** — Phases 16-18 (in progress)
 
 ---
 
@@ -259,11 +260,10 @@ Plans:
 
 ---
 
-## v2.3 Stability & Reliability Bugfixes (In Progress)
+<details>
+<summary>✅ v2.3 Stability & Reliability Bugfixes (Phases 12-15) — SHIPPED 2026-03-22</summary>
 
 **Milestone Goal:** Исправить критичные баги, обнаруженные при тестировании v2.2. Повысить надёжность установки на edge-кейсах (медленное железо, resume, low VRAM) и улучшить UX оператора (doctor, прогресс, ошибки).
-
-## Phase Details
 
 ### Phase 12: Isolated Bugfixes
 
@@ -282,8 +282,8 @@ Plans:
 **Plans:** 2/2 plans complete
 
 Plans:
-- [ ] 12-01-PLAN.md — Doctor .env SKIP guard without root + Redis ACL explicit blocklist (OPUX-01, OPUX-02)
-- [ ] 12-02-PLAN.md — check-upstream.sh v-prefix strip + Dify init timeout 5 min + fallback credentials (IREL-01, IREL-04)
+- [x] 12-01-PLAN.md — Doctor .env SKIP guard without root + Redis ACL explicit blocklist (OPUX-01, OPUX-02)
+- [x] 12-02-PLAN.md — check-upstream.sh v-prefix strip + Dify init timeout 5 min + fallback credentials (IREL-01, IREL-04)
 
 ---
 
@@ -303,7 +303,7 @@ Plans:
 **Plans:** 1/1 plans complete
 
 Plans:
-- [ ] 13-01-PLAN.md — VRAM-aware vLLM model selection with dynamic [recommended] tag and oversized warning (IREL-02)
+- [x] 13-01-PLAN.md — VRAM-aware vLLM model selection with dynamic [recommended] tag and oversized warning (IREL-02)
 
 ---
 
@@ -323,7 +323,7 @@ Plans:
 **Plans:** 1/1 plans complete
 
 Plans:
-- [ ] 14-01-PLAN.md — Preserve secrets from .env backup on resume + harden sync_db_password timeout/errors (IREL-03)
+- [x] 14-01-PLAN.md — Preserve secrets from .env backup on resume + harden sync_db_password timeout/errors (IREL-03)
 
 ---
 
@@ -343,7 +343,73 @@ Plans:
 **Plans:** 1/1 plans complete
 
 Plans:
-- [ ] 15-01-PLAN.md — Post-pull image validation + model TTY progress + graceful timeout (DLUX-01, DLUX-02)
+- [x] 15-01-PLAN.md — Post-pull image validation + model TTY progress + graceful timeout (DLUX-01, DLUX-02)
+
+</details>
+
+---
+
+## v2.4 Wizard Models + GPU Management (In Progress)
+
+**Milestone Goal:** Обновить список моделей vLLM в визарде (Qwen3, MoE), исправить критичные баги VRAM guard в NON_INTERACTIVE режиме и resume diagnostics, добавить GPU management команды в CLI с поддержкой env-переменных в docker-compose.
+
+## Phase Details
+
+### Phase 16: Critical Bugfixes
+
+**Goal:** Два критичных бага, обнаруженных после v2.3, устранены — VRAM guard работает в NON_INTERACTIVE режиме и не позволяет запустить модель больше GPU, resume установки всегда инициализирует DETECTED_OS/DETECTED_GPU_VRAM независимо от стартовой фазы.
+
+**Depends on:** Phase 15
+**Requirements:** BFIX-41, BFIX-42
+
+**Success Criteria** (what must be TRUE):
+
+1. При запуске `install.sh` с `NON_INTERACTIVE=1` и `VLLM_MODEL=Qwen2.5-72B-Instruct` на сервере с 24 GB VRAM — installer завершается с `exit 1` и сообщением о превышении VRAM вместо молчаливого продолжения
+2. Дефолтная модель (`VLLM_MODEL=Qwen2.5-14B-Instruct`), назначаемая в NON_INTERACTIVE при отсутствии явного выбора, проходит VRAM проверку — если VRAM < требуемого, installer завершается с `exit 1` а не запускает заведомо неработающую конфигурацию
+3. При resume установки с `--start-from 3` (или любой фазы >= 2) `DETECTED_OS` и `DETECTED_GPU_VRAM` инициализированы корректно — последующие фазы используют актуальные значения без ошибок типа "unbound variable"
+4. При resume с `--start-from 2` и недоступным GPU `DETECTED_GPU_VRAM=0` устанавливается явно и не остаётся unset — wizard и VRAM guard работают без падения
+
+**Plans:** 1/1 plans complete
+
+Plans:
+- [ ] 16-01-PLAN.md — VRAM guard for NON_INTERACTIVE vllm path + always run_diagnostics on resume (BFIX-41, BFIX-42)
+
+---
+
+### Phase 17: Wizard Model List Update
+
+**Goal:** Список моделей vLLM в wizard отражает актуальный ландшафт (Qwen3, MoE-архитектуры), VRAM requirements для AWQ-моделей скорректированы до реальных значений, MODEL_SIZES в lib/models.sh охватывает все новые модели.
+
+**Depends on:** Phase 16
+**Requirements:** WMOD-01, WMOD-02
+
+**Success Criteria** (what must be TRUE):
+
+1. В меню выбора модели vLLM wizard показывает все пять новых моделей: `Qwen3-8B`, `Qwen3-8B-AWQ`, `Qwen3-14B-AWQ`, `Qwen3-Coder-Next MoE AWQ`, `Nemotron Nano MoE AWQ` — каждая с корректным VRAM requirement рядом
+2. Модель `Qwen3-14B-AWQ` отображает `[~10 GB VRAM]` (не 12 GB) — метка `[рекомендуется]` появляется на GPU с >= 10 GB VRAM
+3. `lib/models.sh` содержит в `MODEL_SIZES` approximate disk size для каждой из новых моделей — `agmind model pull` использует эти значения для оценки места на диске
+4. При выборе MoE-модели (Qwen3-Coder-Next MoE AWQ, Nemotron Nano MoE AWQ) в NON_INTERACTIVE режиме — VRAM guard проверяет vram_req этой модели перед продолжением
+
+**Plans:** TBD
+
+---
+
+### Phase 18: GPU Management CLI
+
+**Goal:** Оператор управляет распределением GPU между контейнерами через CLI, не редактируя docker-compose вручную — `agmind gpu status` показывает текущее состояние, `agmind gpu assign` назначает GPU сервису через .env, docker-compose использует env-переменные вместо hardcoded "0".
+
+**Depends on:** Phase 16
+**Requirements:** GPUM-01, GPUM-02, GPUM-03
+
+**Success Criteria** (what must be TRUE):
+
+1. `agmind gpu status` выводит таблицу: для каждого GPU — имя, общий VRAM, свободный VRAM, utilization %, и какой контейнер (vLLM / TEI) привязан к нему
+2. `agmind gpu assign vllm 1` записывает `VLLM_CUDA_DEVICE=1` в `.env` и перезапускает vLLM контейнер — после рестарта `agmind gpu status` показывает контейнер привязанным к GPU 1
+3. `agmind gpu assign --auto` на сервере с 2+ GPU автоматически распределяет vLLM и TEI по разным GPU с наибольшим свободным VRAM — оператор не указывает номера вручную
+4. `docker-compose.yml` использует `${VLLM_CUDA_DEVICE:-0}` и `${TEI_CUDA_DEVICE:-0}` вместо hardcoded `"0"` — изменение `.env` без пересборки compose-файла меняет привязку GPU при следующем `docker compose up`
+5. На сервере с одним GPU `agmind gpu assign --auto` записывает `VLLM_CUDA_DEVICE=0` и `TEI_CUDA_DEVICE=0` без ошибки — оба контейнера разделяют единственный GPU
+
+**Plans:** TBD
 
 ---
 
@@ -364,6 +430,9 @@ Plans:
 - [x] **Phase 13: VRAM Guard in Wizard** — Показ требований VRAM в wizard vLLM + предупреждение при выборе слишком большой модели (completed 2026-03-22)
 - [x] **Phase 14: DB Password Resume Safety** — Preserve DB_PASSWORD при resume если PG volume существует (completed 2026-03-22)
 - [x] **Phase 15: Pull & Download UX** — Pre-pull валидация образов + прогресс скачивания моделей + graceful timeout (completed 2026-03-22)
+- [x] **Phase 16: Critical Bugfixes** — VRAM guard в NON_INTERACTIVE + run_diagnostics при resume с любой фазы (completed 2026-03-22)
+- [ ] **Phase 17: Wizard Model List Update** — Новые модели Qwen3/MoE в wizard + скорректированные VRAM req + MODEL_SIZES
+- [ ] **Phase 18: GPU Management CLI** — agmind gpu status/assign + docker-compose env-переменные для CUDA_VISIBLE_DEVICES
 
 ## Progress
 
@@ -383,8 +452,11 @@ Plans:
 | 12. Isolated Bugfixes | v2.3 | 2/2 | Complete | 2026-03-22 |
 | 13. VRAM Guard in Wizard | v2.3 | 1/1 | Complete | 2026-03-22 |
 | 14. DB Password Resume Safety | v2.3 | 1/1 | Complete | 2026-03-22 |
-| 15. Pull & Download UX | 1/1 | Complete   | 2026-03-22 | — |
+| 15. Pull & Download UX | v2.3 | 1/1 | Complete | 2026-03-22 |
+| 16. Critical Bugfixes | 1/1 | Complete   | 2026-03-22 | — |
+| 17. Wizard Model List Update | v2.4 | 0/TBD | Not started | — |
+| 18. GPU Management CLI | v2.4 | 0/TBD | Not started | — |
 
 ---
 *Roadmap created: 2026-03-17*
-*Last updated: 2026-03-23 — Phase 15 planned (1 plan, wave 1)*
+*Last updated: 2026-03-23 — Phase 16 planned: 1 plan (BFIX-41, BFIX-42)*
