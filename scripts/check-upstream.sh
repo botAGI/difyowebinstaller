@@ -53,6 +53,19 @@ SEMIANNUAL_CHECKS=(
 declare -A CURRENT_VERSIONS
 UPDATES=()  # "name|current|latest|change"
 
+# Components whose Docker images do NOT use v-prefix in tags.
+# GitHub releases use v-prefix (v1.36.6) but Docker Hub has bare (1.36.6).
+declare -A NO_V_PREFIX=(
+    [Weaviate]=1
+    [Grafana]=1
+    [Prometheus]=1
+    [Alertmanager]=1
+    [Loki]=1
+    [Promtail]=1
+    [Node\ Exporter]=1
+    [cAdvisor]=1
+)
+
 # ============================================================================
 # Version helpers
 # ============================================================================
@@ -220,8 +233,13 @@ check_component() {
     if is_newer "$current" "$latest"; then
         local change
         change=$(classify_change "$current" "$latest")
-        UPDATES+=("${name}|${current}|${latest}|${change}")
-        echo "  UPDATE: ${name} ${current} -> ${latest} (${change})" >&2
+        # Strip v-prefix for components whose Docker images don't use it
+        local report_latest="$latest"
+        if [[ -n "${NO_V_PREFIX[$name]+x}" ]]; then
+            report_latest="${latest#v}"
+        fi
+        UPDATES+=("${name}|${current}|${report_latest}|${change}")
+        echo "  UPDATE: ${name} ${current} -> ${report_latest} (${change})" >&2
     else
         echo "  OK: ${name} ${current} (up to date)" >&2
     fi
