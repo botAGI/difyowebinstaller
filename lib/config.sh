@@ -233,6 +233,8 @@ _generate_env_file() {
     safe_embed_provider="$(escape_sed "${EMBED_PROVIDER:-ollama}")"
     safe_vllm_model="$(escape_sed "${VLLM_MODEL:-Qwen/Qwen2.5-14B-Instruct}")"
     safe_hf_token="$(escape_sed "${HF_TOKEN:-}")"
+    safe_enable_reranker="$(escape_sed "${ENABLE_RERANKER:-false}")"
+    safe_rerank_model="$(escape_sed "${RERANK_MODEL:-}")"
     safe_monitoring_token="$(escape_sed "${MONITORING_TOKEN:-}")"
     safe_telegram_token="$(escape_sed "${ALERT_TELEGRAM_TOKEN:-}")"
     safe_telegram_chat_id="$(escape_sed "${ALERT_TELEGRAM_CHAT_ID:-}")"
@@ -274,6 +276,8 @@ _generate_env_file() {
         -e "s|__EMBED_PROVIDER__|${safe_embed_provider}|g" \
         -e "s|__VLLM_MODEL__|${safe_vllm_model}|g" \
         -e "s|__HF_TOKEN__|${safe_hf_token}|g" \
+        -e "s|__ENABLE_RERANKER__|${safe_enable_reranker}|g" \
+        -e "s|__RERANK_MODEL__|${safe_rerank_model}|g" \
         -e "s|__AUTHELIA_JWT_SECRET__|${_AUTHELIA_JWT_SECRET}|g" \
         "$env_file" > "$env_tmp" || { rm -f "$env_tmp"; return 1; }
     mv "$env_tmp" "$env_file"
