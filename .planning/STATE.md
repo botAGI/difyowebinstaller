@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.5
 milestone_name: Modular Model Selection + Xinference Removal
 status: planning
-stopped_at: Completed 22-reranker-wizard-docker-vram 22-01-PLAN.md
-last_updated: "2026-03-23T09:36:00.399Z"
+stopped_at: Completed 23-llm-model-list-effective-vram 23-01-PLAN.md
+last_updated: "2026-03-23T09:46:38.958Z"
 last_activity: 2026-03-23 — v2.5 roadmap created
 progress:
   total_phases: 6
-  completed_phases: 4
-  total_plans: 7
-  completed_plans: 7
+  completed_phases: 5
+  total_plans: 8
+  completed_plans: 8
   percent: 0
 ---
 
@@ -57,6 +57,7 @@ Updated after each plan completion.
 | Phase 21-embeddings-wizard-docker P01 | 10 | 2 tasks | 2 files |
 | Phase 22-reranker-wizard-docker-vram P02 | 8 | 2 tasks | 7 files |
 | Phase 22-reranker-wizard-docker-vram P01 | 10 | 2 tasks | 1 files |
+| Phase 23-llm-model-list-effective-vram P01 | 12 | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -78,6 +79,7 @@ Updated after each plan completion.
 - [Phase 21-embeddings-wizard-docker]: TEI uses full HuggingFace IDs (BAAI/bge-m3), Ollama keeps short names (bge-m3); EMBEDDING_MODEL default changed to empty string
 - [Phase 22-reranker-wizard-docker-vram]: TEI reranker reuses same image/version as TEI embed; RERANK_MODEL defaults to BAAI/bge-reranker-v2-m3; activated via ENABLE_RERANKER=true in reranker compose profile
 - [Phase 22-reranker-wizard-docker-vram]: Phase 22: _wizard_reranker_model() uses _ask with default n for yes/no gate; RERANKER_VRAM_OFFSET=1 readonly; all 3 VRAM guard locations subtract reranker offset when ENABLE_RERANKER=true
+- [Phase 23-llm-model-list-effective-vram]: _get_vram_offset() replaces TEI/RERANKER_VRAM_OFFSET constants; defaults EMBED_PROVIDER to tei (safe conservative fallback) to avoid underestimating GPU offset
 
 ### Architecture Notes
 
@@ -97,6 +99,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-23T09:36:00.397Z
-Stopped at: Completed 22-reranker-wizard-docker-vram 22-01-PLAN.md
+Last session: 2026-03-23T09:46:38.956Z
+Stopped at: Completed 23-llm-model-list-effective-vram 23-01-PLAN.md
 Resume file: None

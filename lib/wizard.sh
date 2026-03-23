@@ -981,6 +981,48 @@ _wizard_summary() {
     [[ "$ENABLE_AUTHELIA" == "true" ]] && echo "  Authelia:     2FA включена"
     [[ "$ENABLE_TUNNEL" == "true" ]] && echo "  Туннель:      ${TUNNEL_VPS_HOST}:${TUNNEL_REMOTE_PORT}"
     echo "  Бэкапы:       ${BACKUP_TARGET} (${BACKUP_SCHEDULE})"
+
+    # VRAM plan (only for vLLM — Ollama manages VRAM internally)
+    if [[ "${LLM_PROVIDER:-}" == "vllm" ]]; then
+        echo ""
+        echo -e "${CYAN}--- VRAM план ---${NC}"
+        local vllm_vram
+        vllm_vram=$(_get_vllm_vram_req "${VLLM_MODEL:-}")
+        [[ "$vllm_vram" == "0" ]] && vllm_vram="?"
+        echo "  vLLM:         ${vllm_vram} GB   (${VLLM_MODEL:-unknown})"
+
+        local embed_vram=0
+        if [[ "${EMBED_PROVIDER:-}" == "tei" ]]; then
+            embed_vram=2
+            echo "  TEI-embed:    ${embed_vram} GB   (${EMBEDDING_MODEL:-unknown})"
+        fi
+
+        local rerank_vram=0
+        if [[ "${ENABLE_RERANKER:-}" == "true" ]]; then
+            rerank_vram=1
+            echo "  TEI-rerank:   ${rerank_vram} GB   (${RERANK_MODEL:-unknown})"
+        fi
+
+        echo "  ─────────────────"
+
+        if [[ "$vllm_vram" == "?" ]]; then
+            echo "  Итого:        ? GB (неизвестная модель)"
+        else
+            local total_vram=$(( vllm_vram + embed_vram + rerank_vram ))
+            local gpu_vram_mb="${DETECTED_GPU_VRAM:-0}"
+            if [[ "$gpu_vram_mb" -gt 0 ]] 2>/dev/null; then
+                local gpu_vram_gb=$(( gpu_vram_mb / 1024 ))
+                echo "  Итого:        ${total_vram} GB / ${gpu_vram_gb} GB доступно"
+                if [[ "$total_vram" -gt "$gpu_vram_gb" ]]; then
+                    echo -e "  ${YELLOW}⚠ VRAM бюджет превышен! Возможен OOM.${NC}"
+                fi
+            else
+                echo "  Итого:        ${total_vram} GB"
+                echo -e "  ${YELLOW}GPU VRAM не определён — проверьте вручную${NC}"
+            fi
+        fi
+    fi
+
     echo ""
 }
 
@@ -1007,13 +1049,13 @@ run_wizard() {
     _wizard_security_defaults
     _wizard_admin_ui
     _wizard_domain
-    _wizard_vector_store
-    _wizard_etl
     _wizard_llm_provider
     _wizard_llm_model
     _wizard_embed_provider
     _wizard_embedding_model
     _wizard_reranker_model
+    _wizard_vector_store
+    _wizard_etl
     _wizard_hf_token
     _wizard_offline_warning
     _wizard_tls

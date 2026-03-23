@@ -31,8 +31,8 @@ Requirements for v2.5 Modular Model Selection + Xinference Removal. Each maps to
 
 ### LLM Models
 
-- [ ] **LLMM-01**: Список моделей vLLM обновлён до 17 моделей (AWQ/bf16/MoE секции) с корректными VRAM requirements и TEI offset в рекомендациях
-- [ ] **LLMM-02**: VRAM guard учитывает TEI offset (~2 GB) при расчёте effective_vram для рекомендации
+- [x] **LLMM-01**: Список моделей vLLM обновлён до 17 моделей (AWQ/bf16/MoE секции) с корректными VRAM requirements и TEI offset в рекомендациях
+- [x] **LLMM-02**: VRAM guard учитывает TEI offset (~2 GB) при расчёте effective_vram для рекомендации
 
 ### Compose Profiles
 
@@ -292,8 +292,8 @@ All 24 requirements shipped and confirmed working in v2.0. See git history for d
 | RNKR-01 | Phase 22 | Complete |
 | RNKR-02 | Phase 22 | Complete |
 | RNKR-03 | Phase 22 | Complete |
-| LLMM-01 | Phase 23 | Pending |
-| LLMM-02 | Phase 23 | Pending |
+| LLMM-01 | Phase 23 | Complete |
+| LLMM-02 | Phase 23 | Complete |
 | WIZS-01 | Phase 24 | Pending |
 | WIZS-02 | Phase 24 | Pending |
 | PROF-01 | Phase 24 | Pending |

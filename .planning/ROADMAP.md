@@ -526,7 +526,10 @@ Plans:
 2. VRAM requirement учитывает TEI offset (~2 GB): на GPU с 24 GB VRAM wizard рекомендует модели до ~22 GB, а не до 24 GB — модель с vram_req=24 получает предупреждение о нехватке
 3. TEI offset в рекомендациях конфигурируем (не hardcoded) — берётся из переменной или функции, чтобы учитывать разные конфигурации embedding/reranker
 
-**Plans**: TBD
+**Plans:** 1/1 plans complete
+
+Plans:
+- [ ] 23-01-PLAN.md — Dynamic _get_vram_offset() + model VRAM audit
 
 ---
 
@@ -572,7 +575,7 @@ Plans:
 - [x] **Phase 20: Xinference Removal** — Убрать xinference из обязательного стека, ETL_ENHANCED -> ENABLE_DOCLING, docling profile (v2.5) (completed 2026-03-23)
 - [x] **Phase 21: Embeddings Wizard + Docker** — Шаг визарда для выбора embedding модели + .env + docker-compose интеграция (v2.5) (completed 2026-03-23)
 - [x] **Phase 22: Reranker Wizard + Docker + VRAM** — Шаг визарда для reranker + TEI-rerank контейнер в profile reranker + VRAM учёт (v2.5) (completed 2026-03-23)
-- [ ] **Phase 23: LLM Model List + Effective VRAM** — 17 моделей AWQ/bf16/MoE + TEI offset в рекомендациях (v2.5)
+- [x] **Phase 23: LLM Model List + Effective VRAM** — 17 моделей AWQ/bf16/MoE + TEI offset в рекомендациях (v2.5) (completed 2026-03-23)
 - [ ] **Phase 24: Wizard Restructure + VRAM Summary + Profiles** — Новый порядок шагов визарда + VRAM сводка + COMPOSE_PROFILES с tei/reranker/docling (v2.5)
 
 ## Progress
@@ -600,8 +603,8 @@ Plans:
 | 19. Bugfixes + GPU Enhancement | 2/2 | Complete    | 2026-03-23 | - |
 | 20. Xinference Removal | 2/2 | Complete    | 2026-03-23 | - |
 | 21. Embeddings Wizard + Docker | 1/1 | Complete    | 2026-03-23 | - |
-| 22. Reranker Wizard + Docker + VRAM | 2/2 | Complete   | 2026-03-23 | - |
-| 23. LLM Model List + Effective VRAM | v2.5 | 0/? | Not started | - |
+| 22. Reranker Wizard + Docker + VRAM | 2/2 | Complete    | 2026-03-23 | - |
+| 23. LLM Model List + Effective VRAM | 1/1 | Complete   | 2026-03-23 | - |
 | 24. Wizard Restructure + VRAM Summary + Profiles | v2.5 | 0/? | Not started | - |
 
 ---
