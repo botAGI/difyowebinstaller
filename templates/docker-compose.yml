@@ -381,7 +381,7 @@ services:
     environment:
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
       - CUDA_VISIBLE_DEVICES=${TEI_CUDA_DEVICE:-0}
-    command: --model-id ${RERANK_MODEL:-BAAI/bge-reranker-v2-m3} --port 80
+    command: --model-id ${RERANK_MODEL:-BAAI/bge-reranker-v2-m3} --reranker --port 80
     volumes:
       - agmind_tei_rerank_cache:/data
     healthcheck:
