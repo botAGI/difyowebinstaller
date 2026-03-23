@@ -547,7 +547,10 @@ Plans:
 3. `COMPOSE_PROFILES` в .env после визарда содержит профили `tei`, `reranker`, `docling` в зависимости от выбора пользователя — каждый профиль включается/выключается отдельным флагом (`EMBED_PROVIDER=tei`, `ENABLE_RERANKER=true`, `ENABLE_DOCLING=true`)
 4. При NON_INTERACTIVE режиме COMPOSE_PROFILES формируется корректно из env-переменных без участия визарда — все новые профили учитываются
 
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 24-01-PLAN.md — Reorder wizard steps + VRAM summary + verify compose profiles
 
 ---
 
@@ -576,7 +579,7 @@ Plans:
 - [x] **Phase 21: Embeddings Wizard + Docker** — Шаг визарда для выбора embedding модели + .env + docker-compose интеграция (v2.5) (completed 2026-03-23)
 - [x] **Phase 22: Reranker Wizard + Docker + VRAM** — Шаг визарда для reranker + TEI-rerank контейнер в profile reranker + VRAM учёт (v2.5) (completed 2026-03-23)
 - [x] **Phase 23: LLM Model List + Effective VRAM** — 17 моделей AWQ/bf16/MoE + TEI offset в рекомендациях (v2.5) (completed 2026-03-23)
-- [ ] **Phase 24: Wizard Restructure + VRAM Summary + Profiles** — Новый порядок шагов визарда + VRAM сводка + COMPOSE_PROFILES с tei/reranker/docling (v2.5)
+- [x] **Phase 24: Wizard Restructure + VRAM Summary + Profiles** — Новый порядок шагов визарда + VRAM сводка + COMPOSE_PROFILES с tei/reranker/docling (v2.5) (completed 2026-03-23)
 
 ## Progress
 
@@ -604,8 +607,8 @@ Plans:
 | 20. Xinference Removal | 2/2 | Complete    | 2026-03-23 | - |
 | 21. Embeddings Wizard + Docker | 1/1 | Complete    | 2026-03-23 | - |
 | 22. Reranker Wizard + Docker + VRAM | 2/2 | Complete    | 2026-03-23 | - |
-| 23. LLM Model List + Effective VRAM | 1/1 | Complete   | 2026-03-23 | - |
-| 24. Wizard Restructure + VRAM Summary + Profiles | v2.5 | 0/? | Not started | - |
+| 23. LLM Model List + Effective VRAM | 1/1 | Complete    | 2026-03-23 | - |
+| 24. Wizard Restructure + VRAM Summary + Profiles | 1/1 | Complete   | 2026-03-23 | - |
 
 ---
 *Roadmap created: 2026-03-17*

@@ -9,8 +9,8 @@ Requirements for v2.5 Modular Model Selection + Xinference Removal. Each maps to
 
 ### Wizard Structure
 
-- [ ] **WIZS-01**: Визард имеет новый порядок шагов: Профиль → LLM → Модель LLM → Embeddings → Reranker → VectorDB → Docling → Мониторинг → TLS → Алерты → UFW → Tunnel → Бэкапы → Сводка с VRAM планом
-- [ ] **WIZS-02**: В конце визарда показывается сводка с VRAM планом (vLLM + TEI-embed + TEI-rerank vs available GPU), предупреждение если не влезает
+- [x] **WIZS-01**: Визард имеет новый порядок шагов: Профиль → LLM → Модель LLM → Embeddings → Reranker → VectorDB → Docling → Мониторинг → TLS → Алерты → UFW → Tunnel → Бэкапы → Сводка с VRAM планом
+- [x] **WIZS-02**: В конце визарда показывается сводка с VRAM планом (vLLM + TEI-embed + TEI-rerank vs available GPU), предупреждение если не влезает
 
 ### Embeddings
 
@@ -36,7 +36,7 @@ Requirements for v2.5 Modular Model Selection + Xinference Removal. Each maps to
 
 ### Compose Profiles
 
-- [ ] **PROF-01**: COMPOSE_PROFILES формируется с новыми профилями: tei, reranker, docling — каждый включается отдельным флагом
+- [x] **PROF-01**: COMPOSE_PROFILES формируется с новыми профилями: tei, reranker, docling — каждый включается отдельным флагом
 
 ### Bugfixes
 
@@ -294,9 +294,9 @@ All 24 requirements shipped and confirmed working in v2.0. See git history for d
 | RNKR-03 | Phase 22 | Complete |
 | LLMM-01 | Phase 23 | Complete |
 | LLMM-02 | Phase 23 | Complete |
-| WIZS-01 | Phase 24 | Pending |
-| WIZS-02 | Phase 24 | Pending |
-| PROF-01 | Phase 24 | Pending |
+| WIZS-01 | Phase 24 | Complete |
+| WIZS-02 | Phase 24 | Complete |
+| PROF-01 | Phase 24 | Complete |
 
 **Coverage (v2.2):**
 

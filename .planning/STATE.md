@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.5
 milestone_name: Modular Model Selection + Xinference Removal
 status: planning
-stopped_at: Completed 23-llm-model-list-effective-vram 23-01-PLAN.md
-last_updated: "2026-03-23T09:46:38.958Z"
+stopped_at: Completed 24-wizard-restructure-vram-summary-profiles 24-01-PLAN.md
+last_updated: "2026-03-23T09:56:58.369Z"
 last_activity: 2026-03-23 — v2.5 roadmap created
 progress:
   total_phases: 6
-  completed_phases: 5
-  total_plans: 8
-  completed_plans: 8
+  completed_phases: 6
+  total_plans: 9
+  completed_plans: 9
   percent: 0
 ---
 
@@ -58,6 +58,7 @@ Updated after each plan completion.
 | Phase 22-reranker-wizard-docker-vram P02 | 8 | 2 tasks | 7 files |
 | Phase 22-reranker-wizard-docker-vram P01 | 10 | 2 tasks | 1 files |
 | Phase 23-llm-model-list-effective-vram P01 | 12 | 2 tasks | 1 files |
+| Phase 24-wizard-restructure-vram-summary-profiles P01 | 1 | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -80,6 +81,9 @@ Updated after each plan completion.
 - [Phase 22-reranker-wizard-docker-vram]: TEI reranker reuses same image/version as TEI embed; RERANK_MODEL defaults to BAAI/bge-reranker-v2-m3; activated via ENABLE_RERANKER=true in reranker compose profile
 - [Phase 22-reranker-wizard-docker-vram]: Phase 22: _wizard_reranker_model() uses _ask with default n for yes/no gate; RERANKER_VRAM_OFFSET=1 readonly; all 3 VRAM guard locations subtract reranker offset when ENABLE_RERANKER=true
 - [Phase 23-llm-model-list-effective-vram]: _get_vram_offset() replaces TEI/RERANKER_VRAM_OFFSET constants; defaults EMBED_PROVIDER to tei (safe conservative fallback) to avoid underestimating GPU offset
+- [Phase 24-wizard-restructure-vram-summary-profiles]: Wizard step order: LLM provider/model grouped before VectorDB/ETL — model choices contiguous, no context switching
+- [Phase 24-wizard-restructure-vram-summary-profiles]: VRAM summary block shown only for vLLM — Ollama manages VRAM internally, budget display irrelevant for Ollama users
+- [Phase 24-wizard-restructure-vram-summary-profiles]: build_compose_profiles() verified correct for NON_INTERACTIVE mode — tei/reranker/docling profiles already handled via env vars, no changes needed
 
 ### Architecture Notes
 
@@ -99,6 +103,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-23T09:46:38.956Z
-Stopped at: Completed 23-llm-model-list-effective-vram 23-01-PLAN.md
+Last session: 2026-03-23T09:56:58.366Z
+Stopped at: Completed 24-wizard-restructure-vram-summary-profiles 24-01-PLAN.md
 Resume file: None
