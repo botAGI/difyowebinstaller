@@ -19,9 +19,9 @@ Requirements for v2.5 Modular Model Selection + Xinference Removal. Each maps to
 
 ### Reranker
 
-- [ ] **RNKR-01**: Новый шаг визарда `_wizard_reranker_model()` с выбором реранкера (нет / bge-reranker-large / bge-reranker-base / gte-reranker / ввод вручную)
-- [ ] **RNKR-02**: При ENABLE_RERANKER=true поднимается отдельный TEI-rerank контейнер (profile `reranker`) с RERANK_MODEL из .env
-- [ ] **RNKR-03**: VRAM реранкера учитывается в VRAM бюджете и сводке
+- [x] **RNKR-01**: Новый шаг визарда `_wizard_reranker_model()` с выбором реранкера (нет / bge-reranker-large / bge-reranker-base / gte-reranker / ввод вручную)
+- [x] **RNKR-02**: При ENABLE_RERANKER=true поднимается отдельный TEI-rerank контейнер (profile `reranker`) с RERANK_MODEL из .env
+- [x] **RNKR-03**: VRAM реранкера учитывается в VRAM бюджете и сводке
 
 ### Xinference Removal
 
@@ -289,9 +289,9 @@ All 24 requirements shipped and confirmed working in v2.0. See git history for d
 | XINF-03 | Phase 20 | Complete |
 | EMBD-01 | Phase 21 | Complete |
 | EMBD-02 | Phase 21 | Complete |
-| RNKR-01 | Phase 22 | Pending |
-| RNKR-02 | Phase 22 | Pending |
-| RNKR-03 | Phase 22 | Pending |
+| RNKR-01 | Phase 22 | Complete |
+| RNKR-02 | Phase 22 | Complete |
+| RNKR-03 | Phase 22 | Complete |
 | LLMM-01 | Phase 23 | Pending |
 | LLMM-02 | Phase 23 | Pending |
 | WIZS-01 | Phase 24 | Pending |

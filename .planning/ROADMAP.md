@@ -505,7 +505,11 @@ Plans:
 3. VRAM реранкера (~0.5-1 GB в зависимости от модели) учитывается при расчёте VRAM бюджета — сводка установки и VRAM guard знают о реранкере
 4. При `ENABLE_RERANKER=false` profile `reranker` не активируется, TEI-rerank контейнер не запускается, VRAM реранкера не вычитается из бюджета
 
-**Plans**: TBD
+**Plans:** 2/2 plans complete
+
+Plans:
+- [ ] 22-01-PLAN.md — Wizard reranker function + VRAM guard integration (RNKR-01, RNKR-03)
+- [ ] 22-02-PLAN.md — Docker-compose tei-rerank service + compose profile + config + env templates (RNKR-02)
 
 ---
 
@@ -567,7 +571,7 @@ Plans:
 - [x] **Phase 19: Bugfixes + GPU Enhancement** — preflight port filter, effective_vram fix, xinference reranker broken flag, gpu status container names (v2.5) (completed 2026-03-23)
 - [x] **Phase 20: Xinference Removal** — Убрать xinference из обязательного стека, ETL_ENHANCED -> ENABLE_DOCLING, docling profile (v2.5) (completed 2026-03-23)
 - [x] **Phase 21: Embeddings Wizard + Docker** — Шаг визарда для выбора embedding модели + .env + docker-compose интеграция (v2.5) (completed 2026-03-23)
-- [ ] **Phase 22: Reranker Wizard + Docker + VRAM** — Шаг визарда для reranker + TEI-rerank контейнер в profile reranker + VRAM учёт (v2.5)
+- [x] **Phase 22: Reranker Wizard + Docker + VRAM** — Шаг визарда для reranker + TEI-rerank контейнер в profile reranker + VRAM учёт (v2.5) (completed 2026-03-23)
 - [ ] **Phase 23: LLM Model List + Effective VRAM** — 17 моделей AWQ/bf16/MoE + TEI offset в рекомендациях (v2.5)
 - [ ] **Phase 24: Wizard Restructure + VRAM Summary + Profiles** — Новый порядок шагов визарда + VRAM сводка + COMPOSE_PROFILES с tei/reranker/docling (v2.5)
 
@@ -596,7 +600,7 @@ Plans:
 | 19. Bugfixes + GPU Enhancement | 2/2 | Complete    | 2026-03-23 | - |
 | 20. Xinference Removal | 2/2 | Complete    | 2026-03-23 | - |
 | 21. Embeddings Wizard + Docker | 1/1 | Complete    | 2026-03-23 | - |
-| 22. Reranker Wizard + Docker + VRAM | v2.5 | 0/? | Not started | - |
+| 22. Reranker Wizard + Docker + VRAM | 2/2 | Complete   | 2026-03-23 | - |
 | 23. LLM Model List + Effective VRAM | v2.5 | 0/? | Not started | - |
 | 24. Wizard Restructure + VRAM Summary + Profiles | v2.5 | 0/? | Not started | - |
 
