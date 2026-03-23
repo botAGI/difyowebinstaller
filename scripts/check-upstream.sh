@@ -26,7 +26,6 @@ DAILY_CHECKS=(
     "Weaviate|WEAVIATE_VERSION|weaviate/weaviate|gh"
     "Qdrant|QDRANT_VERSION|qdrant/qdrant|gh"
     "Docling|DOCLING_SERVE_VERSION|docling-project/docling-serve|gh"
-    "Xinference|XINFERENCE_VERSION|xorbitsai/inference|gh"
 )
 
 MONTHLY_CHECKS=(

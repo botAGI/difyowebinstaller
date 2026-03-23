@@ -60,7 +60,7 @@ def main() -> int:
         "dify-api", "dify-web", "open-webui", "ollama",
         "postgres", "redis", "weaviate", "qdrant",
         "dify-sandbox", "squid", "nginx", "certbot",
-        "dify-plugin-daemon", "docling-serve", "xinference",
+        "dify-plugin-daemon", "docling-serve",
         "authelia", "grafana", "portainer", "node-exporter",
         "cadvisor", "prometheus", "alertmanager", "loki", "promtail",
     }
@@ -90,7 +90,6 @@ def main() -> int:
         "certbot": "CERTBOT_VERSION",
         "dify-plugin-daemon": "PLUGIN_DAEMON_VERSION",
         "docling-serve": "DOCLING_SERVE_VERSION",
-        "xinference": "XINFERENCE_VERSION",
         "authelia": "AUTHELIA_VERSION",
         "grafana": "GRAFANA_VERSION",
         "portainer": "PORTAINER_VERSION",

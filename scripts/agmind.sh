@@ -579,10 +579,9 @@ _gpu_assign() {
     case "$service" in
         vllm)        env_var="VLLM_CUDA_DEVICE" ;;
         tei)         env_var="TEI_CUDA_DEVICE" ;;
-        xinference)  env_var="XINFERENCE_CUDA_DEVICE" ;;
         *)
             echo -e "${RED}Unknown service: ${service}${NC}" >&2
-            echo "Valid services: vllm, tei, xinference" >&2
+            echo "Valid services: vllm, tei" >&2
             return 1
             ;;
     esac
@@ -644,7 +643,7 @@ Commands:
   restart            Restart all containers
   gpu [subcommand]   GPU management
     status             Show GPUs, VRAM, utilization, assignments
-    assign <svc> <id>  Assign GPU to service (vllm, tei, xinference)
+    assign <svc> <id>  Assign GPU to service (vllm, tei)
     assign --auto      Auto-distribute across GPUs
   backup             Create backup (root)
   restore <path>     Restore from backup (root)

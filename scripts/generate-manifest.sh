@@ -63,7 +63,6 @@ declare -a IMAGE_MAP=(
     "certbot|docker.io|certbot/certbot|${CERTBOT_VERSION}|linux/amd64,linux/arm64"
     "dify-plugin-daemon|docker.io|langgenius/dify-plugin-daemon|${PLUGIN_DAEMON_VERSION}|linux/amd64,linux/arm64"
     "docling-serve|ghcr.io|docling-project/docling-serve|${DOCLING_SERVE_VERSION}|linux/amd64"
-    "xinference|docker.io|xprobe/xinference|${XINFERENCE_VERSION}|linux/amd64"
     "authelia|docker.io|authelia/authelia|${AUTHELIA_VERSION}|linux/amd64,linux/arm64"
     "grafana|docker.io|grafana/grafana|${GRAFANA_VERSION}|linux/amd64,linux/arm64"
     "portainer|docker.io|portainer/portainer-ce|${PORTAINER_VERSION}|linux/amd64,linux/arm64"
