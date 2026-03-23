@@ -369,10 +369,13 @@ services:
     networks:
       - agmind-backend
 
-  # ==================== TEI Reranker (reranker profile) ====================
+  # ==================== TEI Reranker (reranker profile, CPU) ================
+  # Runs on CPU (ONNX backend) — cross-encoder models are incompatible with
+  # TEI's CUDA/Candle backend (FlashBert). CPU is fine: reranker only
+  # re-scores top 10-20 results, latency ~50-100ms per query.
   tei-rerank:
     <<: *logging-defaults
-    image: ghcr.io/huggingface/text-embeddings-inference:${TEI_VERSION:-cuda-1.9.2}
+    image: ghcr.io/huggingface/text-embeddings-inference:${TEI_RERANK_VERSION:-cpu-1.9}
     container_name: agmind-tei-rerank
     restart: unless-stopped
     mem_limit: ${TEI_RERANK_MEM_LIMIT:-4g}
@@ -380,8 +383,7 @@ services:
       - reranker
     environment:
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
-      - CUDA_VISIBLE_DEVICES=${TEI_CUDA_DEVICE:-0}
-    command: --model-id ${RERANK_MODEL:-BAAI/bge-reranker-v2-m3} --reranker --port 80
+    command: --model-id ${RERANK_MODEL:-BAAI/bge-reranker-v2-m3} --port 80
     volumes:
       - agmind_tei_rerank_cache:/data
     healthcheck:
@@ -390,13 +392,6 @@ services:
       timeout: 10s
       retries: 5
       start_period: 600s
-    #__GPU__deploy:
-    #__GPU__  resources:
-    #__GPU__    reservations:
-    #__GPU__      devices:
-    #__GPU__        - driver: nvidia
-    #__GPU__          count: 1
-    #__GPU__          capabilities: [gpu]
     networks:
       - agmind-backend
 
