@@ -196,9 +196,9 @@ _wizard_etl() {
         return 0
     fi
 
-    echo "Расширенная обработка документов (Docling + Xinference reranker)?"
+    echo "Расширенная обработка документов (Docling)?"
     echo "  1) Нет — стандартный Dify ETL (по умолчанию)"
-    echo "  2) Да — Docling + bce-reranker-base_v1"
+    echo "  2) Да — Docling (улучшенный парсинг документов)"
     echo ""
 
     _ask_choice "Выбор [1-2, Enter=1]: " 1 2 1

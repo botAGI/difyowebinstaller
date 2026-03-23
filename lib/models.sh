@@ -153,33 +153,10 @@ load_reranker() {
         return 0
     fi
 
-    local compose_file="${INSTALL_DIR}/docker/docker-compose.yml"
-    log_info "Loading reranker model in Xinference..."
-
-    # Wait for Xinference to be ready (up to 150s)
-    local retries=30 i=0
-    while [[ $i -lt $retries ]]; do
-        if docker compose -f "$compose_file" exec -T xinference \
-            curl -sf http://localhost:9997/v1/models >/dev/null 2>&1; then
-            break
-        fi
-        sleep 5
-        i=$((i + 1))
-    done
-
-    if [[ $i -ge $retries ]]; then
-        log_warn "Xinference not ready, skipping reranker"
-        return 0
-    fi
-
-    # Register bce-reranker-base_v1
-    docker compose -f "$compose_file" exec -T xinference \
-        curl -sf -X POST http://localhost:9997/v1/models \
-        -H "Content-Type: application/json" \
-        -d '{"model_name":"bce-reranker-base_v1","model_type":"rerank","model_engine":"sentence-transformers"}' \
-        >/dev/null 2>&1 || true
-
-    log_success "Reranker model registered"
+    # BROKEN: bce-reranker-base_v1 fails in Xinference v2.3.0
+    # Reranker will return via TEI in Phase 22 (RNKR-01..03)
+    log_warn "Reranker disabled: bce-reranker-base_v1 is broken in Xinference v2.3.0"
+    return 0
 }
 
 # ============================================================================
