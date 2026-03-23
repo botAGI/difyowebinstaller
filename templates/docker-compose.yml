@@ -378,7 +378,7 @@ services:
     image: ghcr.io/huggingface/text-embeddings-inference:${TEI_RERANK_VERSION:-cpu-1.9}
     container_name: agmind-tei-rerank
     restart: unless-stopped
-    mem_limit: ${TEI_RERANK_MEM_LIMIT:-4g}
+    mem_limit: ${TEI_RERANK_MEM_LIMIT:-8g}
     profiles:
       - reranker
     environment:
