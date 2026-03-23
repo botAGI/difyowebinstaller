@@ -50,7 +50,6 @@ Groups are based on shared configuration, version coupling, or runtime dependenc
 | authelia | AUTHELIA_VERSION | SSO/2FA gateway |
 | certbot | CERTBOT_VERSION | TLS certificates |
 | docling | DOCLING_SERVE_VERSION | Document conversion |
-| xinference | XINFERENCE_VERSION | Model serving |
 
 > No cross-dependencies within this group. Update individually.
 

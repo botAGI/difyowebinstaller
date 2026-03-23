@@ -98,7 +98,7 @@ fi
 # 2. Remove Docker volumes (including Loki; removed promtail_data — not a named volume)
 CLEANUP_STAGE="docker-volumes"
 echo -e "${YELLOW}Removing Docker volumes...${NC}"
-docker volume ls -q | grep -E "^agmind_|_openwebui_data$|_ollama_data$|_xinference_data$|_grafana_data$|_portainer_data$|_prometheus_data$|_loki_data$|_authelia_data$" | while read -r vol; do
+docker volume ls -q | grep -E "^agmind_|_openwebui_data$|_ollama_data$|_grafana_data$|_portainer_data$|_prometheus_data$|_loki_data$|_authelia_data$" | while read -r vol; do
     docker volume rm "$vol" 2>/dev/null || true
     echo "  Removed volume: $vol"
 done
