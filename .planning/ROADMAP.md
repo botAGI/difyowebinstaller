@@ -412,7 +412,10 @@ Plans:
 4. `docker-compose.yml` использует `${VLLM_CUDA_DEVICE:-0}` и `${TEI_CUDA_DEVICE:-0}` вместо hardcoded `"0"` — изменение `.env` без пересборки compose-файла меняет привязку GPU при следующем `docker compose up`
 5. На сервере с одним GPU `agmind gpu assign --auto` записывает `VLLM_CUDA_DEVICE=0` и `TEI_CUDA_DEVICE=0` без ошибки — оба контейнера разделяют единственный GPU
 
-**Plans:** TBD
+**Plans:** 1/1 plans complete
+
+Plans:
+- [ ] 18-01-PLAN.md — docker-compose env var substitution + cmd_gpu with status/assign/auto-assign (GPUM-01, GPUM-02, GPUM-03)
 
 ---
 
@@ -435,7 +438,7 @@ Plans:
 - [x] **Phase 15: Pull & Download UX** — Pre-pull валидация образов + прогресс скачивания моделей + graceful timeout (completed 2026-03-22)
 - [x] **Phase 16: Critical Bugfixes** — VRAM guard в NON_INTERACTIVE + run_diagnostics при resume с любой фазы (completed 2026-03-22)
 - [x] **Phase 17: Wizard Model List Update** — Новые модели Qwen3/MoE в wizard + скорректированные VRAM req + MODEL_SIZES (completed 2026-03-22)
-- [ ] **Phase 18: GPU Management CLI** — agmind gpu status/assign + docker-compose env-переменные для CUDA_VISIBLE_DEVICES
+- [x] **Phase 18: GPU Management CLI** — agmind gpu status/assign + docker-compose env-переменные для CUDA_VISIBLE_DEVICES (completed 2026-03-23)
 
 ## Progress
 
@@ -457,9 +460,9 @@ Plans:
 | 14. DB Password Resume Safety | v2.3 | 1/1 | Complete | 2026-03-22 |
 | 15. Pull & Download UX | v2.3 | 1/1 | Complete | 2026-03-22 |
 | 16. Critical Bugfixes | v2.4 | 1/1 | Complete | 2026-03-22 |
-| 17. Wizard Model List Update | 1/1 | Complete   | 2026-03-22 | — |
-| 18. GPU Management CLI | v2.4 | 0/TBD | Not started | — |
+| 17. Wizard Model List Update | v2.4 | 1/1 | Complete | 2026-03-23 |
+| 18. GPU Management CLI | 1/1 | Complete   | 2026-03-23 | — |
 
 ---
 *Roadmap created: 2026-03-17*
-*Last updated: 2026-03-23 — Phase 17 planned: 1 plan (WMOD-01, WMOD-02)*
+*Last updated: 2026-03-23 — Phase 18 planned: 1 plan (GPUM-01, GPUM-02, GPUM-03)*

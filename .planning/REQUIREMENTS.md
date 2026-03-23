@@ -19,9 +19,9 @@ Requirements for v2.4 Wizard Models + GPU Management. Each maps to roadmap phase
 
 ### GPU Management
 
-- [ ] **GPUM-01**: `agmind gpu status` показывает per-GPU name/VRAM/free, привязанные контейнеры, GPU processes
-- [ ] **GPUM-02**: `agmind gpu assign <service> <gpu_id>` назначает GPU через .env + `--auto` для multi-GPU auto-distribute
-- [ ] **GPUM-03**: docker-compose.yml использует `${VLLM_CUDA_DEVICE:-0}` / `${TEI_CUDA_DEVICE:-0}` вместо hardcoded "0"
+- [x] **GPUM-01**: `agmind gpu status` показывает per-GPU name/VRAM/free, привязанные контейнеры, GPU processes
+- [x] **GPUM-02**: `agmind gpu assign <service> <gpu_id>` назначает GPU через .env + `--auto` для multi-GPU auto-distribute
+- [x] **GPUM-03**: docker-compose.yml использует `${VLLM_CUDA_DEVICE:-0}` / `${TEI_CUDA_DEVICE:-0}` вместо hardcoded "0"
 
 ## v2.3 Requirements (Validated)
 
@@ -232,9 +232,9 @@ All 24 requirements shipped and confirmed working in v2.0. See git history for d
 | BFIX-42 | Phase 16 | Complete |
 | WMOD-01 | Phase 17 | Complete |
 | WMOD-02 | Phase 17 | Complete |
-| GPUM-01 | Phase 18 | Pending |
-| GPUM-02 | Phase 18 | Pending |
-| GPUM-03 | Phase 18 | Pending |
+| GPUM-01 | Phase 18 | Complete |
+| GPUM-02 | Phase 18 | Complete |
+| GPUM-03 | Phase 18 | Complete |
 
 **Coverage (v2.2):**
 

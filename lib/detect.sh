@@ -485,11 +485,20 @@ preflight_checks() {
     fi
 
     # --- 7. Key ports ---
+    # Check if agmind nginx owns the port (reinstall scenario should not warn)
+    local agmind_nginx_up=false
+    if docker compose -f "${INSTALL_DIR:-/opt/agmind}/docker/docker-compose.yml" ps --status running nginx 2>/dev/null | grep -q nginx; then
+        agmind_nginx_up=true
+    fi
     for port in 80 443; do
         if ss -tlnp 2>/dev/null | grep -q ":${port} " || \
            lsof -i ":${port}" -sTCP:LISTEN &>/dev/null 2>&1; then
-            echo -e "  ${YELLOW}[WARN]${NC} Port ${port}: in use"
-            warnings=$((warnings + 1))
+            if [[ "$agmind_nginx_up" == "true" ]]; then
+                echo -e "  ${GREEN}[PASS]${NC} Port ${port}: in use (agmind)"
+            else
+                echo -e "  ${YELLOW}[WARN]${NC} Port ${port}: in use"
+                warnings=$((warnings + 1))
+            fi
         else
             echo -e "  ${GREEN}[PASS]${NC} Port ${port}: free"
         fi

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.4
 milestone_name: Wizard Models + GPU Management
 status: Roadmap ready, awaiting plan-phase 16
-stopped_at: Completed 17-wizard-model-list-update-01-PLAN.md
-last_updated: "2026-03-22T23:57:28.118Z"
+stopped_at: Completed 18-gpu-management-cli-01-PLAN.md
+last_updated: "2026-03-23T00:11:23.893Z"
 last_activity: "2026-03-23 — Roadmap v2.4 created: Phases 16-18"
 progress:
   total_phases: 3
-  completed_phases: 2
-  total_plans: 2
-  completed_plans: 2
+  completed_phases: 3
+  total_plans: 3
+  completed_plans: 3
   percent: 0
 ---
 
@@ -53,6 +53,7 @@ Progress: `[░░░░░░░░░░] 0% (0/3 phases)`
 Updated after each plan completion.
 | Phase 16-critical-bugfixes P01 | 15 | 2 tasks | 2 files |
 | Phase 17-wizard-model-list-update P01 | 2 | 2 tasks | 2 files |
+| Phase 18-gpu-management-cli P01 | 2 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -71,6 +72,7 @@ Updated after each plan completion.
 - [Phase 17-wizard-model-list-update]: Phase 17-01: Default Enter=6 selects Qwen/Qwen2.5-7B-Instruct in 16-model menu
 - [Phase 17-wizard-model-list-update]: Phase 17-01: VRAM corrected for AWQ models (14B: 12->10 GB, 7B: 8->5 GB) per hardware measurements
 - [Phase 17-wizard-model-list-update]: Phase 17-01: MoE section separate from 32B+ bf16 to clarify active vs total params
+- [Phase 18-gpu-management-cli]: _gpu_status no-root, _gpu_assign root-required; xinference in assign only (not --auto); direct nvidia-smi vs detect_gpu for multi-GPU detail
 
 ### Architecture Notes
 
@@ -116,6 +118,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-22T23:57:28.116Z
-Stopped at: Completed 17-wizard-model-list-update-01-PLAN.md
+Last session: 2026-03-23T00:11:23.890Z
+Stopped at: Completed 18-gpu-management-cli-01-PLAN.md
 Resume file: None
