@@ -20,9 +20,11 @@ build_compose_profiles() {
     [[ "${DEPLOY_PROFILE:-}" == "vps" ]] && profiles="vps"
     [[ "${VECTOR_STORE:-weaviate}" == "qdrant" ]] && profiles="${profiles:+$profiles,}qdrant"
     [[ "${VECTOR_STORE:-weaviate}" == "weaviate" ]] && profiles="${profiles:+$profiles,}weaviate"
-    # ETL: check both wizard var (ETL_ENHANCED) and .env var (ETL_TYPE) for resume support (BUG-V3-038)
-    if [[ "${ETL_ENHANCED:-false}" == "true" || "${ETL_TYPE:-dify}" == "unstructured_api" ]]; then
-        profiles="${profiles:+$profiles,}etl"
+    # Docling: check both wizard var (ENABLE_DOCLING) and .env var (ETL_TYPE) for resume support
+    # Backward compat: ETL_ENHANCED=true without ENABLE_DOCLING → treat as ENABLE_DOCLING=true
+    local docling_enabled="${ENABLE_DOCLING:-${ETL_ENHANCED:-false}}"
+    if [[ "$docling_enabled" == "true" || "${ETL_TYPE:-dify}" == "unstructured_api" ]]; then
+        profiles="${profiles:+$profiles,}docling"
     fi
     [[ "${MONITORING_MODE:-none}" == "local" ]] && profiles="${profiles:+$profiles,}monitoring"
     [[ "${ENABLE_AUTHELIA:-false}" == "true" ]] && profiles="${profiles:+$profiles,}authelia"
