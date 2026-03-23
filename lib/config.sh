@@ -239,7 +239,7 @@ _generate_env_file() {
 
     # ETL type mapping (v3: true/false → unstructured_api/dify)
     local etl_type="dify"
-    if [[ "${ETL_ENHANCED:-false}" == "true" ]]; then
+    if [[ "${ENABLE_DOCLING:-${ETL_ENHANCED:-false}}" == "true" ]]; then
         etl_type="unstructured_api"
     fi
 

@@ -2,7 +2,7 @@
 # wizard.sh — Interactive installation wizard. All user questions in one module.
 # Dependencies: common.sh (log_*, validate_*, colors), detect.sh (RECOMMENDED_MODEL, DETECTED_GPU)
 # Exports all wizard choices as global variables (see §7.3 in SPEC.md):
-#   DEPLOY_PROFILE, DOMAIN, CERTBOT_EMAIL, VECTOR_STORE, ETL_ENHANCED,
+#   DEPLOY_PROFILE, DOMAIN, CERTBOT_EMAIL, VECTOR_STORE, ENABLE_DOCLING,
 #   LLM_PROVIDER, LLM_MODEL, VLLM_MODEL, EMBED_PROVIDER, EMBEDDING_MODEL,
 #   HF_TOKEN, TLS_MODE, TLS_CERT_PATH, TLS_KEY_PATH,
 #   MONITORING_MODE, MONITORING_ENDPOINT, MONITORING_TOKEN,
@@ -25,7 +25,7 @@ _init_wizard_defaults() {
     DOMAIN="${DOMAIN:-}"
     CERTBOT_EMAIL="${CERTBOT_EMAIL:-}"
     VECTOR_STORE="${VECTOR_STORE:-weaviate}"
-    ETL_ENHANCED="${ETL_ENHANCED:-false}"
+    ENABLE_DOCLING="${ENABLE_DOCLING:-${ETL_ENHANCED:-false}}"
     LLM_PROVIDER="${LLM_PROVIDER:-}"
     LLM_MODEL="${LLM_MODEL:-}"
     VLLM_MODEL="${VLLM_MODEL:-}"
@@ -192,7 +192,7 @@ _wizard_vector_store() {
 
 _wizard_etl() {
     if [[ "$DEPLOY_PROFILE" == "offline" ]]; then
-        ETL_ENHANCED="false"
+        ENABLE_DOCLING="false"
         return 0
     fi
 
@@ -203,8 +203,8 @@ _wizard_etl() {
 
     _ask_choice "Выбор [1-2, Enter=1]: " 1 2 1
     case "$REPLY" in
-        2) ETL_ENHANCED="true";;
-        *) ETL_ENHANCED="false";;
+        2) ENABLE_DOCLING="true";;
+        *) ENABLE_DOCLING="false";;
     esac
     echo ""
 }
@@ -860,7 +860,7 @@ _wizard_summary() {
     echo "  Профиль:      ${DEPLOY_PROFILE}"
     [[ -n "$DOMAIN" ]] && echo "  Домен:        ${DOMAIN}"
     echo "  Вектор. БД:   ${VECTOR_STORE}"
-    [[ "$ETL_ENHANCED" == "true" ]] && echo "  ETL:          Docling + Xinference"
+    [[ "$ENABLE_DOCLING" == "true" ]] && echo "  ETL:          Docling"
     echo "  LLM:          ${LLM_PROVIDER} ${LLM_MODEL}${VLLM_MODEL:+ (${VLLM_MODEL})}"
     echo "  Эмбеддинги:   ${EMBED_PROVIDER} ${EMBEDDING_MODEL}"
     [[ "$TLS_MODE" != "none" ]] && echo "  TLS:          ${TLS_MODE}"
@@ -915,7 +915,7 @@ run_wizard() {
     _wizard_confirm
 
     # Export all choices
-    export DEPLOY_PROFILE DOMAIN CERTBOT_EMAIL VECTOR_STORE ETL_ENHANCED
+    export DEPLOY_PROFILE DOMAIN CERTBOT_EMAIL VECTOR_STORE ENABLE_DOCLING
     export LLM_PROVIDER LLM_MODEL VLLM_MODEL VLLM_CUDA_SUFFIX EMBED_PROVIDER EMBEDDING_MODEL
     export HF_TOKEN TLS_MODE TLS_CERT_PATH TLS_KEY_PATH
     export MONITORING_MODE MONITORING_ENDPOINT MONITORING_TOKEN

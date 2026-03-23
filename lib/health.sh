@@ -57,7 +57,7 @@ get_service_list() {
         local etl_type
         etl_type="$(grep '^ETL_TYPE=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "dify")"
         if [[ "$etl_type" == "unstructured_api" ]]; then
-            services+=(docling xinference)
+            services+=(docling)
         fi
     else
         services+=(weaviate)

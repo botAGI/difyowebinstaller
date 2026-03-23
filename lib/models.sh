@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# models.sh — Download LLM/embedding models (Ollama pull, vLLM/TEI info, Xinference reranker).
+# models.sh — Download LLM/embedding models (Ollama pull, vLLM/TEI info).
 # Dependencies: common.sh (log_*, validate_model_name)
 # Functions: download_models(), wait_for_ollama(), pull_model(name),
-#            check_ollama_models(), load_reranker()
+#            check_ollama_models()
 # Expects: INSTALL_DIR, LLM_PROVIDER, LLM_MODEL, EMBED_PROVIDER, EMBEDDING_MODEL,
-#          DEPLOY_PROFILE, ETL_ENHANCED
+#          DEPLOY_PROFILE
 set -euo pipefail
 
 INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
@@ -144,22 +144,6 @@ check_ollama_models() {
 }
 
 # ============================================================================
-# XINFERENCE RERANKER
-# ============================================================================
-
-# Load bce-reranker-base_v1 in Xinference (only when ETL enhanced is enabled).
-load_reranker() {
-    if [[ "${ETL_ENHANCED:-false}" != "true" ]]; then
-        return 0
-    fi
-
-    # BROKEN: bce-reranker-base_v1 fails in Xinference v2.3.0
-    # Reranker will return via TEI in Phase 22 (RNKR-01..03)
-    log_warn "Reranker disabled: bce-reranker-base_v1 is broken in Xinference v2.3.0"
-    return 0
-}
-
-# ============================================================================
 # MAIN: DOWNLOAD MODELS
 # ============================================================================
 
@@ -176,7 +160,6 @@ download_models() {
         if [[ "$llm_provider" == "ollama" || "$embed_provider" == "ollama" ]]; then
             check_ollama_models
         fi
-        load_reranker
         return 0
     fi
 
@@ -204,8 +187,6 @@ download_models() {
     if [[ "$llm_provider" == "external" || "$llm_provider" == "skip" ]]; then
         [[ "$need_ollama" != "true" ]] && log_info "Provider ${llm_provider}: no model download needed"
     fi
-
-    load_reranker
 
     echo ""
     log_success "Model phase complete"
