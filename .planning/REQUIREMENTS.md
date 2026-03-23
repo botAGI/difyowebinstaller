@@ -14,8 +14,8 @@ Requirements for v2.5 Modular Model Selection + Xinference Removal. Each maps to
 
 ### Embeddings
 
-- [ ] **EMBD-01**: Новый шаг визарда `_wizard_embedding_model()` с выбором TEI модели (BAAI/bge-m3, Qwen3-Embedding-0.6B, e5-large-instruct, ввод вручную)
-- [ ] **EMBD-02**: Переменные EMBEDDING_MODEL и EMBED_PROVIDER=tei записываются в .env и используются docker-compose
+- [x] **EMBD-01**: Новый шаг визарда `_wizard_embedding_model()` с выбором TEI модели (BAAI/bge-m3, Qwen3-Embedding-0.6B, multilingual-e5-large-instruct, ввод вручную)
+- [x] **EMBD-02**: Переменные EMBEDDING_MODEL и EMBED_PROVIDER=tei записываются в .env и используются docker-compose
 
 ### Reranker
 
@@ -26,7 +26,7 @@ Requirements for v2.5 Modular Model Selection + Xinference Removal. Each maps to
 ### Xinference Removal
 
 - [x] **XINF-01**: Xinference убран из обязательного стека — сервис перенесён в disabled profile или удалён из docker-compose
-- [x] **XINF-02**: ETL_ENHANCED заменён на ENABLE_DOCLING + ENABLE_RERANKER (раздельные флаги)
+- [x] **XINF-02**: ETL_ENHANCED заменён на ENABLE_DOCLING (ENABLE_RERANKER добавляется в Phase 22 / RNKR-01)
 - [x] **XINF-03**: Docling перенесён в отдельный profile `docling`, независимый от Xinference
 
 ### LLM Models
@@ -287,8 +287,8 @@ All 24 requirements shipped and confirmed working in v2.0. See git history for d
 | XINF-01 | Phase 20 | Complete |
 | XINF-02 | Phase 20 | Complete |
 | XINF-03 | Phase 20 | Complete |
-| EMBD-01 | Phase 21 | Pending |
-| EMBD-02 | Phase 21 | Pending |
+| EMBD-01 | Phase 21 | Complete |
+| EMBD-02 | Phase 21 | Complete |
 | RNKR-01 | Phase 22 | Pending |
 | RNKR-02 | Phase 22 | Pending |
 | RNKR-03 | Phase 22 | Pending |
