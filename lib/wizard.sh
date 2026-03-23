@@ -31,7 +31,7 @@ _init_wizard_defaults() {
     VLLM_MODEL="${VLLM_MODEL:-}"
     VLLM_CUDA_SUFFIX="${VLLM_CUDA_SUFFIX:-}"
     EMBED_PROVIDER="${EMBED_PROVIDER:-}"
-    EMBEDDING_MODEL="${EMBEDDING_MODEL:-bge-m3}"
+    EMBEDDING_MODEL="${EMBEDDING_MODEL:-}"
     HF_TOKEN="${HF_TOKEN:-}"
     TLS_MODE="${TLS_MODE:-none}"
     TLS_CERT_PATH="${TLS_CERT_PATH:-}"
@@ -578,15 +578,61 @@ _wizard_embed_provider() {
     echo ""
 }
 
-_wizard_embed_model() {
-    if [[ "$EMBED_PROVIDER" != "ollama" ]]; then
+_wizard_embedding_model() {
+    # --- NON_INTERACTIVE: use env or default ---
+    if [[ "${NON_INTERACTIVE}" == "true" ]]; then
+        if [[ -n "${EMBEDDING_MODEL:-}" && "$EMBEDDING_MODEL" != "bge-m3" ]]; then
+            return 0
+        fi
+        # Apply provider-aware default
+        case "$EMBED_PROVIDER" in
+            tei)    EMBEDDING_MODEL="BAAI/bge-m3";;
+            ollama) EMBEDDING_MODEL="${EMBEDDING_MODEL:-bge-m3}";;
+            *)      return 0;;
+        esac
         return 0
     fi
 
-    _ask "Модель эмбеддингов [bge-m3]:" "bge-m3"
-    EMBEDDING_MODEL="${REPLY:-bge-m3}"
-    validate_model_name "$EMBEDDING_MODEL" || { EMBEDDING_MODEL="bge-m3"; log_warn "Некорректное имя модели, используется значение по умолчанию"; }
-    echo ""
+    # --- TEI provider: show model menu ---
+    if [[ "$EMBED_PROVIDER" == "tei" ]]; then
+        echo "Выберите модель эмбеддингов TEI:"
+        echo ""
+        echo "  1) BAAI/bge-m3                                — мультиязычная, стабильная  [по умолчанию]"
+        echo "  2) Qwen/Qwen3-Embedding-0.6B                  — лёгкая, 0.6B параметров"
+        echo "  3) intfloat/multilingual-e5-large-instruct     — instruct-версия, MTEB #7, понимает query:/passage: префиксы"
+        echo "  4) Ввод вручную                                — полный HuggingFace ID"
+        echo ""
+
+        _ask_choice "Выбор [1-4, Enter=1]: " 1 4 1
+        case "$REPLY" in
+            1) EMBEDDING_MODEL="BAAI/bge-m3";;
+            2) EMBEDDING_MODEL="Qwen/Qwen3-Embedding-0.6B";;
+            3) EMBEDDING_MODEL="intfloat/multilingual-e5-large-instruct";;
+            4) _ask "HuggingFace model ID:" ""
+               EMBEDDING_MODEL="${REPLY:-BAAI/bge-m3}"
+               validate_model_name "$EMBEDDING_MODEL" || {
+                   EMBEDDING_MODEL="BAAI/bge-m3"
+                   log_warn "Некорректное имя модели, используется BAAI/bge-m3"
+               };;
+            *) EMBEDDING_MODEL="BAAI/bge-m3";;
+        esac
+        echo ""
+        return 0
+    fi
+
+    # --- Ollama provider: simple prompt (existing behavior) ---
+    if [[ "$EMBED_PROVIDER" == "ollama" ]]; then
+        _ask "Модель эмбеддингов [bge-m3]:" "bge-m3"
+        EMBEDDING_MODEL="${REPLY:-bge-m3}"
+        validate_model_name "$EMBEDDING_MODEL" || {
+            EMBEDDING_MODEL="bge-m3"
+            log_warn "Некорректное имя модели, используется значение по умолчанию"
+        }
+        echo ""
+        return 0
+    fi
+
+    # --- external/skip: no model selection needed ---
 }
 
 _wizard_hf_token() {
@@ -902,7 +948,7 @@ run_wizard() {
     _wizard_llm_provider
     _wizard_llm_model
     _wizard_embed_provider
-    _wizard_embed_model
+    _wizard_embedding_model
     _wizard_hf_token
     _wizard_offline_warning
     _wizard_tls
