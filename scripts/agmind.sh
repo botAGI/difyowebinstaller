@@ -39,6 +39,19 @@ _read_env() {
     [[ -f "$ENV_FILE" ]] && grep "^${key}=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- || echo "$default"
 }
 
+_set_env_var() {
+    local key="$1" value="$2"
+    if [[ ! -f "$ENV_FILE" ]]; then
+        echo -e "${RED}.env file not found: ${ENV_FILE}${NC}" >&2
+        return 1
+    fi
+    if LC_ALL=C grep -q "^${key}=" "$ENV_FILE" 2>/dev/null; then
+        LC_ALL=C sed -i "s/^${key}=.*/${key}=${value}/" "$ENV_FILE"
+    else
+        echo "${key}=${value}" >> "$ENV_FILE"
+    fi
+}
+
 _get_ip() {
     if [[ "$(uname)" == "Darwin" ]]; then ipconfig getifaddr en0 2>/dev/null || echo "localhost"
     else hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost"; fi
@@ -391,6 +404,200 @@ cmd_restart() {
 }
 
 # ============================================================================
+# GPU MANAGEMENT
+# ============================================================================
+
+_gpu_status() {
+    # Check nvidia-smi availability
+    if ! command -v nvidia-smi &>/dev/null; then
+        echo -e "${RED}nvidia-smi not found. NVIDIA GPU required for gpu status.${NC}" >&2
+        return 1
+    fi
+
+    echo -e "\n${BOLD}${CYAN}=========================================${NC}"
+    echo -e "${BOLD}${CYAN}  GPU Status${NC}"
+    echo -e "${BOLD}${CYAN}=========================================${NC}\n"
+
+    # Per-GPU info table
+    echo -e "${BOLD}GPUs:${NC}"
+    local gpu_idx=0
+    while IFS=',' read -r name mem_total mem_used mem_free util_gpu; do
+        name="$(echo "$name" | xargs)"
+        mem_total="$(echo "$mem_total" | xargs)"
+        mem_used="$(echo "$mem_used" | xargs)"
+        mem_free="$(echo "$mem_free" | xargs)"
+        util_gpu="$(echo "$util_gpu" | xargs)"
+        printf "  GPU %d: %-30s | VRAM: %s / %s MiB (free: %s MiB) | Util: %s\n" \
+            "$gpu_idx" "$name" "$mem_used" "$mem_total" "$mem_free" "$util_gpu"
+        gpu_idx=$((gpu_idx + 1))
+    done < <(nvidia-smi --query-gpu=name,memory.total,memory.used,memory.free,utilization.gpu \
+        --format=csv,noheader,nounits 2>/dev/null)
+
+    if [[ $gpu_idx -eq 0 ]]; then
+        echo "  No NVIDIA GPUs detected"
+        return 1
+    fi
+    echo ""
+
+    # Container-GPU assignment from .env
+    echo -e "${BOLD}Container Assignments:${NC}"
+    local vllm_dev tei_dev
+    vllm_dev="$(_read_env VLLM_CUDA_DEVICE "0")"
+    tei_dev="$(_read_env TEI_CUDA_DEVICE "0")"
+    local llm_prov embed_prov
+    llm_prov="$(_read_env LLM_PROVIDER "unknown")"
+    embed_prov="$(_read_env EMBED_PROVIDER "unknown")"
+
+    if [[ "$llm_prov" == "vllm" ]]; then
+        echo -e "  vLLM           -> GPU ${BOLD}${vllm_dev}${NC}  (VLLM_CUDA_DEVICE=${vllm_dev})"
+    else
+        echo -e "  vLLM           -> ${YELLOW}not active (LLM_PROVIDER=${llm_prov})${NC}"
+    fi
+    if [[ "$embed_prov" == "tei" ]]; then
+        echo -e "  TEI            -> GPU ${BOLD}${tei_dev}${NC}  (TEI_CUDA_DEVICE=${tei_dev})"
+    else
+        echo -e "  TEI            -> ${YELLOW}not active (EMBED_PROVIDER=${embed_prov})${NC}"
+    fi
+    echo ""
+
+    # GPU processes
+    echo -e "${BOLD}GPU Processes:${NC}"
+    local proc_output
+    proc_output="$(nvidia-smi --query-compute-apps=gpu_uuid,pid,process_name,used_gpu_memory \
+        --format=csv,noheader,nounits 2>/dev/null || true)"
+    if [[ -z "$proc_output" ]]; then
+        echo "  No GPU compute processes running"
+    else
+        while IFS=',' read -r uuid pid pname pmem; do
+            pname="$(echo "$pname" | xargs)"
+            pmem="$(echo "$pmem" | xargs)"
+            printf "  PID %-8s | %-40s | %s MiB\n" "$(echo "$pid" | xargs)" "$pname" "$pmem"
+        done <<< "$proc_output"
+    fi
+    echo ""
+}
+
+_gpu_auto_assign() {
+    if ! command -v nvidia-smi &>/dev/null; then
+        echo -e "${RED}nvidia-smi not found. Cannot auto-assign GPUs.${NC}" >&2
+        return 1
+    fi
+
+    local gpu_count
+    gpu_count="$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | wc -l)"
+
+    if [[ "$gpu_count" -eq 0 ]]; then
+        echo -e "${RED}No NVIDIA GPUs detected.${NC}" >&2
+        return 1
+    fi
+
+    if [[ "$gpu_count" -eq 1 ]]; then
+        echo -e "${YELLOW}Single GPU detected, all services on GPU 0${NC}"
+        _set_env_var "VLLM_CUDA_DEVICE" "0"
+        _set_env_var "TEI_CUDA_DEVICE" "0"
+        echo -e "${GREEN}Set VLLM_CUDA_DEVICE=0, TEI_CUDA_DEVICE=0${NC}"
+        echo -e "${YELLOW}Restart required: sudo agmind restart${NC}"
+        return 0
+    fi
+
+    # Multi-GPU: vLLM gets GPU with most free VRAM, TEI gets GPU with least free VRAM
+    local biggest_gpu=0 biggest_free=0
+    local smallest_gpu=0 smallest_free=999999
+    local idx=0
+    while IFS=',' read -r name mem_free; do
+        mem_free="$(echo "$mem_free" | xargs)"
+        if [[ "$mem_free" -gt "$biggest_free" ]]; then
+            biggest_free="$mem_free"
+            biggest_gpu="$idx"
+        fi
+        if [[ "$mem_free" -lt "$smallest_free" ]]; then
+            smallest_free="$mem_free"
+            smallest_gpu="$idx"
+        fi
+        idx=$((idx + 1))
+    done < <(nvidia-smi --query-gpu=name,memory.free --format=csv,noheader,nounits 2>/dev/null)
+
+    # If same GPU selected for both (e.g., all GPUs equal), spread across 0 and 1
+    if [[ "$biggest_gpu" -eq "$smallest_gpu" && "$gpu_count" -ge 2 ]]; then
+        biggest_gpu=0
+        smallest_gpu=1
+    fi
+
+    _set_env_var "VLLM_CUDA_DEVICE" "$biggest_gpu"
+    _set_env_var "TEI_CUDA_DEVICE" "$smallest_gpu"
+
+    echo -e "${GREEN}Auto-assigned:${NC}"
+    echo -e "  vLLM -> GPU ${biggest_gpu} (${biggest_free} MiB free)"
+    echo -e "  TEI  -> GPU ${smallest_gpu} (${smallest_free} MiB free)"
+    echo -e "${YELLOW}Restart required: sudo agmind restart${NC}"
+}
+
+_gpu_assign() {
+    _require_root "gpu assign"
+
+    local service="${1:-}"
+    local gpu_id="${2:-}"
+
+    # --auto mode
+    if [[ "$service" == "--auto" ]]; then
+        _gpu_auto_assign
+        return $?
+    fi
+
+    # Validate service name
+    local env_var=""
+    case "$service" in
+        vllm)        env_var="VLLM_CUDA_DEVICE" ;;
+        tei)         env_var="TEI_CUDA_DEVICE" ;;
+        xinference)  env_var="XINFERENCE_CUDA_DEVICE" ;;
+        *)
+            echo -e "${RED}Unknown service: ${service}${NC}" >&2
+            echo "Valid services: vllm, tei, xinference" >&2
+            return 1
+            ;;
+    esac
+
+    # Validate gpu_id is a number
+    if [[ -z "$gpu_id" ]]; then
+        echo -e "${RED}Usage: agmind gpu assign <service> <gpu_id>${NC}" >&2
+        echo "       agmind gpu assign --auto" >&2
+        return 1
+    fi
+    if ! [[ "$gpu_id" =~ ^[0-9]+$ ]]; then
+        echo -e "${RED}Invalid GPU ID: ${gpu_id} (must be a number)${NC}" >&2
+        return 1
+    fi
+
+    # Validate GPU exists
+    if command -v nvidia-smi &>/dev/null; then
+        local gpu_count
+        gpu_count="$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | wc -l)"
+        if [[ "$gpu_id" -ge "$gpu_count" ]]; then
+            echo -e "${RED}GPU ${gpu_id} does not exist. Found ${gpu_count} GPU(s) (0-$((gpu_count - 1))).${NC}" >&2
+            return 1
+        fi
+    fi
+
+    # Update .env
+    _set_env_var "$env_var" "$gpu_id"
+
+    echo -e "${GREEN}Set ${env_var}=${gpu_id} in ${ENV_FILE}${NC}"
+    echo -e "${YELLOW}Restart required: sudo agmind restart${NC}"
+}
+
+cmd_gpu() {
+    local subcmd="${1:-status}"
+    shift 2>/dev/null || true
+    case "$subcmd" in
+        status)  _gpu_status ;;
+        assign)  _gpu_assign "$@" ;;
+        *)       echo -e "${RED}Unknown gpu subcommand: ${subcmd}${NC}" >&2
+                 echo "Usage: agmind gpu {status|assign}" >&2
+                 return 1 ;;
+    esac
+}
+
+# ============================================================================
 # HELP
 # ============================================================================
 
@@ -405,6 +612,10 @@ Commands:
   stop               Stop all containers
   start              Start containers
   restart            Restart all containers
+  gpu [subcommand]   GPU management
+    status             Show GPUs, VRAM, utilization, assignments
+    assign <svc> <id>  Assign GPU to service (vllm, tei, xinference)
+    assign --auto      Auto-distribute across GPUs
   backup             Create backup (root)
   restore <path>     Restore from backup (root)
   update [options]       Update AGMind stack (root)
@@ -440,6 +651,7 @@ case "${1:-help}" in
     uninstall)      shift; _require_root uninstall; exec "${SCRIPTS_DIR}/uninstall.sh" "$@" ;;
     rotate-secrets) shift; _require_root rotate-secrets; exec "${SCRIPTS_DIR}/rotate_secrets.sh" "$@" ;;
     logs)           shift; exec docker compose -f "$COMPOSE_FILE" logs "$@" ;;
+    gpu)            shift; cmd_gpu "$@" ;;
     help|--help|-h) cmd_help ;;
     *)              echo -e "${RED}Unknown command: ${1}${NC}" >&2; cmd_help; exit 1 ;;
 esac
