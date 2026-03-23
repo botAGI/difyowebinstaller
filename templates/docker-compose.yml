@@ -317,7 +317,7 @@ services:
       - vllm
     environment:
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
-      - CUDA_VISIBLE_DEVICES=0
+      - CUDA_VISIBLE_DEVICES=${VLLM_CUDA_DEVICE:-0}
     command: --model ${VLLM_MODEL:-Qwen/Qwen2.5-14B-Instruct} --host 0.0.0.0 --port 8000 --gpu-memory-utilization 0.90
     volumes:
       - agmind_vllm_cache:/root/.cache/huggingface
@@ -349,7 +349,7 @@ services:
       - tei
     environment:
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
-      - CUDA_VISIBLE_DEVICES=0
+      - CUDA_VISIBLE_DEVICES=${TEI_CUDA_DEVICE:-0}
     command: --model-id BAAI/bge-m3 --port 80
     volumes:
       - agmind_tei_cache:/data

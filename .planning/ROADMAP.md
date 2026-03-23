@@ -372,7 +372,7 @@ Plans:
 **Plans:** 1/1 plans complete
 
 Plans:
-- [ ] 16-01-PLAN.md — VRAM guard for NON_INTERACTIVE vllm path + always run_diagnostics on resume (BFIX-41, BFIX-42)
+- [x] 16-01-PLAN.md — VRAM guard for NON_INTERACTIVE vllm path + always run_diagnostics on resume (BFIX-41, BFIX-42)
 
 ---
 
@@ -390,7 +390,10 @@ Plans:
 3. `lib/models.sh` содержит в `MODEL_SIZES` approximate disk size для каждой из новых моделей — `agmind model pull` использует эти значения для оценки места на диске
 4. При выборе MoE-модели (Qwen3-Coder-Next MoE AWQ, Nemotron Nano MoE AWQ) в NON_INTERACTIVE режиме — VRAM guard проверяет vram_req этой модели перед продолжением
 
-**Plans:** TBD
+**Plans:** 1/1 plans complete
+
+Plans:
+- [ ] 17-01-PLAN.md — Expand vLLM model list to 16 models (Qwen3 + MoE) + fix VRAM reqs + MODEL_SIZES (WMOD-01, WMOD-02)
 
 ---
 
@@ -431,7 +434,7 @@ Plans:
 - [x] **Phase 14: DB Password Resume Safety** — Preserve DB_PASSWORD при resume если PG volume существует (completed 2026-03-22)
 - [x] **Phase 15: Pull & Download UX** — Pre-pull валидация образов + прогресс скачивания моделей + graceful timeout (completed 2026-03-22)
 - [x] **Phase 16: Critical Bugfixes** — VRAM guard в NON_INTERACTIVE + run_diagnostics при resume с любой фазы (completed 2026-03-22)
-- [ ] **Phase 17: Wizard Model List Update** — Новые модели Qwen3/MoE в wizard + скорректированные VRAM req + MODEL_SIZES
+- [x] **Phase 17: Wizard Model List Update** — Новые модели Qwen3/MoE в wizard + скорректированные VRAM req + MODEL_SIZES (completed 2026-03-22)
 - [ ] **Phase 18: GPU Management CLI** — agmind gpu status/assign + docker-compose env-переменные для CUDA_VISIBLE_DEVICES
 
 ## Progress
@@ -453,10 +456,10 @@ Plans:
 | 13. VRAM Guard in Wizard | v2.3 | 1/1 | Complete | 2026-03-22 |
 | 14. DB Password Resume Safety | v2.3 | 1/1 | Complete | 2026-03-22 |
 | 15. Pull & Download UX | v2.3 | 1/1 | Complete | 2026-03-22 |
-| 16. Critical Bugfixes | 1/1 | Complete   | 2026-03-22 | — |
-| 17. Wizard Model List Update | v2.4 | 0/TBD | Not started | — |
+| 16. Critical Bugfixes | v2.4 | 1/1 | Complete | 2026-03-22 |
+| 17. Wizard Model List Update | 1/1 | Complete   | 2026-03-22 | — |
 | 18. GPU Management CLI | v2.4 | 0/TBD | Not started | — |
 
 ---
 *Roadmap created: 2026-03-17*
-*Last updated: 2026-03-23 — Phase 16 planned: 1 plan (BFIX-41, BFIX-42)*
+*Last updated: 2026-03-23 — Phase 17 planned: 1 plan (WMOD-01, WMOD-02)*

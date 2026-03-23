@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.4
 milestone_name: Wizard Models + GPU Management
 status: Roadmap ready, awaiting plan-phase 16
-stopped_at: Completed 16-critical-bugfixes-01-PLAN.md
-last_updated: "2026-03-22T23:44:24.254Z"
+stopped_at: Completed 17-wizard-model-list-update-01-PLAN.md
+last_updated: "2026-03-22T23:57:28.118Z"
 last_activity: "2026-03-23 — Roadmap v2.4 created: Phases 16-18"
 progress:
   total_phases: 3
-  completed_phases: 1
-  total_plans: 1
-  completed_plans: 1
+  completed_phases: 2
+  total_plans: 2
+  completed_plans: 2
   percent: 0
 ---
 
@@ -52,6 +52,7 @@ Progress: `[░░░░░░░░░░] 0% (0/3 phases)`
 
 Updated after each plan completion.
 | Phase 16-critical-bugfixes P01 | 15 | 2 tasks | 2 files |
+| Phase 17-wizard-model-list-update P01 | 2 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -67,6 +68,9 @@ Updated after each plan completion.
 - v2.4: Phase 18 adds agmind gpu subcommand — status + assign + docker-compose env vars
 - [Phase 16-critical-bugfixes]: BFIX-41: Unknown custom vLLM models in NON_INTERACTIVE get warning only (no exit) -- matches interactive behavior
 - [Phase 16-critical-bugfixes]: BFIX-42: On resume use run_diagnostics (not phase_diagnostics) to avoid preflight_checks user prompts; || true for partial GPU detection
+- [Phase 17-wizard-model-list-update]: Phase 17-01: Default Enter=6 selects Qwen/Qwen2.5-7B-Instruct in 16-model menu
+- [Phase 17-wizard-model-list-update]: Phase 17-01: VRAM corrected for AWQ models (14B: 12->10 GB, 7B: 8->5 GB) per hardware measurements
+- [Phase 17-wizard-model-list-update]: Phase 17-01: MoE section separate from 32B+ bf16 to clarify active vs total params
 
 ### Architecture Notes
 
@@ -112,6 +116,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-22T23:44:24.251Z
-Stopped at: Completed 16-critical-bugfixes-01-PLAN.md
+Last session: 2026-03-22T23:57:28.116Z
+Stopped at: Completed 17-wizard-model-list-update-01-PLAN.md
 Resume file: None

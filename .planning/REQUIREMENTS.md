@@ -14,8 +14,8 @@ Requirements for v2.4 Wizard Models + GPU Management. Each maps to roadmap phase
 
 ### Wizard Models
 
-- [ ] **WMOD-01**: Список моделей vLLM обновлён: Qwen3-8B, Qwen3-8B-AWQ, Qwen3-14B-AWQ, Qwen3-Coder-Next MoE AWQ, Nemotron Nano MoE AWQ; vram_req скорректирован; рекомендации обновлены
-- [ ] **WMOD-02**: MODEL_SIZES в lib/models.sh содержит approximate sizes для всех новых моделей
+- [x] **WMOD-01**: Список моделей vLLM обновлён: Qwen3-8B, Qwen3-8B-AWQ, Qwen3-14B-AWQ, Qwen3-Coder-Next MoE AWQ, Nemotron Nano MoE AWQ; vram_req скорректирован; рекомендации обновлены
+- [x] **WMOD-02**: MODEL_SIZES в lib/models.sh содержит approximate sizes для всех новых моделей
 
 ### GPU Management
 
@@ -230,8 +230,8 @@ All 24 requirements shipped and confirmed working in v2.0. See git history for d
 | DLUX-02 | Phase 15 | Complete |
 | BFIX-41 | Phase 16 | Complete |
 | BFIX-42 | Phase 16 | Complete |
-| WMOD-01 | Phase 17 | Pending |
-| WMOD-02 | Phase 17 | Pending |
+| WMOD-01 | Phase 17 | Complete |
+| WMOD-02 | Phase 17 | Complete |
 | GPUM-01 | Phase 18 | Pending |
 | GPUM-02 | Phase 18 | Pending |
 | GPUM-03 | Phase 18 | Pending |
