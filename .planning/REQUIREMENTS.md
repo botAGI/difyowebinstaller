@@ -41,8 +41,8 @@ Requirements for v2.5 Modular Model Selection + Xinference Removal. Each maps to
 ### Bugfixes
 
 - [x] **BFIX-43**: preflight_checks() в detect.sh фильтрует agmind/docker процессы при проверке портов 80/443, не показывая ложный WARN
-- [ ] **BFIX-44**: Xinference bce-reranker сломан в v2.3.0 — решается через XINF-01; если xinference остаётся как fallback profile — сменить модель на bge-reranker-v2-m3 или пометить broken
-- [ ] **BFIX-45**: VRAM guard в NON_INTERACTIVE использует effective_vram (gpu - TEI offset ~2 GB) вместо raw VRAM; hard fail если модель > effective_vram
+- [x] **BFIX-44**: Xinference bce-reranker сломан в v2.3.0 — решается через XINF-01; если xinference остаётся как fallback profile — сменить модель на bge-reranker-v2-m3 или пометить broken
+- [x] **BFIX-45**: VRAM guard в NON_INTERACTIVE использует effective_vram (gpu - TEI offset ~2 GB) вместо raw VRAM; hard fail если модель > effective_vram
 
 ### GPU Enhancement
 
@@ -281,8 +281,8 @@ All 24 requirements shipped and confirmed working in v2.0. See git history for d
 | GPUM-02 | Phase 18 | Complete |
 | GPUM-03 | Phase 18 | Complete |
 | BFIX-43 | Phase 19 | Complete |
-| BFIX-44 | Phase 19 | Pending |
-| BFIX-45 | Phase 19 | Pending |
+| BFIX-44 | Phase 19 | Complete |
+| BFIX-45 | Phase 19 | Complete |
 | GPUX-01 | Phase 19 | Complete |
 | XINF-01 | Phase 20 | Pending |
 | XINF-02 | Phase 20 | Pending |

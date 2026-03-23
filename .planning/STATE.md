@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.5
 milestone_name: Modular Model Selection + Xinference Removal
 status: planning
-stopped_at: Completed 19-01-PLAN.md
-last_updated: "2026-03-23T01:30:52.043Z"
+stopped_at: Completed 19-02-PLAN.md
+last_updated: "2026-03-23T01:31:35.266Z"
 last_activity: 2026-03-23 — v2.5 roadmap created
 progress:
   total_phases: 6
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -51,6 +51,7 @@ Progress: `[░░░░░░░░░░] 0%`
 
 Updated after each plan completion.
 | Phase 19-bugfixes-gpu-enhancement P01 | 2 | 2 tasks | 2 files |
+| Phase 19 P02 | 102 | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -63,6 +64,8 @@ Updated after each plan completion.
 - v2.4: Phase 18 added `agmind gpu` subcommand (status/assign/auto)
 - [Phase 19]: BFIX-43: preflight port check skips WARN when agmind nginx owns port 80/443 (docker compose ps check)
 - [Phase 19]: GPUX-01: gpu status maps PIDs to container names via docker top + associative array, annotates vLLM/TEI with model from .env
+- [Phase 19]: v2.5: TEI_VRAM_OFFSET=2 is readonly constant, not configurable; effective_vram used in both interactive and NON_INTERACTIVE VRAM guards
+- [Phase 19]: v2.5: load_reranker() disabled as stub -- bce-reranker broken in Xinference v2.3.0, will use TEI in Phase 22
 
 ### Architecture Notes
 
@@ -82,6 +85,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-23T01:30:52.041Z
-Stopped at: Completed 19-01-PLAN.md
+Last session: 2026-03-23T01:31:35.264Z
+Stopped at: Completed 19-02-PLAN.md
 Resume file: None
