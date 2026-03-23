@@ -32,6 +32,8 @@ _init_wizard_defaults() {
     VLLM_CUDA_SUFFIX="${VLLM_CUDA_SUFFIX:-}"
     EMBED_PROVIDER="${EMBED_PROVIDER:-}"
     EMBEDDING_MODEL="${EMBEDDING_MODEL:-}"
+    ENABLE_RERANKER="${ENABLE_RERANKER:-false}"
+    RERANK_MODEL="${RERANK_MODEL:-}"
     HF_TOKEN="${HF_TOKEN:-}"
     TLS_MODE="${TLS_MODE:-none}"
     TLS_CERT_PATH="${TLS_CERT_PATH:-}"
@@ -347,6 +349,8 @@ _wizard_ollama_model() {
 
 # TEI VRAM offset: reserve 2 GB for TEI embedding container
 readonly TEI_VRAM_OFFSET=2
+# Reranker VRAM offset: reserve 1 GB for TEI reranker container
+readonly RERANKER_VRAM_OFFSET=1
 
 # Returns VRAM requirement in GB for a known vLLM model name.
 # Usage: req=$(_get_vllm_vram_req "Qwen/Qwen2.5-14B-Instruct")
@@ -633,6 +637,51 @@ _wizard_embedding_model() {
     fi
 
     # --- external/skip: no model selection needed ---
+}
+
+_wizard_reranker_model() {
+    # --- NON_INTERACTIVE: use env or default ---
+    if [[ "${NON_INTERACTIVE}" == "true" ]]; then
+        if [[ "${ENABLE_RERANKER:-}" == "true" ]]; then
+            RERANK_MODEL="${RERANK_MODEL:-BAAI/bge-reranker-v2-m3}"
+        fi
+        return 0
+    fi
+
+    # --- Ask yes/no ---
+    echo "Включить реранкер? (Улучшает качество RAG, +~1 GB VRAM)"
+    echo ""
+    _ask "Включить реранкер? [y/N]:" "n"
+    if [[ "$REPLY" != "y" && "$REPLY" != "Y" ]]; then
+        ENABLE_RERANKER="false"
+        return 0
+    fi
+    ENABLE_RERANKER="true"
+
+    # --- Show model menu ---
+    echo ""
+    echo "Выберите модель реранкера TEI:"
+    echo ""
+    echo "  1) BAAI/bge-reranker-v2-m3                    — мультиязычный, ~0.5 GB  [по умолчанию]"
+    echo "  2) BAAI/bge-reranker-base                     — компактный, ~0.3 GB"
+    echo "  3) cross-encoder/ms-marco-MiniLM-L-6-v2       — быстрый, ~0.2 GB"
+    echo "  4) Ввод вручную                                — полный HuggingFace ID"
+    echo ""
+
+    _ask_choice "Выбор [1-4, Enter=1]: " 1 4 1
+    case "$REPLY" in
+        1) RERANK_MODEL="BAAI/bge-reranker-v2-m3";;
+        2) RERANK_MODEL="BAAI/bge-reranker-base";;
+        3) RERANK_MODEL="cross-encoder/ms-marco-MiniLM-L-6-v2";;
+        4) _ask "HuggingFace model ID:" ""
+           RERANK_MODEL="${REPLY:-BAAI/bge-reranker-v2-m3}"
+           validate_model_name "$RERANK_MODEL" || {
+               RERANK_MODEL="BAAI/bge-reranker-v2-m3"
+               log_warn "Некорректное имя модели, используется BAAI/bge-reranker-v2-m3"
+           };;
+        *) RERANK_MODEL="BAAI/bge-reranker-v2-m3";;
+    esac
+    echo ""
 }
 
 _wizard_hf_token() {
