@@ -656,7 +656,7 @@ _wizard_reranker_model() {
     # --- NON_INTERACTIVE: use env or default ---
     if [[ "${NON_INTERACTIVE}" == "true" ]]; then
         if [[ "${ENABLE_RERANKER:-}" == "true" ]]; then
-            RERANK_MODEL="${RERANK_MODEL:-BAAI/bge-reranker-v2-m3}"
+            RERANK_MODEL="${RERANK_MODEL:-BAAI/bge-reranker-base}"
         fi
         return 0
     fi
@@ -675,24 +675,24 @@ _wizard_reranker_model() {
     echo ""
     echo "Выберите модель реранкера TEI:"
     echo ""
-    echo "  1) BAAI/bge-reranker-v2-m3                    — мультиязычный, ~0.5 GB  [по умолчанию]"
-    echo "  2) BAAI/bge-reranker-base                     — компактный, ~0.3 GB"
-    echo "  3) cross-encoder/ms-marco-MiniLM-L-6-v2       — быстрый, ~0.2 GB"
+    echo "  1) BAAI/bge-reranker-v2-m3                    — мультиязычный, ~2.2 GB RAM"
+    echo "  2) BAAI/bge-reranker-base                     — компактный, ~1.2 GB RAM  [по умолчанию]"
+    echo "  3) cross-encoder/ms-marco-MiniLM-L-6-v2       — быстрый, ~0.5 GB RAM"
     echo "  4) Ввод вручную                                — полный HuggingFace ID"
     echo ""
 
-    _ask_choice "Выбор [1-4, Enter=1]: " 1 4 1
+    _ask_choice "Выбор [1-4, Enter=2]: " 1 4 2
     case "$REPLY" in
         1) RERANK_MODEL="BAAI/bge-reranker-v2-m3";;
         2) RERANK_MODEL="BAAI/bge-reranker-base";;
         3) RERANK_MODEL="cross-encoder/ms-marco-MiniLM-L-6-v2";;
         4) _ask "HuggingFace model ID:" ""
-           RERANK_MODEL="${REPLY:-BAAI/bge-reranker-v2-m3}"
+           RERANK_MODEL="${REPLY:-BAAI/bge-reranker-base}"
            validate_model_name "$RERANK_MODEL" || {
-               RERANK_MODEL="BAAI/bge-reranker-v2-m3"
-               log_warn "Некорректное имя модели, используется BAAI/bge-reranker-v2-m3"
+               RERANK_MODEL="BAAI/bge-reranker-base"
+               log_warn "Некорректное имя модели, используется BAAI/bge-reranker-base"
            };;
-        *) RERANK_MODEL="BAAI/bge-reranker-v2-m3";;
+        *) RERANK_MODEL="BAAI/bge-reranker-base";;
     esac
     echo ""
 }
