@@ -347,16 +347,15 @@ _wizard_ollama_model() {
     echo ""
 }
 
-# Dynamic VRAM offset: sum of GPU reservations for TEI services.
-# Returns total offset in GB based on current EMBED_PROVIDER and ENABLE_RERANKER.
+# Dynamic VRAM offset: GPU reservation for TEI embedding service.
+# Returns offset in GB based on current EMBED_PROVIDER.
+# Note: TEI reranker runs on CPU (ONNX) — no GPU VRAM consumed.
 _get_vram_offset() {
     local offset=0
     # TEI embedding reserves ~2 GB GPU VRAM; Ollama/external/skip use no GPU for embeddings
     case "${EMBED_PROVIDER:-tei}" in
         tei) offset=$(( offset + 2 )) ;;
     esac
-    # TEI reranker reserves ~1 GB GPU VRAM
-    [[ "${ENABLE_RERANKER:-}" == "true" ]] && offset=$(( offset + 1 ))
     echo "$offset"
 }
 
@@ -485,7 +484,7 @@ _wizard_vllm_model() {
     if [[ "$REPLY" -ge 1 && "$REPLY" -le 16 ]]; then
         VLLM_MODEL="${vllm_models[$REPLY]}"
 
-        # VRAM guard: warn if selected model exceeds effective GPU (raw - TEI offset - reranker offset)
+        # VRAM guard: warn if selected model exceeds effective GPU (raw - TEI embed offset)
         local vram_offset_guard
         vram_offset_guard=$(_get_vram_offset)
         local effective_vram_check=$(( vram_gb > 0 ? vram_gb - vram_offset_guard : 0 ))
@@ -997,10 +996,8 @@ _wizard_summary() {
             echo "  TEI-embed:    ${embed_vram} GB   (${EMBEDDING_MODEL:-unknown})"
         fi
 
-        local rerank_vram=0
         if [[ "${ENABLE_RERANKER:-}" == "true" ]]; then
-            rerank_vram=1
-            echo "  TEI-rerank:   ${rerank_vram} GB   (${RERANK_MODEL:-unknown})"
+            echo "  TEI-rerank:   CPU (4 GB RAM)   (${RERANK_MODEL:-unknown})"
         fi
 
         echo "  ─────────────────"
@@ -1008,7 +1005,7 @@ _wizard_summary() {
         if [[ "$vllm_vram" == "?" ]]; then
             echo "  Итого:        ? GB (неизвестная модель)"
         else
-            local total_vram=$(( vllm_vram + embed_vram + rerank_vram ))
+            local total_vram=$(( vllm_vram + embed_vram ))
             local gpu_vram_mb="${DETECTED_GPU_VRAM:-0}"
             if [[ "$gpu_vram_mb" -gt 0 ]] 2>/dev/null; then
                 local gpu_vram_gb=$(( gpu_vram_mb / 1024 ))
