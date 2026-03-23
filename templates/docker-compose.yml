@@ -499,42 +499,12 @@ services:
     restart: on-failure:5
     mem_limit: ${DOCLING_MEM_LIMIT:-4g}
     profiles:
-      - etl
+      - docling
     expose:
       - "8765"
     command: ["docling-serve", "run", "--port", "8765", "--host", "0.0.0.0"]
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8765/health')\" 2>/dev/null || curl -sf http://localhost:8765/health 2>/dev/null || exit 1"]
-      interval: ${HEALTHCHECK_INTERVAL:-30s}
-      timeout: 10s
-      retries: ${HEALTHCHECK_RETRIES:-5}
-      start_period: 30s
-    networks:
-      - agmind-backend
-
-  # ==================== Xinference (Reranker) ====================
-  xinference:
-    <<: *logging-defaults
-    image: xprobe/xinference:${XINFERENCE_VERSION:-v0.16.3}
-    container_name: agmind-xinference
-    restart: unless-stopped
-    mem_limit: ${XINFERENCE_MEM_LIMIT:-4g}
-    profiles:
-      - etl
-    expose:
-      - "9997"
-    command: ["xinference-local", "--host", "0.0.0.0", "--port", "9997"]
-    volumes:
-      - agmind_xinference_data:/root/.xinference
-    #__GPU__deploy:
-    #__GPU__  resources:
-    #__GPU__    reservations:
-    #__GPU__      devices:
-    #__GPU__        - driver: nvidia
-    #__GPU__          count: all
-    #__GPU__          capabilities: [gpu]
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:9997/v1/models 2>/dev/null || wget -qO- http://localhost:9997/v1/models 2>/dev/null || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
@@ -1039,7 +1009,6 @@ volumes:
   agmind_openwebui_data:
   agmind_pipelines_data:
   agmind_ollama_data:
-  agmind_xinference_data:
   agmind_grafana_data:
   agmind_portainer_data:
   agmind_prometheus_data:
