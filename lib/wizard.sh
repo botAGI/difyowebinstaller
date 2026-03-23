@@ -390,7 +390,9 @@ _wizard_vllm_model() {
     # TEI offset for [recommended]: vLLM default embed is TEI (~2 GB shared GPU)
     local effective_vram="$vram_gb"
     if [[ "$vram_gb" -gt 0 ]]; then
-        effective_vram=$(( vram_gb - TEI_VRAM_OFFSET ))
+        local reranker_offset=0
+        [[ "${ENABLE_RERANKER:-}" == "true" ]] && reranker_offset=$RERANKER_VRAM_OFFSET
+        effective_vram=$(( vram_gb - TEI_VRAM_OFFSET - reranker_offset ))
         [[ "$effective_vram" -lt 0 ]] && effective_vram=0
     fi
 
@@ -475,12 +477,16 @@ _wizard_vllm_model() {
     if [[ "$REPLY" -ge 1 && "$REPLY" -le 16 ]]; then
         VLLM_MODEL="${vllm_models[$REPLY]}"
 
-        # VRAM guard: warn if selected model exceeds effective GPU (raw - TEI offset)
-        local effective_vram_check=$(( vram_gb > 0 ? vram_gb - TEI_VRAM_OFFSET : 0 ))
+        # VRAM guard: warn if selected model exceeds effective GPU (raw - TEI offset - reranker offset)
+        local reranker_off=0
+        [[ "${ENABLE_RERANKER:-}" == "true" ]] && reranker_off=$RERANKER_VRAM_OFFSET
+        local effective_vram_check=$(( vram_gb > 0 ? vram_gb - TEI_VRAM_OFFSET - reranker_off : 0 ))
         [[ "$effective_vram_check" -lt 0 ]] && effective_vram_check=0
         if [[ "$vram_gb" -gt 0 && "${vram_req[$REPLY]}" -gt "$effective_vram_check" ]]; then
             echo ""
-            echo -e "  ${YELLOW}Модель требует ${vram_req[$REPLY]} GB VRAM, доступно ${effective_vram_check} GB effective (${vram_gb} GB - ${TEI_VRAM_OFFSET} GB TEI). Возможен OOM.${NC}"
+            local offset_desc="${TEI_VRAM_OFFSET} GB TEI"
+            [[ "$reranker_off" -gt 0 ]] && offset_desc="${offset_desc} + ${RERANKER_VRAM_OFFSET} GB reranker"
+            echo -e "  ${YELLOW}Модель требует ${vram_req[$REPLY]} GB VRAM, доступно ${effective_vram_check} GB effective (${vram_gb} GB - ${offset_desc}). Возможен OOM.${NC}"
             if [[ "${NON_INTERACTIVE}" != "true" ]]; then
                 read -rp "  Продолжить? (y/N): " confirm
                 if [[ ! "${confirm}" =~ ^[Yy]$ ]]; then
@@ -538,10 +544,14 @@ _wizard_llm_model() {
             if [[ "${DETECTED_GPU_VRAM:-0}" -gt 0 ]]; then
                 ni_vram_gb=$(( DETECTED_GPU_VRAM / 1024 ))
             fi
-            local ni_effective_vram=$(( ni_vram_gb > 0 ? ni_vram_gb - TEI_VRAM_OFFSET : 0 ))
+            local ni_reranker_off=0
+            [[ "${ENABLE_RERANKER:-}" == "true" ]] && ni_reranker_off=$RERANKER_VRAM_OFFSET
+            local ni_effective_vram=$(( ni_vram_gb > 0 ? ni_vram_gb - TEI_VRAM_OFFSET - ni_reranker_off : 0 ))
             [[ "$ni_effective_vram" -lt 0 ]] && ni_effective_vram=0
             if [[ "$ni_vram_gb" -gt 0 && "$ni_vram_req" -gt "$ni_effective_vram" ]]; then
-                log_error "Model ${VLLM_MODEL} requires ${ni_vram_req} GB VRAM, effective available: ${ni_effective_vram} GB (${ni_vram_gb} GB - ${TEI_VRAM_OFFSET} GB TEI)"
+                local ni_offset_desc="${TEI_VRAM_OFFSET} GB TEI"
+                [[ "$ni_reranker_off" -gt 0 ]] && ni_offset_desc="${ni_offset_desc} + ${RERANKER_VRAM_OFFSET} GB reranker"
+                log_error "Model ${VLLM_MODEL} requires ${ni_vram_req} GB VRAM, effective available: ${ni_effective_vram} GB (${ni_vram_gb} GB - ${ni_offset_desc})"
                 log_error "Choose a smaller model or set VLLM_MODEL to a model that fits your GPU"
                 exit 1
             fi
@@ -958,6 +968,7 @@ _wizard_summary() {
     [[ "$ENABLE_DOCLING" == "true" ]] && echo "  ETL:          Docling"
     echo "  LLM:          ${LLM_PROVIDER} ${LLM_MODEL}${VLLM_MODEL:+ (${VLLM_MODEL})}"
     echo "  Эмбеддинги:   ${EMBED_PROVIDER} ${EMBEDDING_MODEL}"
+    [[ "${ENABLE_RERANKER:-}" == "true" ]] && echo "  Реранкер:     ${RERANK_MODEL} (~1 GB)"
     [[ "$TLS_MODE" != "none" ]] && echo "  TLS:          ${TLS_MODE}"
     [[ "$MONITORING_MODE" != "none" ]] && echo "  Мониторинг:   ${MONITORING_MODE}"
     [[ "$ALERT_MODE" != "none" ]] && echo "  Уведомления:  ${ALERT_MODE}"
@@ -998,6 +1009,7 @@ run_wizard() {
     _wizard_llm_model
     _wizard_embed_provider
     _wizard_embedding_model
+    _wizard_reranker_model
     _wizard_hf_token
     _wizard_offline_warning
     _wizard_tls
@@ -1012,6 +1024,7 @@ run_wizard() {
     # Export all choices
     export DEPLOY_PROFILE DOMAIN CERTBOT_EMAIL VECTOR_STORE ENABLE_DOCLING
     export LLM_PROVIDER LLM_MODEL VLLM_MODEL VLLM_CUDA_SUFFIX EMBED_PROVIDER EMBEDDING_MODEL
+    export ENABLE_RERANKER RERANK_MODEL
     export HF_TOKEN TLS_MODE TLS_CERT_PATH TLS_KEY_PATH
     export MONITORING_MODE MONITORING_ENDPOINT MONITORING_TOKEN
     export ALERT_MODE ALERT_WEBHOOK_URL ALERT_TELEGRAM_TOKEN ALERT_TELEGRAM_CHAT_ID
