@@ -17,7 +17,6 @@
 | Plugin Daemon | 0.5.3 | 0.5.0 | ⚠️ <0.5.0 is ancient/broken |
 | Certbot | v3.1.0 | v2.0.0 | Let's Encrypt certificates |
 | Docling Serve | v1.14.3 | v1.10.0 | ETL document processing |
-| Xinference | v0.16.3 | v0.14.0 | Reranker model serving |
 | Authelia | 4.38 | 4.37 | Optional 2FA |
 | Grafana | 11.4.0 | 10.0.0 | Monitoring dashboards |
 | Portainer | 2.21.4 | 2.19.0 | Container management UI |
@@ -55,4 +54,4 @@
 - **Weaviate <1.27.0 + Dify ≥1.9.2**: Data loss risk. Dify uses weaviate-client v4 which requires server ≥1.27.0.
 - **Plugin Daemon <0.5.0**: Ancient version, incompatible with current Dify plugin system.
 - **Docker <24.0**: Missing healthcheck features and compose v2 compatibility.
-- **ARM64**: Most images support arm64 except sandbox, plugin-daemon, docling, xinference.
+- **ARM64**: Most images support arm64 except sandbox, plugin-daemon, docling.

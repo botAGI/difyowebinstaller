@@ -102,13 +102,6 @@
       "digest": "",
       "platforms": ["linux/amd64"]
     },
-    "xinference": {
-      "registry": "docker.io",
-      "image": "xprobe/xinference",
-      "tag": "v2.3.0",
-      "digest": "",
-      "platforms": ["linux/amd64"]
-    },
     "authelia": {
       "registry": "docker.io",
       "image": "authelia/authelia",

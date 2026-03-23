@@ -38,7 +38,6 @@ declare -A NAME_TO_VERSION_KEY=(
     [weaviate]=WEAVIATE_VERSION
     [qdrant]=QDRANT_VERSION
     [docling]=DOCLING_SERVE_VERSION
-    [xinference]=XINFERENCE_VERSION
     [sandbox]=SANDBOX_VERSION
     [nginx]=NGINX_VERSION
     [plugin-daemon]=PLUGIN_DAEMON_VERSION
@@ -70,7 +69,6 @@ declare -A NAME_TO_SERVICES=(
     [weaviate]="weaviate"
     [qdrant]="qdrant"
     [docling]="docling"
-    [xinference]="xinference"
     [sandbox]="api worker web sandbox plugin_daemon"
     [nginx]="nginx"
     [plugin-daemon]="api worker web sandbox plugin_daemon"
@@ -802,7 +800,7 @@ perform_bundle_update() {
         "api" "worker" "web" "sandbox" "plugin_daemon"
         "pipelines" "ollama" "vllm" "tei"
         "nginx" "open-webui"
-        "weaviate" "qdrant" "docling" "xinference"
+        "weaviate" "qdrant" "docling"
         "grafana" "portainer" "prometheus" "alertmanager"
         "loki" "promtail" "node-exporter" "cadvisor" "authelia"
     )
@@ -978,6 +976,18 @@ main() {
     # Update versions.env from downloaded release asset
     if [[ -n "${DOWNLOADED_VERSIONS_FILE:-}" && -f "$DOWNLOADED_VERSIONS_FILE" ]]; then
         cp "$DOWNLOADED_VERSIONS_FILE" "$VERSIONS_FILE"
+    fi
+
+    # --- Xinference removal cleanup (v2.5) ---
+    # Xinference was removed in v2.5. Stop orphan container and remove volume if present.
+    if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q '^agmind-xinference$'; then
+        log_info "Removing legacy Xinference container (removed in v2.5)..."
+        docker stop agmind-xinference 2>/dev/null || true
+        docker rm agmind-xinference 2>/dev/null || true
+    fi
+    if docker volume ls -q 2>/dev/null | grep -q '^agmind_xinference_data$'; then
+        log_info "Removing legacy Xinference volume..."
+        docker volume rm agmind_xinference_data 2>/dev/null || true
     fi
 
     echo ""
