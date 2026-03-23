@@ -463,7 +463,11 @@ Plans:
 3. Docling контейнер работает в profile `docling` независимо от xinference — `ENABLE_DOCLING=true` поднимает только docling без xinference
 4. `load_reranker()` в lib/models.sh не вызывает Xinference HTTP API — функция либо удалена, либо переписана на TEI-rerank endpoint
 
-**Plans**: TBD
+**Plans:** 2/2 plans complete
+
+Plans:
+- [ ] 20-01-PLAN.md — Core: remove Xinference from docker-compose + migrate ETL_ENHANCED to ENABLE_DOCLING in lib/ scripts + env templates
+- [ ] 20-02-PLAN.md — Peripheral: remove Xinference from scripts, configs, docs + add orphan cleanup to update.sh
 
 ---
 
@@ -558,7 +562,7 @@ Plans:
 - [x] **Phase 17: Wizard Model List Update** — Новые модели Qwen3/MoE в wizard + скорректированные VRAM req + MODEL_SIZES (completed 2026-03-23)
 - [x] **Phase 18: GPU Management CLI** — agmind gpu status/assign + docker-compose env-переменные для CUDA_VISIBLE_DEVICES (completed 2026-03-23)
 - [x] **Phase 19: Bugfixes + GPU Enhancement** — preflight port filter, effective_vram fix, xinference reranker broken flag, gpu status container names (v2.5) (completed 2026-03-23)
-- [ ] **Phase 20: Xinference Removal** — Убрать xinference из обязательного стека, ETL_ENHANCED -> ENABLE_DOCLING + ENABLE_RERANKER, docling profile (v2.5)
+- [x] **Phase 20: Xinference Removal** — Убрать xinference из обязательного стека, ETL_ENHANCED -> ENABLE_DOCLING + ENABLE_RERANKER, docling profile (v2.5) (completed 2026-03-23)
 - [ ] **Phase 21: Embeddings Wizard + Docker** — Шаг визарда для выбора embedding модели + .env + docker-compose интеграция (v2.5)
 - [ ] **Phase 22: Reranker Wizard + Docker + VRAM** — Шаг визарда для reranker + TEI-rerank контейнер в profile reranker + VRAM учёт (v2.5)
 - [ ] **Phase 23: LLM Model List + Effective VRAM** — 17 моделей AWQ/bf16/MoE + TEI offset в рекомендациях (v2.5)
@@ -586,8 +590,8 @@ Plans:
 | 16. Critical Bugfixes | v2.4 | 1/1 | Complete | 2026-03-22 |
 | 17. Wizard Model List Update | v2.4 | 1/1 | Complete | 2026-03-23 |
 | 18. GPU Management CLI | v2.4 | 1/1 | Complete | 2026-03-23 |
-| 19. Bugfixes + GPU Enhancement | 2/2 | Complete   | 2026-03-23 | - |
-| 20. Xinference Removal | v2.5 | 0/? | Not started | - |
+| 19. Bugfixes + GPU Enhancement | 2/2 | Complete    | 2026-03-23 | - |
+| 20. Xinference Removal | 2/2 | Complete   | 2026-03-23 | - |
 | 21. Embeddings Wizard + Docker | v2.5 | 0/? | Not started | - |
 | 22. Reranker Wizard + Docker + VRAM | v2.5 | 0/? | Not started | - |
 | 23. LLM Model List + Effective VRAM | v2.5 | 0/? | Not started | - |

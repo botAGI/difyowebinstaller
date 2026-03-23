@@ -25,7 +25,7 @@ Requirements for v2.5 Modular Model Selection + Xinference Removal. Each maps to
 
 ### Xinference Removal
 
-- [ ] **XINF-01**: Xinference убран из обязательного стека — сервис перенесён в disabled profile или удалён из docker-compose
+- [x] **XINF-01**: Xinference убран из обязательного стека — сервис перенесён в disabled profile или удалён из docker-compose
 - [ ] **XINF-02**: ETL_ENHANCED заменён на ENABLE_DOCLING + ENABLE_RERANKER (раздельные флаги)
 - [ ] **XINF-03**: Docling перенесён в отдельный profile `docling`, независимый от Xinference
 
@@ -284,7 +284,7 @@ All 24 requirements shipped and confirmed working in v2.0. See git history for d
 | BFIX-44 | Phase 19 | Complete |
 | BFIX-45 | Phase 19 | Complete |
 | GPUX-01 | Phase 19 | Complete |
-| XINF-01 | Phase 20 | Pending |
+| XINF-01 | Phase 20 | Complete |
 | XINF-02 | Phase 20 | Pending |
 | XINF-03 | Phase 20 | Pending |
 | EMBD-01 | Phase 21 | Pending |
