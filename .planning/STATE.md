@@ -4,7 +4,7 @@ milestone: v2.5
 milestone_name: Modular Model Selection + Xinference Removal
 status: planning
 stopped_at: Completed 21-embeddings-wizard-docker 21-01-PLAN.md
-last_updated: "2026-03-23T09:00:25.064Z"
+last_updated: "2026-03-23T09:02:52.228Z"
 last_activity: 2026-03-23 — v2.5 roadmap created
 progress:
   total_phases: 6

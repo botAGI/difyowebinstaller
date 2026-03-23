@@ -369,6 +369,37 @@ services:
     networks:
       - agmind-backend
 
+  # ==================== TEI Reranker (reranker profile) ====================
+  tei-rerank:
+    <<: *logging-defaults
+    image: ghcr.io/huggingface/text-embeddings-inference:${TEI_VERSION:-cuda-1.9.2}
+    container_name: agmind-tei-rerank
+    restart: unless-stopped
+    mem_limit: ${TEI_RERANK_MEM_LIMIT:-4g}
+    profiles:
+      - reranker
+    environment:
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
+      - CUDA_VISIBLE_DEVICES=${TEI_CUDA_DEVICE:-0}
+    command: --model-id ${RERANK_MODEL:-BAAI/bge-reranker-v2-m3} --port 80
+    volumes:
+      - agmind_tei_rerank_cache:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 600s
+    #__GPU__deploy:
+    #__GPU__  resources:
+    #__GPU__    reservations:
+    #__GPU__      devices:
+    #__GPU__        - driver: nvidia
+    #__GPU__          count: 1
+    #__GPU__          capabilities: [gpu]
+    networks:
+      - agmind-backend
+
   # ==================== PostgreSQL ====================
   db:
     <<: *security-defaults
@@ -1017,3 +1048,4 @@ volumes:
   agmind_promtail_positions:
   agmind_vllm_cache:
   agmind_tei_cache:
+  agmind_tei_rerank_cache:

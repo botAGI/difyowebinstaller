@@ -595,7 +595,7 @@ Plans:
 | 18. GPU Management CLI | v2.4 | 1/1 | Complete | 2026-03-23 |
 | 19. Bugfixes + GPU Enhancement | 2/2 | Complete    | 2026-03-23 | - |
 | 20. Xinference Removal | 2/2 | Complete    | 2026-03-23 | - |
-| 21. Embeddings Wizard + Docker | 1/1 | Complete   | 2026-03-23 | - |
+| 21. Embeddings Wizard + Docker | 1/1 | Complete    | 2026-03-23 | - |
 | 22. Reranker Wizard + Docker + VRAM | v2.5 | 0/? | Not started | - |
 | 23. LLM Model List + Effective VRAM | v2.5 | 0/? | Not started | - |
 | 24. Wizard Restructure + VRAM Summary + Profiles | v2.5 | 0/? | Not started | - |
