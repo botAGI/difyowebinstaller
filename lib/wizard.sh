@@ -347,10 +347,18 @@ _wizard_ollama_model() {
     echo ""
 }
 
-# TEI VRAM offset: reserve 2 GB for TEI embedding container
-readonly TEI_VRAM_OFFSET=2
-# Reranker VRAM offset: reserve 1 GB for TEI reranker container
-readonly RERANKER_VRAM_OFFSET=1
+# Dynamic VRAM offset: sum of GPU reservations for TEI services.
+# Returns total offset in GB based on current EMBED_PROVIDER and ENABLE_RERANKER.
+_get_vram_offset() {
+    local offset=0
+    # TEI embedding reserves ~2 GB GPU VRAM; Ollama/external/skip use no GPU for embeddings
+    case "${EMBED_PROVIDER:-tei}" in
+        tei) offset=$(( offset + 2 )) ;;
+    esac
+    # TEI reranker reserves ~1 GB GPU VRAM
+    [[ "${ENABLE_RERANKER:-}" == "true" ]] && offset=$(( offset + 1 ))
+    echo "$offset"
+}
 
 # Returns VRAM requirement in GB for a known vLLM model name.
 # Usage: req=$(_get_vllm_vram_req "Qwen/Qwen2.5-14B-Instruct")
@@ -390,9 +398,9 @@ _wizard_vllm_model() {
     # TEI offset for [recommended]: vLLM default embed is TEI (~2 GB shared GPU)
     local effective_vram="$vram_gb"
     if [[ "$vram_gb" -gt 0 ]]; then
-        local reranker_offset=0
-        [[ "${ENABLE_RERANKER:-}" == "true" ]] && reranker_offset=$RERANKER_VRAM_OFFSET
-        effective_vram=$(( vram_gb - TEI_VRAM_OFFSET - reranker_offset ))
+        local vram_offset
+        vram_offset=$(_get_vram_offset)
+        effective_vram=$(( vram_gb - vram_offset ))
         [[ "$effective_vram" -lt 0 ]] && effective_vram=0
     fi
 
@@ -478,15 +486,13 @@ _wizard_vllm_model() {
         VLLM_MODEL="${vllm_models[$REPLY]}"
 
         # VRAM guard: warn if selected model exceeds effective GPU (raw - TEI offset - reranker offset)
-        local reranker_off=0
-        [[ "${ENABLE_RERANKER:-}" == "true" ]] && reranker_off=$RERANKER_VRAM_OFFSET
-        local effective_vram_check=$(( vram_gb > 0 ? vram_gb - TEI_VRAM_OFFSET - reranker_off : 0 ))
+        local vram_offset_guard
+        vram_offset_guard=$(_get_vram_offset)
+        local effective_vram_check=$(( vram_gb > 0 ? vram_gb - vram_offset_guard : 0 ))
         [[ "$effective_vram_check" -lt 0 ]] && effective_vram_check=0
         if [[ "$vram_gb" -gt 0 && "${vram_req[$REPLY]}" -gt "$effective_vram_check" ]]; then
             echo ""
-            local offset_desc="${TEI_VRAM_OFFSET} GB TEI"
-            [[ "$reranker_off" -gt 0 ]] && offset_desc="${offset_desc} + ${RERANKER_VRAM_OFFSET} GB reranker"
-            echo -e "  ${YELLOW}Модель требует ${vram_req[$REPLY]} GB VRAM, доступно ${effective_vram_check} GB effective (${vram_gb} GB - ${offset_desc}). Возможен OOM.${NC}"
+            echo -e "  ${YELLOW}Модель требует ${vram_req[$REPLY]} GB VRAM, доступно ${effective_vram_check} GB effective (${vram_gb} GB - ${vram_offset_guard} GB offset). Возможен OOM.${NC}"
             if [[ "${NON_INTERACTIVE}" != "true" ]]; then
                 read -rp "  Продолжить? (y/N): " confirm
                 if [[ ! "${confirm}" =~ ^[Yy]$ ]]; then
@@ -544,14 +550,12 @@ _wizard_llm_model() {
             if [[ "${DETECTED_GPU_VRAM:-0}" -gt 0 ]]; then
                 ni_vram_gb=$(( DETECTED_GPU_VRAM / 1024 ))
             fi
-            local ni_reranker_off=0
-            [[ "${ENABLE_RERANKER:-}" == "true" ]] && ni_reranker_off=$RERANKER_VRAM_OFFSET
-            local ni_effective_vram=$(( ni_vram_gb > 0 ? ni_vram_gb - TEI_VRAM_OFFSET - ni_reranker_off : 0 ))
+            local ni_vram_offset
+            ni_vram_offset=$(_get_vram_offset)
+            local ni_effective_vram=$(( ni_vram_gb > 0 ? ni_vram_gb - ni_vram_offset : 0 ))
             [[ "$ni_effective_vram" -lt 0 ]] && ni_effective_vram=0
             if [[ "$ni_vram_gb" -gt 0 && "$ni_vram_req" -gt "$ni_effective_vram" ]]; then
-                local ni_offset_desc="${TEI_VRAM_OFFSET} GB TEI"
-                [[ "$ni_reranker_off" -gt 0 ]] && ni_offset_desc="${ni_offset_desc} + ${RERANKER_VRAM_OFFSET} GB reranker"
-                log_error "Model ${VLLM_MODEL} requires ${ni_vram_req} GB VRAM, effective available: ${ni_effective_vram} GB (${ni_vram_gb} GB - ${ni_offset_desc})"
+                log_error "Model ${VLLM_MODEL} requires ${ni_vram_req} GB VRAM, effective available: ${ni_effective_vram} GB (${ni_vram_gb} GB - ${ni_vram_offset} GB offset)"
                 log_error "Choose a smaller model or set VLLM_MODEL to a model that fits your GPU"
                 exit 1
             fi
