@@ -23,6 +23,7 @@ DAILY_CHECKS=(
     "Ollama|OLLAMA_VERSION|ollama/ollama|gh"
     "vLLM|VLLM_VERSION|vllm-project/vllm|gh"
     "TEI|TEI_VERSION|huggingface/text-embeddings-inference|gh"
+    "TEI-Embed|TEI_EMBED_VERSION|huggingface/text-embeddings-inference|gh"
     "TEI-Rerank|TEI_RERANK_VERSION|huggingface/text-embeddings-inference|gh"
     "Weaviate|WEAVIATE_VERSION|weaviate/weaviate|gh"
     "Qdrant|QDRANT_VERSION|qdrant/qdrant|gh"

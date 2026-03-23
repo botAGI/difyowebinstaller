@@ -33,6 +33,7 @@ declare -A NAME_TO_VERSION_KEY=(
     [ollama]=OLLAMA_VERSION
     [vllm]=VLLM_VERSION
     [tei]=TEI_VERSION
+    [tei-embed]=TEI_EMBED_VERSION
     [tei-rerank]=TEI_RERANK_VERSION
     [postgres]=POSTGRES_VERSION
     [redis]=REDIS_VERSION

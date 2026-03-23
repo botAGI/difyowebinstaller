@@ -341,7 +341,7 @@ services:
   # ==================== TEI (tei profile) ====================
   tei:
     <<: *logging-defaults
-    image: ghcr.io/huggingface/text-embeddings-inference:${TEI_VERSION:-cuda-1.9.2}
+    image: ghcr.io/huggingface/text-embeddings-inference:${TEI_EMBED_VERSION:-${TEI_VERSION:-cuda-1.9.2}}
     container_name: agmind-tei
     restart: unless-stopped
     mem_limit: ${TEI_MEM_LIMIT:-8g}
@@ -350,7 +350,7 @@ services:
     environment:
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
       - CUDA_VISIBLE_DEVICES=${TEI_CUDA_DEVICE:-0}
-    command: --model-id ${EMBEDDING_MODEL:-BAAI/bge-m3} --port 80
+    command: --model-id ${EMBEDDING_MODEL:-intfloat/multilingual-e5-base} --port 80
     volumes:
       - agmind_tei_cache:/data
     healthcheck:

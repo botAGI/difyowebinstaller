@@ -235,6 +235,7 @@ _generate_env_file() {
     safe_hf_token="$(escape_sed "${HF_TOKEN:-}")"
     safe_enable_reranker="$(escape_sed "${ENABLE_RERANKER:-false}")"
     safe_rerank_model="$(escape_sed "${RERANK_MODEL:-}")"
+    safe_tei_embed_version="$(escape_sed "${TEI_EMBED_VERSION:-}")"
     safe_monitoring_token="$(escape_sed "${MONITORING_TOKEN:-}")"
     safe_telegram_token="$(escape_sed "${ALERT_TELEGRAM_TOKEN:-}")"
     safe_telegram_chat_id="$(escape_sed "${ALERT_TELEGRAM_CHAT_ID:-}")"
@@ -278,6 +279,7 @@ _generate_env_file() {
         -e "s|__HF_TOKEN__|${safe_hf_token}|g" \
         -e "s|__ENABLE_RERANKER__|${safe_enable_reranker}|g" \
         -e "s|__RERANK_MODEL__|${safe_rerank_model}|g" \
+        -e "s|__TEI_EMBED_VERSION__|${safe_tei_embed_version}|g" \
         -e "s|__AUTHELIA_JWT_SECRET__|${_AUTHELIA_JWT_SECRET}|g" \
         "$env_file" > "$env_tmp" || { rm -f "$env_tmp"; return 1; }
     mv "$env_tmp" "$env_file"

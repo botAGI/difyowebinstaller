@@ -32,6 +32,7 @@ _init_wizard_defaults() {
     VLLM_CUDA_SUFFIX="${VLLM_CUDA_SUFFIX:-}"
     EMBED_PROVIDER="${EMBED_PROVIDER:-}"
     EMBEDDING_MODEL="${EMBEDDING_MODEL:-}"
+    TEI_EMBED_VERSION="${TEI_EMBED_VERSION:-}"
     ENABLE_RERANKER="${ENABLE_RERANKER:-false}"
     RERANK_MODEL="${RERANK_MODEL:-}"
     HF_TOKEN="${HF_TOKEN:-}"
@@ -348,14 +349,15 @@ _wizard_ollama_model() {
 }
 
 # Dynamic VRAM offset: GPU reservation for TEI embedding service.
-# Returns offset in GB based on current EMBED_PROVIDER.
-# Note: TEI reranker runs on CPU (ONNX) — no GPU VRAM consumed.
+# Returns offset in GB based on EMBED_PROVIDER and TEI_EMBED_VERSION.
+# CPU TEI (ONNX) and reranker consume no GPU VRAM.
 _get_vram_offset() {
     local offset=0
-    # TEI embedding reserves ~2 GB GPU VRAM; Ollama/external/skip use no GPU for embeddings
-    case "${EMBED_PROVIDER:-tei}" in
-        tei) offset=$(( offset + 2 )) ;;
-    esac
+    # TEI embedding on CUDA reserves ~2 GB GPU VRAM
+    # CPU-only models (TEI_EMBED_VERSION=cpu-*) use no GPU VRAM
+    if [[ "${EMBED_PROVIDER:-tei}" == "tei" && "${TEI_EMBED_VERSION:-cuda}" != cpu-* ]]; then
+        offset=$(( offset + 2 ))
+    fi
     echo "$offset"
 }
 
@@ -596,14 +598,27 @@ _wizard_embed_provider() {
 }
 
 _wizard_embedding_model() {
+    # CPU-only models (no safetensors → Candle/CUDA fails, ONNX fallback only)
+    local -a cpu_only_models=("BAAI/bge-m3")
+
+    _is_cpu_embed_model() {
+        local m="${1:-}"
+        local c
+        for c in "${cpu_only_models[@]}"; do
+            [[ "$m" == "$c" ]] && return 0
+        done
+        return 1
+    }
+
     # --- NON_INTERACTIVE: use env or default ---
     if [[ "${NON_INTERACTIVE}" == "true" ]]; then
         if [[ -n "${EMBEDDING_MODEL:-}" && "$EMBEDDING_MODEL" != "bge-m3" ]]; then
+            _is_cpu_embed_model "$EMBEDDING_MODEL" && TEI_EMBED_VERSION="cpu-1.9"
             return 0
         fi
         # Apply provider-aware default
         case "$EMBED_PROVIDER" in
-            tei)    EMBEDDING_MODEL="BAAI/bge-m3";;
+            tei)    EMBEDDING_MODEL="intfloat/multilingual-e5-base";;
             ollama) EMBEDDING_MODEL="${EMBEDDING_MODEL:-bge-m3}";;
             *)      return 0;;
         esac
@@ -614,25 +629,40 @@ _wizard_embedding_model() {
     if [[ "$EMBED_PROVIDER" == "tei" ]]; then
         echo "Выберите модель эмбеддингов TEI:"
         echo ""
-        echo "  1) BAAI/bge-m3                                — мультиязычная, стабильная  [по умолчанию]"
-        echo "  2) Qwen/Qwen3-Embedding-0.6B                  — лёгкая, 0.6B параметров"
-        echo "  3) intfloat/multilingual-e5-large-instruct     — instruct-версия, MTEB #7, понимает query:/passage: префиксы"
-        echo "  4) Ввод вручную                                — полный HuggingFace ID"
+        echo " -- GPU (CUDA) --"
+        echo "  1) intfloat/multilingual-e5-base               — 278M, мультиязычная  [по умолчанию]"
+        echo "  2) intfloat/multilingual-e5-large              — 560M, лучшее качество"
+        echo "  3) intfloat/multilingual-e5-small              — 118M, быстрая"
+        echo "  4) deepvk/USER-bge-m3                          — 359M, русский fine-tune"
+        echo ""
+        echo " -- CPU only (медленнее) --"
+        echo "  5) BAAI/bge-m3                                 — 568M, ⚠ CPU only"
+        echo ""
+        echo " -- Своя модель --"
+        echo "  6) Ввод вручную                                — полный HuggingFace ID"
         echo ""
 
-        _ask_choice "Выбор [1-4, Enter=1]: " 1 4 1
+        _ask_choice "Выбор [1-6, Enter=1]: " 1 6 1
         case "$REPLY" in
-            1) EMBEDDING_MODEL="BAAI/bge-m3";;
-            2) EMBEDDING_MODEL="Qwen/Qwen3-Embedding-0.6B";;
-            3) EMBEDDING_MODEL="intfloat/multilingual-e5-large-instruct";;
-            4) _ask "HuggingFace model ID:" ""
-               EMBEDDING_MODEL="${REPLY:-BAAI/bge-m3}"
+            1) EMBEDDING_MODEL="intfloat/multilingual-e5-base";;
+            2) EMBEDDING_MODEL="intfloat/multilingual-e5-large";;
+            3) EMBEDDING_MODEL="intfloat/multilingual-e5-small";;
+            4) EMBEDDING_MODEL="deepvk/USER-bge-m3";;
+            5) EMBEDDING_MODEL="BAAI/bge-m3";;
+            6) _ask "HuggingFace model ID:" ""
+               EMBEDDING_MODEL="${REPLY:-intfloat/multilingual-e5-base}"
                validate_model_name "$EMBEDDING_MODEL" || {
-                   EMBEDDING_MODEL="BAAI/bge-m3"
-                   log_warn "Некорректное имя модели, используется BAAI/bge-m3"
+                   EMBEDDING_MODEL="intfloat/multilingual-e5-base"
+                   log_warn "Некорректное имя модели, используется intfloat/multilingual-e5-base"
                };;
-            *) EMBEDDING_MODEL="BAAI/bge-m3";;
+            *) EMBEDDING_MODEL="intfloat/multilingual-e5-base";;
         esac
+
+        # CPU-only models need ONNX backend
+        if _is_cpu_embed_model "$EMBEDDING_MODEL"; then
+            TEI_EMBED_VERSION="cpu-1.9"
+            echo -e "  ${YELLOW}⚠ ${EMBEDDING_MODEL} — CPU only (нет safetensors, ONNX fallback)${NC}"
+        fi
         echo ""
         return 0
     fi
@@ -992,8 +1022,12 @@ _wizard_summary() {
 
         local embed_vram=0
         if [[ "${EMBED_PROVIDER:-}" == "tei" ]]; then
-            embed_vram=2
-            echo "  TEI-embed:    ${embed_vram} GB   (${EMBEDDING_MODEL:-unknown})"
+            if [[ "${TEI_EMBED_VERSION:-cuda}" == cpu-* ]]; then
+                echo "  TEI-embed:    CPU (8 GB RAM)   (${EMBEDDING_MODEL:-unknown})"
+            else
+                embed_vram=2
+                echo "  TEI-embed:    ${embed_vram} GB   (${EMBEDDING_MODEL:-unknown})"
+            fi
         fi
 
         if [[ "${ENABLE_RERANKER:-}" == "true" ]]; then
@@ -1066,7 +1100,7 @@ run_wizard() {
 
     # Export all choices
     export DEPLOY_PROFILE DOMAIN CERTBOT_EMAIL VECTOR_STORE ENABLE_DOCLING
-    export LLM_PROVIDER LLM_MODEL VLLM_MODEL VLLM_CUDA_SUFFIX EMBED_PROVIDER EMBEDDING_MODEL
+    export LLM_PROVIDER LLM_MODEL VLLM_MODEL VLLM_CUDA_SUFFIX EMBED_PROVIDER EMBEDDING_MODEL TEI_EMBED_VERSION
     export ENABLE_RERANKER RERANK_MODEL
     export HF_TOKEN TLS_MODE TLS_CERT_PATH TLS_KEY_PATH
     export MONITORING_MODE MONITORING_ENDPOINT MONITORING_TOKEN
