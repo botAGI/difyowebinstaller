@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.5
 milestone_name: Modular Model Selection + Xinference Removal
 status: planning
-stopped_at: Completed 20-01-PLAN.md
-last_updated: "2026-03-23T08:08:59.580Z"
+stopped_at: Completed 21-embeddings-wizard-docker 21-01-PLAN.md
+last_updated: "2026-03-23T09:00:25.064Z"
 last_activity: 2026-03-23 — v2.5 roadmap created
 progress:
   total_phases: 6
-  completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
+  completed_phases: 3
+  total_plans: 5
+  completed_plans: 5
   percent: 0
 ---
 
@@ -54,6 +54,7 @@ Updated after each plan completion.
 | Phase 19 P02 | 102 | 2 tasks | 6 files |
 | Phase 20-xinference-removal P02 | 16 | 2 tasks | 10 files |
 | Phase 20-xinference-removal P01 | 209 | 2 tasks | 10 files |
+| Phase 21-embeddings-wizard-docker P01 | 10 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -71,6 +72,8 @@ Updated after each plan completion.
 - [Phase 20-xinference-removal]: v2.5: Xinference orphan cleanup in update.sh stops agmind-xinference container and removes agmind_xinference_data volume on update from pre-v2.5 installations
 - [Phase 20-xinference-removal]: ETL_ENHANCED retained as fallback in backward-compat shim; ENABLE_DOCLING is now primary flag
 - [Phase 20-xinference-removal]: load_reranker() fully deleted; Docling profile renamed etl→docling
+- [Phase 21-embeddings-wizard-docker]: TEI embedding model selection menu in wizard with 3 HuggingFace presets + custom input, wired to parameterized docker-compose TEI service
+- [Phase 21-embeddings-wizard-docker]: TEI uses full HuggingFace IDs (BAAI/bge-m3), Ollama keeps short names (bge-m3); EMBEDDING_MODEL default changed to empty string
 
 ### Architecture Notes
 
@@ -90,6 +93,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-23T08:08:59.577Z
-Stopped at: Completed 20-01-PLAN.md
+Last session: 2026-03-23T09:00:25.061Z
+Stopped at: Completed 21-embeddings-wizard-docker 21-01-PLAN.md
 Resume file: None
