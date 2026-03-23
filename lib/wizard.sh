@@ -345,6 +345,9 @@ _wizard_ollama_model() {
     echo ""
 }
 
+# TEI VRAM offset: reserve 2 GB for TEI embedding container
+readonly TEI_VRAM_OFFSET=2
+
 # Returns VRAM requirement in GB for a known vLLM model name.
 # Usage: req=$(_get_vllm_vram_req "Qwen/Qwen2.5-14B-Instruct")
 # Outputs "0" for unknown models (caller skips the VRAM check).
@@ -383,7 +386,7 @@ _wizard_vllm_model() {
     # TEI offset for [recommended]: vLLM default embed is TEI (~2 GB shared GPU)
     local effective_vram="$vram_gb"
     if [[ "$vram_gb" -gt 0 ]]; then
-        effective_vram=$(( vram_gb - 2 ))
+        effective_vram=$(( vram_gb - TEI_VRAM_OFFSET ))
         [[ "$effective_vram" -lt 0 ]] && effective_vram=0
     fi
 
@@ -468,10 +471,12 @@ _wizard_vllm_model() {
     if [[ "$REPLY" -ge 1 && "$REPLY" -le 16 ]]; then
         VLLM_MODEL="${vllm_models[$REPLY]}"
 
-        # VRAM guard: warn if selected model exceeds available GPU
-        if [[ "$vram_gb" -gt 0 && "${vram_req[$REPLY]}" -gt "$vram_gb" ]]; then
+        # VRAM guard: warn if selected model exceeds effective GPU (raw - TEI offset)
+        local effective_vram_check=$(( vram_gb > 0 ? vram_gb - TEI_VRAM_OFFSET : 0 ))
+        [[ "$effective_vram_check" -lt 0 ]] && effective_vram_check=0
+        if [[ "$vram_gb" -gt 0 && "${vram_req[$REPLY]}" -gt "$effective_vram_check" ]]; then
             echo ""
-            echo -e "  ${YELLOW}Модель требует ${vram_req[$REPLY]} GB VRAM, доступно ${vram_gb} GB. Возможен OOM.${NC}"
+            echo -e "  ${YELLOW}Модель требует ${vram_req[$REPLY]} GB VRAM, доступно ${effective_vram_check} GB effective (${vram_gb} GB - ${TEI_VRAM_OFFSET} GB TEI). Возможен OOM.${NC}"
             if [[ "${NON_INTERACTIVE}" != "true" ]]; then
                 read -rp "  Продолжить? (y/N): " confirm
                 if [[ ! "${confirm}" =~ ^[Yy]$ ]]; then
@@ -529,8 +534,10 @@ _wizard_llm_model() {
             if [[ "${DETECTED_GPU_VRAM:-0}" -gt 0 ]]; then
                 ni_vram_gb=$(( DETECTED_GPU_VRAM / 1024 ))
             fi
-            if [[ "$ni_vram_gb" -gt 0 && "$ni_vram_req" -gt "$ni_vram_gb" ]]; then
-                log_error "Model ${VLLM_MODEL} requires ${ni_vram_req} GB VRAM, available: ${ni_vram_gb} GB"
+            local ni_effective_vram=$(( ni_vram_gb > 0 ? ni_vram_gb - TEI_VRAM_OFFSET : 0 ))
+            [[ "$ni_effective_vram" -lt 0 ]] && ni_effective_vram=0
+            if [[ "$ni_vram_gb" -gt 0 && "$ni_vram_req" -gt "$ni_effective_vram" ]]; then
+                log_error "Model ${VLLM_MODEL} requires ${ni_vram_req} GB VRAM, effective available: ${ni_effective_vram} GB (${ni_vram_gb} GB - ${TEI_VRAM_OFFSET} GB TEI)"
                 log_error "Choose a smaller model or set VLLM_MODEL to a model that fits your GPU"
                 exit 1
             fi
