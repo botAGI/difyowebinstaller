@@ -6,7 +6,8 @@
 - ✅ **v2.1 Bugfixes + Improvements** — Phases 6-9 (shipped 2026-03-21)
 - ✅ **v2.2 Release Bundle Update System** — Phases 10-11 (shipped 2026-03-22)
 - ✅ **v2.3 Stability & Reliability Bugfixes** — Phases 12-15 (shipped 2026-03-22)
-- 🚧 **v2.4 Wizard Models + GPU Management** — Phases 16-18 (in progress)
+- ✅ **v2.4 Wizard Models + GPU Management** — Phases 16-18 (shipped 2026-03-23)
+- 🚧 **v2.5 Modular Model Selection + Xinference Removal** — Phases 19-24 (in progress)
 
 ---
 
@@ -349,11 +350,10 @@ Plans:
 
 ---
 
-## v2.4 Wizard Models + GPU Management (In Progress)
+<details>
+<summary>✅ v2.4 Wizard Models + GPU Management (Phases 16-18) — SHIPPED 2026-03-23</summary>
 
 **Milestone Goal:** Обновить список моделей vLLM в визарде (Qwen3, MoE), исправить критичные баги VRAM guard в NON_INTERACTIVE режиме и resume diagnostics, добавить GPU management команды в CLI с поддержкой env-переменных в docker-compose.
-
-## Phase Details
 
 ### Phase 16: Critical Bugfixes
 
@@ -393,7 +393,7 @@ Plans:
 **Plans:** 1/1 plans complete
 
 Plans:
-- [ ] 17-01-PLAN.md — Expand vLLM model list to 16 models (Qwen3 + MoE) + fix VRAM reqs + MODEL_SIZES (WMOD-01, WMOD-02)
+- [x] 17-01-PLAN.md — Expand vLLM model list to 16 models (Qwen3 + MoE) + fix VRAM reqs + MODEL_SIZES (WMOD-01, WMOD-02)
 
 ---
 
@@ -415,7 +415,125 @@ Plans:
 **Plans:** 1/1 plans complete
 
 Plans:
-- [ ] 18-01-PLAN.md — docker-compose env var substitution + cmd_gpu with status/assign/auto-assign (GPUM-01, GPUM-02, GPUM-03)
+- [x] 18-01-PLAN.md — docker-compose env var substitution + cmd_gpu with status/assign/auto-assign (GPUM-01, GPUM-02, GPUM-03)
+
+</details>
+
+---
+
+## v2.5 Modular Model Selection + Xinference Removal (In Progress)
+
+**Milestone Goal:** Переработка визарда: модульный выбор LLM, Embeddings, Reranker с VRAM-aware рекомендациями. Убрать Xinference из стека — реранк через TEI. VRAM план в сводке установки. Новые compose profiles: tei, reranker, docling.
+
+## Phase Details
+
+### Phase 19: Bugfixes + GPU Enhancement
+
+**Goal:** Мелкие независимые исправления устранены до начала крупных изменений — preflight_checks не выдаёт ложных WARN на собственных контейнерах, VRAM guard в NON_INTERACTIVE использует effective_vram с учётом TEI offset, xinference bce-reranker помечен как broken, `agmind gpu status` показывает имена контейнеров вместо сырых PID.
+
+**Depends on:** Phase 18
+**Requirements:** BFIX-43, BFIX-44, BFIX-45, GPUX-01
+
+**Success Criteria** (what must be TRUE):
+
+1. `preflight_checks()` при повторной установке на сервере с работающим agmind стеком не выдаёт WARN для портов 80/443, занятых собственными контейнерами nginx/docker — предупреждение показывается только для чужих процессов
+2. В NON_INTERACTIVE режиме с `LLM_PROVIDER=vllm` VRAM guard вычисляет `effective_vram = gpu_vram - 2` (TEI offset) и сравнивает модель с effective_vram — модель, которая влезает в raw VRAM, но не влезает с учётом TEI, отклоняется с exit 1
+3. Xinference bce-reranker-base_v1 помечен как broken в коде/документации или заменён на bge-reranker-v2-m3, если xinference остаётся как fallback profile
+4. `agmind gpu status` в колонке процессов показывает имя контейнера (например, `agmind-vllm-1`) и загруженную модель вместо сырого PID числа
+
+**Plans:** 1/2 plans executed
+
+Plans:
+- [ ] 19-01-PLAN.md — Preflight port filter (BFIX-43) + GPU status container names (GPUX-01)
+- [ ] 19-02-PLAN.md — VRAM guard TEI offset (BFIX-45) + Xinference reranker broken (BFIX-44)
+
+---
+
+### Phase 20: Xinference Removal
+
+**Goal:** Xinference убран из обязательного стека — реранк через TEI-rerank, Docling независим от Xinference, флаг ETL_ENHANCED заменён на раздельные ENABLE_DOCLING и ENABLE_RERANKER.
+
+**Depends on:** Phase 19
+**Requirements:** XINF-01, XINF-02, XINF-03
+
+**Success Criteria** (what must be TRUE):
+
+1. После установки с профилем по умолчанию `docker ps` не показывает контейнер xinference — сервис либо удалён из docker-compose, либо перенесён в disabled/legacy profile, который не активируется автоматически
+2. Переменная `ETL_ENHANCED` больше не используется ни в wizard, ни в docker-compose, ни в .env — вместо неё `ENABLE_DOCLING=true/false` и `ENABLE_RERANKER=true/false` управляют соответствующими сервисами независимо
+3. Docling контейнер работает в profile `docling` независимо от xinference — `ENABLE_DOCLING=true` поднимает только docling без xinference
+4. `load_reranker()` в lib/models.sh не вызывает Xinference HTTP API — функция либо удалена, либо переписана на TEI-rerank endpoint
+
+**Plans**: TBD
+
+---
+
+### Phase 21: Embeddings Wizard + Docker
+
+**Goal:** Пользователь выбирает embedding модель в отдельном шаге визарда, выбор записывается в .env и используется docker-compose для TEI-embed контейнера.
+
+**Depends on:** Phase 20
+**Requirements:** EMBD-01, EMBD-02
+
+**Success Criteria** (what must be TRUE):
+
+1. В wizard появился шаг `Embeddings` с меню выбора: BAAI/bge-m3, Qwen3-Embedding-0.6B, e5-large-instruct, ввод вручную — каждый вариант показывает краткое описание
+2. После прохождения визарда `.env` содержит `EMBEDDING_MODEL=<выбранная_модель>` и `EMBED_PROVIDER=tei` — значения подхватываются docker-compose без ручного редактирования
+3. При NON_INTERACTIVE режиме с `EMBEDDING_MODEL` из env визард использует переданное значение, при отсутствии — применяет дефолт (bge-m3)
+
+**Plans**: TBD
+
+---
+
+### Phase 22: Reranker Wizard + Docker + VRAM
+
+**Goal:** Пользователь опционально включает reranker в визарде, выбирает модель, TEI-rerank контейнер поднимается в отдельном profile, VRAM реранкера учитывается в бюджете.
+
+**Depends on:** Phase 20
+**Requirements:** RNKR-01, RNKR-02, RNKR-03
+
+**Success Criteria** (what must be TRUE):
+
+1. В wizard появился шаг `Reranker` с вариантами: нет (по умолчанию) / bge-reranker-large / bge-reranker-base / gte-reranker / ввод вручную — при выборе "нет" никакой reranker контейнер не поднимается
+2. При `ENABLE_RERANKER=true` docker-compose поднимает отдельный TEI-rerank контейнер в profile `reranker` с `RERANK_MODEL` из .env — контейнер отвечает на health-check
+3. VRAM реранкера (~0.5-1 GB в зависимости от модели) учитывается при расчёте VRAM бюджета — сводка установки и VRAM guard знают о реранкере
+4. При `ENABLE_RERANKER=false` profile `reranker` не активируется, TEI-rerank контейнер не запускается, VRAM реранкера не вычитается из бюджета
+
+**Plans**: TBD
+
+---
+
+### Phase 23: LLM Model List + Effective VRAM
+
+**Goal:** Список моделей vLLM обновлён до 17 моделей с корректными AWQ/bf16/MoE секциями, VRAM рекомендации учитывают TEI offset для более точных рекомендаций.
+
+**Depends on:** Phase 19 (BFIX-45 — effective_vram fix)
+**Requirements:** LLMM-01, LLMM-02
+
+**Success Criteria** (what must be TRUE):
+
+1. В меню выбора модели vLLM wizard показывает 17 моделей, разбитых на секции AWQ / bf16 / MoE — каждая с корректным VRAM requirement и меткой `[рекомендуется]` при наличии достаточного effective_vram
+2. VRAM requirement учитывает TEI offset (~2 GB): на GPU с 24 GB VRAM wizard рекомендует модели до ~22 GB, а не до 24 GB — модель с vram_req=24 получает предупреждение о нехватке
+3. TEI offset в рекомендациях конфигурируем (не hardcoded) — берётся из переменной или функции, чтобы учитывать разные конфигурации embedding/reranker
+
+**Plans**: TBD
+
+---
+
+### Phase 24: Wizard Restructure + VRAM Summary + Profiles
+
+**Goal:** Визард перестроен в новый порядок шагов (LLM -> Embeddings -> Reranker -> VectorDB -> ...), в конце показывается VRAM план с бюджетом, COMPOSE_PROFILES формируется с новыми профилями tei/reranker/docling.
+
+**Depends on:** Phase 21, Phase 22, Phase 23
+**Requirements:** WIZS-01, WIZS-02, PROF-01
+
+**Success Criteria** (what must be TRUE):
+
+1. Визард проходит шаги в порядке: Профиль -> LLM -> Модель LLM -> Embeddings -> Reranker -> VectorDB -> Docling -> Мониторинг -> TLS -> Алерты -> UFW -> Tunnel -> Бэкапы -> Сводка — порядок соответствует WIZS-01
+2. В сводке установки (последний экран визарда) показан VRAM план: vLLM X GB + TEI-embed Y GB + TEI-rerank Z GB = Total vs Available GPU VRAM — если Total > Available, выводится жёлтое предупреждение
+3. `COMPOSE_PROFILES` в .env после визарда содержит профили `tei`, `reranker`, `docling` в зависимости от выбора пользователя — каждый профиль включается/выключается отдельным флагом (`EMBED_PROVIDER=tei`, `ENABLE_RERANKER=true`, `ENABLE_DOCLING=true`)
+4. При NON_INTERACTIVE режиме COMPOSE_PROFILES формируется корректно из env-переменных без участия визарда — все новые профили учитываются
+
+**Plans**: TBD
 
 ---
 
@@ -437,8 +555,14 @@ Plans:
 - [x] **Phase 14: DB Password Resume Safety** — Preserve DB_PASSWORD при resume если PG volume существует (completed 2026-03-22)
 - [x] **Phase 15: Pull & Download UX** — Pre-pull валидация образов + прогресс скачивания моделей + graceful timeout (completed 2026-03-22)
 - [x] **Phase 16: Critical Bugfixes** — VRAM guard в NON_INTERACTIVE + run_diagnostics при resume с любой фазы (completed 2026-03-22)
-- [x] **Phase 17: Wizard Model List Update** — Новые модели Qwen3/MoE в wizard + скорректированные VRAM req + MODEL_SIZES (completed 2026-03-22)
+- [x] **Phase 17: Wizard Model List Update** — Новые модели Qwen3/MoE в wizard + скорректированные VRAM req + MODEL_SIZES (completed 2026-03-23)
 - [x] **Phase 18: GPU Management CLI** — agmind gpu status/assign + docker-compose env-переменные для CUDA_VISIBLE_DEVICES (completed 2026-03-23)
+- [ ] **Phase 19: Bugfixes + GPU Enhancement** — preflight port filter, effective_vram fix, xinference reranker broken flag, gpu status container names (v2.5)
+- [ ] **Phase 20: Xinference Removal** — Убрать xinference из обязательного стека, ETL_ENHANCED -> ENABLE_DOCLING + ENABLE_RERANKER, docling profile (v2.5)
+- [ ] **Phase 21: Embeddings Wizard + Docker** — Шаг визарда для выбора embedding модели + .env + docker-compose интеграция (v2.5)
+- [ ] **Phase 22: Reranker Wizard + Docker + VRAM** — Шаг визарда для reranker + TEI-rerank контейнер в profile reranker + VRAM учёт (v2.5)
+- [ ] **Phase 23: LLM Model List + Effective VRAM** — 17 моделей AWQ/bf16/MoE + TEI offset в рекомендациях (v2.5)
+- [ ] **Phase 24: Wizard Restructure + VRAM Summary + Profiles** — Новый порядок шагов визарда + VRAM сводка + COMPOSE_PROFILES с tei/reranker/docling (v2.5)
 
 ## Progress
 
@@ -461,8 +585,14 @@ Plans:
 | 15. Pull & Download UX | v2.3 | 1/1 | Complete | 2026-03-22 |
 | 16. Critical Bugfixes | v2.4 | 1/1 | Complete | 2026-03-22 |
 | 17. Wizard Model List Update | v2.4 | 1/1 | Complete | 2026-03-23 |
-| 18. GPU Management CLI | 1/1 | Complete   | 2026-03-23 | — |
+| 18. GPU Management CLI | v2.4 | 1/1 | Complete | 2026-03-23 |
+| 19. Bugfixes + GPU Enhancement | 1/2 | In Progress|  | - |
+| 20. Xinference Removal | v2.5 | 0/? | Not started | - |
+| 21. Embeddings Wizard + Docker | v2.5 | 0/? | Not started | - |
+| 22. Reranker Wizard + Docker + VRAM | v2.5 | 0/? | Not started | - |
+| 23. LLM Model List + Effective VRAM | v2.5 | 0/? | Not started | - |
+| 24. Wizard Restructure + VRAM Summary + Profiles | v2.5 | 0/? | Not started | - |
 
 ---
 *Roadmap created: 2026-03-17*
-*Last updated: 2026-03-23 — Phase 18 planned: 1 plan (GPUM-01, GPUM-02, GPUM-03)*
+*Last updated: 2026-03-23 — v2.5 roadmap: 6 phases (19-24), 17 requirements mapped*

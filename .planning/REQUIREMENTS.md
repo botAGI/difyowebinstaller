@@ -3,6 +3,51 @@
 **Defined:** 2026-03-20
 **Core Value:** One command installs, secures, and monitors a production-ready AI stack
 
+## v2.5 Requirements
+
+Requirements for v2.5 Modular Model Selection + Xinference Removal. Each maps to roadmap phases.
+
+### Wizard Structure
+
+- [ ] **WIZS-01**: Визард имеет новый порядок шагов: Профиль → LLM → Модель LLM → Embeddings → Reranker → VectorDB → Docling → Мониторинг → TLS → Алерты → UFW → Tunnel → Бэкапы → Сводка с VRAM планом
+- [ ] **WIZS-02**: В конце визарда показывается сводка с VRAM планом (vLLM + TEI-embed + TEI-rerank vs available GPU), предупреждение если не влезает
+
+### Embeddings
+
+- [ ] **EMBD-01**: Новый шаг визарда `_wizard_embedding_model()` с выбором TEI модели (BAAI/bge-m3, Qwen3-Embedding-0.6B, e5-large-instruct, ввод вручную)
+- [ ] **EMBD-02**: Переменные EMBEDDING_MODEL и EMBED_PROVIDER=tei записываются в .env и используются docker-compose
+
+### Reranker
+
+- [ ] **RNKR-01**: Новый шаг визарда `_wizard_reranker_model()` с выбором реранкера (нет / bge-reranker-large / bge-reranker-base / gte-reranker / ввод вручную)
+- [ ] **RNKR-02**: При ENABLE_RERANKER=true поднимается отдельный TEI-rerank контейнер (profile `reranker`) с RERANK_MODEL из .env
+- [ ] **RNKR-03**: VRAM реранкера учитывается в VRAM бюджете и сводке
+
+### Xinference Removal
+
+- [ ] **XINF-01**: Xinference убран из обязательного стека — сервис перенесён в disabled profile или удалён из docker-compose
+- [ ] **XINF-02**: ETL_ENHANCED заменён на ENABLE_DOCLING + ENABLE_RERANKER (раздельные флаги)
+- [ ] **XINF-03**: Docling перенесён в отдельный profile `docling`, независимый от Xinference
+
+### LLM Models
+
+- [ ] **LLMM-01**: Список моделей vLLM обновлён до 17 моделей (AWQ/bf16/MoE секции) с корректными VRAM requirements и TEI offset в рекомендациях
+- [ ] **LLMM-02**: VRAM guard учитывает TEI offset (~2 GB) при расчёте effective_vram для рекомендации
+
+### Compose Profiles
+
+- [ ] **PROF-01**: COMPOSE_PROFILES формируется с новыми профилями: tei, reranker, docling — каждый включается отдельным флагом
+
+### Bugfixes
+
+- [x] **BFIX-43**: preflight_checks() в detect.sh фильтрует agmind/docker процессы при проверке портов 80/443, не показывая ложный WARN
+- [ ] **BFIX-44**: Xinference bce-reranker сломан в v2.3.0 — решается через XINF-01; если xinference остаётся как fallback profile — сменить модель на bge-reranker-v2-m3 или пометить broken
+- [ ] **BFIX-45**: VRAM guard в NON_INTERACTIVE использует effective_vram (gpu - TEI offset ~2 GB) вместо raw VRAM; hard fail если модель > effective_vram
+
+### GPU Enhancement
+
+- [x] **GPUX-01**: `agmind gpu status` маппит GPU PID → container name + загруженная модель вместо сырых PID
+
 ## v2.4 Requirements
 
 Requirements for v2.4 Wizard Models + GPU Management. Each maps to roadmap phases.
@@ -235,6 +280,23 @@ All 24 requirements shipped and confirmed working in v2.0. See git history for d
 | GPUM-01 | Phase 18 | Complete |
 | GPUM-02 | Phase 18 | Complete |
 | GPUM-03 | Phase 18 | Complete |
+| BFIX-43 | Phase 19 | Complete |
+| BFIX-44 | Phase 19 | Pending |
+| BFIX-45 | Phase 19 | Pending |
+| GPUX-01 | Phase 19 | Complete |
+| XINF-01 | Phase 20 | Pending |
+| XINF-02 | Phase 20 | Pending |
+| XINF-03 | Phase 20 | Pending |
+| EMBD-01 | Phase 21 | Pending |
+| EMBD-02 | Phase 21 | Pending |
+| RNKR-01 | Phase 22 | Pending |
+| RNKR-02 | Phase 22 | Pending |
+| RNKR-03 | Phase 22 | Pending |
+| LLMM-01 | Phase 23 | Pending |
+| LLMM-02 | Phase 23 | Pending |
+| WIZS-01 | Phase 24 | Pending |
+| WIZS-02 | Phase 24 | Pending |
+| PROF-01 | Phase 24 | Pending |
 
 **Coverage (v2.2):**
 
@@ -254,6 +316,12 @@ All 24 requirements shipped and confirmed working in v2.0. See git history for d
 - Mapped to phases: 7
 - Unmapped: 0
 
+**Coverage (v2.5):**
+
+- v2.5 requirements: 17 total
+- Mapped to phases: 17
+- Unmapped: 0
+
 ---
 *Requirements defined: 2026-03-20*
-*Last updated: 2026-03-23 — v2.4 traceability added (BFIX-41..42 → Phase 16, WMOD-01..02 → Phase 17, GPUM-01..03 → Phase 18)*
+*Last updated: 2026-03-23 — v2.5 traceability added (17 requirements -> phases 19-24)*
