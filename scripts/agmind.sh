@@ -460,8 +460,25 @@ _gpu_status() {
     fi
     echo ""
 
-    # GPU processes
+    # GPU processes with container name mapping
     echo -e "${BOLD}GPU Processes:${NC}"
+
+    # Build PID -> container map via docker top
+    declare -A pid_container_map
+    local compose_file="${INSTALL_DIR:-/opt/agmind}/docker/docker-compose.yml"
+    while IFS= read -r cname; do
+        [[ -z "$cname" ]] && continue
+        while read -r cpid; do
+            [[ -z "$cpid" ]] && continue
+            pid_container_map["$cpid"]="$cname"
+        done < <(docker top "$cname" -o pid 2>/dev/null | tail -n +2 | xargs -n1)
+    done < <(docker compose -f "$compose_file" ps -q 2>/dev/null | xargs -r docker inspect --format '{{.Name}}' 2>/dev/null | sed 's|^/||')
+
+    # Read model names from .env for annotation
+    local vllm_model tei_model
+    vllm_model="$(_read_env VLLM_MODEL "")"
+    tei_model="$(_read_env EMBEDDING_MODEL "")"
+
     local proc_output
     proc_output="$(nvidia-smi --query-compute-apps=gpu_uuid,pid,process_name,used_gpu_memory \
         --format=csv,noheader,nounits 2>/dev/null || true)"
@@ -469,9 +486,22 @@ _gpu_status() {
         echo "  No GPU compute processes running"
     else
         while IFS=',' read -r uuid pid pname pmem; do
+            pid="$(echo "$pid" | xargs)"
             pname="$(echo "$pname" | xargs)"
             pmem="$(echo "$pmem" | xargs)"
-            printf "  PID %-8s | %-40s | %s MiB\n" "$(echo "$pid" | xargs)" "$pname" "$pmem"
+            local container="${pid_container_map[$pid]:-}"
+            if [[ -n "$container" ]]; then
+                # Determine model name based on container
+                local model_info=""
+                if [[ "$container" == *vllm* && -n "$vllm_model" ]]; then
+                    model_info=" ($vllm_model)"
+                elif [[ "$container" == *tei* && -n "$tei_model" ]]; then
+                    model_info=" ($tei_model)"
+                fi
+                printf "  %-30s | %s MiB\n" "${container}${model_info}" "$pmem"
+            else
+                printf "  PID %-8s | %-20s | %s MiB  (non-agmind)\n" "$pid" "$pname" "$pmem"
+            fi
         done <<< "$proc_output"
     fi
     echo ""
