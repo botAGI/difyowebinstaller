@@ -350,7 +350,7 @@ services:
     environment:
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
       - CUDA_VISIBLE_DEVICES=${TEI_CUDA_DEVICE:-0}
-    command: --model-id BAAI/bge-m3 --port 80
+    command: --model-id ${EMBEDDING_MODEL:-BAAI/bge-m3} --port 80
     volumes:
       - agmind_tei_cache:/data
     healthcheck:
