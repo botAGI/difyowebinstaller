@@ -543,7 +543,7 @@ services:
   # no-new-privileges:true blocks cap_add (SYS_ADMIN needed for sandbox namespaces).
   # cap_drop: ALL + cap_add is incompatible with sandbox's chroot/mount operations.
   sandbox:
-    image: langgenius/dify-sandbox:${SANDBOX_VERSION:-0.2.12}
+    image: langgenius/dify-sandbox:${SANDBOX_VERSION:-0.2.13}
     container_name: agmind-sandbox
     restart: always
     mem_limit: ${SANDBOX_MEM_LIMIT:-1g}

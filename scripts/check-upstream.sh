@@ -27,6 +27,8 @@ DAILY_CHECKS=(
     "TEI-Rerank|TEI_RERANK_VERSION|huggingface/text-embeddings-inference|gh"
     "Weaviate|WEAVIATE_VERSION|weaviate/weaviate|gh"
     "Qdrant|QDRANT_VERSION|qdrant/qdrant|gh"
+    "Plugin Daemon|PLUGIN_DAEMON_VERSION|langgenius/dify-plugin-daemon|gh"
+    "Sandbox|SANDBOX_VERSION|langgenius/dify-sandbox|gh"
     "Docling|DOCLING_SERVE_VERSION|docling-project/docling-serve|gh"
 )
 
@@ -65,6 +67,12 @@ declare -A NO_V_PREFIX=(
     [Promtail]=1
     [Node\ Exporter]=1
     [cAdvisor]=1
+)
+
+# Components whose Docker image tags carry a -local suffix not present
+# in the upstream GitHub release tags (e.g. GitHub 0.5.4 → Docker 0.5.4-local).
+declare -A LOCAL_SUFFIX=(
+    [Plugin\ Daemon]=1
 )
 
 # ============================================================================
@@ -238,6 +246,10 @@ check_component() {
         local report_latest="$latest"
         if [[ -n "${NO_V_PREFIX[$name]+x}" ]]; then
             report_latest="${latest#v}"
+        fi
+        # Append -local suffix for components that use it in Docker tags
+        if [[ -n "${LOCAL_SUFFIX[$name]+x}" ]]; then
+            report_latest="${report_latest%-local}-local"
         fi
         UPDATES+=("${name}|${current}|${report_latest}|${change}")
         echo "  UPDATE: ${name} ${current} -> ${report_latest} (${change})" >&2
