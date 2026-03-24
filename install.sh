@@ -110,8 +110,20 @@ run_phase_with_timeout() {
         if [[ $rc -eq 124 ]]; then
             log_warn "Phase ${name} timed out after ${retry}s"
             if [[ "$name" == "Models" ]]; then
-                log_warn "Модели не скачаны. Скачайте позже: docker compose -f ${INSTALL_DIR}/docker/docker-compose.yml exec ollama ollama pull <model>"
-                log_warn "Установка продолжается..."
+                log_warn "Model download timed out. Containers continue downloading in background."
+                local llm_provider="${LLM_PROVIDER:-ollama}"
+                local embed_provider="${EMBED_PROVIDER:-ollama}"
+                if [[ "$llm_provider" == "ollama" ]]; then
+                    log_warn "Retry: docker exec agmind-ollama ollama pull ${LLM_MODEL:-qwen2.5:14b}"
+                elif [[ "$llm_provider" == "vllm" ]]; then
+                    log_warn "Monitor: docker logs -f agmind-vllm"
+                fi
+                if [[ "$embed_provider" == "tei" ]]; then
+                    log_warn "Monitor: docker logs -f agmind-tei"
+                elif [[ "$embed_provider" == "ollama" ]]; then
+                    log_warn "Retry: docker exec agmind-ollama ollama pull ${EMBEDDING_MODEL:-bge-m3}"
+                fi
+                log_warn "Installation continues..."
                 return 0
             fi
             log_error "Phase ${name} timed out after ${retry}s"
@@ -145,9 +157,25 @@ phase_models_graceful() {
     phase_models || rc=$?
     if [[ $rc -ne 0 ]]; then
         echo ""
-        log_warn "Модели не скачаны или скачаны не полностью."
-        log_warn "Скачайте позже: docker compose -f ${INSTALL_DIR}/docker/docker-compose.yml exec ollama ollama pull <model>"
-        log_warn "Установка продолжается..."
+        log_warn "Models were not fully downloaded."
+        log_warn "Containers continue downloading in background."
+        echo ""
+        local llm_provider="${LLM_PROVIDER:-ollama}"
+        local embed_provider="${EMBED_PROVIDER:-ollama}"
+        local llm_model="${LLM_MODEL:-qwen2.5:14b}"
+        local embedding_model="${EMBEDDING_MODEL:-bge-m3}"
+        if [[ "$llm_provider" == "ollama" ]]; then
+            log_warn "Retry Ollama LLM:       docker exec agmind-ollama ollama pull ${llm_model}"
+        elif [[ "$llm_provider" == "vllm" ]]; then
+            log_warn "Monitor vLLM progress:  docker logs -f agmind-vllm"
+        fi
+        if [[ "$embed_provider" == "ollama" ]]; then
+            log_warn "Retry Ollama Embedding: docker exec agmind-ollama ollama pull ${embedding_model}"
+        elif [[ "$embed_provider" == "tei" ]]; then
+            log_warn "Monitor TEI progress:   docker logs -f agmind-tei"
+        fi
+        echo ""
+        log_warn "Installation continues..."
         return 0  # Do NOT propagate error — installation continues
     fi
 }
