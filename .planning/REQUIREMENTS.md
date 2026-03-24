@@ -10,10 +10,10 @@ Requirements for Install Stability + Update Robustness milestone.
 ### Install Stability
 
 - [x] **ISTB-01**: Health wait парсит Docker logs GPU-контейнеров и показывает реальный статус (Downloading 45%, Loading model); таймаут по отсутствию прогресса (60s без новых строк), не по абсолютному времени
-- [ ] **ISTB-02**: При TLS=letsencrypt nginx стартует с self-signed placeholder cert; certbot получает настоящий cert; nginx reload — без race condition
-- [ ] **ISTB-03**: В LAN профиле Squid не блокирует RFC1918 адреса для webhook-вызовов из Dify sandbox
+- [x] **ISTB-02**: При TLS=letsencrypt nginx стартует с self-signed placeholder cert; certbot получает настоящий cert; nginx reload — без race condition
+- [x] **ISTB-03**: В LAN профиле Squid не блокирует RFC1918 адреса для webhook-вызовов из Dify sandbox
 - [x] **ISTB-04**: Telegram notifications экранируют HTML-спецсимволы (`<`, `>`, `&`) перед отправкой
-- [ ] **ISTB-05**: credentials.txt содержит disclaimer: пароли могут устареть при смене через UI
+- [x] **ISTB-05**: credentials.txt содержит disclaimer: пароли могут устареть при смене через UI
 
 ### Update Robustness
 
@@ -52,10 +52,10 @@ Requirements for Install Stability + Update Robustness milestone.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | ISTB-01 | Phase 25 | Complete |
-| ISTB-02 | Phase 25 | Pending |
-| ISTB-03 | Phase 25 | Pending |
+| ISTB-02 | Phase 25 | Complete |
+| ISTB-03 | Phase 25 | Complete |
 | ISTB-04 | Phase 25 | Complete |
-| ISTB-05 | Phase 25 | Pending |
+| ISTB-05 | Phase 25 | Complete |
 | UPDT-01 | Phase 26 | Pending |
 | UPDT-02 | Phase 26 | Pending |
 | UPDT-03 | Phase 26 | Pending |

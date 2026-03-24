@@ -577,7 +577,7 @@ Plans:
 4. Telegram-уведомление с текстом, содержащим `<`, `>`, `&`, доставляется без ошибки Telegram Bot API (error 400) — спецсимволы экранированы перед отправкой
 5. `credentials.txt` после установки содержит предупреждение вида "Эти пароли актуальны на момент установки. При смене пароля через UI обновите credentials.txt вручную." — пользователь знает о возможном расхождении
 
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 25-01-PLAN.md — GPU health wait log progress + Telegram HTML escape (ISTB-01, ISTB-04)
@@ -645,7 +645,7 @@ Plans:
 - [x] **Phase 22: Reranker Wizard + Docker + VRAM** — Шаг визарда для reranker + TEI-rerank контейнер в profile reranker + VRAM учёт (v2.5) (completed 2026-03-23)
 - [x] **Phase 23: LLM Model List + Effective VRAM** — 17 моделей AWQ/bf16/MoE + TEI offset в рекомендациях (v2.5) (completed 2026-03-23)
 - [x] **Phase 24: Wizard Restructure + VRAM Summary + Profiles** — Новый порядок шагов визарда + VRAM сводка + COMPOSE_PROFILES с tei/reranker/docling (v2.5) (completed 2026-03-23)
-- [ ] **Phase 25: Install Stability** — Health wait по прогрессу логов, certbot placeholder, Squid RFC1918, Telegram HTML escape, credentials disclaimer (v2.6)
+- [x] **Phase 25: Install Stability** — Health wait по прогрессу логов, certbot placeholder, Squid RFC1918, Telegram HTML escape, credentials disclaimer (v2.6) (completed 2026-03-24)
 - [ ] **Phase 26: Update Robustness** — PG major upgrade warning, full release notes в --check, post-rollback doctor, CI manifest auto-sync (v2.6)
 - [ ] **Phase 27: UX Polish** — Streaming model download progress bar, install.sh --dry-run mode (v2.6)
 
@@ -677,7 +677,7 @@ Plans:
 | 22. Reranker Wizard + Docker + VRAM | v2.5 | 2/2 | Complete | 2026-03-23 |
 | 23. LLM Model List + Effective VRAM | v2.5 | 1/1 | Complete | 2026-03-23 |
 | 24. Wizard Restructure + VRAM Summary + Profiles | v2.5 | 1/1 | Complete | 2026-03-23 |
-| 25. Install Stability | 1/2 | In Progress|  | — |
+| 25. Install Stability | 2/2 | Complete   | 2026-03-24 | — |
 | 26. Update Robustness | v2.6 | 0/? | Not started | — |
 | 27. UX Polish | v2.6 | 0/? | Not started | — |
 
