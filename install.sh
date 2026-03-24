@@ -328,6 +328,12 @@ _save_credentials() {
             echo "  Откройте http://${DOMAIN:-$ip}:3000/install"
             echo "  Пароль инициализации: grep INIT_PASSWORD ${INSTALL_DIR}/docker/.env | cut -d= -f2-"
         fi
+        echo ""
+        echo "# ---"
+        echo "# ВНИМАНИЕ: Эти пароли актуальны на момент установки."
+        echo "# При смене пароля через UI обновите этот файл вручную."
+        echo "# WARNING: Passwords reflect installation defaults."
+        echo "# If changed via UI, update this file manually."
     } > "${INSTALL_DIR}/credentials.txt"
     chmod 600 "${INSTALL_DIR}/credentials.txt"
     log_info "Credentials: ${INSTALL_DIR}/credentials.txt"
