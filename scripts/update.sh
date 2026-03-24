@@ -252,6 +252,37 @@ load_current_versions() {
     fi
 }
 
+# Check for PostgreSQL major version change (data-incompatible upgrade)
+check_pg_major_upgrade() {
+    local current_pg="${CURRENT_VERSIONS[POSTGRES_VERSION]:-}"
+    local new_pg="${NEW_VERSIONS[POSTGRES_VERSION]:-}"
+    [[ -z "$current_pg" || -z "$new_pg" ]] && return 0
+    [[ "$current_pg" == "$new_pg" ]] && return 0
+
+    # Extract major version: "16-alpine" -> "16", "17.1-alpine" -> "17"
+    local pg_major_old="${current_pg%%[.-]*}"
+    local pg_major_new="${new_pg%%[.-]*}"
+
+    if [[ "$pg_major_old" != "$pg_major_new" ]]; then
+        echo ""
+        log_error "PostgreSQL major upgrade detected: ${pg_major_old} -> ${pg_major_new}"
+        log_error "Major PostgreSQL upgrades require manual data migration."
+        log_error ""
+        log_error "Before updating, run:"
+        log_error "  1. pg_dump: docker exec agmind-db pg_dumpall -U postgres > backup_pg${pg_major_old}.sql"
+        log_error "  2. Verify backup: ls -lh backup_pg${pg_major_old}.sql"
+        log_error "  3. Then re-run: agmind update --force"
+        log_error ""
+        log_error "See: https://github.com/botAGI/AGmind/blob/main/docs/pg-upgrade.md"
+        echo ""
+        if [[ "$FORCE" != "true" ]]; then
+            log_update "BLOCKED" "PostgreSQL major upgrade ${pg_major_old}->${pg_major_new} — manual migration required"
+            exit 1
+        fi
+        log_warn "Continuing with --force (PostgreSQL major upgrade — operator responsibility)"
+    fi
+}
+
 # Get current release tag from RELEASE file
 get_current_release() {
     if [[ -f "$RELEASE_FILE" ]]; then
@@ -381,15 +412,24 @@ display_bundle_diff() {
         echo "  (${unchanged_count} components unchanged)"
     fi
 
-    # Show first line of release notes (truncated to 80 chars)
+    # Show release notes (up to 10 lines)
     if [[ -n "${RELEASE_NOTES:-}" ]]; then
-        local first_line
-        first_line=$(echo "${RELEASE_NOTES}" | head -1)
-        if [[ ${#first_line} -gt 80 ]]; then
-            first_line="${first_line:0:77}..."
+        echo ""
+        echo "Release notes:"
+        local line_count=0
+        while IFS= read -r line; do
+            [[ -z "$line" && $line_count -eq 0 ]] && continue  # skip leading blank lines
+            echo "  ${line}"
+            line_count=$((line_count + 1))
+            [[ $line_count -ge 10 ]] && break
+        done <<< "${RELEASE_NOTES}"
+        local total_lines
+        total_lines=$(echo "${RELEASE_NOTES}" | wc -l)
+        if [[ "$total_lines" -gt 10 ]]; then
+            echo "  ... (${total_lines} lines total)"
         fi
         echo ""
-        echo "Release notes: ${first_line}"
+        echo "Full changelog: https://github.com/botAGI/AGmind/releases/tag/${RELEASE_TAG}"
     fi
     echo ""
 
@@ -663,6 +703,24 @@ rollback_bundle() {
     fi
 
     verify_rollback || log_warn "Some services may not have rolled back correctly"
+
+    # Post-rollback health verification (UPDT-03)
+    log_info "Running post-rollback health check..."
+    local doctor_output
+    if doctor_output=$("${INSTALL_DIR}/scripts/agmind.sh" doctor --json 2>&1); then
+        log_success "Post-rollback health check passed"
+    else
+        log_warn "Post-rollback health check found issues:"
+        echo "$doctor_output" | head -20
+    fi
+    # Log doctor output to install.log
+    mkdir -p "${INSTALL_DIR}/logs"
+    {
+        echo "--- Post-rollback doctor $(date '+%Y-%m-%d %H:%M:%S') ---"
+        echo "$doctor_output"
+        echo "--- End doctor ---"
+    } >> "${INSTALL_DIR}/logs/install.log"
+
     log_update "MANUAL_ROLLBACK" "Bundle rollback: ${current_release} -> ${rollback_release}"
     send_notification "AGMind rolled back: ${current_release} -> ${rollback_release}"
 }
@@ -941,6 +999,9 @@ main() {
     if [[ "$CHECK_ONLY" == "true" ]]; then
         exit 0
     fi
+
+    # Check for dangerous PostgreSQL major upgrade (UPDT-01)
+    check_pg_major_upgrade
 
     # Confirm update
     if [[ "$AUTO_UPDATE" != "true" ]]; then
