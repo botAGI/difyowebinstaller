@@ -599,7 +599,7 @@ Plans:
 3. После успешного `agmind update --rollback` автоматически запускается `agmind doctor --json` и его результат сохраняется в install.log — если doctor находит проблемы, оператор видит предупреждение с деталями
 4. При создании нового GitHub Release CI action автоматически обновляет `release-manifest.json` в репозитории с новым тегом и датой — мейнтейнеру не нужно редактировать файл вручную
 
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 26-01-PLAN.md — PG major upgrade guard + full release notes + post-rollback doctor (UPDT-01, UPDT-02, UPDT-03)
@@ -650,7 +650,7 @@ Plans:
 - [x] **Phase 23: LLM Model List + Effective VRAM** — 17 моделей AWQ/bf16/MoE + TEI offset в рекомендациях (v2.5) (completed 2026-03-23)
 - [x] **Phase 24: Wizard Restructure + VRAM Summary + Profiles** — Новый порядок шагов визарда + VRAM сводка + COMPOSE_PROFILES с tei/reranker/docling (v2.5) (completed 2026-03-23)
 - [x] **Phase 25: Install Stability** — Health wait по прогрессу логов, certbot placeholder, Squid RFC1918, Telegram HTML escape, credentials disclaimer (v2.6) (completed 2026-03-24)
-- [ ] **Phase 26: Update Robustness** — PG major upgrade warning, full release notes в --check, post-rollback doctor, CI manifest auto-sync (v2.6)
+- [x] **Phase 26: Update Robustness** — PG major upgrade warning, full release notes в --check, post-rollback doctor, CI manifest auto-sync (v2.6) (completed 2026-03-24)
 - [ ] **Phase 27: UX Polish** — Streaming model download progress bar, install.sh --dry-run mode (v2.6)
 
 ## Progress
@@ -682,7 +682,7 @@ Plans:
 | 23. LLM Model List + Effective VRAM | v2.5 | 1/1 | Complete | 2026-03-23 |
 | 24. Wizard Restructure + VRAM Summary + Profiles | v2.5 | 1/1 | Complete | 2026-03-23 |
 | 25. Install Stability | 2/2 | Complete    | 2026-03-24 | — |
-| 26. Update Robustness | 1/2 | In Progress|  | — |
+| 26. Update Robustness | 2/2 | Complete    | 2026-03-24 | — |
 | 27. UX Polish | v2.6 | 0/? | Not started | — |
 
 ---

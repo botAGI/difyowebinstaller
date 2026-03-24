@@ -20,7 +20,7 @@ Requirements for Install Stability + Update Robustness milestone.
 - [x] **UPDT-01**: update.sh при изменении major версии PostgreSQL (16→17) останавливает обновление с warning и предлагает pg_dump
 - [x] **UPDT-02**: update --check показывает полные release notes (до 10 строк + ссылка на GitHub)
 - [x] **UPDT-03**: После rollback автоматически запускается agmind doctor --json для верификации health
-- [ ] **UPDT-04**: CI action автоматически синхронизирует release-manifest.json при создании GitHub Release
+- [x] **UPDT-04**: CI action автоматически синхронизирует release-manifest.json при создании GitHub Release
 
 ### UX Polish
 
@@ -59,7 +59,7 @@ Requirements for Install Stability + Update Robustness milestone.
 | UPDT-01 | Phase 26 | Complete |
 | UPDT-02 | Phase 26 | Complete |
 | UPDT-03 | Phase 26 | Complete |
-| UPDT-04 | Phase 26 | Pending |
+| UPDT-04 | Phase 26 | Complete |
 | UXPL-01 | Phase 27 | Pending |
 | UXPL-02 | Phase 27 | Pending |
 
