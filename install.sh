@@ -138,7 +138,7 @@ phase_wizard()      { run_wizard; }
 phase_docker()      { setup_docker; }
 phase_config()      { ensure_bind_mount_files; export INSTALL_DIR; generate_config "$DEPLOY_PROFILE" "$TEMPLATE_DIR"; enable_gpu_compose; setup_security; [[ "$ENABLE_AUTHELIA" == "true" ]] && configure_authelia "$TEMPLATE_DIR"; _copy_runtime_files; }
 phase_start()       { compose_up; create_openwebui_admin; }
-phase_health()      { wait_healthy "$TIMEOUT_HEALTH" "$TIMEOUT_GPU_HEALTH"; _check_critical_services; }
+phase_health()      { wait_healthy "$TIMEOUT_HEALTH" "$TIMEOUT_GPU_HEALTH"; _check_critical_services; _obtain_letsencrypt_cert; }
 phase_models()      { download_models; }
 phase_models_graceful() {
     local rc=0
@@ -334,6 +334,44 @@ _save_credentials() {
 }
 
 _get_ip() { if [[ "$(uname)" == "Darwin" ]]; then ipconfig getifaddr en0 2>/dev/null || echo "127.0.0.1"; else hostname -I 2>/dev/null | awk '{print $1}' || echo "127.0.0.1"; fi; }
+
+_obtain_letsencrypt_cert() {
+    [[ "${TLS_MODE:-none}" != "letsencrypt" ]] && return 0
+    [[ -z "${DOMAIN:-}" ]] && { log_warn "TLS: letsencrypt requires DOMAIN — skipping cert obtain"; return 0; }
+    [[ -z "${CERTBOT_EMAIL:-}" ]] && { log_warn "TLS: letsencrypt requires CERTBOT_EMAIL — skipping cert obtain"; return 0; }
+
+    local compose_file="${INSTALL_DIR}/docker/docker-compose.yml"
+
+    log_info "Obtaining Let's Encrypt certificate for ${DOMAIN}..."
+
+    # Certbot obtains cert via webroot (nginx serves /.well-known/acme-challenge/)
+    if docker compose -f "$compose_file" run --rm certbot \
+        certonly --webroot \
+        --webroot-path=/var/www/certbot \
+        --email "${CERTBOT_EMAIL}" \
+        --agree-tos --no-eff-email \
+        -d "${DOMAIN}" \
+        --non-interactive 2>&1 | tail -5; then
+
+        log_success "Let's Encrypt certificate obtained for ${DOMAIN}"
+
+        # Update nginx config to use real LE cert paths
+        local nginx_conf="${INSTALL_DIR}/docker/nginx/nginx.conf"
+        local le_cert="/etc/letsencrypt/live/${DOMAIN}/fullchain.pem"
+        local le_key="/etc/letsencrypt/live/${DOMAIN}/privkey.pem"
+        sed -i "s|/etc/nginx/ssl/cert.pem|${le_cert}|g" "$nginx_conf"
+        sed -i "s|/etc/nginx/ssl/key.pem|${le_key}|g" "$nginx_conf"
+
+        # Reload nginx to pick up real cert
+        docker compose -f "$compose_file" exec -T nginx nginx -s reload 2>/dev/null || {
+            log_warn "nginx reload failed — restart nginx manually: docker compose restart nginx"
+        }
+        log_success "Nginx reloaded with Let's Encrypt certificate"
+    else
+        log_warn "Let's Encrypt cert obtain failed — nginx continues with self-signed placeholder"
+        log_warn "Retry manually: docker compose run --rm certbot certonly --webroot --webroot-path=/var/www/certbot -d ${DOMAIN} --email ${CERTBOT_EMAIL} --agree-tos"
+    fi
+}
 
 _install_cli() {
     [[ -d /usr/local/bin ]] && ln -sf "${INSTALL_DIR}/scripts/agmind.sh" /usr/local/bin/agmind && log_success "'agmind' command available"

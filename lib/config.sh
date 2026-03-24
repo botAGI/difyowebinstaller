@@ -385,8 +385,10 @@ generate_nginx_config() {
     local cert_path="/etc/nginx/ssl/cert.pem"
     local key_path="/etc/nginx/ssl/key.pem"
     if [[ "${TLS_MODE:-none}" == "letsencrypt" ]]; then
-        cert_path="/etc/letsencrypt/live/${DOMAIN:-localhost}/fullchain.pem"
-        key_path="/etc/letsencrypt/live/${DOMAIN:-localhost}/privkey.pem"
+        # Initially use placeholder cert (same path as self-signed)
+        # After certbot obtains real cert, _obtain_letsencrypt_cert() switches nginx to LE paths
+        cert_path="/etc/nginx/ssl/cert.pem"
+        key_path="/etc/nginx/ssl/key.pem"
     fi
     _atomic_sed "$nginx_conf" -e "s|__TLS_CERT_PATH__|${cert_path}|g" -e "s|__TLS_KEY_PATH__|${key_path}|g"
 }
@@ -587,7 +589,8 @@ handle_tls_config() {
             _copy_custom_cert "$ssl_dir"
             ;;
         letsencrypt)
-            log_info "TLS: Let's Encrypt (certbot will obtain cert after launch)"
+            log_info "TLS: Let's Encrypt — generating placeholder cert for initial startup..."
+            _generate_self_signed_cert "$ssl_dir"
             ;;
         none)
             log_info "TLS: disabled"
