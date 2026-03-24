@@ -627,6 +627,75 @@ cmd_gpu() {
 }
 
 # ============================================================================
+# INIT-DIFY — manual Dify admin initialization
+# ============================================================================
+
+cmd_init_dify() {
+    if [[ ! -f "$ENV_FILE" ]]; then
+        echo -e "${RED}.env not found: ${ENV_FILE}${NC}" >&2
+        exit 1
+    fi
+
+    if [[ -f "${AGMIND_DIR}/.dify_initialized" ]]; then
+        echo -e "${GREEN}Dify already initialized${NC}"
+        echo "  To re-initialize, remove ${AGMIND_DIR}/.dify_initialized and retry."
+        return 0
+    fi
+
+    local init_password
+    init_password="$(grep '^INIT_PASSWORD=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2-)"
+    if [[ -z "$init_password" ]]; then
+        echo -e "${RED}INIT_PASSWORD not found in .env${NC}" >&2
+        return 1
+    fi
+
+    local admin_password
+    admin_password="$(echo "$init_password" | base64 -d 2>/dev/null || echo "$init_password")"
+
+    # Check API health
+    echo "Checking Dify API health..."
+    if ! docker exec agmind-api curl -sf http://localhost:5001/health >/dev/null 2>&1; then
+        echo -e "${RED}Dify API is not healthy. Wait for it to start or check logs:${NC}"
+        echo "  agmind logs api"
+        return 1
+    fi
+
+    echo "Initializing Dify admin..."
+    local resp
+    resp="$(docker exec \
+        -e "INIT_PWD=${init_password}" \
+        -e "ADMIN_PWD=${admin_password}" \
+        agmind-api sh -c '
+            curl -sf -c /tmp/dify_cookies \
+                -H "Content-Type: application/json" \
+                -d "{\"password\":\"$INIT_PWD\"}" \
+                http://localhost:5001/console/api/init >/dev/null 2>&1
+            curl -sf -b /tmp/dify_cookies \
+                -H "Content-Type: application/json" \
+                -d "{\"email\":\"admin@agmind.local\",\"name\":\"AGMind Admin\",\"password\":\"$ADMIN_PWD\"}" \
+                http://localhost:5001/console/api/setup 2>/dev/null
+            rm -f /tmp/dify_cookies
+        ' 2>&1)" || true
+
+    if echo "$resp" | grep -qi '"result"\|"id"\|"token"\|success'; then
+        echo -e "${GREEN}Dify admin initialized successfully${NC}"
+        touch "${AGMIND_DIR}/.dify_initialized"
+    elif echo "$resp" | grep -qi "already\|initialized\|repeat"; then
+        echo -e "${GREEN}Dify already initialized${NC}"
+        touch "${AGMIND_DIR}/.dify_initialized"
+    else
+        echo -e "${RED}Dify init failed:${NC} $(echo "$resp" | head -c 300)"
+        echo ""
+        echo "Troubleshooting:"
+        echo "  1) Check API logs: agmind logs api"
+        echo "  2) Verify API health: docker exec agmind-api curl -sf http://localhost:5001/health"
+        echo "  3) Try manual init: open http://<host>:3000/install"
+        echo "     Init password: grep INIT_PASSWORD ${ENV_FILE} | cut -d= -f2-"
+        return 1
+    fi
+}
+
+# ============================================================================
 # HELP
 # ============================================================================
 
@@ -645,6 +714,7 @@ Commands:
     status             Show GPUs, VRAM, utilization, assignments
     assign <svc> <id>  Assign GPU to service (vllm, tei)
     assign --auto      Auto-distribute across GPUs
+  init-dify          Initialize Dify admin (if auto-init failed)
   backup             Create backup (root)
   restore <path>     Restore from backup (root)
   update [options]       Update AGMind stack (root)
@@ -674,6 +744,7 @@ case "${1:-help}" in
     stop)           cmd_stop ;;
     start)          cmd_start ;;
     restart)        cmd_restart ;;
+    init-dify)      cmd_init_dify ;;
     backup)         shift; _require_root backup; exec "${SCRIPTS_DIR}/backup.sh" "$@" ;;
     restore)        shift; _require_root restore; exec "${SCRIPTS_DIR}/restore.sh" "$@" ;;
     update)         shift; _require_root update; exec "${SCRIPTS_DIR}/update.sh" "$@" ;;
