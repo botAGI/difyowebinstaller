@@ -14,7 +14,7 @@ __pycache__/
 
 # Internal dev artifacts (kept locally, not in repo)
 .planning/
-workflows/
+/workflows/
 CLAUDE.md
 SPEC.md
 references/
