@@ -544,12 +544,29 @@ enable_gpu_compose() {
             ;;
     esac
 
-    # If vLLM and TEI share the same GPU, reduce vLLM memory utilization
-    # to leave room for TEI (~1.5-2 GB VRAM for bge-m3)
+    # If vLLM and TEI share the same GPU, calculate VRAM split dynamically:
+    # Reserve 4 GB for TEI + CUDA overhead, give the rest to vLLM.
+    # Formula: (total_vram_mb - 4000) / total_vram_mb
+    #   12 GB → 0.67   16 GB → 0.75   24 GB → 0.83   32 GB → 0.87
     if [[ "${LLM_PROVIDER:-}" == "vllm" && "${EMBED_PROVIDER:-}" == "tei" ]]; then
-        log_info "vLLM + TEI on same GPU — setting gpu-memory-utilization=0.75"
-        _atomic_sed "$compose_file" \
-            's|--gpu-memory-utilization 0\.90|--gpu-memory-utilization 0.75|g'
+        local env_file="${INSTALL_DIR}/docker/.env"
+        local tei_reserve_mb=4000
+        local total_vram_mb=""
+        total_vram_mb=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d '[:space:]') || true
+
+        if [[ -n "$total_vram_mb" && "$total_vram_mb" -gt 0 ]] 2>/dev/null; then
+            local vllm_util
+            vllm_util=$(awk "BEGIN { printf \"%.2f\", ($total_vram_mb - $tei_reserve_mb) / $total_vram_mb }")
+            # Clamp to [0.40, 0.92] — never starve vLLM or oversubscribe
+            if awk "BEGIN { exit ($vllm_util < 0.40) ? 0 : 1 }"; then vllm_util="0.40"; fi
+            if awk "BEGIN { exit ($vllm_util > 0.92) ? 0 : 1 }"; then vllm_util="0.92"; fi
+            log_info "GPU VRAM ${total_vram_mb} MB — reserving ${tei_reserve_mb} MB for TEI → VLLM_GPU_MEM_UTIL=${vllm_util}"
+        else
+            # Fallback: can't query VRAM (e.g. CI), use conservative default
+            local vllm_util="0.70"
+            log_warn "Could not query GPU VRAM — using conservative VLLM_GPU_MEM_UTIL=${vllm_util}"
+        fi
+        echo "VLLM_GPU_MEM_UTIL=${vllm_util}" >> "$env_file"
     fi
 }
 
