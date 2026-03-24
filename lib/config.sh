@@ -556,10 +556,10 @@ enable_gpu_compose() {
 
         if [[ -n "$total_vram_mb" && "$total_vram_mb" -gt 0 ]] 2>/dev/null; then
             local vllm_util
-            vllm_util=$(awk "BEGIN { printf \"%.2f\", ($total_vram_mb - $tei_reserve_mb) / $total_vram_mb }")
+            vllm_util=$(LC_NUMERIC=C awk "BEGIN { printf \"%.2f\", ($total_vram_mb - $tei_reserve_mb) / $total_vram_mb }")
             # Clamp to [0.40, 0.92] — never starve vLLM or oversubscribe
-            if awk "BEGIN { exit ($vllm_util < 0.40) ? 0 : 1 }"; then vllm_util="0.40"; fi
-            if awk "BEGIN { exit ($vllm_util > 0.92) ? 0 : 1 }"; then vllm_util="0.92"; fi
+            if LC_NUMERIC=C awk "BEGIN { exit ($vllm_util < 0.40) ? 0 : 1 }"; then vllm_util="0.40"; fi
+            if LC_NUMERIC=C awk "BEGIN { exit ($vllm_util > 0.92) ? 0 : 1 }"; then vllm_util="0.92"; fi
             log_info "GPU VRAM ${total_vram_mb} MB — reserving ${tei_reserve_mb} MB for TEI → VLLM_GPU_MEM_UTIL=${vllm_util}"
         else
             # Fallback: can't query VRAM (e.g. CI), use conservative default
