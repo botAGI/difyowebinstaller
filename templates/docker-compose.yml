@@ -624,7 +624,7 @@ services:
   # ==================== Plugin Daemon ====================
   plugin_daemon:
     <<: *security-defaults
-    image: langgenius/dify-plugin-daemon:${PLUGIN_DAEMON_VERSION:-0.5.3-local}
+    image: langgenius/dify-plugin-daemon:${PLUGIN_DAEMON_VERSION:-0.5.4-local}
     container_name: agmind-plugin-daemon
     restart: always
     mem_limit: ${PLUGIN_MEM_LIMIT:-2g}
@@ -748,6 +748,8 @@ services:
       api:
         condition: service_healthy
       web:
+        condition: service_healthy
+      plugin_daemon:
         condition: service_healthy
       open-webui:
         condition: service_healthy
