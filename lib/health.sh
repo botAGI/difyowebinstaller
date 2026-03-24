@@ -540,9 +540,15 @@ send_alert() {
             tg_token="$(grep '^ALERT_TELEGRAM_TOKEN=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "")"
             tg_chat_id="$(grep '^ALERT_TELEGRAM_CHAT_ID=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "")"
             if [[ -n "$tg_token" && -n "$tg_chat_id" ]]; then
+                # Escape HTML special chars for Telegram parse_mode=HTML.
+                # & must be escaped FIRST to avoid double-escaping.
+                local tg_message="$message"
+                tg_message="${tg_message//&/&amp;}"
+                tg_message="${tg_message//</&lt;}"
+                tg_message="${tg_message//>/&gt;}"
                 curl -sf --max-time 10 -K - \
                     -d "chat_id=${tg_chat_id}" \
-                    -d "text=${message}" \
+                    -d "text=${tg_message}" \
                     -d "parse_mode=HTML" \
                     >/dev/null 2>&1 <<CURL_CFG || true
 url = "https://api.telegram.org/bot${tg_token}/sendMessage"
