@@ -478,21 +478,36 @@ _generate_squid_config() {
     safe_write_file "$squid_conf"
 
     cat > "$squid_conf" << 'SQUIDEOF'
-# AGMind SSRF Proxy — Block metadata, RFC1918, link-local
+# AGMind SSRF Proxy — Block metadata, optionally block RFC1918
 acl localnet src 172.16.0.0/12
 acl SSL_ports port 443
 acl Safe_ports port 80 443 1025-65535
 acl CONNECT method CONNECT
 
-# Block cloud metadata endpoints
+# Block cloud metadata endpoints (always)
 acl metadata dst 169.254.169.254
 acl metadata dst 169.254.0.0/16
 http_access deny metadata
 
-# Block RFC1918 private networks (except Docker)
+SQUIDEOF
+
+    # RFC1918 blocking: VPS/VPN — block all private nets for SSRF safety
+    # LAN/Offline — allow RFC1918 so Dify sandbox can call internal webhooks
+    if [[ "${DEPLOY_PROFILE:-vps}" == "lan" || "${DEPLOY_PROFILE:-vps}" == "offline" ]]; then
+        cat >> "$squid_conf" << 'SQUIDEOF'
+# LAN profile: allow RFC1918 for internal webhook calls from Dify sandbox
+# Metadata endpoints are still blocked above
+SQUIDEOF
+    else
+        cat >> "$squid_conf" << 'SQUIDEOF'
+# Block RFC1918 private networks (SSRF protection for public-facing profiles)
 acl private_nets dst 10.0.0.0/8
 acl private_nets dst 192.168.0.0/16
 http_access deny private_nets
+SQUIDEOF
+    fi
+
+    cat >> "$squid_conf" << 'SQUIDEOF'
 
 # Allow Docker internal networks
 acl docker_nets src 172.16.0.0/12
