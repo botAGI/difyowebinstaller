@@ -618,7 +618,7 @@ _wizard_embedding_model() {
         fi
         # Apply provider-aware default
         case "$EMBED_PROVIDER" in
-            tei)    EMBEDDING_MODEL="intfloat/multilingual-e5-base";;
+            tei)    EMBEDDING_MODEL="deepvk/USER-bge-m3";;
             ollama) EMBEDDING_MODEL="${EMBEDDING_MODEL:-bge-m3}";;
             *)      return 0;;
         esac
@@ -630,10 +630,10 @@ _wizard_embedding_model() {
         echo "Выберите модель эмбеддингов TEI:"
         echo ""
         echo " -- GPU (CUDA) --"
-        echo "  1) intfloat/multilingual-e5-base               — 278M, мультиязычная  [по умолчанию]"
-        echo "  2) intfloat/multilingual-e5-large              — 560M, лучшее качество"
-        echo "  3) intfloat/multilingual-e5-small              — 118M, быстрая"
-        echo "  4) deepvk/USER-bge-m3                          — 359M, русский fine-tune"
+        echo "  1) deepvk/USER-bge-m3                          — 359M, русский fine-tune  [по умолчанию]"
+        echo "  2) intfloat/multilingual-e5-base               — 278M, мультиязычная"
+        echo "  3) intfloat/multilingual-e5-large              — 560M, лучшее качество"
+        echo "  4) intfloat/multilingual-e5-small              — 118M, быстрая"
         echo ""
         echo " -- CPU only (медленнее) --"
         echo "  5) BAAI/bge-m3                                 — 568M, ⚠ CPU only"
@@ -644,18 +644,18 @@ _wizard_embedding_model() {
 
         _ask_choice "Выбор [1-6, Enter=1]: " 1 6 1
         case "$REPLY" in
-            1) EMBEDDING_MODEL="intfloat/multilingual-e5-base";;
-            2) EMBEDDING_MODEL="intfloat/multilingual-e5-large";;
-            3) EMBEDDING_MODEL="intfloat/multilingual-e5-small";;
-            4) EMBEDDING_MODEL="deepvk/USER-bge-m3";;
+            1) EMBEDDING_MODEL="deepvk/USER-bge-m3";;
+            2) EMBEDDING_MODEL="intfloat/multilingual-e5-base";;
+            3) EMBEDDING_MODEL="intfloat/multilingual-e5-large";;
+            4) EMBEDDING_MODEL="intfloat/multilingual-e5-small";;
             5) EMBEDDING_MODEL="BAAI/bge-m3";;
             6) _ask "HuggingFace model ID:" ""
-               EMBEDDING_MODEL="${REPLY:-intfloat/multilingual-e5-base}"
+               EMBEDDING_MODEL="${REPLY:-deepvk/USER-bge-m3}"
                validate_model_name "$EMBEDDING_MODEL" || {
-                   EMBEDDING_MODEL="intfloat/multilingual-e5-base"
-                   log_warn "Некорректное имя модели, используется intfloat/multilingual-e5-base"
+                   EMBEDDING_MODEL="deepvk/USER-bge-m3"
+                   log_warn "Некорректное имя модели, используется deepvk/USER-bge-m3"
                };;
-            *) EMBEDDING_MODEL="intfloat/multilingual-e5-base";;
+            *) EMBEDDING_MODEL="deepvk/USER-bge-m3";;
         esac
 
         # CPU-only models need ONNX backend
