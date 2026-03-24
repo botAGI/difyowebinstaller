@@ -96,6 +96,55 @@ check_container() {
 }
 
 # ============================================================================
+# GPU PROGRESS PARSER
+# ============================================================================
+
+# _parse_gpu_progress — reads last log line of a GPU service and returns a
+# human-readable progress string (e.g. "Downloading 47%" or "Loading model...").
+# Used by wait_healthy Phase 2 to display real progress instead of a blind timer.
+_parse_gpu_progress() {
+    local svc="$1"
+    local compose_file="$2"
+    local last_line
+    last_line="$(docker compose -f "$compose_file" logs --tail=1 --no-log-prefix "$svc" 2>/dev/null | tr -d '\r')"
+    [[ -z "$last_line" ]] && { echo "waiting..."; return; }
+
+    # vLLM / general downloading patterns
+    if echo "$last_line" | grep -qiE 'downloading|fetching'; then
+        local pct
+        pct="$(echo "$last_line" | grep -oE '[0-9]+%' | tail -1)"
+        echo "Downloading ${pct:-...}"
+        return
+    fi
+    if echo "$last_line" | grep -qiE 'loading model|loading weights|loading safetensors'; then
+        echo "Loading model..."
+        return
+    fi
+    if echo "$last_line" | grep -qiE 'warming up|compilation|compiling'; then
+        echo "Warming up..."
+        return
+    fi
+
+    # Ollama patterns
+    if echo "$last_line" | grep -qiE 'pulling.*manifest|pulling.*layer|verifying'; then
+        local pct
+        pct="$(echo "$last_line" | grep -oE '[0-9]+%' | tail -1)"
+        echo "Pulling ${pct:-...}"
+        return
+    fi
+
+    # TEI patterns
+    if echo "$last_line" | grep -qiE 'downloading model|downloading.*shard|warming up model'; then
+        local pct
+        pct="$(echo "$last_line" | grep -oE '[0-9]+%' | tail -1)"
+        echo "Loading ${pct:-...}"
+        return
+    fi
+
+    echo "starting..."
+}
+
+# ============================================================================
 # WAIT HEALTHY
 # ============================================================================
 
@@ -196,6 +245,17 @@ wait_healthy() {
     local gpu_elapsed=0
     local gpu_done=""
 
+    # Per-service inactivity tracking (requires bash 4+ associative arrays — guaranteed: Bash 5+)
+    local -A last_log_hash=()
+    local -A last_change_ts=()
+    local inactivity_timeout=60
+    local now_ts
+    now_ts="$(date +%s)"
+    for svc in "${gpu_svcs[@]}"; do
+        last_log_hash[$svc]=""
+        last_change_ts[$svc]="$now_ts"
+    done
+
     while [[ $gpu_elapsed -lt $gpu_timeout ]]; do
         local gpu_ready=0
 
@@ -224,7 +284,23 @@ wait_healthy() {
                 continue
             fi
 
-            # Still starting — that's expected for GPU containers
+            # Still starting — check inactivity
+            local cur_line
+            cur_line="$(docker compose -f "$compose_file" logs --tail=1 --no-log-prefix "$svc" 2>/dev/null | tr -d '\r')"
+            local cur_hash
+            cur_hash="$(echo "$cur_line" | cksum | cut -d' ' -f1)"
+            if [[ "$cur_hash" != "${last_log_hash[$svc]:-}" ]]; then
+                last_log_hash[$svc]="$cur_hash"
+                last_change_ts[$svc]="$(date +%s)"
+            fi
+            local idle_secs=$(( $(date +%s) - ${last_change_ts[$svc]} ))
+            if [[ $idle_secs -ge $inactivity_timeout ]]; then
+                echo ""
+                log_warn "GPU service '${svc}': no log activity for ${idle_secs}s — marking as stalled"
+                gpu_done="${gpu_done} ${svc} "
+                optional_exited="${optional_exited} ${svc} "
+                gpu_ready=$((gpu_ready + 1))
+            fi
         done
 
         [[ $gpu_ready -ge ${#gpu_svcs[@]} ]] && break
@@ -232,12 +308,15 @@ wait_healthy() {
         sleep "$interval"
         gpu_elapsed=$((gpu_elapsed + interval))
 
-        # Show which GPU services are still loading
-        local waiting_for=""
+        # Show real progress from docker logs for each still-loading GPU service
+        local progress_info=""
         for svc in "${gpu_svcs[@]}"; do
-            [[ "$gpu_done" == *" $svc "* ]] || waiting_for="${waiting_for:+${waiting_for}, }${svc}"
+            [[ "$gpu_done" == *" $svc "* ]] && continue
+            local svc_progress
+            svc_progress="$(_parse_gpu_progress "$svc" "$compose_file")"
+            progress_info="${progress_info:+${progress_info} | }${svc}: ${svc_progress}"
         done
-        echo -ne "\r  ⏳ GPU загрузка моделей... ${gpu_elapsed}/${gpu_timeout}s [${waiting_for}]    "
+        printf "\r  %-80s" "${progress_info}"
     done
 
     echo ""
