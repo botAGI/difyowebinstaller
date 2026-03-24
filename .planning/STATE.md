@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: Install Stability + Update Robustness
 status: planning
-stopped_at: Completed 25-install-stability 25-02-PLAN.md
-last_updated: "2026-03-24T22:41:59.988Z"
+stopped_at: Completed 26-update-robustness 26-01-PLAN.md
+last_updated: "2026-03-24T23:05:26.566Z"
 last_activity: 2026-03-25 — v2.6 roadmap created
 progress:
   total_phases: 3
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 4
+  completed_plans: 3
   percent: 0
 ---
 
@@ -61,6 +61,7 @@ Progress: `[░░░░░░░░░░] 0%`
 Updated after each plan completion.
 | Phase 25 P01 | 118 | 2 tasks | 1 files |
 | Phase 25-install-stability P02 | 2 | 3 tasks | 2 files |
+| Phase 26-update-robustness P01 | 89 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -90,6 +91,8 @@ Updated after each plan completion.
 - [Phase 25]: Telegram HTML escaping order: & first then < and > via bash parameter expansion (no subshell)
 - [Phase 25-install-stability]: letsencrypt TLS: nginx starts with self-signed placeholder cert, certbot obtains real cert post-compose; _obtain_letsencrypt_cert patches nginx.conf paths via sed + reload
 - [Phase 25-install-stability]: Squid RFC1918: LAN/Offline profiles allow 10.x+192.168.x for Dify sandbox webhooks; VPS/VPN block RFC1918 for SSRF protection; 169.254.x always blocked
+- [Phase 26]: PG guard placed after CHECK_ONLY exit: --check shows diff, actual update blocks on major upgrade
+- [Phase 26]: Post-rollback doctor --json always logs to install.log; failure is warning not fatal
 
 ### Architecture Notes
 
@@ -109,6 +112,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-24T22:41:59.986Z
-Stopped at: Completed 25-install-stability 25-02-PLAN.md
+Last session: 2026-03-24T23:05:26.563Z
+Stopped at: Completed 26-update-robustness 26-01-PLAN.md
 Resume file: None
