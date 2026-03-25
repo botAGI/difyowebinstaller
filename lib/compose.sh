@@ -85,34 +85,31 @@ _pull_with_progress() {
 
     log_info "Pulling ${total} images..."
 
-    # Both TTY and non-TTY: run pull in background, monitor inactivity.
-    # TTY gets live output via tail -f; non-TTY gets periodic status lines.
-    local pull_log="/tmp/agmind-pull-$$.log"
-    : > "$pull_log"
     local pull_rc=0
 
-    if [[ -n "$profiles" ]]; then
-        COMPOSE_PROFILES="$profiles" docker compose pull > "$pull_log" 2>&1 &
-    else
-        docker compose pull > "$pull_log" 2>&1 &
-    fi
-    local pull_pid=$!
-
-    # In TTY: stream output live via tail -f (background, killed when pull ends)
-    local tail_pid=0
     if [ -t 1 ]; then
-        tail -f "$pull_log" 2>/dev/null &
-        tail_pid=$!
+        # TTY: run docker compose pull with native interactive progress.
+        # Monitor inactivity by checking image count changes in background.
+        if [[ -n "$profiles" ]]; then
+            COMPOSE_PROFILES="$profiles" docker compose pull &
+        else
+            docker compose pull &
+        fi
+        local pull_pid=$!
+        _monitor_pull_by_images "$pull_pid" images "$total" || pull_rc=$?
+    else
+        # non-TTY: redirect to log file, monitor by file size
+        local pull_log="/tmp/agmind-pull-$$.log"
+        : > "$pull_log"
+        if [[ -n "$profiles" ]]; then
+            COMPOSE_PROFILES="$profiles" docker compose pull > "$pull_log" 2>&1 &
+        else
+            docker compose pull > "$pull_log" 2>&1 &
+        fi
+        local pull_pid=$!
+        _monitor_pull_inactivity "$pull_pid" "$pull_log" || pull_rc=$?
+        rm -f "$pull_log"
     fi
-
-    _monitor_pull_inactivity "$pull_pid" "$pull_log" || pull_rc=$?
-
-    # Cleanup tail -f
-    if [[ $tail_pid -ne 0 ]]; then
-        kill "$tail_pid" 2>/dev/null; wait "$tail_pid" 2>/dev/null || true
-    fi
-
-    rm -f "$pull_log"
 
     # Verify pulled images
     local ready=0
@@ -131,8 +128,45 @@ _pull_with_progress() {
     return 0
 }
 
+# Monitor pull in TTY mode by checking how many images are locally available.
+# Docker compose pull has native progress output attached to terminal.
+# We only interrupt if no new image appears for INACTIVITY_TIMEOUT seconds.
+_monitor_pull_by_images() {
+    local pid="$1"
+    local -n _mon_imgs=$2
+    local total="$3"
+    local inactivity_timeout=120
+    local last_ready=0 idle_secs=0
+
+    # Count already-present images
+    for img in "${_mon_imgs[@]}"; do
+        docker image inspect "$img" >/dev/null 2>&1 && last_ready=$((last_ready + 1))
+    done
+
+    while kill -0 "$pid" 2>/dev/null; do
+        sleep 10
+        local ready=0
+        for img in "${_mon_imgs[@]}"; do
+            docker image inspect "$img" >/dev/null 2>&1 && ready=$((ready + 1))
+        done
+        if [[ $ready -gt $last_ready ]]; then
+            last_ready=$ready
+            idle_secs=0
+        else
+            idle_secs=$((idle_secs + 10))
+        fi
+        if [[ $idle_secs -ge $inactivity_timeout ]]; then
+            log_warn "Pull stalled (no new images for ${inactivity_timeout}s) — interrupting"
+            kill -TERM "$pid" 2>/dev/null
+            wait "$pid" 2>/dev/null || true
+            return 124
+        fi
+    done
+    wait "$pid"
+}
+
 # Monitor background pull process; kill only if no output for INACTIVITY_TIMEOUT seconds.
-# Works in both TTY and non-TTY — this is the ONLY timeout mechanism for pull.
+# non-TTY only — this is the ONLY timeout mechanism for pull.
 # The absolute timeout from _run_with_timeout is a hard safety net; this should trigger first.
 _monitor_pull_inactivity() {
     local pid="$1" logfile="$2"
