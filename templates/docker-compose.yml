@@ -529,6 +529,8 @@ services:
     expose:
       - "8765"
     command: ["docling-serve", "run", "--port", "8765", "--host", "0.0.0.0"]
+    volumes:
+      - agmind_docling_cache:/home/docling/.cache
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8765/health')\" 2>/dev/null || curl -sf http://localhost:8765/health 2>/dev/null || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
@@ -1043,6 +1045,7 @@ volumes:
   agmind_authelia_data:
   agmind_loki_data:
   agmind_promtail_positions:
+  agmind_docling_cache:
   agmind_vllm_cache:
   agmind_tei_cache:
   agmind_tei_rerank_cache:
