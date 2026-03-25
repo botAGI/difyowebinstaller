@@ -537,6 +537,14 @@ main() {
     _acquire_lock
     mkdir -p "$INSTALL_DIR"
 
+    # Save original TTY fd before tee redirect (used by docker compose pull for progress)
+    ORIGINAL_TTY_FD=""
+    if [ -t 1 ]; then
+        exec 3>&1
+        ORIGINAL_TTY_FD=3
+    fi
+    export ORIGINAL_TTY_FD
+
     # Logging (BUG-002 fix: touch+chmod BEFORE tee)
     local LOG_FILE="${INSTALL_DIR}/install.log"
     touch "$LOG_FILE"; chmod 600 "$LOG_FILE"

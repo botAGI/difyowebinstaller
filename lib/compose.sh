@@ -87,15 +87,16 @@ _pull_with_progress() {
 
     local pull_rc=0
 
-    if [ -t 1 ]; then
-        # TTY: pull in foreground (keeps TTY for interactive progress bars).
+    if [[ -n "${ORIGINAL_TTY_FD:-}" ]] && { true >&"${ORIGINAL_TTY_FD}"; } 2>/dev/null; then
+        # TTY: pull in foreground with stdout/stderr on original TTY (fd 3).
+        # This bypasses tee redirect so Docker shows interactive progress bars.
         # Background watchdog kills pull if no new images for 120s.
         _start_pull_watchdog images "$total" &
         local watchdog_pid=$!
         if [[ -n "$profiles" ]]; then
-            COMPOSE_PROFILES="$profiles" docker compose pull || pull_rc=$?
+            COMPOSE_PROFILES="$profiles" docker compose pull >&"${ORIGINAL_TTY_FD}" 2>&1 || pull_rc=$?
         else
-            docker compose pull || pull_rc=$?
+            docker compose pull >&"${ORIGINAL_TTY_FD}" 2>&1 || pull_rc=$?
         fi
         kill "$watchdog_pid" 2>/dev/null; wait "$watchdog_pid" 2>/dev/null || true
     else
