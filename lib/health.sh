@@ -240,7 +240,7 @@ wait_healthy() {
     fi
 
     echo ""
-    log_info "⏳ Ожидание GPU сервисов — загрузка моделей (timeout: ${gpu_timeout}s)..."
+    log_info "Waiting for GPU services — loading models (timeout: ${gpu_timeout}s)..."
 
     local gpu_elapsed=0
     local gpu_done=""
@@ -328,9 +328,9 @@ wait_healthy() {
     done
 
     if [[ -n "$still_waiting" ]]; then
-        log_warn "GPU сервисы ещё загружаются: ${still_waiting}"
-        log_warn "Установка продолжится — модели догрузятся в фоне"
-        log_warn "Проверьте позже: agmind status"
+        log_warn "GPU services still loading: ${still_waiting}"
+        log_warn "Installation continues — models will finish downloading in background"
+        log_warn "Check later: agmind status"
     else
         log_success "All GPU services ready!"
     fi
@@ -490,21 +490,21 @@ verify_services() {
             # Per-service troubleshoot hints
             local hint=""
             case "$name" in
-                vLLM)           hint="Модель ещё грузится. Проверьте: agmind logs vllm" ;;
-                Ollama)         hint="Проверьте: agmind logs ollama" ;;
-                TEI)            hint="Проверьте: agmind logs tei" ;;
-                "Dify Console") hint="Проверьте: agmind logs api" ;;
-                "Open WebUI")   hint="Проверьте: agmind logs open-webui" ;;
-                Weaviate)       hint="Проверьте: agmind logs weaviate" ;;
-                Qdrant)         hint="Проверьте: agmind logs qdrant" ;;
-                *)              hint="Проверьте логи сервиса" ;;
+                vLLM)           hint="Model still loading. Check: agmind logs vllm" ;;
+                Ollama)         hint="Check: agmind logs ollama" ;;
+                TEI)            hint="Check: agmind logs tei" ;;
+                "Dify Console") hint="Check: agmind logs api" ;;
+                "Open WebUI")   hint="Check: agmind logs open-webui" ;;
+                Weaviate)       hint="Check: agmind logs weaviate" ;;
+                Qdrant)         hint="Check: agmind logs qdrant" ;;
+                *)              hint="Check service logs" ;;
             esac
             echo -e "  ${RED}[FAIL]${NC} ${name}  ${url}"
             echo -e "         ${CYAN}-> ${hint}${NC}"
         fi
     done
     echo ""
-    echo -e "  Итого: ${ok}/${total} сервисов доступны"
+    echo -e "  Total: ${ok}/${total} services reachable"
     echo ""
 
     return "$fail"
