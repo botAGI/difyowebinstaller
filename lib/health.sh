@@ -96,6 +96,20 @@ check_container() {
 }
 
 # ============================================================================
+# GPU LOG STREAM HELPERS
+# ============================================================================
+
+# Kill background docker logs -f stream for a GPU service
+_kill_log_stream() {
+    local svc="$1"
+    local -n _lp=$2
+    if [[ -n "${_lp[$svc]:-}" ]]; then
+        kill "${_lp[$svc]}" 2>/dev/null; wait "${_lp[$svc]}" 2>/dev/null || true
+        _lp[$svc]=""
+    fi
+}
+
+# ============================================================================
 # GPU PROGRESS PARSER
 # ============================================================================
 
@@ -240,19 +254,25 @@ wait_healthy() {
     fi
 
     echo ""
-    if [[ "$gpu_timeout" -gt 0 ]]; then
-        log_info "Waiting for GPU services — loading models (timeout: ${gpu_timeout}s)..."
-    else
-        log_info "Waiting for GPU services — loading models (no limit, inactivity timeout: 60s idle)..."
+    log_info "Waiting for GPU services — loading models (inactivity timeout: 60s idle)..."
+
+    local gpu_done=""
+    local -A log_pids=()
+    local inactivity_timeout=60
+
+    # In TTY: stream docker logs -f to terminal for each GPU service
+    if [[ -n "${ORIGINAL_TTY_FD:-}" ]] && { true >&"${ORIGINAL_TTY_FD}"; } 2>/dev/null; then
+        for svc in "${gpu_svcs[@]}"; do
+            echo -e "  ${CYAN}--- ${svc} logs ---${NC}" >&"${ORIGINAL_TTY_FD}"
+            docker compose -f "$compose_file" logs -f --no-log-prefix --since=0s "$svc" 2>/dev/null \
+                | sed "s/^/  [${svc}] /" >&"${ORIGINAL_TTY_FD}" &
+            log_pids[$svc]=$!
+        done
     fi
 
-    local gpu_elapsed=0
-    local gpu_done=""
-
-    # Per-service inactivity tracking (requires bash 4+ associative arrays — guaranteed: Bash 5+)
+    # Per-service inactivity tracking
     local -A last_log_hash=()
     local -A last_change_ts=()
-    local inactivity_timeout=60
     local now_ts
     now_ts="$(date +%s)"
     for svc in "${gpu_svcs[@]}"; do
@@ -260,11 +280,10 @@ wait_healthy() {
         last_change_ts[$svc]="$now_ts"
     done
 
-    while [[ "$gpu_timeout" -eq 0 || $gpu_elapsed -lt $gpu_timeout ]]; do
+    while true; do
         local gpu_ready=0
 
         for svc in "${gpu_svcs[@]}"; do
-            # Already resolved — skip
             [[ "$gpu_done" == *" $svc "* ]] && { gpu_ready=$((gpu_ready + 1)); continue; }
 
             local status
@@ -274,10 +293,10 @@ wait_healthy() {
                 if ! echo "$optional_exited" | grep -q " $svc "; then
                     optional_exited="${optional_exited} ${svc} "
                     log_warn "GPU service '${svc}' exited (non-critical)"
-                    docker compose -f "$compose_file" logs --tail=5 "$svc" 2>/dev/null || true
                 fi
                 gpu_done="${gpu_done} ${svc} "
                 gpu_ready=$((gpu_ready + 1))
+                _kill_log_stream "$svc" log_pids
                 continue
             fi
 
@@ -285,10 +304,11 @@ wait_healthy() {
                 gpu_done="${gpu_done} ${svc} "
                 log_success "${svc} is healthy"
                 gpu_ready=$((gpu_ready + 1))
+                _kill_log_stream "$svc" log_pids
                 continue
             fi
 
-            # Still starting — check inactivity
+            # Still starting — check inactivity via log changes
             local cur_line
             cur_line="$(docker compose -f "$compose_file" logs --tail=1 --no-log-prefix "$svc" 2>/dev/null | tr -d '\r')"
             local cur_hash
@@ -304,25 +324,31 @@ wait_healthy() {
                 gpu_done="${gpu_done} ${svc} "
                 optional_exited="${optional_exited} ${svc} "
                 gpu_ready=$((gpu_ready + 1))
+                _kill_log_stream "$svc" log_pids
             fi
         done
 
         [[ $gpu_ready -ge ${#gpu_svcs[@]} ]] && break
 
         sleep "$interval"
-        gpu_elapsed=$((gpu_elapsed + interval))
 
-        # Show real progress from docker logs for each still-loading GPU service
-        local progress_info=""
-        for svc in "${gpu_svcs[@]}"; do
-            [[ "$gpu_done" == *" $svc "* ]] && continue
-            local svc_progress
-            svc_progress="$(_parse_gpu_progress "$svc" "$compose_file")"
-            progress_info="${progress_info:+${progress_info} | }${svc}: ${svc_progress}"
-        done
-        printf "\r  %-80s" "${progress_info}"
+        # non-TTY: show compact progress line
+        if [[ -z "${ORIGINAL_TTY_FD:-}" ]]; then
+            local progress_info=""
+            for svc in "${gpu_svcs[@]}"; do
+                [[ "$gpu_done" == *" $svc "* ]] && continue
+                local svc_progress
+                svc_progress="$(_parse_gpu_progress "$svc" "$compose_file")"
+                progress_info="${progress_info:+${progress_info} | }${svc}: ${svc_progress}"
+            done
+            printf "\r  %-80s" "${progress_info}"
+        fi
     done
 
+    # Kill any remaining log streams
+    for svc in "${gpu_svcs[@]}"; do
+        _kill_log_stream "$svc" log_pids
+    done
     echo ""
 
     # GPU timeout is a WARNING, not a failure — installation continues
