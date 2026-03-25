@@ -85,26 +85,31 @@ _pull_with_progress() {
 
     log_info "Pulling ${total} images..."
 
-    # Pull with native Docker progress in TTY, inactivity-monitored in non-TTY
+    # Both TTY and non-TTY: run pull in background, monitor inactivity.
+    # TTY gets live output via tail -f; non-TTY gets periodic status lines.
     local pull_log="/tmp/agmind-pull-$$.log"
+    : > "$pull_log"
     local pull_rc=0
 
     if [[ -n "$profiles" ]]; then
-        if [ -t 1 ]; then
-            # TTY: show native Docker progress (no --quiet)
-            COMPOSE_PROFILES="$profiles" docker compose pull 2>&1 | tee "$pull_log" || pull_rc=$?
-        else
-            # non-TTY: run in background, monitor for inactivity
-            COMPOSE_PROFILES="$profiles" docker compose pull > "$pull_log" 2>&1 &
-            _monitor_pull_inactivity $! "$pull_log" || pull_rc=$?
-        fi
+        COMPOSE_PROFILES="$profiles" docker compose pull > "$pull_log" 2>&1 &
     else
-        if [ -t 1 ]; then
-            docker compose pull 2>&1 | tee "$pull_log" || pull_rc=$?
-        else
-            docker compose pull > "$pull_log" 2>&1 &
-            _monitor_pull_inactivity $! "$pull_log" || pull_rc=$?
-        fi
+        docker compose pull > "$pull_log" 2>&1 &
+    fi
+    local pull_pid=$!
+
+    # In TTY: stream output live via tail -f (background, killed when pull ends)
+    local tail_pid=0
+    if [ -t 1 ]; then
+        tail -f "$pull_log" 2>/dev/null &
+        tail_pid=$!
+    fi
+
+    _monitor_pull_inactivity "$pull_pid" "$pull_log" || pull_rc=$?
+
+    # Cleanup tail -f
+    if [[ $tail_pid -ne 0 ]]; then
+        kill "$tail_pid" 2>/dev/null; wait "$tail_pid" 2>/dev/null || true
     fi
 
     rm -f "$pull_log"
@@ -127,11 +132,14 @@ _pull_with_progress() {
 }
 
 # Monitor background pull process; kill only if no output for INACTIVITY_TIMEOUT seconds.
-# This allows slow but active downloads to continue without hitting an absolute timeout.
+# Works in both TTY and non-TTY — this is the ONLY timeout mechanism for pull.
+# The absolute timeout from _run_with_timeout is a hard safety net; this should trigger first.
 _monitor_pull_inactivity() {
     local pid="$1" logfile="$2"
     local inactivity_timeout=120  # kill if no new output for 2 min
     local last_size=0 idle_secs=0
+    local is_tty=false
+    [ -t 1 ] && is_tty=true
 
     while kill -0 "$pid" 2>/dev/null; do
         sleep 5
@@ -140,10 +148,12 @@ _monitor_pull_inactivity() {
         if [[ "$current_size" -gt "$last_size" ]]; then
             last_size="$current_size"
             idle_secs=0
-            # Show last line as status
-            local last_line
-            last_line=$(tail -1 "$logfile" 2>/dev/null || true)
-            [[ -n "$last_line" ]] && log_info "Pull: ${last_line:0:80}"
+            # non-TTY: show periodic status (TTY already has tail -f)
+            if [[ "$is_tty" == "false" ]]; then
+                local last_line
+                last_line=$(tail -1 "$logfile" 2>/dev/null || true)
+                [[ -n "$last_line" ]] && log_info "Pull: ${last_line:0:80}"
+            fi
         else
             idle_secs=$((idle_secs + 5))
         fi
