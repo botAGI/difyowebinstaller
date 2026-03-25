@@ -131,41 +131,64 @@ _pull_with_progress() {
 }
 
 # Background watchdog for TTY pull: kills the foreground docker compose pull
-# if no new image appears for 120 seconds. Runs as a subshell.
+# if no activity for 120 seconds. Detects both new images (Pulled) and
+# disk usage changes (Downloading/Extracting layers). Runs as a subshell.
 _start_pull_watchdog() {
     local -n _wd_imgs=$1
     local total="$2"
     local inactivity_timeout=120
     local last_ready=0 idle_secs=0
+    local last_disk_usage=0
     local parent_pid=$$
 
     for img in "${_wd_imgs[@]}"; do
         docker image inspect "$img" >/dev/null 2>&1 && last_ready=$((last_ready + 1))
     done
+    last_disk_usage=$(_docker_images_bytes)
 
     while true; do
         sleep 10
         # Parent finished — exit watchdog
         kill -0 "$parent_pid" 2>/dev/null || exit 0
 
+        local activity=false
+
+        # Check 1: new completed images
         local ready=0
         for img in "${_wd_imgs[@]}"; do
             docker image inspect "$img" >/dev/null 2>&1 && ready=$((ready + 1))
         done
         if [[ $ready -gt $last_ready ]]; then
             last_ready=$ready
+            activity=true
+        fi
+
+        # Check 2: disk usage change (catches Download + Extract phases)
+        local cur_disk
+        cur_disk=$(_docker_images_bytes)
+        if [[ "$cur_disk" != "$last_disk_usage" ]]; then
+            last_disk_usage="$cur_disk"
+            activity=true
+        fi
+
+        if [[ "$activity" == "true" ]]; then
             idle_secs=0
         else
             idle_secs=$((idle_secs + 10))
         fi
+
         if [[ $idle_secs -ge $inactivity_timeout ]]; then
             echo ""
-            log_warn "Pull stalled (no new images for ${inactivity_timeout}s)"
-            # Find and kill docker compose pull process
+            log_warn "Pull stalled (no activity for ${inactivity_timeout}s)"
             pkill -f "docker compose pull" 2>/dev/null || true
             exit 0
         fi
     done
+}
+
+# Get total Docker image disk usage in bytes (lightweight check for activity)
+_docker_images_bytes() {
+    docker system df --format '{{.Size}}' 2>/dev/null | head -1 | tr -d ' ' || echo "0"
 }
 
 # Monitor background pull process; kill only if no output for INACTIVITY_TIMEOUT seconds.
