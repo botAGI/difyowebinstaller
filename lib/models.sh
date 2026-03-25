@@ -267,7 +267,8 @@ download_models() {
 
     # vLLM/TEI: stream download progress from container logs
     if [[ "$llm_provider" == "vllm" ]]; then
-        local vllm_size="${MODEL_SIZES[${LLM_MODEL:-}]:-}"
+        local vllm_size=""
+        [[ -n "${LLM_MODEL:-}" ]] && vllm_size="${MODEL_SIZES[${LLM_MODEL}]:-}"
         local vllm_label="vLLM model: ${LLM_MODEL:-unknown}"
         [[ -n "$vllm_size" ]] && vllm_label="${vllm_label} (~${vllm_size})"
         log_info "Streaming ${vllm_label} download progress..."
@@ -278,7 +279,8 @@ download_models() {
         fi
     fi
     if [[ "$embed_provider" == "tei" ]]; then
-        local tei_size="${MODEL_SIZES[${EMBEDDING_MODEL:-}]:-}"
+        local tei_size=""
+        [[ -n "${EMBEDDING_MODEL:-}" ]] && tei_size="${MODEL_SIZES[${EMBEDDING_MODEL}]:-}"
         local tei_label="TEI model: ${EMBEDDING_MODEL:-unknown}"
         [[ -n "$tei_size" ]] && tei_label="${tei_label} (~${tei_size})"
         log_info "Streaming ${tei_label} download progress..."
