@@ -24,10 +24,13 @@ Requirements for Install Stability + Update Robustness milestone.
 
 ### UX Polish
 
-- [ ] **UXPL-01**: Скачивание моделей стримит docker logs -f с progress bar; при таймауте — warning + инструкция `agmind model pull`
-- [ ] **UXPL-02**: install.sh поддерживает `--dry-run` режим: валидирует конфиг, проверяет доступность образов, показывает план без запуска контейнеров
+- [x] **UXPL-01**: Скачивание моделей стримит docker logs -f с progress bar; при таймауте — warning + инструкция docker команд для ручного pull
 
 ## Future Requirements (v3.0+)
+
+### Dry-Run Install
+
+- **UXPL-02**: install.sh поддерживает `--dry-run` режим: валидирует конфиг, проверяет доступность образов, показывает план без запуска контейнеров
 
 ### New Services
 
@@ -60,8 +63,8 @@ Requirements for Install Stability + Update Robustness milestone.
 | UPDT-02 | Phase 26 | Complete |
 | UPDT-03 | Phase 26 | Complete |
 | UPDT-04 | Phase 26 | Complete |
-| UXPL-01 | Phase 27 | Pending |
-| UXPL-02 | Phase 27 | Pending |
+| UXPL-01 | Phase 27 | Complete |
+| UXPL-02 | Backlog v3.0+ | Deferred |
 
 **Coverage:**
 - v2.6 requirements: 11 total

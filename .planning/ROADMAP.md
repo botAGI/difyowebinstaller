@@ -612,14 +612,17 @@ Plans:
 **Goal:** Оператор видит наглядный прогресс при скачивании моделей и может безопасно проверить конфигурацию установки без запуска контейнеров.
 
 **Depends on:** Phase 25
-**Requirements:** UXPL-01, UXPL-02
+**Requirements:** UXPL-01
 
 **Success Criteria** (what must be TRUE):
 
-1. При скачивании модели в TTY отображается стриминговый вывод `docker logs -f` с progress bar — оператор видит процент загрузки в реальном времени, а не пустой экран; при таймауте выводится WARNING и инструкция `agmind model pull <model>`
-2. `install.sh --dry-run` завершается без запуска контейнеров, выводит список шагов установки с проверкой конфига, результаты preflight checks (Docker версия, свободное место, порты) и список образов, которые будут скачаны — оператор может убедиться в корректности настроек до реальной установки
+1. При скачивании модели в TTY отображается стриминговый вывод `docker logs -f` (vLLM/TEI) или нативный прогресс Ollama — оператор видит прогресс загрузки в реальном времени, а не пустой экран; в non-TTY — только статусные сообщения
+2. При таймауте контейнер остаётся работать, выводится WARNING с docker-командами для мониторинга (`docker logs -f agmind-vllm`) и ручного pull (`docker exec agmind-ollama ollama pull <model>`), инсталлятор продолжает со следующими фазами
 
-**Plans:** TBD
+**Plans:** 1/1 plans complete
+
+Plans:
+- [ ] 27-01-PLAN.md — Streaming model download progress (vLLM/TEI docker logs) + provider-specific timeout recovery (UXPL-01)
 
 ---
 
@@ -651,7 +654,7 @@ Plans:
 - [x] **Phase 24: Wizard Restructure + VRAM Summary + Profiles** — Новый порядок шагов визарда + VRAM сводка + COMPOSE_PROFILES с tei/reranker/docling (v2.5) (completed 2026-03-23)
 - [x] **Phase 25: Install Stability** — Health wait по прогрессу логов, certbot placeholder, Squid RFC1918, Telegram HTML escape, credentials disclaimer (v2.6) (completed 2026-03-24)
 - [x] **Phase 26: Update Robustness** — PG major upgrade warning, full release notes в --check, post-rollback doctor, CI manifest auto-sync (v2.6) (completed 2026-03-24)
-- [ ] **Phase 27: UX Polish** — Streaming model download progress bar, install.sh --dry-run mode (v2.6)
+- [x] **Phase 27: UX Polish** — Streaming model download progress (all providers), graceful timeout with recovery instructions (v2.6) (completed 2026-03-24)
 
 ## Progress
 
@@ -683,7 +686,7 @@ Plans:
 | 24. Wizard Restructure + VRAM Summary + Profiles | v2.5 | 1/1 | Complete | 2026-03-23 |
 | 25. Install Stability | 2/2 | Complete    | 2026-03-24 | — |
 | 26. Update Robustness | 2/2 | Complete    | 2026-03-24 | — |
-| 27. UX Polish | v2.6 | 0/? | Not started | — |
+| 27. UX Polish | 1/1 | Complete   | 2026-03-24 | — |
 
 ---
 *Roadmap created: 2026-03-17*
