@@ -497,6 +497,7 @@ _squid_agmind_whitelist() {
         local acl_line=""
         for svc in $services; do
             # Skip ssrf_proxy itself and utility containers
+            # Skip ssrf_proxy itself and utility containers
             case "$svc" in
                 ssrf_proxy|redis-lock-cleaner|certbot|promtail|node-exporter|cadvisor) continue ;;
             esac
