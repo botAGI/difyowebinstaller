@@ -466,7 +466,7 @@ post_launch_status() {
     done < <(docker ps --filter "name=agmind-" --filter "health=starting" --format "{{.Names}}" 2>/dev/null || true)
 
     if [[ -n "$gpu_loading" ]]; then
-        log_info "⏳ GPU контейнеры загружают модели (это нормально): ${gpu_loading}"
+        log_info "GPU containers loading models (this is normal): ${gpu_loading}"
     fi
 }
 
