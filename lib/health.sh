@@ -240,7 +240,11 @@ wait_healthy() {
     fi
 
     echo ""
-    log_info "Waiting for GPU services — loading models (timeout: ${gpu_timeout}s)..."
+    if [[ "$gpu_timeout" -gt 0 ]]; then
+        log_info "Waiting for GPU services — loading models (timeout: ${gpu_timeout}s)..."
+    else
+        log_info "Waiting for GPU services — loading models (no limit, inactivity timeout: 60s idle)..."
+    fi
 
     local gpu_elapsed=0
     local gpu_done=""
@@ -256,7 +260,7 @@ wait_healthy() {
         last_change_ts[$svc]="$now_ts"
     done
 
-    while [[ $gpu_elapsed -lt $gpu_timeout ]]; do
+    while [[ "$gpu_timeout" -eq 0 || $gpu_elapsed -lt $gpu_timeout ]]; do
         local gpu_ready=0
 
         for svc in "${gpu_svcs[@]}"; do
