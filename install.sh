@@ -35,6 +35,7 @@ source "${INSTALLER_DIR}/lib/openwebui.sh"
 # --- Global defaults ---
 NON_INTERACTIVE="${NON_INTERACTIVE:-false}"
 FORCE_RESTART="${FORCE_RESTART:-false}"
+TIMEOUT_PULL="${TIMEOUT_PULL:-900}"
 TIMEOUT_START="${TIMEOUT_START:-300}"
 TIMEOUT_HEALTH="${TIMEOUT_HEALTH:-300}"
 TIMEOUT_GPU_HEALTH="${TIMEOUT_GPU_HEALTH:-600}"
@@ -99,6 +100,7 @@ run_phase_with_timeout() {
         return 0
     fi
     if [[ $rc -eq 124 ]]; then
+        # Pull is idempotent — retry directly, no compose down
         local retry=$((timeout * 2))
         log_warn "Phase ${name} timed out after ${timeout}s. Retrying (${retry}s)..."
         rc=0
@@ -126,6 +128,10 @@ run_phase_with_timeout() {
                 log_warn "Installation continues..."
                 return 0
             fi
+            if [[ "$name" == "Pull" ]]; then
+                log_warn "Image pull timed out. Retrying at Start phase with --pull missing."
+                return 0
+            fi
             log_error "Phase ${name} timed out after ${retry}s"
             return 1
         fi
@@ -149,7 +155,8 @@ phase_diagnostics() { run_diagnostics || _confirm_continue "System below minimum
 phase_wizard()      { run_wizard; }
 phase_docker()      { setup_docker; }
 phase_config()      { ensure_bind_mount_files; export INSTALL_DIR; generate_config "$DEPLOY_PROFILE" "$TEMPLATE_DIR"; enable_gpu_compose; setup_security; [[ "$ENABLE_AUTHELIA" == "true" ]] && configure_authelia "$TEMPLATE_DIR"; _copy_runtime_files; }
-phase_start()       { compose_up; create_openwebui_admin; }
+phase_pull()        { compose_pull; }
+phase_start()       { compose_start; create_openwebui_admin; }
 phase_health()      { wait_healthy "$TIMEOUT_HEALTH" "$TIMEOUT_GPU_HEALTH"; _check_critical_services; _obtain_letsencrypt_cert; }
 phase_models()      { download_models; }
 phase_models_graceful() {
@@ -569,16 +576,17 @@ main() {
     fi
 
     # Phase table
-    local t=9
-    [[ $start -le 1 ]] && run_phase 1 $t "Diagnostics"   phase_diagnostics
-    [[ $start -le 2 ]] && run_phase 2 $t "Wizard"        phase_wizard
-    [[ $start -le 3 ]] && run_phase 3 $t "Docker"        phase_docker
-    [[ $start -le 4 ]] && run_phase 4 $t "Configuration" phase_config
-    [[ $start -le 5 ]] && run_phase_with_timeout 5 $t "Start"  phase_start  "$TIMEOUT_START"
-    [[ $start -le 6 ]] && run_phase_with_timeout 6 $t "Health" phase_health "$TIMEOUT_HEALTH"
-    [[ $start -le 7 ]] && run_phase_with_timeout 7 $t "Models" phase_models_graceful "$TIMEOUT_MODELS"
-    [[ $start -le 8 ]] && run_phase 8 $t "Backups"       phase_backups
-    [[ $start -le 9 ]] && run_phase 9 $t "Complete"      phase_complete
+    local t=10
+    [[ $start -le 1  ]] && run_phase 1  $t "Diagnostics"   phase_diagnostics
+    [[ $start -le 2  ]] && run_phase 2  $t "Wizard"        phase_wizard
+    [[ $start -le 3  ]] && run_phase 3  $t "Docker"        phase_docker
+    [[ $start -le 4  ]] && run_phase 4  $t "Configuration" phase_config
+    [[ $start -le 5  ]] && run_phase_with_timeout 5  $t "Pull"   phase_pull   "$TIMEOUT_PULL"
+    [[ $start -le 6  ]] && run_phase_with_timeout 6  $t "Start"  phase_start  "$TIMEOUT_START"
+    [[ $start -le 7  ]] && run_phase_with_timeout 7  $t "Health" phase_health "$TIMEOUT_HEALTH"
+    [[ $start -le 8  ]] && run_phase_with_timeout 8  $t "Models" phase_models_graceful "$TIMEOUT_MODELS"
+    [[ $start -le 9  ]] && run_phase 9  $t "Backups"       phase_backups
+    [[ $start -le 10 ]] && run_phase 10 $t "Complete"      phase_complete
 
     rm -f "${INSTALL_DIR}/.install_phase"
 }
