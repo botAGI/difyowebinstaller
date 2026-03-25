@@ -10,6 +10,8 @@
   <a href="https://github.com/botAGI/AGmind/actions/workflows/lint.yml"><img src="https://github.com/botAGI/AGmind/actions/workflows/lint.yml/badge.svg" alt="Lint"></a>
   <a href="https://github.com/botAGI/AGmind/actions/workflows/test.yml"><img src="https://github.com/botAGI/AGmind/actions/workflows/test.yml/badge.svg" alt="Tests"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License"></a>
+  <img src="https://img.shields.io/badge/docker-ready-blue?logo=docker" alt="Docker Ready">
+  <img src="https://img.shields.io/badge/Ubuntu-24.04_LTS-E95420?logo=ubuntu&logoColor=white" alt="Ubuntu 24.04 LTS">
 </p>
 
 <p align="center">

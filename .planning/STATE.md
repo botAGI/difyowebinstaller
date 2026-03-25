@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: Install Stability + Update Robustness
 status: planning
-stopped_at: Completed 26-update-robustness 26-02-PLAN.md
-last_updated: "2026-03-24T23:11:01.289Z"
+stopped_at: Completed 27-ux-polish-01-PLAN.md
+last_updated: "2026-03-24T23:43:22.443Z"
 last_activity: 2026-03-25 — v2.6 roadmap created
 progress:
   total_phases: 3
-  completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
+  completed_phases: 3
+  total_plans: 5
+  completed_plans: 5
   percent: 0
 ---
 
@@ -63,6 +63,7 @@ Updated after each plan completion.
 | Phase 25-install-stability P02 | 2 | 3 tasks | 2 files |
 | Phase 26-update-robustness P01 | 89 | 1 tasks | 1 files |
 | Phase 26-update-robustness P02 | 178 | 1 tasks | 3 files |
+| Phase 27-ux-polish P01 | 15 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -96,6 +97,8 @@ Updated after each plan completion.
 - [Phase 26]: Post-rollback doctor --json always logs to install.log; failure is warning not fatal
 - [Phase 26-update-robustness]: Python manifest update extracted to scripts/update-release-manifest.py — avoids YAML inline multi-line python3 -c quoting issues
 - [Phase 26-update-robustness]: .gitignore 'workflows/' narrowed to '/workflows/' (root-anchor) — prevents matching .github/workflows/
+- [Phase 27-ux-polish]: _stream_gpu_model_logs: background docker logs -f PID in TTY mode; non-TTY polls --tail=1 every 10s; inactivity guard at 60s warns without killing stream; pull_model() Ollama unchanged
+- [Phase 27-ux-polish]: phase_models_graceful and run_phase_with_timeout Models block use LLM_PROVIDER/EMBED_PROVIDER for conditional recovery commands (Ollama pull vs docker logs -f)
 
 ### Architecture Notes
 
@@ -115,6 +118,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-24T23:06:45.400Z
-Stopped at: Completed 26-update-robustness 26-02-PLAN.md
+Last session: 2026-03-24T23:43:22.440Z
+Stopped at: Completed 27-ux-polish-01-PLAN.md
 Resume file: None
