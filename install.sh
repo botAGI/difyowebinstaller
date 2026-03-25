@@ -37,7 +37,7 @@ NON_INTERACTIVE="${NON_INTERACTIVE:-false}"
 FORCE_RESTART="${FORCE_RESTART:-false}"
 TIMEOUT_START="${TIMEOUT_START:-300}"
 TIMEOUT_HEALTH="${TIMEOUT_HEALTH:-300}"
-TIMEOUT_GPU_HEALTH="${TIMEOUT_GPU_HEALTH:-600}"
+TIMEOUT_GPU_HEALTH="${TIMEOUT_GPU_HEALTH:-0}"  # 0 = no absolute limit, rely on inactivity timeout
 TIMEOUT_MODELS="${TIMEOUT_MODELS:-1200}"
 
 # --- Exclusive lock ---
@@ -578,8 +578,8 @@ main() {
     [[ $start -le 4  ]] && run_phase 4  $t "Configuration" phase_config
     [[ $start -le 5  ]] && run_phase 5  $t "Pull"   phase_pull   # inactivity timeout inside _pull_with_progress
     [[ $start -le 6  ]] && run_phase_with_timeout 6  $t "Start"  phase_start  "$TIMEOUT_START"
-    [[ $start -le 7  ]] && run_phase_with_timeout 7  $t "Health" phase_health "$TIMEOUT_HEALTH"
-    [[ $start -le 8  ]] && run_phase_with_timeout 8  $t "Models" phase_models_graceful "$TIMEOUT_MODELS"
+    [[ $start -le 7  ]] && run_phase 7  $t "Health" phase_health   # inactivity timeout inside wait_healthy
+    [[ $start -le 8  ]] && run_phase 8  $t "Models" phase_models_graceful  # graceful: non-fatal on timeout
     [[ $start -le 9  ]] && run_phase 9  $t "Backups"       phase_backups
     [[ $start -le 10 ]] && run_phase 10 $t "Complete"      phase_complete
 
