@@ -473,6 +473,41 @@ SANDBOXEOF
 # SQUID CONFIG (SSRF protection)
 # ============================================================================
 
+# Generate AGMind service whitelist for Squid from docker-compose.yml.
+# Allows Dify API/sandbox to reach internal services (model validation,
+# webhooks, vector DB queries) by DNS name, before RFC1918 deny rules.
+_squid_agmind_whitelist() {
+    local squid_conf="$1"
+    local compose_file="${INSTALL_DIR}/docker/docker-compose.yml"
+
+    # Extract service names from docker-compose (top-level keys under services:)
+    local services=""
+    if [[ -f "$compose_file" ]]; then
+        services=$(docker compose -f "$compose_file" config --services 2>/dev/null || true)
+    fi
+
+    # Fallback: hardcoded list if docker compose not available yet
+    if [[ -z "$services" ]]; then
+        services="api worker web open-webui pipelines ollama vllm tei tei-rerank db redis weaviate qdrant docling sandbox plugin_daemon nginx"
+    fi
+
+    {
+        echo "# AGMind internal services whitelist (auto-generated from docker-compose)"
+        echo "# Allows Dify to reach local model endpoints, vector DBs, and webhooks"
+        local acl_line=""
+        for svc in $services; do
+            # Skip ssrf_proxy itself and utility containers
+            case "$svc" in
+                ssrf_proxy|redis-lock-cleaner|certbot|promtail|node-exporter|cadvisor) continue ;;
+            esac
+            acl_line="${acl_line} ${svc}"
+        done
+        echo "acl agmind_services dstdomain${acl_line}"
+        echo "http_access allow agmind_services"
+        echo ""
+    } >> "$squid_conf"
+}
+
 _generate_squid_config() {
     local squid_conf="${INSTALL_DIR}/docker/volumes/ssrf_proxy/squid.conf"
     safe_write_file "$squid_conf"
@@ -499,9 +534,15 @@ SQUIDEOF
 # Metadata endpoints are still blocked above
 SQUIDEOF
     else
+        # Build whitelist from docker-compose service names so Dify API/sandbox
+        # can reach internal services (model validation, webhooks, vector DB)
+        # even when RFC1918 is blocked for SSRF protection.
+        _squid_agmind_whitelist "$squid_conf"
+
         cat >> "$squid_conf" << 'SQUIDEOF'
 # Block RFC1918 private networks (SSRF protection for public-facing profiles)
 acl private_nets dst 10.0.0.0/8
+acl private_nets dst 172.16.0.0/12
 acl private_nets dst 192.168.0.0/16
 http_access deny private_nets
 SQUIDEOF
