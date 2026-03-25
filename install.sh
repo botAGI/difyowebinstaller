@@ -35,7 +35,6 @@ source "${INSTALLER_DIR}/lib/openwebui.sh"
 # --- Global defaults ---
 NON_INTERACTIVE="${NON_INTERACTIVE:-false}"
 FORCE_RESTART="${FORCE_RESTART:-false}"
-TIMEOUT_PULL="${TIMEOUT_PULL:-900}"
 TIMEOUT_START="${TIMEOUT_START:-300}"
 TIMEOUT_HEALTH="${TIMEOUT_HEALTH:-300}"
 TIMEOUT_GPU_HEALTH="${TIMEOUT_GPU_HEALTH:-600}"
@@ -126,10 +125,6 @@ run_phase_with_timeout() {
                     log_warn "Retry: docker exec agmind-ollama ollama pull ${EMBEDDING_MODEL:-bge-m3}"
                 fi
                 log_warn "Installation continues..."
-                return 0
-            fi
-            if [[ "$name" == "Pull" ]]; then
-                log_warn "Image pull timed out. Retrying at Start phase with --pull missing."
                 return 0
             fi
             log_error "Phase ${name} timed out after ${retry}s"
@@ -581,7 +576,7 @@ main() {
     [[ $start -le 2  ]] && run_phase 2  $t "Wizard"        phase_wizard
     [[ $start -le 3  ]] && run_phase 3  $t "Docker"        phase_docker
     [[ $start -le 4  ]] && run_phase 4  $t "Configuration" phase_config
-    [[ $start -le 5  ]] && run_phase_with_timeout 5  $t "Pull"   phase_pull   "$TIMEOUT_PULL"
+    [[ $start -le 5  ]] && run_phase 5  $t "Pull"   phase_pull   # inactivity timeout inside _pull_with_progress
     [[ $start -le 6  ]] && run_phase_with_timeout 6  $t "Start"  phase_start  "$TIMEOUT_START"
     [[ $start -le 7  ]] && run_phase_with_timeout 7  $t "Health" phase_health "$TIMEOUT_HEALTH"
     [[ $start -le 8  ]] && run_phase_with_timeout 8  $t "Models" phase_models_graceful "$TIMEOUT_MODELS"
