@@ -88,15 +88,16 @@ _pull_with_progress() {
     local pull_rc=0
 
     if [ -t 1 ]; then
-        # TTY: run docker compose pull with native interactive progress.
-        # Monitor inactivity by checking image count changes in background.
+        # TTY: pull in foreground (keeps TTY for interactive progress bars).
+        # Background watchdog kills pull if no new images for 120s.
+        _start_pull_watchdog images "$total" &
+        local watchdog_pid=$!
         if [[ -n "$profiles" ]]; then
-            COMPOSE_PROFILES="$profiles" docker compose pull &
+            COMPOSE_PROFILES="$profiles" docker compose pull || pull_rc=$?
         else
-            docker compose pull &
+            docker compose pull || pull_rc=$?
         fi
-        local pull_pid=$!
-        _monitor_pull_by_images "$pull_pid" images "$total" || pull_rc=$?
+        kill "$watchdog_pid" 2>/dev/null; wait "$watchdog_pid" 2>/dev/null || true
     else
         # non-TTY: redirect to log file, monitor by file size
         local pull_log="/tmp/agmind-pull-$$.log"
@@ -128,25 +129,26 @@ _pull_with_progress() {
     return 0
 }
 
-# Monitor pull in TTY mode by checking how many images are locally available.
-# Docker compose pull has native progress output attached to terminal.
-# We only interrupt if no new image appears for INACTIVITY_TIMEOUT seconds.
-_monitor_pull_by_images() {
-    local pid="$1"
-    local -n _mon_imgs=$2
-    local total="$3"
+# Background watchdog for TTY pull: kills the foreground docker compose pull
+# if no new image appears for 120 seconds. Runs as a subshell.
+_start_pull_watchdog() {
+    local -n _wd_imgs=$1
+    local total="$2"
     local inactivity_timeout=120
     local last_ready=0 idle_secs=0
+    local parent_pid=$$
 
-    # Count already-present images
-    for img in "${_mon_imgs[@]}"; do
+    for img in "${_wd_imgs[@]}"; do
         docker image inspect "$img" >/dev/null 2>&1 && last_ready=$((last_ready + 1))
     done
 
-    while kill -0 "$pid" 2>/dev/null; do
+    while true; do
         sleep 10
+        # Parent finished — exit watchdog
+        kill -0 "$parent_pid" 2>/dev/null || exit 0
+
         local ready=0
-        for img in "${_mon_imgs[@]}"; do
+        for img in "${_wd_imgs[@]}"; do
             docker image inspect "$img" >/dev/null 2>&1 && ready=$((ready + 1))
         done
         if [[ $ready -gt $last_ready ]]; then
@@ -156,13 +158,13 @@ _monitor_pull_by_images() {
             idle_secs=$((idle_secs + 10))
         fi
         if [[ $idle_secs -ge $inactivity_timeout ]]; then
-            log_warn "Pull stalled (no new images for ${inactivity_timeout}s) — interrupting"
-            kill -TERM "$pid" 2>/dev/null
-            wait "$pid" 2>/dev/null || true
-            return 124
+            echo ""
+            log_warn "Pull stalled (no new images for ${inactivity_timeout}s)"
+            # Find and kill docker compose pull process
+            pkill -f "docker compose pull" 2>/dev/null || true
+            exit 0
         fi
     done
-    wait "$pid"
 }
 
 # Monitor background pull process; kill only if no output for INACTIVITY_TIMEOUT seconds.
