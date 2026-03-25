@@ -41,15 +41,35 @@ build_compose_profiles() {
 }
 
 # ============================================================================
-# PULL WITH PROGRESS
+# PULL IMAGES (standalone phase — called from install.sh phase_pull)
 # ============================================================================
+
+compose_pull() {
+    local docker_dir="${INSTALL_DIR}/docker"
+    cd "$docker_dir"
+
+    build_compose_profiles
+    local profiles="$COMPOSE_PROFILE_STRING"
+
+    if [[ "${DEPLOY_PROFILE:-}" == "offline" ]]; then
+        log_info "Offline profile: skipping image pull"
+        return 0
+    fi
+
+    # Bind mount safety before pull (ensures compose config is valid)
+    ensure_bind_mount_files
+    _nuclear_cleanup_dirs
+    preflight_bind_mount_check
+
+    _pull_with_progress "$profiles"
+}
 
 _pull_with_progress() {
     local profiles="${1:-}"
     local docker_dir="${INSTALL_DIR}/docker"
     cd "$docker_dir"
 
-    # Get list of required images (fallback: skip progress if config fails)
+    # Get list of required images
     local images_raw
     if [[ -n "$profiles" ]]; then
         images_raw="$(COMPOSE_PROFILES="$profiles" docker compose config --images 2>/dev/null)" || { log_info "Pulling images..."; return 0; }
@@ -63,24 +83,33 @@ _pull_with_progress() {
     local total=${#images[@]}
     [[ $total -eq 0 ]] && return 0
 
-    # Start pull in background (fully silenced — we show our own progress)
-    if [[ -n "$profiles" ]]; then
-        COMPOSE_PROFILES="$profiles" docker compose pull --quiet </dev/null >/dev/null 2>/dev/null &
-    else
-        docker compose pull --quiet </dev/null >/dev/null 2>/dev/null &
-    fi
-    local pull_pid=$!
+    log_info "Pulling ${total} images..."
 
-    # Monitor which images appear locally
-    while kill -0 "$pull_pid" 2>/dev/null; do
-        _print_pull_status images "$total"
-        sleep 3
-    done
+    # Pull with native Docker progress in TTY, inactivity-monitored in non-TTY
+    local pull_log="/tmp/agmind-pull-$$.log"
     local pull_rc=0
-    wait "$pull_pid" || pull_rc=$?
 
-    # Clear progress line, print final result
-    printf "\r%-80s\r" ""
+    if [[ -n "$profiles" ]]; then
+        if [ -t 1 ]; then
+            # TTY: show native Docker progress (no --quiet)
+            COMPOSE_PROFILES="$profiles" docker compose pull 2>&1 | tee "$pull_log" || pull_rc=$?
+        else
+            # non-TTY: run in background, monitor for inactivity
+            COMPOSE_PROFILES="$profiles" docker compose pull > "$pull_log" 2>&1 &
+            _monitor_pull_inactivity $! "$pull_log" || pull_rc=$?
+        fi
+    else
+        if [ -t 1 ]; then
+            docker compose pull 2>&1 | tee "$pull_log" || pull_rc=$?
+        else
+            docker compose pull > "$pull_log" 2>&1 &
+            _monitor_pull_inactivity $! "$pull_log" || pull_rc=$?
+        fi
+    fi
+
+    rm -f "$pull_log"
+
+    # Verify pulled images
     local ready=0
     for img in "${images[@]}"; do
         docker image inspect "$img" >/dev/null 2>&1 && ready=$((ready + 1))
@@ -91,35 +120,44 @@ _pull_with_progress() {
     else
         log_warn "Images ready: ${ready}/${total}"
         _validate_pulled_images images "$total" || true
+        return 1
     fi
 
-    # Return non-zero if any images are missing (caller decides severity)
-    [[ $ready -lt $total ]] && return 1
     return 0
 }
 
-_print_pull_status() {
-    local -n _imgs=$1
-    local total="$2"
-    local ready=0 names=""
+# Monitor background pull process; kill only if no output for INACTIVITY_TIMEOUT seconds.
+# This allows slow but active downloads to continue without hitting an absolute timeout.
+_monitor_pull_inactivity() {
+    local pid="$1" logfile="$2"
+    local inactivity_timeout=120  # kill if no new output for 2 min
+    local last_size=0 idle_secs=0
 
-    for img in "${_imgs[@]}"; do
-        if docker image inspect "$img" >/dev/null 2>&1; then
-            ready=$((ready + 1))
-            local short="${img##*/}"
-            short="${short%%:*}"
-            [[ ${#short} -gt 12 ]] && short="${short:0:10}.."
-            names="${names:+${names} }${short} ✓"
+    while kill -0 "$pid" 2>/dev/null; do
+        sleep 5
+        local current_size
+        current_size=$(stat -c%s "$logfile" 2>/dev/null || echo "0")
+        if [[ "$current_size" -gt "$last_size" ]]; then
+            last_size="$current_size"
+            idle_secs=0
+            # Show last line as status
+            local last_line
+            last_line=$(tail -1 "$logfile" 2>/dev/null || true)
+            [[ -n "$last_line" ]] && log_info "Pull: ${last_line:0:80}"
+        else
+            idle_secs=$((idle_secs + 5))
+        fi
+        if [[ $idle_secs -ge $inactivity_timeout ]]; then
+            log_warn "Pull stalled (no output for ${inactivity_timeout}s) — interrupting"
+            kill -TERM "$pid" 2>/dev/null
+            wait "$pid" 2>/dev/null || true
+            return 124
         fi
     done
-
-    # Truncate to fit terminal
-    [[ ${#names} -gt 64 ]] && names="${names:0:61}..."
-    printf "\r  ⬇️  Pulling images... %d/%d [%s]   " "$ready" "$total" "$names"
+    wait "$pid"
 }
 
 # Check each image after pull; print error for each missing one.
-# Returns count of missing images (non-zero = some missing).
 _validate_pulled_images() {
     local -n _vimgs=$1
     local total="$2"
@@ -127,7 +165,7 @@ _validate_pulled_images() {
 
     for img in "${_vimgs[@]}"; do
         if ! docker image inspect "$img" >/dev/null 2>&1; then
-            log_error "Образ не найден: ${img}. Проверьте тег в versions.env"
+            log_error "Image not found: ${img} — check tag in versions.env"
             missing=$((missing + 1))
         fi
     done
@@ -136,10 +174,19 @@ _validate_pulled_images() {
 }
 
 # ============================================================================
-# COMPOSE UP
+# COMPOSE UP (legacy — calls pull + start for backward compat)
 # ============================================================================
 
 compose_up() {
+    compose_pull
+    compose_start
+}
+
+# ============================================================================
+# COMPOSE START (no pull — uses already-pulled images)
+# ============================================================================
+
+compose_start() {
     local docker_dir="${INSTALL_DIR}/docker"
     cd "$docker_dir"
 
@@ -149,7 +196,6 @@ compose_up() {
     # Persist COMPOSE_PROFILES to .env for systemd reboot support (BUG-V3-029)
     local env_file="${INSTALL_DIR}/docker/.env"
     if [[ -f "$env_file" ]]; then
-        # Remove any existing COMPOSE_PROFILES line first
         sed -i '/^COMPOSE_PROFILES=/d' "$env_file"
         echo "COMPOSE_PROFILES=${profiles}" >> "$env_file"
     fi
@@ -159,15 +205,9 @@ compose_up() {
 
     # --- Bind mount safety ---
     ensure_bind_mount_files
-    _nuclear_cleanup_dirs
     preflight_bind_mount_check
 
-    # --- Pull with progress (skip for offline) ---
-    if [[ "${DEPLOY_PROFILE:-}" != "offline" ]]; then
-        _pull_with_progress "$profiles" || log_warn "Не все образы загружены — установка продолжается"
-    fi
-
-    # --- Up (--pull missing as safety net for anything _pull missed) ---
+    # --- Up (--pull missing as safety net for anything pull phase missed) ---
     local pull_flag="--pull missing"
     if [[ "${DEPLOY_PROFILE:-}" == "offline" ]]; then
         pull_flag="--pull never"
