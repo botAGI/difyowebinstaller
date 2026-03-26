@@ -99,20 +99,23 @@ check_container() {
 # GPU HEALTH HELPERS
 # ============================================================================
 
-# Check if GPU service responds to HTTP health probe directly (faster than Docker healthcheck)
+# Check if GPU service responds to HTTP health probe directly (faster than Docker healthcheck).
+# Tries curl, wget, python — GPU containers often lack standard HTTP tools.
 _gpu_svc_responds() {
     local svc="$1" compose_file="$2"
     local port=""
     case "$svc" in
-        vllm)       port=8000 ;;
+        vllm)           port=8000 ;;
         tei|tei-rerank) port=80 ;;
-        ollama)     port=11434 ;;
-        *)          return 1 ;;
+        ollama)         port=11434 ;;
+        *)              return 1 ;;
     esac
     local container
     container="$(docker compose -f "$compose_file" ps --format '{{.Name}}' "$svc" 2>/dev/null | head -1)"
     [[ -z "$container" ]] && return 1
-    docker exec "$container" curl -sf "http://localhost:${port}/health" >/dev/null 2>&1
+    docker exec "$container" curl -sf "http://localhost:${port}/health" >/dev/null 2>&1 \
+        || docker exec "$container" wget -qO- "http://localhost:${port}/health" >/dev/null 2>&1 \
+        || docker exec "$container" python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:${port}/health')" >/dev/null 2>&1
 }
 
 # ============================================================================

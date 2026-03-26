@@ -269,29 +269,42 @@ download_models() {
         [[ "$embed_provider" == "ollama" ]] && pull_model "$embedding_model" "Embedding (${embedding_model})"
     fi
 
-    # vLLM/TEI: stream download progress from container logs
+    # vLLM/TEI: models download at container startup (Phase 6).
+    # Only stream logs if container is NOT yet healthy — skip if already loaded.
     if [[ "$llm_provider" == "vllm" ]]; then
-        local vllm_size=""
-        [[ -n "${LLM_MODEL:-}" ]] && vllm_size="${MODEL_SIZES[${LLM_MODEL}]:-}"
-        local vllm_label="vLLM model: ${LLM_MODEL:-unknown}"
-        [[ -n "$vllm_size" ]] && vllm_label="${vllm_label} (~${vllm_size})"
-        log_info "Streaming ${vllm_label} download progress..."
-        if ! _stream_gpu_model_logs "agmind-vllm" "vLLM" "${TIMEOUT_GPU_HEALTH:-600}"; then
-            log_warn "vLLM model download did not complete within timeout"
-            log_warn "Container continues downloading in background"
-            log_warn "Monitor progress: docker logs -f agmind-vllm"
+        local vllm_health
+        vllm_health="$(docker inspect --format='{{.State.Health.Status}}' agmind-vllm 2>/dev/null || echo "none")"
+        if [[ "$vllm_health" == "healthy" ]]; then
+            log_success "vLLM model already loaded"
+        else
+            local vllm_size=""
+            [[ -n "${LLM_MODEL:-}" ]] && vllm_size="${MODEL_SIZES[${LLM_MODEL}]:-}"
+            local vllm_label="vLLM model: ${LLM_MODEL:-unknown}"
+            [[ -n "$vllm_size" ]] && vllm_label="${vllm_label} (~${vllm_size})"
+            log_info "Waiting for ${vllm_label}..."
+            if ! _stream_gpu_model_logs "agmind-vllm" "vLLM" "${TIMEOUT_GPU_HEALTH:-0}"; then
+                log_warn "vLLM model not fully loaded yet"
+                log_warn "Container continues in background"
+                log_warn "Monitor: docker logs -f agmind-vllm"
+            fi
         fi
     fi
     if [[ "$embed_provider" == "tei" ]]; then
-        local tei_size=""
-        [[ -n "${EMBEDDING_MODEL:-}" ]] && tei_size="${MODEL_SIZES[${EMBEDDING_MODEL}]:-}"
-        local tei_label="TEI model: ${EMBEDDING_MODEL:-unknown}"
-        [[ -n "$tei_size" ]] && tei_label="${tei_label} (~${tei_size})"
-        log_info "Streaming ${tei_label} download progress..."
-        if ! _stream_gpu_model_logs "agmind-tei" "TEI" "${TIMEOUT_GPU_HEALTH:-600}"; then
-            log_warn "TEI model download did not complete within timeout"
-            log_warn "Container continues downloading in background"
-            log_warn "Monitor progress: docker logs -f agmind-tei"
+        local tei_health
+        tei_health="$(docker inspect --format='{{.State.Health.Status}}' agmind-tei 2>/dev/null || echo "none")"
+        if [[ "$tei_health" == "healthy" ]]; then
+            log_success "TEI model already loaded"
+        else
+            local tei_size=""
+            [[ -n "${EMBEDDING_MODEL:-}" ]] && tei_size="${MODEL_SIZES[${EMBEDDING_MODEL}]:-}"
+            local tei_label="TEI model: ${EMBEDDING_MODEL:-unknown}"
+            [[ -n "$tei_size" ]] && tei_label="${tei_label} (~${tei_size})"
+            log_info "Waiting for ${tei_label}..."
+            if ! _stream_gpu_model_logs "agmind-tei" "TEI" "${TIMEOUT_GPU_HEALTH:-0}"; then
+                log_warn "TEI model not fully loaded yet"
+                log_warn "Container continues in background"
+                log_warn "Monitor: docker logs -f agmind-tei"
+            fi
         fi
     fi
     if [[ "$llm_provider" == "external" || "$llm_provider" == "skip" ]]; then
