@@ -139,6 +139,8 @@ services:
     environment:
       <<: *shared-env
       MODE: api
+      SSRF_PROXY_HTTP_URL: ""
+      SSRF_PROXY_HTTPS_URL: ""
     volumes:
       - ./volumes/app/storage:/app/api/storage
     healthcheck:
@@ -173,6 +175,8 @@ services:
     environment:
       <<: *shared-env
       MODE: worker
+      SSRF_PROXY_HTTP_URL: ""
+      SSRF_PROXY_HTTPS_URL: ""
     volumes:
       - ./volumes/app/storage:/app/api/storage
     healthcheck:
