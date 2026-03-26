@@ -56,7 +56,7 @@ declare -A MODEL_SIZES=(
 _stream_gpu_model_logs() {
     local container="$1"
     local label="$2"
-    local timeout="${3:-600}"
+    local timeout="${3:-0}"  # 0 = no limit, rely on healthcheck + inactivity
     local elapsed=0
     local poll_interval=5
 
@@ -66,18 +66,20 @@ _stream_gpu_model_logs() {
         return 1
     fi
 
-    if [ -t 1 ]; then
-        # TTY path: stream raw logs, poll health separately
-        docker logs -f --since=0s "$container" 2>&1 &
+    if [[ -n "${ORIGINAL_TTY_FD:-}" ]] && { true >&"${ORIGINAL_TTY_FD}"; } 2>/dev/null; then
+        # TTY path: stream logs to real terminal (fd 3), filter healthcheck noise
+        docker logs -f --since=0s "$container" 2>&1 \
+            | grep -v --line-buffered -E 'curl.*health|wget.*health|healthcheck|GET /health' \
+            | sed --unbuffered "s/^/  [${label}] /" >&"${ORIGINAL_TTY_FD}" &
         local logs_pid=$!
-        local last_log_size=0
+        local last_log_hash=""
         local inactivity=0
 
-        while [[ $elapsed -lt $timeout ]]; do
+        while [[ "$timeout" -eq 0 || $elapsed -lt $timeout ]]; do
             sleep "$poll_interval"
             elapsed=$((elapsed + poll_interval))
 
-            # Check health
+            # Check health — stop immediately when model is loaded
             local health
             health="$(docker inspect --format='{{.State.Health.Status}}' "$container" 2>/dev/null || echo "none")"
             if [[ "$health" == "healthy" ]]; then
@@ -85,18 +87,20 @@ _stream_gpu_model_logs() {
                 return 0
             fi
 
-            # Inactivity guard: check if log size changed
-            local cur_size
-            cur_size="$(docker logs "$container" 2>&1 | wc -c || echo "0")"
-            if [[ "$cur_size" -eq "$last_log_size" ]]; then
+            # Inactivity guard: check last real log line (not healthcheck)
+            local cur_line
+            cur_line="$(docker logs --tail=5 "$container" 2>&1 | grep -v -E 'curl.*health|wget.*health|healthcheck|GET /health' | tail -1 | tr -d '\r')"
+            local cur_hash
+            cur_hash="$(echo "$cur_line" | cksum | cut -d' ' -f1)"
+            if [[ "$cur_hash" != "$last_log_hash" ]]; then
+                last_log_hash="$cur_hash"
+                inactivity=0
+            else
                 inactivity=$((inactivity + poll_interval))
                 if [[ $inactivity -ge 60 ]]; then
-                    log_warn "${label}: no log output for 60s, may be stalled"
+                    log_warn "${label}: no log activity for 60s, may be stalled"
                     inactivity=0
                 fi
-            else
-                inactivity=0
-                last_log_size="$cur_size"
             fi
         done
 
@@ -105,7 +109,7 @@ _stream_gpu_model_logs() {
     else
         # Non-TTY path: poll last log line every 10s
         poll_interval=10
-        while [[ $elapsed -lt $timeout ]]; do
+        while [[ "$timeout" -eq 0 || $elapsed -lt $timeout ]]; do
             sleep "$poll_interval"
             elapsed=$((elapsed + poll_interval))
 
@@ -123,7 +127,7 @@ _stream_gpu_model_logs() {
                 local summary="${last_line:0:80}"
                 log_info "${label}: ${summary}"
             else
-                log_info "${label}: waiting... (${elapsed}s / ${timeout}s)"
+                log_info "${label}: waiting... (${elapsed}s)"
             fi
         done
 
