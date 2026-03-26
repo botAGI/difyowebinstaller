@@ -69,7 +69,7 @@ _stream_gpu_model_logs() {
     if [[ -n "${ORIGINAL_TTY_FD:-}" ]] && { true >&"${ORIGINAL_TTY_FD}"; } 2>/dev/null; then
         # TTY path: stream logs to real terminal (fd 3), filter healthcheck noise
         docker logs -f --since=0s "$container" 2>&1 \
-            | grep -v --line-buffered -E 'curl.*health|wget.*health|healthcheck|GET /health' \
+            | grep -v --line-buffered -E '/health|healthcheck' \
             | sed --unbuffered "s/^/  [${label}] /" >&"${ORIGINAL_TTY_FD}" &
         local logs_pid=$!
         local last_log_hash=""
@@ -89,7 +89,7 @@ _stream_gpu_model_logs() {
 
             # Inactivity guard: check last real log line (not healthcheck)
             local cur_line
-            cur_line="$(docker logs --tail=5 "$container" 2>&1 | grep -v -E 'curl.*health|wget.*health|healthcheck|GET /health' | tail -1 | tr -d '\r')"
+            cur_line="$(docker logs --tail=5 "$container" 2>&1 | grep -v -E '/health|healthcheck' | tail -1 | tr -d '\r')"
             local cur_hash
             cur_hash="$(echo "$cur_line" | cksum | cut -d' ' -f1)"
             if [[ "$cur_hash" != "$last_log_hash" ]]; then

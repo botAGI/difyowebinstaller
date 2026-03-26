@@ -109,6 +109,22 @@ _kill_log_stream() {
     fi
 }
 
+# Check if GPU service responds to HTTP health probe directly (faster than Docker healthcheck)
+_gpu_svc_responds() {
+    local svc="$1" compose_file="$2"
+    local port=""
+    case "$svc" in
+        vllm)       port=8000 ;;
+        tei|tei-rerank) port=80 ;;
+        ollama)     port=11434 ;;
+        *)          return 1 ;;
+    esac
+    local container
+    container="$(docker compose -f "$compose_file" ps --format '{{.Name}}' "$svc" 2>/dev/null | head -1)"
+    [[ -z "$container" ]] && return 1
+    docker exec "$container" curl -sf "http://localhost:${port}/health" >/dev/null 2>&1
+}
+
 # ============================================================================
 # GPU PROGRESS PARSER
 # ============================================================================
@@ -261,11 +277,13 @@ wait_healthy() {
     local inactivity_timeout=60
 
     # In TTY: stream docker logs -f to terminal for each GPU service
+    # Filter healthcheck noise (GET /health, curl health, etc.)
     if [[ -n "${ORIGINAL_TTY_FD:-}" ]] && { true >&"${ORIGINAL_TTY_FD}"; } 2>/dev/null; then
         for svc in "${gpu_svcs[@]}"; do
             echo -e "  ${CYAN}--- ${svc} logs ---${NC}" >&"${ORIGINAL_TTY_FD}"
             docker compose -f "$compose_file" logs -f --no-log-prefix --since=0s "$svc" 2>/dev/null \
-                | sed "s/^/  [${svc}] /" >&"${ORIGINAL_TTY_FD}" &
+                | grep -v --line-buffered -iE '/health|healthcheck' \
+                | sed --unbuffered "s/^/  [${svc}] /" >&"${ORIGINAL_TTY_FD}" &
             log_pids[$svc]=$!
         done
     fi
@@ -300,7 +318,7 @@ wait_healthy() {
                 continue
             fi
 
-            if echo "$status" | grep -qi "healthy"; then
+            if echo "$status" | grep -qi "healthy" || _gpu_svc_responds "$svc" "$compose_file"; then
                 gpu_done="${gpu_done} ${svc} "
                 log_success "${svc} is healthy"
                 gpu_ready=$((gpu_ready + 1))
