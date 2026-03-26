@@ -96,18 +96,8 @@ check_container() {
 }
 
 # ============================================================================
-# GPU LOG STREAM HELPERS
+# GPU HEALTH HELPERS
 # ============================================================================
-
-# Kill background docker logs -f stream for a GPU service
-_kill_log_stream() {
-    local svc="$1"
-    local -n _lp=$2
-    if [[ -n "${_lp[$svc]:-}" ]]; then
-        kill "${_lp[$svc]}" 2>/dev/null; wait "${_lp[$svc]}" 2>/dev/null || true
-        _lp[$svc]=""
-    fi
-}
 
 # Check if GPU service responds to HTTP health probe directly (faster than Docker healthcheck)
 _gpu_svc_responds() {
@@ -270,23 +260,10 @@ wait_healthy() {
     fi
 
     echo ""
-    log_info "Waiting for GPU services — loading models (inactivity timeout: 60s idle)..."
+    log_info "Waiting for GPU services — loading models..."
 
     local gpu_done=""
-    local -A log_pids=()
-    local inactivity_timeout=60
-
-    # In TTY: stream docker logs -f to terminal for each GPU service
-    # Filter healthcheck noise (GET /health, curl health, etc.)
-    if [[ -n "${ORIGINAL_TTY_FD:-}" ]] && { true >&"${ORIGINAL_TTY_FD}"; } 2>/dev/null; then
-        for svc in "${gpu_svcs[@]}"; do
-            echo -e "  ${CYAN}--- ${svc} logs ---${NC}" >&"${ORIGINAL_TTY_FD}"
-            docker compose -f "$compose_file" logs -f --no-log-prefix --since=0s "$svc" 2>/dev/null \
-                | grep -v --line-buffered -iE '/health|healthcheck' \
-                | sed --unbuffered "s/^/  [${svc}] /" >&"${ORIGINAL_TTY_FD}" &
-            log_pids[$svc]=$!
-        done
-    fi
+    local inactivity_timeout=120  # stall = no log change AND no HTTP response for 2 min
 
     # Per-service inactivity tracking
     local -A last_log_hash=()
@@ -307,6 +284,7 @@ wait_healthy() {
             local status
             status="$(docker compose -f "$compose_file" ps --format '{{.Status}}' "$svc" 2>/dev/null || echo "")"
 
+            # Exited — mark done, not an error (optional GPU service)
             if echo "$status" | grep -qi "exited"; then
                 if ! echo "$optional_exited" | grep -q " $svc "; then
                     optional_exited="${optional_exited} ${svc} "
@@ -314,19 +292,18 @@ wait_healthy() {
                 fi
                 gpu_done="${gpu_done} ${svc} "
                 gpu_ready=$((gpu_ready + 1))
-                _kill_log_stream "$svc" log_pids
                 continue
             fi
 
+            # Healthy — via Docker status OR direct HTTP probe
             if echo "$status" | grep -qi "healthy" || _gpu_svc_responds "$svc" "$compose_file"; then
                 gpu_done="${gpu_done} ${svc} "
                 log_success "${svc} is healthy"
                 gpu_ready=$((gpu_ready + 1))
-                _kill_log_stream "$svc" log_pids
                 continue
             fi
 
-            # Still starting — check inactivity via log changes
+            # Still starting — check log activity (any line, including healthchecks)
             local cur_line
             cur_line="$(docker compose -f "$compose_file" logs --tail=1 --no-log-prefix "$svc" 2>/dev/null | tr -d '\r')"
             local cur_hash
@@ -338,11 +315,11 @@ wait_healthy() {
             local idle_secs=$(( $(date +%s) - ${last_change_ts[$svc]} ))
             if [[ $idle_secs -ge $inactivity_timeout ]]; then
                 echo ""
-                log_warn "GPU service '${svc}': no log activity for ${idle_secs}s — marking as stalled"
+                log_warn "GPU service '${svc}': no activity for ${idle_secs}s — continuing without it"
+                log_warn "Check manually: docker logs --tail 20 agmind-${svc}"
                 gpu_done="${gpu_done} ${svc} "
                 optional_exited="${optional_exited} ${svc} "
                 gpu_ready=$((gpu_ready + 1))
-                _kill_log_stream "$svc" log_pids
             fi
         done
 
@@ -350,22 +327,15 @@ wait_healthy() {
 
         sleep "$interval"
 
-        # non-TTY: show compact progress line
-        if [[ -z "${ORIGINAL_TTY_FD:-}" ]]; then
-            local progress_info=""
-            for svc in "${gpu_svcs[@]}"; do
-                [[ "$gpu_done" == *" $svc "* ]] && continue
-                local svc_progress
-                svc_progress="$(_parse_gpu_progress "$svc" "$compose_file")"
-                progress_info="${progress_info:+${progress_info} | }${svc}: ${svc_progress}"
-            done
-            printf "\r  %-80s" "${progress_info}"
-        fi
-    done
-
-    # Kill any remaining log streams
-    for svc in "${gpu_svcs[@]}"; do
-        _kill_log_stream "$svc" log_pids
+        # Compact progress line (works in both TTY and non-TTY)
+        local progress_info=""
+        for svc in "${gpu_svcs[@]}"; do
+            [[ "$gpu_done" == *" $svc "* ]] && continue
+            local svc_progress
+            svc_progress="$(_parse_gpu_progress "$svc" "$compose_file")"
+            progress_info="${progress_info:+${progress_info} | }${svc}: ${svc_progress}"
+        done
+        echo -e "  ${progress_info}"
     done
     echo ""
 
