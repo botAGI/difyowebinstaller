@@ -626,7 +626,7 @@ services:
   # ==================== Plugin Daemon ====================
   plugin_daemon:
     <<: *security-defaults
-    image: langgenius/dify-plugin-daemon:${PLUGIN_DAEMON_VERSION:-main}
+    image: langgenius/dify-plugin-daemon:${PLUGIN_DAEMON_VERSION:-main-local}
     container_name: agmind-plugin-daemon
     restart: always
     mem_limit: ${PLUGIN_MEM_LIMIT:-2g}
