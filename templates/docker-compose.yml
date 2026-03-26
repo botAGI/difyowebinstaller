@@ -127,7 +127,7 @@ services:
   # ==================== Dify API ====================
   api:
     <<: *security-defaults
-    image: langgenius/dify-api:${DIFY_VERSION:-1.13.2}
+    image: langgenius/dify-api:${DIFY_VERSION:-main}
     container_name: agmind-api
     restart: always
     mem_limit: ${API_MEM_LIMIT:-2g}
@@ -161,7 +161,7 @@ services:
   # ==================== Dify Worker ====================
   worker:
     <<: *security-defaults
-    image: langgenius/dify-api:${DIFY_VERSION:-1.13.2}
+    image: langgenius/dify-api:${DIFY_VERSION:-main}
     container_name: agmind-worker
     restart: always
     mem_limit: ${WORKER_MEM_LIMIT:-2g}
@@ -195,7 +195,7 @@ services:
   # ==================== Dify Web (Console UI) ====================
   web:
     <<: *security-defaults
-    image: langgenius/dify-web:${DIFY_VERSION:-1.13.2}
+    image: langgenius/dify-web:${DIFY_VERSION:-main}
     container_name: agmind-web
     restart: always
     mem_limit: ${WEB_MEM_LIMIT:-512m}

@@ -7,14 +7,14 @@
     "dify-api": {
       "registry": "docker.io",
       "image": "langgenius/dify-api",
-      "tag": "1.13.2",
+      "tag": "main",
       "digest": "",
       "platforms": ["linux/amd64", "linux/arm64"]
     },
     "dify-web": {
       "registry": "docker.io",
       "image": "langgenius/dify-web",
-      "tag": "1.13.2",
+      "tag": "main",
       "digest": "",
       "platforms": ["linux/amd64", "linux/arm64"]
     },
