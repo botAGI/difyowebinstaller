@@ -91,7 +91,7 @@
     "dify-plugin-daemon": {
       "registry": "docker.io",
       "image": "langgenius/dify-plugin-daemon",
-      "tag": "main",
+      "tag": "main-local",
       "digest": "",
       "platforms": ["linux/amd64", "linux/arm64"]
     },
