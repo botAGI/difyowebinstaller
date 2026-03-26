@@ -88,17 +88,13 @@ _pull_with_progress() {
     local pull_rc=0
 
     if [[ -n "${ORIGINAL_TTY_FD:-}" ]] && { true >&"${ORIGINAL_TTY_FD}"; } 2>/dev/null; then
-        # TTY: pull in foreground with stdout/stderr on original TTY (fd 3).
-        # This bypasses tee redirect so Docker shows interactive progress bars.
-        # Background watchdog kills pull if no new images for 120s.
-        _start_pull_watchdog images "$total" &
-        local watchdog_pid=$!
+        # TTY: pull in foreground on original TTY (fd 3) for interactive progress.
+        # No watchdog — Docker handles its own timeouts. User can Ctrl+C if stuck.
         if [[ -n "$profiles" ]]; then
             COMPOSE_PROFILES="$profiles" docker compose pull >&"${ORIGINAL_TTY_FD}" 2>&1 || pull_rc=$?
         else
             docker compose pull >&"${ORIGINAL_TTY_FD}" 2>&1 || pull_rc=$?
         fi
-        kill "$watchdog_pid" 2>/dev/null; wait "$watchdog_pid" 2>/dev/null || true
     else
         # non-TTY: redirect to log file, monitor by file size
         local pull_log="/tmp/agmind-pull-$$.log"
@@ -130,68 +126,7 @@ _pull_with_progress() {
     return 0
 }
 
-# Background watchdog for TTY pull: kills the foreground docker compose pull
-# if no activity for 120 seconds. Detects both new images (Pulled) and
-# disk usage changes (Downloading/Extracting layers). Runs as a subshell.
-_start_pull_watchdog() {
-    local -n _wd_imgs=$1
-    local total="$2"
-    local inactivity_timeout=120
-    local last_ready=0 idle_secs=0
-    local last_disk_usage=0
-    local parent_pid=$$
-
-    for img in "${_wd_imgs[@]}"; do
-        docker image inspect "$img" >/dev/null 2>&1 && last_ready=$((last_ready + 1))
-    done
-    last_disk_usage=$(_docker_images_bytes)
-
-    while true; do
-        sleep 10
-        # Parent finished — exit watchdog
-        kill -0 "$parent_pid" 2>/dev/null || exit 0
-
-        local activity=false
-
-        # Check 1: new completed images
-        local ready=0
-        for img in "${_wd_imgs[@]}"; do
-            docker image inspect "$img" >/dev/null 2>&1 && ready=$((ready + 1))
-        done
-        if [[ $ready -gt $last_ready ]]; then
-            last_ready=$ready
-            activity=true
-        fi
-
-        # Check 2: disk usage change (catches Download + Extract phases)
-        local cur_disk
-        cur_disk=$(_docker_images_bytes)
-        if [[ "$cur_disk" != "$last_disk_usage" ]]; then
-            last_disk_usage="$cur_disk"
-            activity=true
-        fi
-
-        if [[ "$activity" == "true" ]]; then
-            idle_secs=0
-        else
-            idle_secs=$((idle_secs + 10))
-        fi
-
-        if [[ $idle_secs -ge $inactivity_timeout ]]; then
-            echo ""
-            log_warn "Pull stalled (no activity for ${inactivity_timeout}s)"
-            pkill -f "docker compose pull" 2>/dev/null || true
-            exit 0
-        fi
-    done
-}
-
-# Get total Docker image disk usage in bytes (lightweight check for activity)
-_docker_images_bytes() {
-    docker system df --format '{{.Size}}' 2>/dev/null | head -1 | tr -d ' ' || echo "0"
-}
-
-# Monitor background pull process; kill only if no output for INACTIVITY_TIMEOUT seconds.
+# Monitor background pull process (non-TTY only); kill if no output for 120s.
 # non-TTY only — this is the ONLY timeout mechanism for pull.
 # The absolute timeout from _run_with_timeout is a hard safety net; this should trigger first.
 _monitor_pull_inactivity() {
