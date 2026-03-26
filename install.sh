@@ -250,12 +250,10 @@ _init_dify_admin() {
     local admin_password
     admin_password="$(echo "$init_password" | base64 -d 2>/dev/null || echo "$init_password")"
 
-    # Wait for Dify API to be fully ready (health + init endpoint)
+    # Wait for Dify API health only (don't check init endpoint — its codes vary by version)
     local attempts=0 max_attempts=120  # 120 × 5s = 10 min
     while [[ $attempts -lt $max_attempts ]]; do
-        # Check both /health AND /console/api/init reachability
-        if docker exec agmind-api curl -sf http://localhost:5001/health >/dev/null 2>&1 \
-           && docker exec agmind-api curl -s -o /dev/null -w '%{http_code}' http://localhost:5001/console/api/init 2>/dev/null | grep -qE '^(200|401|405)'; then
+        if docker exec agmind-api curl -sf http://localhost:5001/health >/dev/null 2>&1; then
             break
         fi
         sleep 5
@@ -266,60 +264,72 @@ _init_dify_admin() {
         log_warn "Run 'agmind init-dify' manually after API is healthy"
         return 0
     fi
+    # Extra settle time — API may accept /health before init endpoints are ready
+    sleep 5
 
-    log_info "Initializing Dify admin (1.13 two-step)..."
+    log_info "Initializing Dify admin (two-step: init → setup)..."
 
-    # Two-step init: POST /console/api/init → POST /console/api/setup
-    # Uses curl cookie jar inside the container for session handling
-    local resp
-    resp="$(docker exec \
-        -e "INIT_PWD=${init_password}" \
-        -e "ADMIN_PWD=${admin_password}" \
-        agmind-api sh -c '
-            curl -sf -c /tmp/dify_cookies \
-                -H "Content-Type: application/json" \
-                -d "{\"password\":\"$INIT_PWD\"}" \
-                http://localhost:5001/console/api/init >/dev/null 2>&1
-            curl -sf -b /tmp/dify_cookies \
-                -H "Content-Type: application/json" \
-                -d "{\"email\":\"admin@agmind.local\",\"name\":\"AGMind Admin\",\"password\":\"$ADMIN_PWD\"}" \
-                http://localhost:5001/console/api/setup 2>/dev/null
-            rm -f /tmp/dify_cookies
-        ' 2>&1)" || true
-
-    # Retry up to 3 times — API may need a moment after health check passes
+    # Two-step init: POST /console/api/init → check → POST /console/api/setup
+    # Step 1 returns a session cookie required by step 2
     local try
     for try in 1 2 3; do
-        if echo "$resp" | grep -qi '"result"\|"id"\|"token"\|success'; then
-            log_success "Dify admin initialized"
-            touch "${INSTALL_DIR}/.dify_initialized"
-            return 0
-        elif echo "$resp" | grep -qi "already\|initialized\|repeat"; then
-            log_info "Dify already initialized"
-            touch "${INSTALL_DIR}/.dify_initialized"
-            return 0
-        fi
-
-        [[ $try -lt 3 ]] || break
-        log_warn "Dify init attempt ${try}/3 failed, retrying in 30s..."
-        sleep 30
+        local resp
         resp="$(docker exec \
             -e "INIT_PWD=${init_password}" \
             -e "ADMIN_PWD=${admin_password}" \
             agmind-api sh -c '
-                curl -sf -c /tmp/dify_cookies \
+                # Step 1: init — get session cookie
+                init_code=$(curl -s -o /tmp/dify_init_resp -w "%{http_code}" \
+                    -c /tmp/dify_cookies \
                     -H "Content-Type: application/json" \
                     -d "{\"password\":\"$INIT_PWD\"}" \
-                    http://localhost:5001/console/api/init >/dev/null 2>&1
-                curl -sf -b /tmp/dify_cookies \
+                    http://localhost:5001/console/api/init)
+                init_body=$(cat /tmp/dify_init_resp 2>/dev/null)
+
+                # If init says already setup — we are done
+                if echo "$init_body" | grep -qi "already"; then
+                    echo "ALREADY_INIT"
+                    rm -f /tmp/dify_cookies /tmp/dify_init_resp
+                    exit 0
+                fi
+
+                # If init failed (non-2xx) — report and bail
+                case "$init_code" in
+                    2*) ;;  # 2xx — success, continue to setup
+                    *)  echo "INIT_FAIL:${init_code}:${init_body}"
+                        rm -f /tmp/dify_cookies /tmp/dify_init_resp
+                        exit 0 ;;
+                esac
+
+                # Step 2: setup — create admin account using session cookie
+                setup_resp=$(curl -s -w "\nHTTP_%{http_code}" \
+                    -b /tmp/dify_cookies \
                     -H "Content-Type: application/json" \
                     -d "{\"email\":\"admin@agmind.local\",\"name\":\"AGMind Admin\",\"password\":\"$ADMIN_PWD\"}" \
-                    http://localhost:5001/console/api/setup 2>/dev/null
-                rm -f /tmp/dify_cookies
+                    http://localhost:5001/console/api/setup)
+                echo "$setup_resp"
+                rm -f /tmp/dify_cookies /tmp/dify_init_resp
             ' 2>&1)" || true
+
+        # Check result
+        if echo "$resp" | grep -qi "ALREADY_INIT\|already.*setup\|already.*initialized"; then
+            log_info "Dify already initialized"
+            touch "${INSTALL_DIR}/.dify_initialized"
+            return 0
+        elif echo "$resp" | grep -q "HTTP_2"; then
+            log_success "Dify admin initialized"
+            touch "${INSTALL_DIR}/.dify_initialized"
+            return 0
+        elif echo "$resp" | grep -q "INIT_FAIL"; then
+            log_warn "Dify init step failed (attempt ${try}/3): $(echo "$resp" | head -c 200)"
+        else
+            log_warn "Dify setup step failed (attempt ${try}/3): $(echo "$resp" | head -c 200)"
+        fi
+
+        [[ $try -lt 3 ]] || break
+        sleep 30
     done
-    log_warn "Dify init failed after 3 attempts: $(echo "$resp" | head -c 200)"
-    log_warn "Run 'agmind init-dify' manually after API is healthy"
+    log_warn "Dify init failed after 3 attempts — run 'agmind init-dify' manually"
 }
 
 _save_credentials() {
