@@ -63,7 +63,7 @@
     "dify-sandbox": {
       "registry": "docker.io",
       "image": "langgenius/dify-sandbox",
-      "tag": "0.2.13",
+      "tag": "0.2.14",
       "digest": "",
       "platforms": ["linux/amd64"]
     },
