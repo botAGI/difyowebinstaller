@@ -54,7 +54,7 @@ SEMIANNUAL_CHECKS=(
 
 # --- State ---
 declare -A CURRENT_VERSIONS
-UPDATES=()  # "name|current|latest|change"
+ALL_RESULTS=()  # "name|current|latest|status"  (status: update/ok/branch/error)
 
 # Components whose Docker images do NOT use v-prefix in tags.
 # GitHub releases use v-prefix (v1.36.6) but Docker Hub has bare (1.36.6).
@@ -221,10 +221,10 @@ check_component() {
         return
     fi
 
-    # Skip branch-based versions
-    if [[ "$current" =~ ^[a-z]+$ ]]; then
-        echo "  SKIP: ${name} — branch ref '${current}'" >&2
-        return
+    # Detect branch-based versions (e.g. "main", "main-local")
+    local is_branch=false
+    if [[ "$current" =~ ^[a-z]+(-[a-z]+)*$ ]]; then
+        is_branch=true
     fi
 
     local latest=""
@@ -236,24 +236,30 @@ check_component() {
 
     if [[ -z "$latest" ]]; then
         echo "  WARN: ${name} — could not fetch latest from ${source}:${repo}" >&2
+        ALL_RESULTS+=("${name}|${current}|???|error")
         return
     fi
 
-    if is_newer "$current" "$latest"; then
+    # Strip v-prefix for components whose Docker images don't use it
+    local report_latest="$latest"
+    if [[ -n "${NO_V_PREFIX[$name]+x}" ]]; then
+        report_latest="${latest#v}"
+    fi
+    # Append -local suffix for components that use it in Docker tags
+    if [[ -n "${LOCAL_SUFFIX[$name]+x}" ]]; then
+        report_latest="${report_latest%-local}-local"
+    fi
+
+    if [[ "$is_branch" == "true" ]]; then
+        echo "  BRANCH: ${name} ${current} -> latest: ${report_latest}" >&2
+        ALL_RESULTS+=("${name}|${current}|${report_latest}|branch")
+    elif is_newer "$current" "$latest"; then
         local change
         change=$(classify_change "$current" "$latest")
-        # Strip v-prefix for components whose Docker images don't use it
-        local report_latest="$latest"
-        if [[ -n "${NO_V_PREFIX[$name]+x}" ]]; then
-            report_latest="${latest#v}"
-        fi
-        # Append -local suffix for components that use it in Docker tags
-        if [[ -n "${LOCAL_SUFFIX[$name]+x}" ]]; then
-            report_latest="${report_latest%-local}-local"
-        fi
-        UPDATES+=("${name}|${current}|${report_latest}|${change}")
+        ALL_RESULTS+=("${name}|${current}|${report_latest}|${change}")
         echo "  UPDATE: ${name} ${current} -> ${report_latest} (${change})" >&2
     else
+        ALL_RESULTS+=("${name}|${current}|${report_latest}|ok")
         echo "  OK: ${name} ${current} (up to date)" >&2
     fi
 }
@@ -270,35 +276,34 @@ run_checks() {
     done
 }
 
-check_dedup() {
-    if [[ -z "${GITHUB_TOKEN:-}" ]]; then
-        return 1  # can't check, assume no dupe
-    fi
-    local count
-    count=$(github_curl "https://api.github.com/repos/botAGI/AGmind/issues?labels=upstream-update&state=open&per_page=1" \
-        | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null) || return 1
-    [[ "$count" -gt 0 ]]
-}
-
 generate_report() {
     {
         echo "## Upstream Version Check — ${TODAY}"
         echo ""
-        echo "| Component | Current | Latest | Change |"
+        echo "| Component | Current | Latest | Status |"
         echo "|-----------|---------|--------|--------|"
-        for u in "${UPDATES[@]}"; do
-            IFS='|' read -r name current latest change <<< "$u"
-            local badge="$change"
-            if [[ "$change" == "major" ]]; then
-                badge="⚠️ major"
-            fi
+        for entry in "${ALL_RESULTS[@]}"; do
+            IFS='|' read -r name current latest status <<< "$entry"
+            local badge
+            case "$status" in
+                ok)     badge="✅ up to date" ;;
+                patch)  badge="📦 patch" ;;
+                minor)  badge="🔄 minor" ;;
+                major)  badge="⚠️ major" ;;
+                branch) badge="🔀 branch → ${latest}" ;;
+                error)  badge="❌ fetch error" ;;
+                *)      badge="$status" ;;
+            esac
             echo "| ${name} | ${current} | ${latest} | ${badge} |"
         done
         echo ""
-        echo "### Recommendations"
-        echo "- **patch**: Safe to update. Test and release."
-        echo "- **minor**: Review changelog. Test before release."
+        echo "### Legend"
+        echo "- **✅ up to date**: No action needed."
+        echo "- **📦 patch**: Safe to update. Test and release."
+        echo "- **🔄 minor**: Review changelog. Test before release."
         echo "- **⚠️ major**: Breaking changes possible. Careful testing required."
+        echo "- **🔀 branch**: Tracking a branch — latest stable release shown for reference."
+        echo "- **❌ fetch error**: Could not reach upstream API."
         echo ""
         echo "### How to update"
         echo "1. On test server: \`agmind update --component <name> --version <latest> --force\`"
@@ -353,22 +358,16 @@ main() {
 
     echo "" >&2
 
-    if [[ ${#UPDATES[@]} -eq 0 ]]; then
-        echo "All versions up to date." >&2
-        set_output "has_updates" "false"
-        set_output "date" "$TODAY"
-        return
-    fi
+    # Count actual updates (not ok/branch/error)
+    local update_count=0
+    for entry in "${ALL_RESULTS[@]}"; do
+        IFS='|' read -r _ _ _ status <<< "$entry"
+        if [[ "$status" == "patch" || "$status" == "minor" || "$status" == "major" ]]; then
+            ((update_count++)) || true
+        fi
+    done
 
-    # Dedup: skip if open issue already exists
-    if check_dedup; then
-        echo "Open upstream-update issue already exists — skipping." >&2
-        set_output "has_updates" "false"
-        set_output "date" "$TODAY"
-        return
-    fi
-
-    echo "${#UPDATES[@]} update(s) found. Generating report..." >&2
+    echo "${#ALL_RESULTS[@]} component(s) checked, ${update_count} update(s) available." >&2
     generate_report
     set_output "has_updates" "true"
     set_output "date" "$TODAY"

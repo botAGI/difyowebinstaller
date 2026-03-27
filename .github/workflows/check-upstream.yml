@@ -23,10 +23,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash scripts/check-upstream.sh
 
-      - name: Create issue if updates found
-        if: steps.check.outputs.has_updates == 'true'
+      - name: Create daily version report issue
         uses: peter-evans/create-issue-from-file@v5
         with:
-          title: "New upstream versions available (${{ steps.check.outputs.date }})"
+          title: "Upstream version report (${{ steps.check.outputs.date }})"
           content-filepath: /tmp/upstream-report.md
           labels: upstream-update
