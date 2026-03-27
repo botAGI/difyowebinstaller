@@ -56,7 +56,7 @@ declare -A MODEL_SIZES=(
 _stream_gpu_model_logs() {
     local container="$1"
     local label="$2"
-    local timeout="${3:-0}"  # 0 = no limit, rely on healthcheck + inactivity
+    local timeout="${3:-900}"  # default 15 min; 0 = no limit
     local elapsed=0
     local poll_interval=5
 
@@ -65,6 +65,22 @@ _stream_gpu_model_logs() {
         log_warn "${label}: container ${container} not found, skipping stream"
         return 1
     fi
+
+    # Direct HTTP health probe — bypasses Docker start_period delay.
+    # During start_period Docker reports "starting" even if the service
+    # already responds on /health.  This function checks the real endpoint.
+    _container_http_ready() {
+        local _port=""
+        case "$container" in
+            *vllm*)          _port=8000 ;;
+            *tei-rerank*)    _port=80 ;;
+            *tei*)           _port=80 ;;
+            *ollama*)        _port=11434 ;;
+            *)               return 1 ;;
+        esac
+        docker exec "$container" curl -sf --max-time 3 "http://localhost:${_port}/health" >/dev/null 2>&1 \
+            || docker exec "$container" wget -qO- --timeout=3 "http://localhost:${_port}/health" >/dev/null 2>&1
+    }
 
     if [[ -n "${ORIGINAL_TTY_FD:-}" ]] && { true >&"${ORIGINAL_TTY_FD}"; } 2>/dev/null; then
         # TTY path: stream logs to real terminal (fd 3), filter healthcheck noise
@@ -80,9 +96,11 @@ _stream_gpu_model_logs() {
             elapsed=$((elapsed + poll_interval))
 
             # Check health — stop immediately when model is loaded
+            # Try Docker health status first, then direct HTTP probe
+            # (bypasses start_period where Docker reports "starting")
             local health
             health="$(docker inspect --format='{{.State.Health.Status}}' "$container" 2>/dev/null || echo "none")"
-            if [[ "$health" == "healthy" ]]; then
+            if [[ "$health" == "healthy" ]] || _container_http_ready; then
                 kill "$logs_pid" 2>/dev/null; wait "$logs_pid" 2>/dev/null || true
                 return 0
             fi
@@ -113,10 +131,10 @@ _stream_gpu_model_logs() {
             sleep "$poll_interval"
             elapsed=$((elapsed + poll_interval))
 
-            # Check health
+            # Check health — Docker status or direct HTTP probe
             local health
             health="$(docker inspect --format='{{.State.Health.Status}}' "$container" 2>/dev/null || echo "none")"
-            if [[ "$health" == "healthy" ]]; then
+            if [[ "$health" == "healthy" ]] || _container_http_ready; then
                 return 0
             fi
 

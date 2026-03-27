@@ -37,7 +37,7 @@ NON_INTERACTIVE="${NON_INTERACTIVE:-false}"
 FORCE_RESTART="${FORCE_RESTART:-false}"
 TIMEOUT_START="${TIMEOUT_START:-300}"
 TIMEOUT_HEALTH="${TIMEOUT_HEALTH:-300}"
-TIMEOUT_GPU_HEALTH="${TIMEOUT_GPU_HEALTH:-0}"  # 0 = no absolute limit, rely on inactivity timeout
+TIMEOUT_GPU_HEALTH="${TIMEOUT_GPU_HEALTH:-900}"  # 15 min default; 0 = no limit
 TIMEOUT_MODELS="${TIMEOUT_MODELS:-1200}"
 
 # --- Exclusive lock ---
