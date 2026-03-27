@@ -425,9 +425,9 @@ appendonly yes
 appendfilename "appendonly.aof"
 
 # Connection limits
-maxclients 100
-timeout 300
-tcp-keepalive 60
+maxclients 256
+timeout 0
+tcp-keepalive 30
 REDISEOF
 
     chmod 644 "$redis_conf"

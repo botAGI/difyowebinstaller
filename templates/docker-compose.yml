@@ -635,6 +635,10 @@ services:
     container_name: agmind-plugin-daemon
     restart: always
     mem_limit: ${PLUGIN_MEM_LIMIT:-2g}
+    dns: 127.0.0.11
+    dns_opt:
+      - timeout:3
+      - attempts:5
     cap_add:
       - CHOWN
       - SETUID
