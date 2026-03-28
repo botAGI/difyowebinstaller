@@ -121,8 +121,8 @@ http {
             proxy_set_header X-Forwarded-Proto $scheme;
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection "upgrade";
-            proxy_read_timeout 300s;
-            proxy_send_timeout 300s;
+            proxy_read_timeout 600s;
+            proxy_send_timeout 600s;
             proxy_buffering off;
         }
 
@@ -304,8 +304,8 @@ http {
     #__TLS__        proxy_set_header X-Forwarded-Proto $scheme;
     #__TLS__        proxy_set_header Upgrade $http_upgrade;
     #__TLS__        proxy_set_header Connection "upgrade";
-    #__TLS__        proxy_read_timeout 300s;
-    #__TLS__        proxy_send_timeout 300s;
+    #__TLS__        proxy_read_timeout 600s;
+    #__TLS__        proxy_send_timeout 600s;
     #__TLS__        proxy_buffering off;
     #__TLS__    }
     #__TLS__

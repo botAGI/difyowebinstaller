@@ -128,16 +128,11 @@ x-shared-env: &shared-env
 services:
   # ==================== Dify API ====================
   api:
-    <<: *security-defaults
+    <<: *logging-defaults
     image: langgenius/dify-api:${DIFY_VERSION:-main}
     container_name: agmind-api
     restart: always
     mem_limit: ${API_MEM_LIMIT:-2g}
-    cap_add:
-      - CHOWN
-      - SETUID
-      - SETGID
-      - DAC_OVERRIDE
     environment:
       <<: *shared-env
       MODE: api
@@ -162,16 +157,11 @@ services:
 
   # ==================== Dify Worker ====================
   worker:
-    <<: *security-defaults
+    <<: *logging-defaults
     image: langgenius/dify-api:${DIFY_VERSION:-main}
     container_name: agmind-worker
     restart: always
     mem_limit: ${WORKER_MEM_LIMIT:-2g}
-    cap_add:
-      - CHOWN
-      - SETUID
-      - SETGID
-      - DAC_OVERRIDE
     environment:
       <<: *shared-env
       MODE: worker
@@ -627,8 +617,9 @@ services:
 
   # ==================== Plugin Daemon ====================
   # Canonical config matching official langgenius/dify docker-compose.
-  # Security defaults temporarily disabled for debugging.
+  # Dify manages plugin isolation internally — no cap_drop needed.
   plugin_daemon:
+    <<: *logging-defaults
     image: langgenius/dify-plugin-daemon:${PLUGIN_DAEMON_VERSION:-0.5.3-local}
     container_name: agmind-plugin-daemon
     restart: always
@@ -646,7 +637,7 @@ services:
       PLUGIN_REMOTE_INSTALLING_PORT: ${PLUGIN_DEBUGGING_PORT:-5003}
       PLUGIN_WORKING_PATH: ${PLUGIN_WORKING_PATH:-/app/storage/cwd}
       FORCE_VERIFYING_SIGNATURE: ${FORCE_VERIFYING_SIGNATURE:-true}
-      PYTHON_ENV_INIT_TIMEOUT: ${PLUGIN_PYTHON_ENV_INIT_TIMEOUT:-600}
+      PYTHON_ENV_INIT_TIMEOUT: ${PLUGIN_PYTHON_ENV_INIT_TIMEOUT:-900}
       PLUGIN_MAX_EXECUTION_TIMEOUT: ${PLUGIN_MAX_EXECUTION_TIMEOUT:-900}
       PLUGIN_STDIO_BUFFER_SIZE: ${PLUGIN_STDIO_BUFFER_SIZE:-1024}
       PLUGIN_STDIO_MAX_BUFFER_SIZE: ${PLUGIN_STDIO_MAX_BUFFER_SIZE:-5242880}
