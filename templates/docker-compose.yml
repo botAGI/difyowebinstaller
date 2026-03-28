@@ -120,6 +120,7 @@ x-shared-env: &shared-env
   # --- Plugin Daemon ---
   PLUGIN_DAEMON_URL: ${PLUGIN_DAEMON_URL:-http://plugin_daemon:5002}
   PLUGIN_DAEMON_KEY: ${PLUGIN_DAEMON_KEY:-}
+  PLUGIN_DAEMON_TIMEOUT: ${PLUGIN_DAEMON_TIMEOUT:-600}
   INNER_API_KEY_FOR_PLUGIN: ${PLUGIN_INNER_API_KEY:-}
   # --- Ollama ---
   OLLAMA_API_BASE: ${OLLAMA_API_BASE:-http://ollama:11434}
@@ -670,17 +671,20 @@ services:
       PLUGIN_REMOTE_INSTALLING_HOST: ${PLUGIN_DEBUGGING_HOST:-0.0.0.0}
       PLUGIN_REMOTE_INSTALLING_PORT: ${PLUGIN_DEBUGGING_PORT:-5003}
       # --- Plugin runtime ---
-      PLUGIN_WORKING_PATH: /app/plugin_working_path
+      PLUGIN_WORKING_PATH: /tmp/dify_plugins
       PLUGIN_INSTALLED_PATH: ${PLUGIN_INSTALLED_PATH:-plugin}
       PLUGIN_PACKAGE_CACHE_PATH: ${PLUGIN_PACKAGE_CACHE_PATH:-plugin_packages}
       PLUGIN_MEDIA_CACHE_PATH: ${PLUGIN_MEDIA_CACHE_PATH:-assets}
       PLUGIN_MAX_EXECUTION_TIMEOUT: 2400
       PLUGIN_LOCAL_LAUNCHING_CONCURRENT: ${PLUGIN_LOCAL_LAUNCHING_CONCURRENT:-10}
       PYTHON_ENV_INIT_TIMEOUT: 640
+      PLUGIN_PYTHON_ENV_INIT_TIMEOUT: 640
       PLUGIN_STDIO_BUFFER_SIZE: ${PLUGIN_STDIO_BUFFER_SIZE:-1024}
       PLUGIN_STDIO_MAX_BUFFER_SIZE: ${PLUGIN_STDIO_MAX_BUFFER_SIZE:-5242880}
       FORCE_VERIFYING_SIGNATURE: ${FORCE_VERIFYING_SIGNATURE:-true}
-      PIP_MIRROR_URL: ${PIP_MIRROR_URL:-}
+      PIP_INDEX_URL: ${PIP_MIRROR_URL:-https://mirrors.aliyun.com/pypi/simple}
+      PIP_MIRROR_URL: ${PIP_MIRROR_URL:-https://mirrors.aliyun.com/pypi/simple}
+      PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-mirrors.aliyun.com}
       # --- uv workaround (uv 0.11+ __pycache__ breaks wheel validation) ---
       UV_LINK_MODE: copy
       # --- Storage ---
@@ -700,6 +704,11 @@ services:
       SENTRY_DSN: ${PLUGIN_SENTRY_DSN:-}
     volumes:
       - ./volumes/plugin_daemon/storage:/app/storage
+    tmpfs:
+      - /tmp/dify_plugins:size=4g
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:5002/health/check 2>/dev/null || wget -qO- http://localhost:5002/health/check 2>/dev/null || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
