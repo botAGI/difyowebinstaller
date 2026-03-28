@@ -705,7 +705,7 @@ services:
     volumes:
       - ./volumes/plugin_daemon/storage:/app/storage
     tmpfs:
-      - /tmp/dify_plugins:size=4g
+      - /tmp/dify_plugins:size=4g,exec
     dns:
       - 8.8.8.8
       - 8.8.4.4
