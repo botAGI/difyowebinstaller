@@ -120,7 +120,6 @@ x-shared-env: &shared-env
   # --- Plugin Daemon ---
   PLUGIN_DAEMON_URL: ${PLUGIN_DAEMON_URL:-http://plugin_daemon:5002}
   PLUGIN_DAEMON_KEY: ${PLUGIN_DAEMON_KEY:-}
-  PLUGIN_DAEMON_TIMEOUT: ${PLUGIN_DAEMON_TIMEOUT:-600}
   INNER_API_KEY_FOR_PLUGIN: ${PLUGIN_INNER_API_KEY:-}
   # --- Ollama ---
   OLLAMA_API_BASE: ${OLLAMA_API_BASE:-http://ollama:11434}
@@ -141,8 +140,6 @@ services:
     environment:
       <<: *shared-env
       MODE: api
-      SSRF_PROXY_HTTP_URL: ""
-      SSRF_PROXY_HTTPS_URL: ""
     volumes:
       - ./volumes/app/storage:/app/api/storage
     healthcheck:
@@ -177,8 +174,6 @@ services:
     environment:
       <<: *shared-env
       MODE: worker
-      SSRF_PROXY_HTTP_URL: ""
-      SSRF_PROXY_HTTPS_URL: ""
     volumes:
       - ./volumes/app/storage:/app/api/storage
     healthcheck:
@@ -630,85 +625,40 @@ services:
       - agmind-backend
 
   # ==================== Plugin Daemon ====================
+  # Canonical config matching official langgenius/dify docker-compose.
+  # Security defaults temporarily disabled for debugging.
   plugin_daemon:
-    <<: *security-defaults
-    image: langgenius/dify-plugin-daemon:${PLUGIN_DAEMON_VERSION:-main-local}
+    image: langgenius/dify-plugin-daemon:${PLUGIN_DAEMON_VERSION:-0.5.3-local}
     container_name: agmind-plugin-daemon
     restart: always
-    mem_limit: ${PLUGIN_MEM_LIMIT:-2g}
-    cap_add:
-      - CHOWN
-      - SETUID
-      - SETGID
-      - DAC_OVERRIDE
     environment:
-      # --- Database ---
-      DB_USERNAME: ${DB_USERNAME:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-}
-      DB_HOST: ${DB_HOST:-db}
-      DB_PORT: ${DB_PORT:-5432}
+      <<: *shared-env
       DB_DATABASE: ${PLUGIN_DB_DATABASE:-dify_plugin}
-      DB_DEFAULT_DATABASE: ${DB_DATABASE:-dify}
       DB_SSL_MODE: ${DB_SSL_MODE:-disable}
-      # --- Redis ---
-      REDIS_HOST: ${REDIS_HOST:-redis}
-      REDIS_PORT: ${REDIS_PORT:-6379}
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      REDIS_DB: ${REDIS_DB:-0}
-      REDIS_USE_SSL: ${REDIS_USE_SSL:-false}
-      REDIS_USE_SENTINEL: ${REDIS_USE_SENTINEL:-false}
-      REDIS_USE_CLUSTERS: ${REDIS_USE_CLUSTERS:-false}
-      REDIS_MAX_CONNECTIONS: 20
-      # --- Server ---
       SERVER_PORT: ${PLUGIN_DAEMON_PORT:-5002}
       SERVER_KEY: ${PLUGIN_DAEMON_KEY:-}
-      PLATFORM: local
-      # --- Dify API ---
-      DIFY_INNER_API_KEY: ${PLUGIN_INNER_API_KEY:-}
+      MAX_PLUGIN_PACKAGE_SIZE: ${MAX_PLUGIN_PACKAGE_SIZE:-52428800}
+      PPROF_ENABLED: ${PLUGIN_PPROF_ENABLED:-false}
       DIFY_INNER_API_URL: ${PLUGIN_DIFY_INNER_API_URL:-http://api:5001}
-      DIFY_INVOCATION_CONNECTION_IDLE_TIMEOUT: ${DIFY_INVOCATION_CONNECTION_IDLE_TIMEOUT:-120}
-      # --- Remote installing (plugin debug server) ---
+      DIFY_INNER_API_KEY: ${PLUGIN_INNER_API_KEY:-}
       PLUGIN_REMOTE_INSTALLING_HOST: ${PLUGIN_DEBUGGING_HOST:-0.0.0.0}
       PLUGIN_REMOTE_INSTALLING_PORT: ${PLUGIN_DEBUGGING_PORT:-5003}
-      # --- Plugin runtime ---
-      PLUGIN_WORKING_PATH: /tmp/dify_plugins
+      PLUGIN_WORKING_PATH: ${PLUGIN_WORKING_PATH:-/app/storage/cwd}
+      FORCE_VERIFYING_SIGNATURE: ${FORCE_VERIFYING_SIGNATURE:-true}
+      PYTHON_ENV_INIT_TIMEOUT: ${PLUGIN_PYTHON_ENV_INIT_TIMEOUT:-120}
+      PLUGIN_MAX_EXECUTION_TIMEOUT: ${PLUGIN_MAX_EXECUTION_TIMEOUT:-600}
+      PLUGIN_STDIO_BUFFER_SIZE: ${PLUGIN_STDIO_BUFFER_SIZE:-1024}
+      PLUGIN_STDIO_MAX_BUFFER_SIZE: ${PLUGIN_STDIO_MAX_BUFFER_SIZE:-5242880}
+      PIP_MIRROR_URL: ${PIP_MIRROR_URL:-}
+      PLUGIN_STORAGE_TYPE: ${PLUGIN_STORAGE_TYPE:-local}
+      PLUGIN_STORAGE_LOCAL_ROOT: ${PLUGIN_STORAGE_LOCAL_ROOT:-/app/storage}
       PLUGIN_INSTALLED_PATH: ${PLUGIN_INSTALLED_PATH:-plugin}
       PLUGIN_PACKAGE_CACHE_PATH: ${PLUGIN_PACKAGE_CACHE_PATH:-plugin_packages}
       PLUGIN_MEDIA_CACHE_PATH: ${PLUGIN_MEDIA_CACHE_PATH:-assets}
-      PLUGIN_MAX_EXECUTION_TIMEOUT: 2400
-      PLUGIN_LOCAL_LAUNCHING_CONCURRENT: ${PLUGIN_LOCAL_LAUNCHING_CONCURRENT:-10}
-      PYTHON_ENV_INIT_TIMEOUT: 640
-      PLUGIN_PYTHON_ENV_INIT_TIMEOUT: 640
-      PLUGIN_STDIO_BUFFER_SIZE: ${PLUGIN_STDIO_BUFFER_SIZE:-1024}
-      PLUGIN_STDIO_MAX_BUFFER_SIZE: ${PLUGIN_STDIO_MAX_BUFFER_SIZE:-5242880}
-      FORCE_VERIFYING_SIGNATURE: ${FORCE_VERIFYING_SIGNATURE:-true}
-      PIP_INDEX_URL: ${PIP_MIRROR_URL:-https://mirrors.aliyun.com/pypi/simple}
-      PIP_MIRROR_URL: ${PIP_MIRROR_URL:-https://mirrors.aliyun.com/pypi/simple}
-      PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-mirrors.aliyun.com}
-      # --- uv workaround (uv 0.11+ __pycache__ breaks wheel validation) ---
-      UV_LINK_MODE: copy
-      # --- Storage ---
-      PLUGIN_STORAGE_TYPE: ${PLUGIN_STORAGE_TYPE:-local}
-      PLUGIN_STORAGE_LOCAL_ROOT: ${PLUGIN_STORAGE_LOCAL_ROOT:-/app/storage}
-      MAX_PLUGIN_PACKAGE_SIZE: ${MAX_PLUGIN_PACKAGE_SIZE:-52428800}
-      MAX_BUNDLE_PACKAGE_SIZE: ${MAX_BUNDLE_PACKAGE_SIZE:-52428800}
-      # --- Pool / lifetime ---
-      # Capped at 10 to fit within 2g mem_limit (10 workers × ~100MB each)
-      ROUTINE_POOL_SIZE: ${ROUTINE_POOL_SIZE:-10}
-      LIFETIME_COLLECTION_HEARTBEAT_INTERVAL: ${LIFETIME_COLLECTION_HEARTBEAT_INTERVAL:-30}
-      LIFETIME_COLLECTION_GC_INTERVAL: ${LIFETIME_COLLECTION_GC_INTERVAL:-60}
-      LIFETIME_STATE_GC_INTERVAL: ${LIFETIME_STATE_GC_INTERVAL:-60}
-      # --- Misc ---
-      PPROF_ENABLED: ${PLUGIN_PPROF_ENABLED:-false}
       SENTRY_ENABLED: ${PLUGIN_SENTRY_ENABLED:-false}
       SENTRY_DSN: ${PLUGIN_SENTRY_DSN:-}
     volumes:
-      - ./volumes/plugin_daemon/storage:/app/storage
-    tmpfs:
-      - /tmp/dify_plugins:size=4g,exec
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
+      - ./volumes/plugin_daemon:/app/storage
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:5002/health/check 2>/dev/null || wget -qO- http://localhost:5002/health/check 2>/dev/null || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
