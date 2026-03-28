@@ -65,7 +65,7 @@ create_openwebui_admin() {
     fi
 
     # Step 5: Create admin via signup API
-    _create_admin_via_api "AGMind Admin" "admin@agmind.local" "$admin_password"
+    _create_admin_via_api "AGMind Admin" "admin@agmind.ai" "$admin_password"
 
     # Step 6: Restart open-webui normally (reads ENABLE_SIGNUP from DB)
     docker compose up -d open-webui >/dev/null 2>&1 || true

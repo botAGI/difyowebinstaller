@@ -305,7 +305,7 @@ _init_dify_admin() {
                 setup_resp=$(curl -s -w "\nHTTP_%{http_code}" \
                     -b /tmp/dify_cookies \
                     -H "Content-Type: application/json" \
-                    -d "{\"email\":\"admin@agmind.local\",\"name\":\"AGMind Admin\",\"password\":\"$ADMIN_PWD\"}" \
+                    -d "{\"email\":\"admin@agmind.ai\",\"name\":\"AGMind Admin\",\"password\":\"$ADMIN_PWD\"}" \
                     http://localhost:5001/console/api/setup)
                 echo "$setup_resp"
                 rm -f /tmp/dify_cookies /tmp/dify_init_resp
@@ -340,11 +340,11 @@ _save_credentials() {
         echo "# AGMind Credentials — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
         echo ""
         echo "Open WebUI:  ${url}"
-        echo "  Login: admin@agmind.local"
+        echo "  Login: admin@agmind.ai"
         echo "  Pass:  ${owui_pass:-N/A}"
         echo ""
         echo "Dify Console: http://${DOMAIN:-$ip}:3000"
-        echo "  Login: admin@agmind.local"
+        echo "  Login: admin@agmind.ai"
         echo "  Pass:  ${owui_pass:-N/A}"
         if [[ "${MONITORING_MODE:-}" == "local" ]]; then
             echo ""
@@ -483,11 +483,11 @@ _show_final_summary() {
     echo "  +--------------------------------------------------+"
     echo -e "${NC}"
     echo -e "  ${BOLD}Open WebUI:${NC}      ${GREEN}${url}${NC}"
-    echo -e "    Login:         admin@agmind.local"
+    echo -e "    Login:         admin@agmind.ai"
     echo -e "    Pass:          ${owui_pass:-см. credentials.txt}"
     echo ""
     echo -e "  ${BOLD}Dify Console:${NC}    ${GREEN}${dify_url}${NC}"
-    echo -e "    Login:         admin@agmind.local"
+    echo -e "    Login:         admin@agmind.ai"
     echo -e "    Pass:          ${owui_pass:-см. credentials.txt}"
     if [[ "${MONITORING_MODE:-}" == "local" ]]; then
         echo ""

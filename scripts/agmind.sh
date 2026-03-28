@@ -672,7 +672,7 @@ cmd_init_dify() {
                 http://localhost:5001/console/api/init >/dev/null 2>&1
             curl -sf -b /tmp/dify_cookies \
                 -H "Content-Type: application/json" \
-                -d "{\"email\":\"admin@agmind.local\",\"name\":\"AGMind Admin\",\"password\":\"$ADMIN_PWD\"}" \
+                -d "{\"email\":\"admin@agmind.ai\",\"name\":\"AGMind Admin\",\"password\":\"$ADMIN_PWD\"}" \
                 http://localhost:5001/console/api/setup 2>/dev/null
             rm -f /tmp/dify_cookies
         ' 2>&1)" || true
