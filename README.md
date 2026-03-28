@@ -7,7 +7,6 @@
 <p align="center">Production-ready AI stack in one command</p>
 
 <p align="center">
-  <a href="https://github.com/botAGI/AGmind/actions/workflows/lint.yml"><img src="https://github.com/botAGI/AGmind/actions/workflows/lint.yml/badge.svg" alt="Lint"></a>
   <a href="https://github.com/botAGI/AGmind/actions/workflows/test.yml"><img src="https://github.com/botAGI/AGmind/actions/workflows/test.yml/badge.svg" alt="Tests"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License"></a>
   <img src="https://img.shields.io/badge/docker-ready-blue?logo=docker" alt="Docker Ready">
@@ -30,7 +29,7 @@
 | Reboot survival | Write systemd units yourself | **Built-in** systemd service |
 | Health monitoring | `docker ps` and guessing | **`agmind doctor`** with 15+ checks |
 | Offline install | Effectively impossible | **`build-offline-bundle.sh`** with models |
-| Security hardening | DIY firewall, SSH, 2FA | **Automated**: cap_drop ALL, fail2ban, Authelia, SOPS |
+| Security hardening | DIY firewall, SSH, 2FA | **Automated**: tiered cap_drop, fail2ban, Authelia, SOPS |
 | Backup & DR | Manual pg_dump scripts | **Daily cron**, S3 upload, encryption, DR drills |
 | Secret management | Passwords in .env | **Auto-generated** 64-char keys, rotation via CLI |
 | Multi-profile deploy | One config fits none | **4 profiles**: LAN, VPN, VPS, Offline |
@@ -105,25 +104,29 @@ sudo agmind backup && ls /var/backups/agmind/              # Backup and verify
 ## Architecture
 
 ```
-                         +-----------+
-                         |   nginx   |  :80 / :443
-                         +-----+-----+
-                           /       \
-                +---------+         +-----------+
-                | Open    |         | Dify Web  |
-                | WebUI   |         | + Console |
-                +---------+         +-----+-----+
-                                      /       \
-                              +------+    +--------+
-                              |  API |    | Worker |
-                              +--+---+    +---+----+
-                                 |            |
-                    +------------+------------+----------+
-                    |            |            |          |
-               +----+---+  +----+---+  +-----+----+ +--+------+
-               |Postgres|  | Redis  |  |Ollama/   | |Weaviate/|
-               +--------+  +--------+  |vLLM/TEI  | |Qdrant   |
-                                       +----------+ +---------+
+                          +-----------+
+                          |   nginx   |  :80 / :443
+                          +-----+-----+
+                            /       \
+                 +---------+         +-----------+
+                 | Open    |         | Dify Web  |
+                 | WebUI   |         | + Console |
+                 +---------+         +-----+-----+
+                                       /       \
+                               +------+    +--------+
+                               |  API |    | Worker |
+                               +--+---+    +---+----+
+                                  |            |
+              +--------+   +------+------------+----------+
+              |Plugin  |   |      |            |          |
+              |Daemon  |   |  +---+---+  +-----+----+ +--+------+
+              +--------+   |  | Redis |  |Ollama/   | |Weaviate/|
+                           |  +-------+  |vLLM/TEI  | |Qdrant   |
+  +-------------+     +----+---+         +----------+ +---------+
+  | SSRF Proxy  +-----+Sandbox |
+  | (Squid)     |     +--------+    +----------+
+  +-------------+                   | Postgres |
+                                    +----------+
 
   Monitoring (optional): Prometheus -> Grafana, Loki -> Promtail,
                          cAdvisor, Alertmanager, Portainer
@@ -192,7 +195,7 @@ Exit codes: `0` = all green, `1` = warnings, `2` = critical failures. Use `--jso
 
 ## Security
 
-- **cap_drop: [ALL]** on every container, `no-new-privileges: true`
+- **Tiered security**: `cap_drop` on infrastructure (DB, Redis, nginx, monitoring); Dify app services (API, Worker, Plugin Daemon) use Dify's own isolation (SSRF proxy, sandbox, plugin process isolation)
 - **SSH hardening** with lockout prevention (validates key access before disabling passwords)
 - **Authelia 2FA** on admin routes (`/console/*`)
 - **SSRF sandbox** on isolated network, blocks RFC1918 + link-local + metadata endpoints
@@ -257,7 +260,7 @@ The bundle includes all Docker images, models, and installer files. No internet 
 
 ```
 AGmind/
-├── install.sh          # Main installer: 9 phases, checkpoint/resume
+├── install.sh          # Main installer: 10 phases, checkpoint/resume
 ├── lib/                # Modular Bash libraries (detect, config, health, security, ...)
 ├── scripts/            # Day-2 ops scripts (agmind CLI, backup, restore, update, ...)
 ├── templates/          # Docker Compose, versions.env, .env templates, nginx configs
@@ -277,7 +280,7 @@ AGmind/
 4. Run `bash -n` on changed scripts
 5. Submit a pull request
 
-All shell scripts must pass `shellcheck` and `bash -n`. CI runs lint + syntax check + Trivy security scan on every PR.
+All shell scripts must pass `shellcheck` and `bash -n`. CI runs syntax checks on every PR.
 
 ---
 

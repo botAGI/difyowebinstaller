@@ -7,7 +7,6 @@
 <p align="center">Production-ready AI-стек одной командой</p>
 
 <p align="center">
-  <a href="https://github.com/botAGI/AGmind/actions/workflows/lint.yml"><img src="https://github.com/botAGI/AGmind/actions/workflows/lint.yml/badge.svg" alt="Lint"></a>
   <a href="https://github.com/botAGI/AGmind/actions/workflows/test.yml"><img src="https://github.com/botAGI/AGmind/actions/workflows/test.yml/badge.svg" alt="Tests"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License"></a>
   <img src="https://img.shields.io/badge/docker-ready-blue?logo=docker" alt="Docker Ready">
@@ -376,7 +375,7 @@ sudo DEPLOY_PROFILE=offline bash install.sh
 
 ```
 AGmind/
-+-- install.sh              # Главный инсталлер (9 фаз, checkpoint/resume)
++-- install.sh              # Главный инсталлер (10 фаз, checkpoint/resume)
 +-- lib/                    # Модульные библиотеки
 |   +-- common.sh           # Логирование, валидация, утилиты
 |   +-- wizard.sh           # Интерактивный мастер настройки
