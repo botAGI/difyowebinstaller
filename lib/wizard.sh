@@ -26,6 +26,9 @@ _init_wizard_defaults() {
     CERTBOT_EMAIL="${CERTBOT_EMAIL:-}"
     VECTOR_STORE="${VECTOR_STORE:-weaviate}"
     ENABLE_DOCLING="${ENABLE_DOCLING:-${ETL_ENHANCED:-false}}"
+    DOCLING_IMAGE="${DOCLING_IMAGE:-}"
+    OCR_LANG="${OCR_LANG:-rus,eng}"
+    NVIDIA_VISIBLE_DEVICES="${NVIDIA_VISIBLE_DEVICES:-}"
     LLM_PROVIDER="${LLM_PROVIDER:-}"
     LLM_MODEL="${LLM_MODEL:-}"
     VLLM_MODEL="${VLLM_MODEL:-}"
@@ -196,19 +199,50 @@ _wizard_vector_store() {
 _wizard_etl() {
     if [[ "$DEPLOY_PROFILE" == "offline" ]]; then
         ENABLE_DOCLING="false"
+        DOCLING_IMAGE=""
+        OCR_LANG="rus,eng"
+        NVIDIA_VISIBLE_DEVICES=""
         return 0
+    fi
+
+    # Detect nvidia container runtime availability
+    local has_nvidia_runtime="false"
+    if [[ "${DETECTED_GPU:-none}" == "nvidia" ]]; then
+        if docker info 2>/dev/null | grep -qi "nvidia"; then
+            has_nvidia_runtime="true"
+        fi
     fi
 
     echo "Расширенная обработка документов (Docling)?"
     echo "  1) Нет — стандартный Dify ETL (по умолчанию)"
-    echo "  2) Да — Docling (улучшенный парсинг документов)"
+    echo "  2) Да — Docling CPU"
+    if [[ "$has_nvidia_runtime" == "true" ]]; then
+        echo "  3) Да — Docling GPU (CUDA)"
+    fi
     echo ""
 
-    _ask_choice "Выбор [1-2, Enter=1]: " 1 2 1
+    local max_choice=2
+    [[ "$has_nvidia_runtime" == "true" ]] && max_choice=3
+
+    _ask_choice "Выбор [1-${max_choice}, Enter=1]: " 1 "$max_choice" 1
     case "$REPLY" in
-        2) ENABLE_DOCLING="true";;
-        *) ENABLE_DOCLING="false";;
+        2)
+            ENABLE_DOCLING="true"
+            DOCLING_IMAGE="${DOCLING_IMAGE_CPU}"
+            NVIDIA_VISIBLE_DEVICES=""
+            ;;
+        3)
+            ENABLE_DOCLING="true"
+            DOCLING_IMAGE="${DOCLING_IMAGE_CUDA}"
+            NVIDIA_VISIBLE_DEVICES="all"
+            ;;
+        *)
+            ENABLE_DOCLING="false"
+            DOCLING_IMAGE=""
+            NVIDIA_VISIBLE_DEVICES=""
+            ;;
     esac
+    OCR_LANG="rus,eng"
     echo ""
 }
 
@@ -998,7 +1032,7 @@ _wizard_summary() {
     echo "  Профиль:      ${DEPLOY_PROFILE}"
     [[ -n "$DOMAIN" ]] && echo "  Домен:        ${DOMAIN}"
     echo "  Вектор. БД:   ${VECTOR_STORE}"
-    [[ "$ENABLE_DOCLING" == "true" ]] && echo "  ETL:          Docling"
+    [[ "$ENABLE_DOCLING" == "true" ]] && echo "  ETL:          Docling (${DOCLING_IMAGE##*/})"
     echo "  LLM:          ${LLM_PROVIDER} ${LLM_MODEL}${VLLM_MODEL:+ (${VLLM_MODEL})}"
     echo "  Эмбеддинги:   ${EMBED_PROVIDER} ${EMBEDDING_MODEL}"
     [[ "${ENABLE_RERANKER:-}" == "true" ]] && echo "  Реранкер:     ${RERANK_MODEL} (~1 GB)"
@@ -1100,6 +1134,7 @@ run_wizard() {
 
     # Export all choices
     export DEPLOY_PROFILE DOMAIN CERTBOT_EMAIL VECTOR_STORE ENABLE_DOCLING
+    export DOCLING_IMAGE OCR_LANG NVIDIA_VISIBLE_DEVICES
     export LLM_PROVIDER LLM_MODEL VLLM_MODEL VLLM_CUDA_SUFFIX EMBED_PROVIDER EMBEDDING_MODEL TEI_EMBED_VERSION
     export ENABLE_RERANKER RERANK_MODEL
     export HF_TOKEN TLS_MODE TLS_CERT_PATH TLS_KEY_PATH

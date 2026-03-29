@@ -292,6 +292,9 @@ _generate_env_file() {
         -e "s|__TEI_EMBED_VERSION__|${safe_tei_embed_version}|g" \
         -e "s|__AUTHELIA_JWT_SECRET__|${_AUTHELIA_JWT_SECRET}|g" \
         -e "s|__FILES_URL__|${safe_files_url}|g" \
+        -e "s|__DOCLING_IMAGE__|${DOCLING_IMAGE:-}|g" \
+        -e "s|__OCR_LANG__|${OCR_LANG:-rus,eng}|g" \
+        -e "s|__NVIDIA_VISIBLE_DEVICES__|${NVIDIA_VISIBLE_DEVICES:-}|g" \
         "$env_file" > "$env_tmp" || { rm -f "$env_tmp"; return 1; }
     mv "$env_tmp" "$env_file"
     chmod 600 "$env_file"
