@@ -368,6 +368,25 @@ _save_credentials() {
             echo "  Откройте http://${DOMAIN:-$ip}:3000/install"
             echo "  Пароль инициализации: grep INIT_PASSWORD ${INSTALL_DIR}/docker/.env | cut -d= -f2-"
         fi
+        # Model API Endpoints — only active providers (Docker-network access only)
+        echo ""
+        echo "Model API Endpoints:"
+        if [[ "${LLM_PROVIDER:-}" == "ollama" || "${EMBED_PROVIDER:-}" == "ollama" ]]; then
+            echo "  Ollama:"
+            echo "    Docker network: http://agmind-ollama:11434"
+        fi
+        if [[ "${LLM_PROVIDER:-}" == "vllm" ]]; then
+            echo "  vLLM:"
+            echo "    Docker network: http://agmind-vllm:8000"
+        fi
+        if [[ "${EMBED_PROVIDER:-}" == "tei" ]]; then
+            echo "  TEI Embedding:"
+            echo "    Docker network: http://agmind-tei:80"
+        fi
+        if [[ "${ENABLE_RERANKER:-false}" == "true" ]]; then
+            echo "  TEI Reranker:"
+            echo "    Docker network: http://agmind-tei-rerank:80"
+        fi
         echo ""
         echo "# ---"
         echo "# ВНИМАНИЕ: Эти пароли актуальны на момент установки."
