@@ -4,7 +4,7 @@ milestone: v2.6
 milestone_name: Install Stability + Update Robustness
 status: Awaiting plan-phase
 stopped_at: Completed 29-docling-gpu-ocr-01-PLAN.md
-last_updated: "2026-03-29T14:01:02.674Z"
+last_updated: "2026-03-29T14:06:11.042Z"
 last_activity: "2026-03-29 — Roadmap created: phases 28-32, 15 requirements mapped"
 progress:
   total_phases: 8

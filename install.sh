@@ -368,24 +368,46 @@ _save_credentials() {
             echo "  Откройте http://${DOMAIN:-$ip}:3000/install"
             echo "  Пароль инициализации: grep INIT_PASSWORD ${INSTALL_DIR}/docker/.env | cut -d= -f2-"
         fi
-        # Model API Endpoints — only active providers (Docker-network access only)
-        echo ""
-        echo "Model API Endpoints:"
-        if [[ "${LLM_PROVIDER:-}" == "ollama" || "${EMBED_PROVIDER:-}" == "ollama" ]]; then
-            echo "  Ollama:"
-            echo "    Docker network: http://agmind-ollama:11434"
-        fi
+        # Model API Endpoints — Dify "Add Model" form fields, copy-paste ready
         if [[ "${LLM_PROVIDER:-}" == "vllm" ]]; then
-            echo "  vLLM:"
-            echo "    Docker network: http://agmind-vllm:8000"
+            echo ""
+            echo "=== vLLM (Dify → Settings → Model Provider → OpenAI-API-compatible) ==="
+            echo "  Model Type:              LLM"
+            echo "  Model Name:              ${VLLM_MODEL:-Qwen/Qwen2.5-14B-Instruct}"
+            echo "  API endpoint URL:        http://agmind-vllm:8000/v1"
+            echo "  API Key:                 none"
+            echo "  model name for endpoint: ${VLLM_MODEL:-Qwen/Qwen2.5-14B-Instruct}"
+        fi
+        if [[ "${LLM_PROVIDER:-}" == "ollama" || "${EMBED_PROVIDER:-}" == "ollama" ]]; then
+            echo ""
+            echo "=== Ollama (Dify → Settings → Model Provider → Ollama) ==="
+            echo "  Base URL:                http://agmind-ollama:11434"
+            if [[ "${LLM_PROVIDER:-}" == "ollama" ]]; then
+                echo "  Model Type:              LLM"
+                echo "  Model Name:              ${LLM_MODEL:-qwen2.5:14b}"
+            fi
+            if [[ "${EMBED_PROVIDER:-}" == "ollama" ]]; then
+                echo "  Model Type:              Text Embedding"
+                echo "  Model Name:              ${EMBEDDING_MODEL:-bge-m3}"
+            fi
         fi
         if [[ "${EMBED_PROVIDER:-}" == "tei" ]]; then
-            echo "  TEI Embedding:"
-            echo "    Docker network: http://agmind-tei:80"
+            echo ""
+            echo "=== TEI Embedding (Dify → Settings → Model Provider → OpenAI-API-compatible) ==="
+            echo "  Model Type:              Text Embedding"
+            echo "  Model Name:              ${EMBEDDING_MODEL:-deepvk/USER-bge-m3}"
+            echo "  API endpoint URL:        http://agmind-tei:80/v1"
+            echo "  API Key:                 none"
+            echo "  model name for endpoint: ${EMBEDDING_MODEL:-deepvk/USER-bge-m3}"
         fi
         if [[ "${ENABLE_RERANKER:-false}" == "true" ]]; then
-            echo "  TEI Reranker:"
-            echo "    Docker network: http://agmind-tei-rerank:80"
+            echo ""
+            echo "=== TEI Reranker (Dify → Settings → Model Provider → OpenAI-API-compatible) ==="
+            echo "  Model Type:              Rerank"
+            echo "  Model Name:              ${RERANK_MODEL:-BAAI/bge-reranker-base}"
+            echo "  API endpoint URL:        http://agmind-tei-rerank:80/v1"
+            echo "  API Key:                 none"
+            echo "  model name for endpoint: ${RERANK_MODEL:-BAAI/bge-reranker-base}"
         fi
         echo ""
         echo "# ---"
@@ -542,7 +564,7 @@ _show_final_summary() {
     echo -e "  ${BOLD}Эмбеддинги:${NC}      ${EMBED_PROVIDER:-ollama} ${EMBEDDING_MODEL:-bge-m3}"
     echo -e "  ${BOLD}Контейнеры:${NC}      ${container_count} запущено"
     echo ""
-    echo -e "  ${BOLD}Credentials:${NC}     ${INSTALL_DIR}/credentials.txt"
+    echo -e "  ${BOLD}Credentials:${NC}     nano ${INSTALL_DIR}/credentials.txt"
     echo -e "  ${BOLD}Логи:${NC}            ${INSTALL_DIR}/install.log"
     echo -e "  ${BOLD}CLI:${NC}             agmind status | agmind health"
     echo ""

@@ -803,7 +803,7 @@ Plans:
 | 26. Update Robustness | 2/2 | Complete    | 2026-03-24 | — |
 | 27. UX Polish | 1/1 | Complete    | 2026-03-24 | — |
 | 28. Release Branch Workflow | 3/3 | Complete    | 2026-03-29 | — |
-| 29. Docling GPU/OCR | 2/2 | Complete   | 2026-03-29 | — |
+| 29. Docling GPU/OCR | 2/2 | Complete    | 2026-03-29 | — |
 | 30. Reliability Fixes | v2.7 | 0/TBD | Not started | — |
 | 31. Pre-Pull Image Validation | v2.7 | 0/TBD | Not started | — |
 | 32. Offline Bundle E2E Test | v2.7 | 0/TBD | Not started | — |
