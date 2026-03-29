@@ -725,6 +725,7 @@ Commands:
     --rollback             Rollback to previous bundle version
     --rollback <name>      Rollback single component (legacy)
     --auto                 Skip all confirmation prompts
+    --scripts-only         Update scripts/configs only (skip docker pull)
   uninstall          Remove AGMind (root)
   rotate-secrets     Rotate passwords and keys (root)
   help               Show this help

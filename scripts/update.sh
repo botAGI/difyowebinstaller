@@ -134,15 +134,17 @@ TARGET_VERSION=""
 ROLLBACK_TARGET=""
 ROLLBACK_MODE=false
 FORCE=false
+UPDATE_BRANCH="${UPDATE_BRANCH:-release}"
+SCRIPTS_ONLY="${SCRIPTS_ONLY:-false}"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --auto)       AUTO_UPDATE=true; shift ;;
-        --check)      CHECK_ONLY=true; shift ;;
-        --check-only) CHECK_ONLY=true; shift ;;
-        --component)  COMPONENT="${2:-}"; shift 2 ;;
-        --version)    TARGET_VERSION="${2:-}"; shift 2 ;;
+        --auto)         AUTO_UPDATE=true; shift ;;
+        --check)        CHECK_ONLY=true; shift ;;
+        --check-only)   CHECK_ONLY=true; shift ;;
+        --component)    COMPONENT="${2:-}"; shift 2 ;;
+        --version)      TARGET_VERSION="${2:-}"; shift 2 ;;
         --rollback)
             ROLLBACK_MODE=true
             # Next arg is optional component name (if not a flag)
@@ -152,8 +154,10 @@ while [[ $# -gt 0 ]]; do
                 ROLLBACK_TARGET=""; shift
             fi
             ;;
-        --force)      FORCE=true; shift ;;
-        *)            log_error "Unknown option: $1"; exit 1 ;;
+        --force)        FORCE=true; shift ;;
+        --main)         UPDATE_BRANCH="main"; shift ;;
+        --scripts-only) SCRIPTS_ONLY=true; shift ;;
+        *)              log_error "Unknown option: $1"; exit 1 ;;
     esac
 done
 
@@ -204,6 +208,55 @@ CURL_CFG
             fi
             ;;
     esac
+}
+
+# Update installer scripts via git pull from release (or main) branch
+update_scripts() {
+    local branch="${UPDATE_BRANCH:-release}"
+    log_info "Updating scripts from branch: ${branch}..."
+
+    cd "$INSTALL_DIR" || { log_error "Cannot cd to $INSTALL_DIR"; return 1; }
+
+    # Ensure we are in a git repo
+    if [[ ! -d ".git" ]]; then
+        log_error "INSTALL_DIR is not a git repository — cannot update scripts"
+        log_error "Manual fix: cd $INSTALL_DIR && git init && git remote add origin https://github.com/botAGI/AGmind.git"
+        return 1
+    fi
+
+    # Stash any local changes (safety net per Pitfall C-01)
+    local stash_msg="agmind-update-$(date +%s)"
+    if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
+        log_info "Stashing local changes before pull..."
+        git stash push -m "$stash_msg" --include-untracked 2>/dev/null || true
+    fi
+
+    # Fetch and checkout target branch
+    git fetch origin "$branch" 2>/dev/null || {
+        log_error "Failed to fetch branch '${branch}' from origin"
+        log_error "Check network connectivity or run: git -C $INSTALL_DIR fetch origin"
+        return 1
+    }
+
+    # Fast-forward pull (no merge commits)
+    git checkout "$branch" 2>/dev/null || {
+        log_error "Failed to checkout branch '${branch}'"
+        return 1
+    }
+
+    git pull --ff-only origin "$branch" 2>/dev/null || {
+        log_error "Failed to pull from '${branch}' — possible conflict"
+        log_error "Manual fix: cd $INSTALL_DIR && git stash && git pull origin $branch"
+        return 1
+    }
+
+    # If --main was used, switch back to release for next time
+    if [[ "$branch" == "main" ]]; then
+        log_warn "One-time pull from 'main' complete. Next 'agmind update' will use 'release'."
+        # Do NOT persist the branch change -- UPDATE_BRANCH defaults to release
+    fi
+
+    log_success "Scripts updated from branch: ${branch}"
 }
 
 check_preflight() {
@@ -305,53 +358,49 @@ get_current_release() {
 
 # Fetch latest release info from GitHub Releases API
 # Sets globals: RELEASE_TAG, RELEASE_NAME, RELEASE_DATE, RELEASE_NOTES,
-#               RELEASE_VERSIONS_URL, DOWNLOADED_VERSIONS_FILE, NEW_VERSIONS
+#               DOWNLOADED_VERSIONS_FILE, NEW_VERSIONS
 fetch_release_info() {
-    log_info "Fetching latest release from GitHub..."
+    log_info "Fetching latest release info from GitHub..."
 
     local json_data
     json_data=$(curl -sf --max-time "$REMOTE_FETCH_TIMEOUT" "$GITHUB_API_URL") || {
-        log_error "Cannot reach GitHub Releases API"
-        log_error "Check network or try: agmind update --component <name> --version <tag>"
-        return 1
+        local http_code
+        http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time "$REMOTE_FETCH_TIMEOUT" "$GITHUB_API_URL" 2>/dev/null || echo "000")
+        if [[ "$http_code" == "403" || "$http_code" == "429" ]]; then
+            log_warn "GitHub API rate limit exceeded (HTTP ${http_code})"
+            log_warn "Version diff will use locally cached versions.env"
+        else
+            log_error "Cannot reach GitHub Releases API (HTTP ${http_code})"
+            log_error "Check network or try: agmind update --component <name> --version <tag>"
+        fi
+        # Continue without release notes — versions.env already fetched from branch
+        RELEASE_TAG=""; RELEASE_NAME=""; RELEASE_DATE=""; RELEASE_NOTES=""
+        json_data=""
     }
 
-    # Parse all fields in a single python3 call
-    eval "$(echo "$json_data" | python3 -c "
+    # Parse tag/name/date/notes from API response (if available)
+    if [[ -n "$json_data" ]]; then
+        eval "$(echo "$json_data" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
 tag = d.get('tag_name', '')
 name = d.get('name', '')
 date = d.get('published_at', '')[:10]
 body = d.get('body', '').replace(\"'\", \"'\\\\''\")
-assets = d.get('assets', [])
-url = ''
-for a in assets:
-    if a.get('name') == 'versions.env':
-        url = a.get('browser_download_url', '')
-        break
 print(f\"RELEASE_TAG='{tag}'\")
 print(f\"RELEASE_NAME='{name}'\")
 print(f\"RELEASE_DATE='{date}'\")
 print(f\"RELEASE_NOTES='{body}'\")
-print(f\"RELEASE_VERSIONS_URL='{url}'\")
-")" || { log_error "Failed to parse GitHub API response"; return 1; }
-
-    if [[ -z "${RELEASE_TAG:-}" ]]; then
-        log_error "GitHub API returned empty release tag"
-        return 1
+")" || { log_warn "Failed to parse GitHub API response — continuing without release notes"; RELEASE_TAG=""; RELEASE_NAME=""; RELEASE_DATE=""; RELEASE_NOTES=""; }
     fi
 
-    if [[ -z "${RELEASE_VERSIONS_URL:-}" ]]; then
-        log_error "Release ${RELEASE_TAG} has no versions.env asset"
-        return 1
-    fi
-
-    # Download versions.env asset into temp file
+    # Download versions.env from branch (not from release assets)
+    local versions_url="https://raw.githubusercontent.com/botAGI/AGmind/${UPDATE_BRANCH}/templates/versions.env"
     local tmp_versions
     tmp_versions=$(mktemp)
-    curl -sfL --max-time "$REMOTE_FETCH_TIMEOUT" "$RELEASE_VERSIONS_URL" -o "$tmp_versions" || {
-        log_error "Failed to download versions.env from release ${RELEASE_TAG}"
+    curl -sf --max-time "$REMOTE_FETCH_TIMEOUT" "$versions_url" -o "$tmp_versions" || {
+        log_error "Failed to download versions.env from branch '${UPDATE_BRANCH}'"
+        log_error "URL: ${versions_url}"
         rm -f "$tmp_versions"
         return 1
     }
@@ -370,7 +419,11 @@ print(f\"RELEASE_VERSIONS_URL='{url}'\")
         NEW_VERSIONS["$key"]="$value"
     done < "$tmp_versions"
 
-    log_success "Release info fetched: ${RELEASE_TAG} (${#NEW_VERSIONS[@]} versions)"
+    if [[ -n "${RELEASE_TAG:-}" ]]; then
+        log_success "Release info fetched: ${RELEASE_TAG} (${#NEW_VERSIONS[@]} versions)"
+    else
+        log_success "Version info fetched from branch '${UPDATE_BRANCH}' (${#NEW_VERSIONS[@]} versions)"
+    fi
 }
 
 # Display bundle diff between current and latest release
@@ -994,6 +1047,19 @@ main() {
     fi
 
     # === Bundle update flow ===
+
+    # Update installer scripts via git pull from release (or main) branch
+    if ! update_scripts; then
+        log_error "Script update failed — check git repository state"
+        exit 1
+    fi
+
+    # Exit after scripts update if --scripts-only flag was set
+    if [[ "$SCRIPTS_ONLY" == "true" ]]; then
+        log_success "Scripts/configs updated successfully (--scripts-only)"
+        log_update "SUCCESS" "Scripts-only update from branch '${UPDATE_BRANCH}'"
+        exit 0
+    fi
 
     # Fetch latest release info from GitHub
     if ! fetch_release_info; then
