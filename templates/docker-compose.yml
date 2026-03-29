@@ -512,7 +512,7 @@ services:
   # ==================== Docling (ETL service) ====================
   docling:
     <<: *logging-defaults
-    image: ghcr.io/docling-project/docling-serve:${DOCLING_SERVE_VERSION:-v1.14.3}
+    image: ${DOCLING_IMAGE:-ghcr.io/docling-project/docling-serve:v1.14.3}
     container_name: agmind-docling
     restart: on-failure:5
     mem_limit: ${DOCLING_MEM_LIMIT:-4g}
@@ -521,6 +521,9 @@ services:
     expose:
       - "8765"
     command: ["docling-serve", "run", "--port", "8765", "--host", "0.0.0.0"]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-}
+      - OCR_LANG=${OCR_LANG:-rus,eng}
     volumes:
       - agmind_docling_cache:/home/docling/.cache
     healthcheck:
