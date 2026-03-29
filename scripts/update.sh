@@ -432,15 +432,17 @@ display_bundle_diff() {
     local current_release
     current_release="$(get_current_release)"
 
-    # If current == latest: no updates
-    if [[ "$current_release" == "${RELEASE_TAG}" ]]; then
-        log_success "You are up to date (${current_release})"
-        return 1
+    # Quick check: if release tag matches current, skip the diff
+    if [[ -n "${RELEASE_TAG:-}" && "$current_release" == "$RELEASE_TAG" ]]; then
+        echo ""
+        echo -e "${GREEN}AGMind ${current_release} — актуальная версия.${NC}"
+        echo ""
+        return 1  # return 1 = no updates available
     fi
 
     echo ""
     echo -e "Current release: ${BOLD}${current_release}${NC}"
-    echo -e "Latest release:  ${BOLD}${RELEASE_TAG}${NC} (${RELEASE_DATE})"
+    echo -e "Latest release:  ${BOLD}${RELEASE_TAG:-unknown}${NC}${RELEASE_DATE:+ (${RELEASE_DATE})}"
     echo ""
     echo "Changes:"
 
@@ -476,24 +478,20 @@ display_bundle_diff() {
         echo "  (${unchanged_count} components unchanged)"
     fi
 
-    # Show release notes (up to 10 lines)
+    # Show full release notes
     if [[ -n "${RELEASE_NOTES:-}" ]]; then
         echo ""
-        echo "Release notes:"
-        local line_count=0
-        while IFS= read -r line; do
-            [[ -z "$line" && $line_count -eq 0 ]] && continue  # skip leading blank lines
-            echo "  ${line}"
-            line_count=$((line_count + 1))
-            [[ $line_count -ge 10 ]] && break
-        done <<< "${RELEASE_NOTES}"
-        local total_lines
-        total_lines=$(echo "${RELEASE_NOTES}" | wc -l)
-        if [[ "$total_lines" -gt 10 ]]; then
-            echo "  ... (${total_lines} lines total)"
-        fi
+        echo -e "${BOLD}Release notes (${RELEASE_TAG}):${NC}"
         echo ""
-        echo "Full changelog: https://github.com/botAGI/AGmind/releases/tag/${RELEASE_TAG}"
+        while IFS= read -r line; do
+            echo "  ${line}"
+        done <<< "${RELEASE_NOTES}"
+        echo ""
+        echo -e "  ${CYAN}https://github.com/botAGI/AGmind/releases/tag/${RELEASE_TAG}${NC}"
+    elif [[ -z "${RELEASE_TAG:-}" ]]; then
+        echo ""
+        echo -e "${YELLOW}Release notes unavailable (GitHub API error or rate limit).${NC}"
+        echo "  Check manually: https://github.com/botAGI/AGmind/releases"
     fi
     echo ""
 
