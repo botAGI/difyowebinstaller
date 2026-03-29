@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: Install Stability + Update Robustness
 status: Awaiting plan-phase
-stopped_at: Completed 28-03-PLAN.md
-last_updated: "2026-03-29T04:11:50.062Z"
+stopped_at: Completed 29-docling-gpu-ocr-01-PLAN.md
+last_updated: "2026-03-29T14:01:02.674Z"
 last_activity: "2026-03-29 — Roadmap created: phases 28-32, 15 requirements mapped"
 progress:
   total_phases: 8
-  completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  completed_phases: 2
+  total_plans: 5
+  completed_plans: 5
   percent: 0
 ---
 
@@ -75,6 +75,11 @@ Progress: `[░░░░░░░░░░] 0%`
 - [Phase 28]: versions.env fetched from raw.githubusercontent.com branch URL instead of GitHub release assets
 - [Phase 28]: GitHub API 403/429 non-fatal: log_warn and continue with branch-fetched versions.env
 - [Phase 28]: display_bundle_diff() shows full RELEASE_NOTES without line limit (while-read loop)
+- [Phase 29-docling-gpu-ocr]: GPU passthrough for Docling uses NVIDIA_VISIBLE_DEVICES env var, not deploy.resources.reservations — single service, no duplicate
+- [Phase 29-docling-gpu-ocr]: DOCLING_SERVE_VERSION replaced by DOCLING_IMAGE_CPU and DOCLING_IMAGE_CUDA in versions.env; DOCLING_IMAGE in .env holds full image:tag
+- [Phase 29-docling-gpu-ocr]: GPU option (item 3) in Docling wizard hidden unless nvidia container runtime detected via docker info
+- [Phase 29-docling-gpu-ocr]: DOCLING_SERVE_VERSION removed from versions.env; replaced by DOCLING_IMAGE_CPU and DOCLING_IMAGE_CUDA full image:tag refs
+- [Phase 29-docling-gpu-ocr]: OCR_LANG hardcoded to rus,eng; not user-configurable (DOCL-03)
 
 ### Architecture Notes
 
@@ -112,7 +117,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-29T04:11:50.060Z
-Stopped at: Completed 28-03-PLAN.md
+Last session: 2026-03-29T14:01:02.672Z
+Stopped at: Completed 29-docling-gpu-ocr-01-PLAN.md
 Resume file: None
 Next step: `/gsd:plan-phase 28`

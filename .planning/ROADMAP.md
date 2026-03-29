@@ -664,7 +664,7 @@ Plans:
 
 ### Phase 29: Docling GPU/OCR
 
-**Goal:** Docling выбирает CUDA или CPU образ автоматически по GPU-детектированию, model cache переживает recreate, русский OCR включён по умолчанию, модели предзагружены при установке.
+**Goal:** Wizard предлагает ручной выбор Docling образа (Нет/CPU/GPU CUDA), GPU-пункт скрыт без nvidia runtime, model cache переживает recreate через existing volume, русский OCR (rus,eng) включён по умолчанию, offline bundle поддерживает CUDA-образ по флагу.
 
 **Depends on:** Phase 28
 **Requirements:** DOCL-01, DOCL-02, DOCL-03, DOCL-04
@@ -672,11 +672,15 @@ Plans:
 **Success Criteria** (what must be TRUE):
 
 1. На хосте с NVIDIA GPU (nvidia container toolkit подтверждён через `docker info`) wizard предлагает GPU-образ (`quay.io/docling-project/docling-serve-cu128`); без GPU — CPU образ (`ghcr.io`); выбор отражён в `DOCLING_IMAGE` в `.env`
-2. После `docker compose up --force-recreate docling` volumes `agmind_docling_models` и `agmind_hf_cache` сохраняются — модели не скачиваются повторно
+2. После `docker compose up --force-recreate docling` volume `agmind_docling_cache` сохраняется — модели не скачиваются повторно
 3. Контейнер Docling стартует с `OCR_LANG=rus,eng` — русскоязычный PDF распознаётся без дополнительной настройки
-4. При установке OCR/layout модели скачиваются в фазе pull до старта контейнера — фаза старта не ждёт первого запроса на обработку документа
+4. Offline bundle включает CPU-образ по умолчанию; `INCLUDE_DOCLING_CUDA=true` добавляет CUDA-образ (+5-8 GB)
 
-**Plans:** TBD
+**Plans:** 2/2 plans complete
+
+Plans:
+- [ ] 29-01-PLAN.md — Wizard тройной выбор Docling + env pipeline (versions.env, templates, config.sh)
+- [ ] 29-02-PLAN.md — Docker-compose dynamic image + offline bundle CUDA flag
 
 ---
 
@@ -762,7 +766,7 @@ Plans:
 - [x] **Phase 26: Update Robustness** — PG major upgrade warning, full release notes в --check, post-rollback doctor, CI manifest auto-sync (v2.6) (completed 2026-03-24)
 - [x] **Phase 27: UX Polish** — Streaming model download progress (all providers), graceful timeout with recovery instructions (v2.6) (completed 2026-03-24)
 - [x] **Phase 28: Release Branch Workflow** — Installer/agmind update via release branch, full release notes, Telegram escape, credentials.txt endpoints, FILES_URL auto-populate (v2.7) (completed 2026-03-29)
-- [ ] **Phase 29: Docling GPU/OCR** — CUDA image auto-selection, persistent model volumes, Russian OCR default, model preload at install (v2.7)
+- [x] **Phase 29: Docling GPU/OCR** — CUDA image auto-selection, persistent model volumes, Russian OCR default, model preload at install (v2.7) (completed 2026-03-29)
 - [ ] **Phase 30: Reliability Fixes** — Dify init retry/fallback with flock, install.sh --dry-run preflight checks (v2.7)
 - [ ] **Phase 31: Pre-Pull Image Validation** — HTTP HEAD validation before docker pull/update, offline/CI skip (v2.7)
 - [ ] **Phase 32: Offline Bundle E2E Test** — build → airgap simulate → install → verify, all v2.7 images included (v2.7)
@@ -798,8 +802,8 @@ Plans:
 | 25. Install Stability | 2/2 | Complete    | 2026-03-24 | — |
 | 26. Update Robustness | 2/2 | Complete    | 2026-03-24 | — |
 | 27. UX Polish | 1/1 | Complete    | 2026-03-24 | — |
-| 28. Release Branch Workflow | 3/3 | Complete   | 2026-03-29 | — |
-| 29. Docling GPU/OCR | v2.7 | 0/TBD | Not started | — |
+| 28. Release Branch Workflow | 3/3 | Complete    | 2026-03-29 | — |
+| 29. Docling GPU/OCR | 2/2 | Complete   | 2026-03-29 | — |
 | 30. Reliability Fixes | v2.7 | 0/TBD | Not started | — |
 | 31. Pre-Pull Image Validation | v2.7 | 0/TBD | Not started | — |
 | 32. Offline Bundle E2E Test | v2.7 | 0/TBD | Not started | — |

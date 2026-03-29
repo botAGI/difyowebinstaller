@@ -20,10 +20,10 @@ Requirements for milestone v2.7 Release Workflow + Platform Expansion.
 
 ### Docling (DOCL)
 
-- [ ] **DOCL-01**: Wizard выбор Docling образа: GPU (quay.io cu128) или CPU (ghcr.io стандартный)
-- [ ] **DOCL-02**: Persistent volumes для HuggingFace cache и моделей Docling (переживают recreate)
-- [ ] **DOCL-03**: Русский OCR по умолчанию (OCR_LANG=rus,eng)
-- [ ] **DOCL-04**: Предзагрузка OCR/layout моделей при установке (до старта контейнера)
+- [x] **DOCL-01**: Wizard выбор Docling образа: GPU (quay.io cu128) или CPU (ghcr.io стандартный)
+- [x] **DOCL-02**: Persistent volumes для HuggingFace cache и моделей Docling (переживают recreate)
+- [x] **DOCL-03**: Русский OCR по умолчанию (OCR_LANG=rus,eng)
+- [x] **DOCL-04**: Предзагрузка OCR/layout моделей при установке (до старта контейнера)
 
 ### Reliability (RLBL)
 
@@ -69,10 +69,10 @@ Within Release & Update: RELU-01/02/03 (branching) and RELU-06/07 (quick fixes) 
 | RELU-06 | Phase 28 | Complete |
 | RELU-07 | Phase 28 | Complete |
 | RELU-08 | Phase 28 | Complete |
-| DOCL-01 | Phase 29 | Pending |
-| DOCL-02 | Phase 29 | Pending |
-| DOCL-03 | Phase 29 | Pending |
-| DOCL-04 | Phase 29 | Pending |
+| DOCL-01 | Phase 29 | Complete |
+| DOCL-02 | Phase 29 | Complete |
+| DOCL-03 | Phase 29 | Complete |
+| DOCL-04 | Phase 29 | Complete |
 | RLBL-01 | Phase 30 | Pending |
 | RLBL-03 | Phase 30 | Pending |
 | RELU-04 | Phase 31 | Pending |
