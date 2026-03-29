@@ -23,3 +23,15 @@ references/
 *.swp
 *.swo
 *~
+
+# Installer-generated runtime files (MUST not conflict with git pull)
+credentials.txt
+RELEASE
+docker/
+logs/
+.rollback/
+.dify_initialized
+.admin_password
+.checkpoint_*
+*.bak
+*.tmp
