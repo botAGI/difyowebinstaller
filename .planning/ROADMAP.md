@@ -653,7 +653,7 @@ Plans:
 6. Model API endpoints (Ollama URL, vLLM URL, TEI URL) записаны в `credentials.txt` после установки
 7. `FILES_URL` в `.env` содержит домен/IP, указанный в wizard — Dify использует правильный URL без ручной правки
 
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 - [ ] 28-01-PLAN.md — Telegram HTML escape, Model API endpoints в credentials.txt, FILES_URL auto-populate
@@ -761,7 +761,7 @@ Plans:
  (completed 2026-03-24)
 - [x] **Phase 26: Update Robustness** — PG major upgrade warning, full release notes в --check, post-rollback doctor, CI manifest auto-sync (v2.6) (completed 2026-03-24)
 - [x] **Phase 27: UX Polish** — Streaming model download progress (all providers), graceful timeout with recovery instructions (v2.6) (completed 2026-03-24)
-- [ ] **Phase 28: Release Branch Workflow** — Installer/agmind update via release branch, full release notes, Telegram escape, credentials.txt endpoints, FILES_URL auto-populate (v2.7)
+- [x] **Phase 28: Release Branch Workflow** — Installer/agmind update via release branch, full release notes, Telegram escape, credentials.txt endpoints, FILES_URL auto-populate (v2.7) (completed 2026-03-29)
 - [ ] **Phase 29: Docling GPU/OCR** — CUDA image auto-selection, persistent model volumes, Russian OCR default, model preload at install (v2.7)
 - [ ] **Phase 30: Reliability Fixes** — Dify init retry/fallback with flock, install.sh --dry-run preflight checks (v2.7)
 - [ ] **Phase 31: Pre-Pull Image Validation** — HTTP HEAD validation before docker pull/update, offline/CI skip (v2.7)
@@ -798,7 +798,7 @@ Plans:
 | 25. Install Stability | 2/2 | Complete    | 2026-03-24 | — |
 | 26. Update Robustness | 2/2 | Complete    | 2026-03-24 | — |
 | 27. UX Polish | 1/1 | Complete    | 2026-03-24 | — |
-| 28. Release Branch Workflow | 2/3 | In Progress|  | — |
+| 28. Release Branch Workflow | 3/3 | Complete   | 2026-03-29 | — |
 | 29. Docling GPU/OCR | v2.7 | 0/TBD | Not started | — |
 | 30. Reliability Fixes | v2.7 | 0/TBD | Not started | — |
 | 31. Pre-Pull Image Validation | v2.7 | 0/TBD | Not started | — |

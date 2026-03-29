@@ -13,7 +13,7 @@ Requirements for milestone v2.7 Release Workflow + Platform Expansion.
 - [x] **RELU-02**: `agmind update` тянет скрипты/конфиги из ветки `release` через git pull
 - [x] **RELU-03**: `agmind update --main` переключает на ветку `main` (скрыт из --help, dev only, только конфиги без перекачки образов)
 - [ ] **RELU-04**: Pre-pull валидация образов через HTTP HEAD к registry API перед docker pull/update
-- [ ] **RELU-05**: Полные release notes в `agmind update --check` (полный текст + ссылка на GitHub)
+- [x] **RELU-05**: Полные release notes в `agmind update --check` (полный текст + ссылка на GitHub)
 - [x] **RELU-06**: Telegram HTML escape спецсимволов (`<`, `>`, `&`) в уведомлениях
 - [x] **RELU-07**: Model API endpoints (Ollama/vLLM URL, TEI URL) записываются в credentials.txt
 - [x] **RELU-08**: Dify FILES_URL auto-populate из домена/IP при установке
@@ -65,7 +65,7 @@ Within Release & Update: RELU-01/02/03 (branching) and RELU-06/07 (quick fixes) 
 | RELU-01 | Phase 28 | Complete |
 | RELU-02 | Phase 28 | Complete |
 | RELU-03 | Phase 28 | Complete |
-| RELU-05 | Phase 28 | Pending |
+| RELU-05 | Phase 28 | Complete |
 | RELU-06 | Phase 28 | Complete |
 | RELU-07 | Phase 28 | Complete |
 | RELU-08 | Phase 28 | Complete |

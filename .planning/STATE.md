@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: Install Stability + Update Robustness
 status: Awaiting plan-phase
-stopped_at: Completed 28-02-PLAN.md
-last_updated: "2026-03-29T04:08:54.611Z"
+stopped_at: Completed 28-03-PLAN.md
+last_updated: "2026-03-29T04:11:50.062Z"
 last_activity: "2026-03-29 — Roadmap created: phases 28-32, 15 requirements mapped"
 progress:
   total_phases: 8
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -74,6 +74,7 @@ Progress: `[░░░░░░░░░░] 0%`
 - [Phase 28]: UPDATE_BRANCH defaults to 'release'; --main sets it to 'main' for one-time dev fetch
 - [Phase 28]: versions.env fetched from raw.githubusercontent.com branch URL instead of GitHub release assets
 - [Phase 28]: GitHub API 403/429 non-fatal: log_warn and continue with branch-fetched versions.env
+- [Phase 28]: display_bundle_diff() shows full RELEASE_NOTES without line limit (while-read loop)
 
 ### Architecture Notes
 
@@ -111,7 +112,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-29T04:08:54.608Z
-Stopped at: Completed 28-02-PLAN.md
+Last session: 2026-03-29T04:11:50.060Z
+Stopped at: Completed 28-03-PLAN.md
 Resume file: None
 Next step: `/gsd:plan-phase 28`
