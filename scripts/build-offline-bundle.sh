@@ -17,6 +17,7 @@ INCLUDE_MODELS=""
 PLATFORM="linux/amd64"
 SKIP_IMAGES=false
 BUNDLE_NAME="agmind-offline"
+INCLUDE_DOCLING_CUDA="${INCLUDE_DOCLING_CUDA:-false}"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -40,6 +41,9 @@ while [[ $# -gt 0 ]]; do
             echo "  --platform PLAT        Target platform (default: linux/amd64)"
             echo "  --skip-images          Skip Docker image export (for testing)"
             echo "  --name NAME            Bundle name prefix (default: agmind-offline)"
+            echo ""
+            echo "Environment variables:"
+            echo "  INCLUDE_DOCLING_CUDA=true  Include Docling CUDA image in bundle (+5-8 GB)"
             echo ""
             exit 0
             ;;
@@ -78,10 +82,13 @@ fi
 # Source versions
 VERSIONS_FILE="${SCRIPT_DIR}/versions.env"
 if [[ -f "$VERSIONS_FILE" ]]; then
-    # Safe parsing — only allow known variable patterns
+    # Safe parsing — allow VERSION vars and DOCLING_IMAGE_* vars
     while IFS='=' read -r key value; do
-        [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*_VERSION$ ]] && export "$key=$value"
-    done < <(grep -E '^[A-Za-z_].*_VERSION=' "$VERSIONS_FILE" | grep -v '^#')
+        if [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*_VERSION$ ]] || \
+           [[ "$key" =~ ^DOCLING_IMAGE_(CPU|CUDA)$ ]]; then
+            export "$key=$value"
+        fi
+    done < <(grep -E '^[A-Za-z_].*(=)' "$VERSIONS_FILE" | grep -v '^#')
     echo -e "${GREEN}✓ Loaded versions from versions.env${NC}"
 else
     echo -e "${RED}versions.env not found!${NC}"
@@ -133,6 +140,23 @@ if [[ "$SKIP_IMAGES" != "true" ]]; then
         echo "$images" | while read -r img; do
             echo "  → $img"
         done
+
+        # Ensure Docling CPU image is included (always in bundle)
+        DOCLING_IMAGE_CPU="${DOCLING_IMAGE_CPU:-ghcr.io/docling-project/docling-serve:v1.14.3}"
+        if ! echo "$images" | grep -qF "docling"; then
+            echo -e "${CYAN}→ Pulling Docling CPU image: ${DOCLING_IMAGE_CPU}${NC}"
+            DOCKER_DEFAULT_PLATFORM="$PLATFORM" docker pull "${DOCLING_IMAGE_CPU}" 2>&1 | tail -3
+            images="${images}"$'\n'"${DOCLING_IMAGE_CPU}"
+        fi
+
+        # Docling CUDA image (optional, +5-8 GB)
+        if [[ "${INCLUDE_DOCLING_CUDA}" == "true" ]]; then
+            DOCLING_IMAGE_CUDA="${DOCLING_IMAGE_CUDA:-quay.io/docling-project/docling-serve-cu128:v1.14.3}"
+            echo ""
+            echo -e "${CYAN}→ Including Docling CUDA image: ${DOCLING_IMAGE_CUDA}${NC}"
+            DOCKER_DEFAULT_PLATFORM="$PLATFORM" docker pull "${DOCLING_IMAGE_CUDA}" 2>&1 | tail -3
+            images="${images}"$'\n'"${DOCLING_IMAGE_CUDA}"
+        fi
 
         # Save all images to a single tar
         echo ""
