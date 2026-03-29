@@ -157,9 +157,20 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Escape HTML special characters for Telegram parse_mode=HTML
+_escape_html() {
+    local text="$1"
+    # Order matters: & first to avoid double-escaping
+    text="${text//&/&amp;}"
+    text="${text//</&lt;}"
+    text="${text//>/&gt;}"
+    echo "$text"
+}
+
 # Send notification via configured alert channel
 send_notification() {
     local message="$1"
+    message="$(_escape_html "$message")"
     [[ ! -f "$ENV_FILE" ]] && return 0
 
     local alert_mode
