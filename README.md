@@ -39,7 +39,13 @@
 ## Quick Start
 
 ```bash
-git clone https://github.com/botAGI/AGmind.git
+curl -fsSL https://raw.githubusercontent.com/botAGI/AGmind/release/bootstrap.sh | sudo bash
+```
+
+Or, using git directly (alternative):
+
+```bash
+git clone -b release https://github.com/botAGI/AGmind.git
 cd AGmind
 sudo bash install.sh
 ```
@@ -80,7 +86,8 @@ Installed as `/usr/local/bin/agmind`. Manages the full stack without memorizing 
 | `agmind doctor` | Diagnostics: disk, RAM, Docker, GPU, DNS, ports, .env | no |
 | `agmind doctor --json` | Diagnostics as JSON (for CI/monitoring) | no |
 | `agmind update --check` | Show available version updates (no changes) | yes |
-| `agmind update` | Interactive rolling update with automatic rollback | yes |
+| `agmind update` | Pull scripts from `release` branch, then roll out new images | yes |
+| `agmind update --scripts-only` | Pull latest scripts/configs only (no docker pull) | yes |
 | `agmind update --component <name> --version <tag>` | Update a single service | yes |
 | `agmind backup` | Manual backup (DB + volumes + config) | yes |
 | `agmind restore <path>` | Restore from backup archive | yes |
