@@ -246,6 +246,16 @@ _generate_env_file() {
         etl_type="unstructured_api"
     fi
 
+    # FILES_URL: VPS uses domain (already in template), others use server IP
+    local files_url=""
+    if [[ "${DEPLOY_PROFILE:-}" != "vps" ]]; then
+        local server_ip
+        server_ip="$(hostname -I 2>/dev/null | awk '{print $1}' || echo "127.0.0.1")"
+        files_url="http://${server_ip}"
+    fi
+    local safe_files_url
+    safe_files_url="$(escape_sed "${files_url}")"
+
     # Replace all placeholders (atomic: temp + mv)
     local env_tmp="${env_file}.tmp.$$"
     sed \
@@ -281,6 +291,7 @@ _generate_env_file() {
         -e "s|__RERANK_MODEL__|${safe_rerank_model}|g" \
         -e "s|__TEI_EMBED_VERSION__|${safe_tei_embed_version}|g" \
         -e "s|__AUTHELIA_JWT_SECRET__|${_AUTHELIA_JWT_SECRET}|g" \
+        -e "s|__FILES_URL__|${safe_files_url}|g" \
         "$env_file" > "$env_tmp" || { rm -f "$env_tmp"; return 1; }
     mv "$env_tmp" "$env_file"
     chmod 600 "$env_file"
