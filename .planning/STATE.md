@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: Install Stability + Update Robustness
 status: Awaiting plan-phase
-stopped_at: Completed 30-reliability-validation-03-PLAN.md
-last_updated: "2026-03-30T00:33:41.824Z"
+stopped_at: Completed 30-reliability-validation-02-PLAN.md
+last_updated: "2026-03-30T00:35:45.906Z"
 last_activity: "2026-03-29 — Roadmap created: phases 28-32, 15 requirements mapped"
 progress:
   total_phases: 6
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 8
-  completed_plans: 6
+  completed_plans: 8
   percent: 0
 ---
 
@@ -81,6 +81,10 @@ Progress: `[░░░░░░░░░░] 0%`
 - [Phase 29-docling-gpu-ocr]: DOCLING_SERVE_VERSION removed from versions.env; replaced by DOCLING_IMAGE_CPU and DOCLING_IMAGE_CUDA full image:tag refs
 - [Phase 29-docling-gpu-ocr]: OCR_LANG hardcoded to rus,eng; not user-configurable (DOCL-03)
 - [Phase 30-reliability-validation]: Stage 6 verification positioned after tar creation to catch missing images before success message; exit 1 on missing images prevents misleading bundle complete output
+- [Phase 30-reliability-validation]: Dify init retry sleep 30->60s; flock on agmind init-dify via fd 8; --dry-run runs preflight_checks and exits with its rc; DNS check uses getent hosts primary + nslookup fallback
+- [Phase 30-reliability-validation]: HTTP HEAD (not docker manifest inspect, not GET) — avoids push scope bug docker/cli#4345 and rate-limit
+- [Phase 30-reliability-validation]: validate_images_exist() blocks compose_pull() on 404; warn-only in update.sh (user may have custom images)
+- [Phase 30-reliability-validation]: update.sh sources lib/compose.sh via _UPDATE_SCRIPT_DIR to get validate_images_exist() without code duplication
 
 ### Architecture Notes
 
@@ -118,7 +122,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-30T00:33:41.821Z
-Stopped at: Completed 30-reliability-validation-03-PLAN.md
+Last session: 2026-03-30T00:35:45.904Z
+Stopped at: Completed 30-reliability-validation-02-PLAN.md
 Resume file: None
 Next step: `/gsd:plan-phase 28`

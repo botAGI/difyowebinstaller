@@ -12,7 +12,7 @@ Requirements for milestone v2.7 Release Workflow + Platform Expansion.
 - [x] **RELU-01**: Installer клонирует ветку `release` по умолчанию (README, документация обновлены)
 - [x] **RELU-02**: `agmind update` тянет скрипты/конфиги из ветки `release` через git pull
 - [x] **RELU-03**: `agmind update --main` переключает на ветку `main` (скрыт из --help, dev only, только конфиги без перекачки образов)
-- [ ] **RELU-04**: Pre-pull валидация образов через HTTP HEAD к registry API перед docker pull/update
+- [x] **RELU-04**: Pre-pull валидация образов через HTTP HEAD к registry API перед docker pull/update
 - [x] **RELU-05**: Полные release notes в `agmind update --check` (полный текст + ссылка на GitHub)
 - [x] **RELU-06**: Telegram HTML escape спецсимволов (`<`, `>`, `&`) в уведомлениях
 - [x] **RELU-07**: Model API endpoints (Ollama/vLLM URL, TEI URL) записываются в credentials.txt
@@ -27,9 +27,9 @@ Requirements for milestone v2.7 Release Workflow + Platform Expansion.
 
 ### Reliability (RLBL)
 
-- [ ] **RLBL-01**: Dify init fallback — увеличенный retry + автоматический повтор при неудаче
+- [x] **RLBL-01**: Dify init fallback — увеличенный retry + автоматический повтор при неудаче
 - [x] **RLBL-02**: Offline bundle e2e тест — build → airgap simulate → install → verify
-- [ ] **RLBL-03**: install.sh --dry-run — preflight checks (prereqs, ports, disk, DNS) без запуска контейнеров
+- [x] **RLBL-03**: install.sh --dry-run — preflight checks (prereqs, ports, disk, DNS) без запуска контейнеров
 
 ## Future (v3.0)
 
@@ -73,9 +73,9 @@ Within Release & Update: RELU-01/02/03 (branching) and RELU-06/07 (quick fixes) 
 | DOCL-02 | Phase 29 | Complete |
 | DOCL-03 | Phase 29 | Complete |
 | DOCL-04 | Phase 29 | Complete |
-| RLBL-01 | Phase 30 | Pending |
-| RLBL-03 | Phase 30 | Pending |
-| RELU-04 | Phase 30 | Pending |
+| RLBL-01 | Phase 30 | Complete |
+| RLBL-03 | Phase 30 | Complete |
+| RELU-04 | Phase 30 | Complete |
 | RLBL-02 | Phase 30 | Complete |
 
 **Coverage:**
