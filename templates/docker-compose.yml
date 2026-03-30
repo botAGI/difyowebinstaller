@@ -994,6 +994,125 @@ services:
     networks:
       - agmind-backend
 
+  # ==================== SearXNG (Search Engine) ====================
+  searxng:
+    <<: *security-defaults
+    image: docker.io/searxng/searxng:${SEARXNG_VERSION:-2024.12.23-42c82f418}
+    container_name: agmind-searxng
+    restart: on-failure:5
+    mem_limit: ${SEARXNG_MEM_LIMIT:-256m}
+    profiles:
+      - searxng
+    ports:
+      - "${SEARXNG_PORT:-8888}:8080"
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8888/
+    volumes:
+      - ../templates/searxng-settings.yml:/etc/searxng/settings.yml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- --timeout=5 http://localhost:8080/healthz || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 15s
+    networks:
+      - agmind-backend
+
+  # ==================== SurrealDB (for Open Notebook) ====================
+  surrealdb:
+    <<: *security-defaults
+    image: docker.io/surrealdb/surrealdb:${SURREALDB_VERSION:-v2.2.1}
+    container_name: agmind-surrealdb
+    restart: on-failure:5
+    mem_limit: ${SURREALDB_MEM_LIMIT:-256m}
+    profiles:
+      - notebook
+    command: ["start", "--user", "root", "--pass", "${SURREALDB_PASSWORD:-changeme}", "rocksdb:/mydata/database.db"]
+    volumes:
+      - agmind_surrealdb_data:/mydata
+    healthcheck:
+      test: ["CMD-SHELL", "/surreal isready || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 10s
+    networks:
+      - agmind-backend
+
+  # ==================== Open Notebook (Research Assistant) ====================
+  open-notebook:
+    <<: *security-defaults
+    image: docker.io/lfnovo/open_notebook:${OPEN_NOTEBOOK_VERSION:-v1-latest}
+    container_name: agmind-notebook
+    restart: on-failure:5
+    mem_limit: ${OPEN_NOTEBOOK_MEM_LIMIT:-512m}
+    profiles:
+      - notebook
+    environment:
+      - OPEN_NOTEBOOK_ENCRYPTION_KEY=${NOTEBOOK_ENCRYPTION_KEY:-}
+      - SURREAL_URL=ws://surrealdb:8000/rpc
+      - SURREAL_USER=root
+      - SURREAL_PASSWORD=${SURREALDB_PASSWORD:-changeme}
+      - SURREAL_NAMESPACE=open_notebook
+      - SURREAL_DATABASE=open_notebook
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf --max-time 5 http://localhost:8502/ || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 30s
+    networks:
+      - agmind-backend
+
+  # ==================== DB-GPT (Data Analysis Agent) ====================
+  dbgpt:
+    <<: *security-defaults
+    image: docker.io/eosphorosai/dbgpt-openai:${DBGPT_VERSION:-v0.8.0}
+    container_name: agmind-dbgpt
+    restart: on-failure:5
+    mem_limit: ${DBGPT_MEM_LIMIT:-1g}
+    profiles:
+      - dbgpt
+    environment:
+      - OPENAI_API_KEY=${LITELLM_MASTER_KEY:-}
+      - OPENAI_API_BASE=http://litellm:4000/v1
+      - DBGPT_LANG=ru
+    volumes:
+      - agmind_dbgpt_data:/app/pilot/data
+    depends_on:
+      litellm:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf --max-time 5 http://localhost:5670/ || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 60s
+    networks:
+      - agmind-backend
+
+  # ==================== Crawl4AI (Web Crawler API) ====================
+  crawl4ai:
+    <<: *security-defaults
+    image: docker.io/unclecode/crawl4ai:${CRAWL4AI_VERSION:-v0.8.5}
+    container_name: agmind-crawl4ai
+    restart: on-failure:5
+    mem_limit: ${CRAWL4AI_MEM_LIMIT:-2g}
+    shm_size: '1g'
+    profiles:
+      - crawl4ai
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf --max-time 5 http://localhost:11235/health || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 45s
+    networks:
+      - agmind-backend
+
   # ==================== Certbot (VPS profile only) ====================
   certbot:
     <<: *security-defaults
@@ -1038,3 +1157,5 @@ volumes:
   agmind_vllm_cache:
   agmind_tei_cache:
   agmind_tei_rerank_cache:
+  agmind_surrealdb_data:
+  agmind_dbgpt_data:
