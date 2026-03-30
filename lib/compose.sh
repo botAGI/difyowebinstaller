@@ -570,17 +570,23 @@ create_plugin_db() {
         return 1
     fi
 
+    # All databases that must exist (init scripts only run on fresh volumes)
+    local -a required_dbs=("$plugin_db" "litellm")
+
     local attempts=0
     while [[ $attempts -lt 15 ]]; do
         if docker exec agmind-db pg_isready -U "$db_user" &>/dev/null; then
-            if docker exec agmind-db psql -U "$db_user" -tc \
-                "SELECT 1 FROM pg_database WHERE datname = '${plugin_db}';" 2>/dev/null | grep -q 1; then
-                return 0  # Already exists
-            fi
-            if docker exec agmind-db psql -U "$db_user" -c \
-                "CREATE DATABASE ${plugin_db};" &>/dev/null; then
-                log_success "Database ${plugin_db} created"
-            fi
+            for dbname in "${required_dbs[@]}"; do
+                if docker exec agmind-db psql -U "$db_user" -tc \
+                    "SELECT 1 FROM pg_database WHERE datname = '${dbname}';" 2>/dev/null | grep -q 1; then
+                    : # exists
+                else
+                    if docker exec agmind-db psql -U "$db_user" -c \
+                        "CREATE DATABASE ${dbname};" &>/dev/null; then
+                        log_success "Database ${dbname} created"
+                    fi
+                fi
+            done
             return 0
         fi
         sleep 2
