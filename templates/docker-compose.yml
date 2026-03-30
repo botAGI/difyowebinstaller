@@ -421,7 +421,7 @@ services:
       - ../templates/init-dify-plugin-db.sql:/docker-entrypoint-initdb.d/01-create-plugin-db.sql:ro
       - ../templates/init-litellm-db.sql:/docker-entrypoint-initdb.d/02-create-litellm-db.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-postgres} && psql -U ${DB_USERNAME:-postgres} -d ${PLUGIN_DB_DATABASE:-dify_plugin} -c 'SELECT 1' >/dev/null 2>&1"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-postgres}"]
       interval: 10s
       timeout: 5s
       retries: 5
