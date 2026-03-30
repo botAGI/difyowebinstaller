@@ -423,6 +423,31 @@ _save_credentials() {
         echo "    API endpoint URL:        http://agmind-litellm:4000/v1"
         echo "    API Key:                 ${LITELLM_MASTER_KEY:-see .env}"
         echo "    model name for endpoint: *"
+        # Optional Services
+        if [[ "${ENABLE_SEARXNG:-false}" == "true" ]]; then
+            echo ""
+            echo "=== SearXNG (Поисковый движок) ==="
+            echo "  URL:           http://${ip}:${SEARXNG_PORT:-8888}"
+            echo "  JSON API:      http://${ip}:${SEARXNG_PORT:-8888}/search?q=test&format=json"
+        fi
+        if [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]]; then
+            echo ""
+            echo "=== Open Notebook (Исследовательский ассистент) ==="
+            echo "  URL:           http://agmind-notebook:8502  (internal)"
+            echo "  Настройте LLM провайдер в Settings после первого входа."
+        fi
+        if [[ "${ENABLE_DBGPT:-false}" == "true" ]]; then
+            echo ""
+            echo "=== DB-GPT (Аналитика данных) ==="
+            echo "  URL:           http://agmind-dbgpt:5670  (internal)"
+            echo "  LLM через LiteLLM (автонастройка)."
+        fi
+        if [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]]; then
+            echo ""
+            echo "=== Crawl4AI (Веб-краулер) ==="
+            echo "  API:           http://agmind-crawl4ai:11235  (internal)"
+            echo "  Playground:    http://agmind-crawl4ai:11235/playground  (internal)"
+        fi
         echo ""
         echo "# ---"
         echo "# ВНИМАНИЕ: Эти пароли актуальны на момент установки."

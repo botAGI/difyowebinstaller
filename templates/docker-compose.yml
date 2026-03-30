@@ -1008,7 +1008,7 @@ services:
     environment:
       - SEARXNG_BASE_URL=http://localhost:8888/
     volumes:
-      - ../templates/searxng-settings.yml:/etc/searxng/settings.yml:ro
+      - ./searxng-settings.yml:/etc/searxng/settings.yml:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- --timeout=5 http://localhost:8080/healthz || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}

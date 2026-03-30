@@ -44,6 +44,7 @@ generate_config() {
     generate_sandbox_config
     _generate_squid_config
     _generate_litellm_config
+    _generate_searxng_config "$template_dir"
 
     # Validate secrets
     validate_no_default_secrets "${INSTALL_DIR}/docker/.env"
@@ -114,6 +115,9 @@ _ADMIN_PASSWORD_PLAIN=""
 _ADMIN_PASSWORD_B64=""
 _AUTHELIA_JWT_SECRET=""
 _LITELLM_MASTER_KEY=""
+_SEARXNG_SECRET_KEY=""
+_SURREALDB_PASSWORD=""
+_NOTEBOOK_ENCRYPTION_KEY=""
 
 # _restore_secrets_from_backup — restore volume-bound secrets when PG data exists (IREL-03)
 # Returns 0 if any secrets were restored, 1 if nothing restored.
@@ -176,6 +180,9 @@ _generate_secrets() {
     _GRAFANA_ADMIN_PASSWORD="$(generate_random 16)"
     _AUTHELIA_JWT_SECRET="$(generate_random 64)"
     _LITELLM_MASTER_KEY="sk-$(generate_random 32)"
+    _SEARXNG_SECRET_KEY="$(generate_random 32)"
+    _SURREALDB_PASSWORD="$(generate_random 24)"
+    _NOTEBOOK_ENCRYPTION_KEY="$(generate_random 32)"
 
     _ADMIN_PASSWORD_PLAIN="$(generate_random 16)"
     _ADMIN_PASSWORD_B64="$(echo -n "$_ADMIN_PASSWORD_PLAIN" | base64)"
@@ -299,6 +306,13 @@ _generate_env_file() {
         -e "s|__DOCLING_IMAGE__|${DOCLING_IMAGE:-}|g" \
         -e "s|__OCR_LANG__|${OCR_LANG:-rus,eng}|g" \
         -e "s|__NVIDIA_VISIBLE_DEVICES__|${NVIDIA_VISIBLE_DEVICES:-}|g" \
+        -e "s|__ENABLE_SEARXNG__|$(escape_sed "${ENABLE_SEARXNG:-false}")|g" \
+        -e "s|__ENABLE_NOTEBOOK__|$(escape_sed "${ENABLE_NOTEBOOK:-false}")|g" \
+        -e "s|__ENABLE_DBGPT__|$(escape_sed "${ENABLE_DBGPT:-false}")|g" \
+        -e "s|__ENABLE_CRAWL4AI__|$(escape_sed "${ENABLE_CRAWL4AI:-false}")|g" \
+        -e "s|__SEARXNG_SECRET_KEY__|$(escape_sed "${_SEARXNG_SECRET_KEY}")|g" \
+        -e "s|__SURREALDB_PASSWORD__|$(escape_sed "${_SURREALDB_PASSWORD}")|g" \
+        -e "s|__NOTEBOOK_ENCRYPTION_KEY__|$(escape_sed "${_NOTEBOOK_ENCRYPTION_KEY}")|g" \
         "$env_file" > "$env_tmp" || { rm -f "$env_tmp"; return 1; }
     mv "$env_tmp" "$env_file"
     chmod 600 "$env_file"
@@ -645,6 +659,26 @@ LITELLM_EOF
 
     chmod 600 "$config_file"
     log_success "LiteLLM config: ${config_file}"
+}
+
+# ============================================================================
+# SEARXNG CONFIG
+# ============================================================================
+
+_generate_searxng_config() {
+    local template_dir="$1"
+    if [[ "${ENABLE_SEARXNG:-false}" != "true" ]]; then
+        return 0
+    fi
+    local src="${template_dir}/searxng-settings.yml"
+    local dst="${INSTALL_DIR}/docker/searxng-settings.yml"
+    if [[ ! -f "$src" ]]; then
+        log_warn "SearXNG settings template not found: ${src}"
+        return 0
+    fi
+    sed "s|__SEARXNG_SECRET_KEY__|${_SEARXNG_SECRET_KEY}|g" "$src" > "$dst"
+    chmod 600 "$dst"
+    log_success "SearXNG config: ${dst}"
 }
 
 # ============================================================================
