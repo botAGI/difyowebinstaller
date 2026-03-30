@@ -734,7 +734,7 @@ Plans:
 5. `lib/health.sh` и `lib/detect.sh` отслеживаются git (`git ls-files lib/health.sh lib/detect.sh` возвращает оба файла)
 6. `git reset --hard origin/main` не удаляет health.sh и detect.sh
 
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 31-01-PLAN.md — Wizard simplify to LAN/VDS-VPS + offline removal from all scripts
@@ -867,7 +867,7 @@ Plans:
 - [x] **Phase 28: Release Branch Workflow** — Installer/agmind update via release branch, full release notes, Telegram escape, credentials.txt endpoints, FILES_URL auto-populate (v2.7) (completed 2026-03-29)
 - [x] **Phase 29: Docling GPU/OCR** — CUDA image auto-selection, persistent model volumes, Russian OCR default, model preload at install (v2.7) (completed 2026-03-29)
 - [x] **Phase 30: Reliability & Validation** — Dify init retry, --dry-run preflight, HTTP HEAD image validation, offline bundle E2E test (v2.7) (completed 2026-03-30)
-- [ ] **Phase 31: Wizard Simplify + Caddy Branch** — LAN/VDS wizard, удаление Offline, ветка agmind-caddy, track health.sh/detect.sh (v2.8)
+- [x] **Phase 31: Wizard Simplify + Caddy Branch** — LAN/VDS wizard, удаление Offline, ветка agmind-caddy, track health.sh/detect.sh (v2.8) (completed 2026-03-30)
 - [ ] **Phase 32: LiteLLM** — AI Gateway, litellm-config.yaml из wizard, fallback chain, cost tracking (v2.8)
 - [ ] **Phase 33: SearXNG** — Приватный поиск, JSON API, 243 движка (v2.8)
 - [ ] **Phase 34: Open Notebook** — Опциональный, wizard y/N, аналог Google NotebookLM (v2.8)
@@ -908,7 +908,7 @@ Plans:
 | 28. Release Branch Workflow | 3/3 | Complete    | 2026-03-29 | — |
 | 29. Docling GPU/OCR | 2/2 | Complete    | 2026-03-29 | — |
 | 30. Reliability & Validation | v2.7 | 3/3 | Complete | 2026-03-30 |
-| 31. Wizard Simplify + Caddy Branch | 1/2 | In Progress|  | — |
+| 31. Wizard Simplify + Caddy Branch | 2/2 | Complete   | 2026-03-30 | — |
 | 32. LiteLLM | v2.8 | 0/TBD | Not started | — |
 | 33. SearXNG | v2.8 | 0/TBD | Not started | — |
 | 34. Open Notebook | v2.8 | 0/TBD | Not started | — |

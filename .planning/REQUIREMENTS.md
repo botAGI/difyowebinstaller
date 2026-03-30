@@ -40,7 +40,7 @@ Requirements for milestone v2.8 New Services + Wizard Simplification.
 - [x] **WZRD-01**: Wizard deploy profile сокращён до 2 пунктов: LAN (по умолчанию) и VDS/VPS (переключение на ветку agmind-caddy)
 - [x] **WZRD-02**: Offline профиль полностью удалён из wizard, install.sh и всех связанных скриптов
 - [x] **WZRD-03**: `scripts/build-offline-bundle.sh` удалён
-- [ ] **WZRD-04**: Ветка `agmind-caddy` создана от main; VDS/VPS в wizard делает `git fetch origin agmind-caddy && git checkout agmind-caddy && exec bash install.sh --vds`
+- [x] **WZRD-04**: Ветка `agmind-caddy` создана от main; VDS/VPS в wizard делает `git fetch origin agmind-caddy && git checkout agmind-caddy && exec bash install.sh --vds`
 - [x] **WZRD-05**: `lib/health.sh` и `lib/detect.sh` затрекены в git (не только копируются инсталлером)
 
 ### Core Services (CSVC)

@@ -38,9 +38,6 @@ configure_ufw() {
     if [[ "${DEPLOY_PROFILE:-}" == "lan" ]]; then
         ufw allow from "${LAN_SUBNET:-192.168.0.0/16}" comment "LAN access"
     fi
-    if [[ "${DEPLOY_PROFILE:-}" == "vpn" ]]; then
-        ufw allow in on "${VPN_INTERFACE:-tun0}" comment "VPN access"
-    fi
     if [[ "${MONITORING_MODE:-none}" == "local" ]]; then
         ufw allow 3001/tcp comment "Grafana"
         ufw allow 9443/tcp comment "Portainer"

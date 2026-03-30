@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: Install Stability + Update Robustness
 status: Awaiting plan-phase
-stopped_at: Completed 31-wizard-simplify-caddy-branch-01-PLAN.md
-last_updated: "2026-03-30T03:37:56.725Z"
-last_activity: "2026-03-30 — v2.8 roadmap created: phases 31-36, 12 requirements mapped"
+stopped_at: "Checkpoint reached: 31-02 Task 2 — awaiting user verification of all phase 31 WZRD requirements"
+last_updated: "2026-03-30T03:41:13.490Z"
+last_activity: "2026-03-30 — Phase 31 Plan 01 complete: 2-choice wizard, offline profile removed"
 progress:
   total_phases: 12
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 10
-  completed_plans: 9
-  percent: 0
+  completed_plans: 10
+  percent: 90
 ---
 
 # State: AGmind Installer v2.8
@@ -88,6 +88,7 @@ Progress: `[█████████░] 90%`
 - [Phase 30-reliability-validation]: update.sh sources lib/compose.sh via _UPDATE_SCRIPT_DIR to get validate_images_exist() without code duplication
 - [Phase 31]: VDS/VPS wizard choice executes git fetch+checkout agmind-caddy then exec install.sh --vds — process replacement, never returns
 - [Phase 31]: Offline profile fully removed from codebase; LAN is now default choice 1 in simplified 2-choice wizard
+- [Phase 31]: agmind-caddy branch created locally from main; user must push with git push origin agmind-caddy
 
 ### Architecture Notes
 
@@ -125,7 +126,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-30T03:37:56.722Z
-Stopped at: Completed 31-wizard-simplify-caddy-branch-01-PLAN.md
+Last session: 2026-03-30T03:41:10.604Z
+Stopped at: Checkpoint reached: 31-02 Task 2 — awaiting user verification of all phase 31 WZRD requirements
 Resume file: None
 Next step: `/gsd:plan-phase 31`
