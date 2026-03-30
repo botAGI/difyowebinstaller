@@ -153,7 +153,7 @@ phase_docker()      { setup_docker; }
 phase_config()      { ensure_bind_mount_files; export INSTALL_DIR; generate_config "$DEPLOY_PROFILE" "$TEMPLATE_DIR"; enable_gpu_compose; setup_security; [[ "$ENABLE_AUTHELIA" == "true" ]] && configure_authelia "$TEMPLATE_DIR"; _copy_runtime_files; }
 phase_pull()        { compose_pull; }
 phase_start()       { compose_start; create_openwebui_admin; }
-phase_health()      { wait_healthy "$TIMEOUT_HEALTH" "$TIMEOUT_GPU_HEALTH"; _check_critical_services; _obtain_letsencrypt_cert; }
+phase_health()      { wait_healthy "$TIMEOUT_HEALTH" "$TIMEOUT_GPU_HEALTH"; _obtain_letsencrypt_cert; }
 phase_models()      { download_models; }
 phase_models_graceful() {
     local rc=0
