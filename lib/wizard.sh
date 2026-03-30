@@ -106,47 +106,30 @@ _ask_choice() {
 
 _wizard_profile() {
     echo "Выберите профиль развёртывания:"
-    echo "  1) VPS     — публичный доступ через домен (нужен интернет + домен)"
-    echo "  2) LAN     — локальная офисная сеть (интернет, без домена)"
-    echo "  3) VPN     — корпоративный VPN (доступ только через VPN)"
-    echo "  4) Offline — изолированная сеть (без интернета)"
+    echo "  1) LAN     — локальная / офисная сеть (по умолчанию)"
+    echo "  2) VDS/VPS — публичный сервер (переключение на ветку agmind-caddy)"
     echo ""
 
     if [[ "${NON_INTERACTIVE}" == "true" && -n "${DEPLOY_PROFILE}" ]]; then
-        # Respect env override only in non-interactive mode
         return 0
     fi
 
-    _ask_choice "Профиль [1-4]: " 1 4 2
+    _ask_choice "Профиль [1-2, Enter=1]: " 1 2 1
     case "$REPLY" in
-        1) DEPLOY_PROFILE="vps";;
-        2) DEPLOY_PROFILE="lan";;
-        3) DEPLOY_PROFILE="vpn";;
-        4) DEPLOY_PROFILE="offline";;
+        2)
+            log_info "Переключение на ветку agmind-caddy для VDS/VPS..."
+            git fetch origin agmind-caddy && git checkout agmind-caddy && exec bash install.sh --vds
+            ;;
+        *) DEPLOY_PROFILE="lan";;
     esac
 }
 
 _wizard_security_defaults() {
-    # VPS profile forces security ON unless user explicitly overrode via env
-    # before _init_wizard_defaults ran. Since _init_wizard_defaults already set
-    # these to "false", we must unconditionally set for vps.
-    case "$DEPLOY_PROFILE" in
-        vps)
-            ENABLE_UFW="true"
-            ENABLE_FAIL2BAN="true"
-            ;;
-        lan|vpn)
-            ENABLE_FAIL2BAN="${ENABLE_FAIL2BAN:-false}"
-            ;;
-    esac
+    # LAN profile: optional security
+    ENABLE_FAIL2BAN="${ENABLE_FAIL2BAN:-false}"
 }
 
 _wizard_admin_ui() {
-    if [[ "$DEPLOY_PROFILE" == "vps" ]]; then
-        ADMIN_UI_OPEN=false
-        return 0
-    fi
-
     echo "Portainer и Grafana привязаны к localhost (127.0.0.1) по умолчанию."
     _ask "Открыть доступ из LAN? [no/yes] (по умолчанию: no):" "no"
     if [[ "$REPLY" == "yes" ]]; then
@@ -158,23 +141,8 @@ _wizard_admin_ui() {
 }
 
 _wizard_domain() {
-    if [[ "$DEPLOY_PROFILE" != "vps" ]]; then
-        return 0
-    fi
-
-    if [[ "${NON_INTERACTIVE}" == "true" && -n "$DOMAIN" && -n "$CERTBOT_EMAIL" ]]; then
-        # Respect env override only in non-interactive mode
-        return 0
-    fi
-
-    _ask "Домен для доступа:" ""
-    DOMAIN="$REPLY"
-    validate_domain "$DOMAIN" || { log_error "Некорректный домен, отмена"; exit 1; }
-
-    _ask "Email для сертификата:" ""
-    CERTBOT_EMAIL="$REPLY"
-    validate_email "$CERTBOT_EMAIL" || { log_error "Некорректный email, отмена"; exit 1; }
-    echo ""
+    # Domain config handled by agmind-caddy branch for VDS/VPS
+    return 0
 }
 
 _wizard_vector_store() {
@@ -197,14 +165,6 @@ _wizard_vector_store() {
 }
 
 _wizard_etl() {
-    if [[ "$DEPLOY_PROFILE" == "offline" ]]; then
-        ENABLE_DOCLING="false"
-        DOCLING_IMAGE=""
-        OCR_LANG="rus,eng"
-        NVIDIA_VISIBLE_DEVICES=""
-        return 0
-    fi
-
     # Detect nvidia container runtime availability
     local has_nvidia_runtime="false"
     if [[ "${DETECTED_GPU:-none}" == "nvidia" ]]; then
@@ -780,34 +740,8 @@ _wizard_hf_token() {
     HF_TOKEN="$REPLY"
 }
 
-_wizard_offline_warning() {
-    if [[ "$DEPLOY_PROFILE" != "offline" ]]; then
-        return 0
-    fi
-
-    log_warn "Offline-профиль: модели НЕ будут загружены."
-    if [[ "$LLM_PROVIDER" == "ollama" || "$EMBED_PROVIDER" == "ollama" ]]; then
-        echo "  Убедитесь, что модели предзагружены в том ollama_data."
-    fi
-    if [[ "$LLM_PROVIDER" == "vllm" ]]; then
-        echo "  Убедитесь, что образ vLLM и модель ${VLLM_MODEL:-} предзагружены."
-    fi
-    if [[ "$EMBED_PROVIDER" == "tei" ]]; then
-        echo "  Убедитесь, что образ TEI и модель BAAI/bge-m3 предзагружены."
-    fi
-    echo ""
-}
 
 _wizard_tls() {
-    if [[ "$DEPLOY_PROFILE" == "vps" ]]; then
-        TLS_MODE="letsencrypt"
-        return 0
-    fi
-    if [[ "$DEPLOY_PROFILE" == "offline" ]]; then
-        TLS_MODE="none"
-        return 0
-    fi
-
     # Already set via env
     if [[ "$TLS_MODE" != "none" ]]; then
         return 0
@@ -849,29 +783,24 @@ _wizard_monitoring() {
     echo "Мониторинг:"
     echo "  1) Отключён (по умолчанию)"
     echo "  2) Локальный (Grafana + Portainer + Prometheus)"
-    if [[ "$DEPLOY_PROFILE" != "offline" ]]; then
-        echo "  3) Внешний (endpoint + токен)"
-    fi
+    echo "  3) Внешний (endpoint + токен)"
     echo ""
 
-    local max_choice=2
-    [[ "$DEPLOY_PROFILE" != "offline" ]] && max_choice=3
+    local max_choice=3
 
     _ask_choice "Мониторинг [1-${max_choice}, Enter=1]: " 1 "$max_choice" 1
     case "$REPLY" in
         2) MONITORING_MODE="local";;
         3)
-            if [[ "$DEPLOY_PROFILE" != "offline" ]]; then
-                MONITORING_MODE="external"
-                _ask "Endpoint (URL):" ""
-                MONITORING_ENDPOINT="$REPLY"
-                validate_url "$MONITORING_ENDPOINT" || {
-                    log_error "Некорректный URL, мониторинг отключён"
-                    MONITORING_MODE="none"; MONITORING_ENDPOINT=""
-                }
-                _ask "Токен:" ""
-                MONITORING_TOKEN="$REPLY"
-            fi
+            MONITORING_MODE="external"
+            _ask "Endpoint (URL):" ""
+            MONITORING_ENDPOINT="$REPLY"
+            validate_url "$MONITORING_ENDPOINT" || {
+                log_error "Некорректный URL, мониторинг отключён"
+                MONITORING_MODE="none"; MONITORING_ENDPOINT=""
+            }
+            _ask "Токен:" ""
+            MONITORING_TOKEN="$REPLY"
             ;;
         *) MONITORING_MODE="none";;
     esac
@@ -887,13 +816,10 @@ _wizard_alerts() {
     echo "Уведомления о сбоях:"
     echo "  1) Отключены (по умолчанию)"
     echo "  2) Webhook (URL)"
-    if [[ "$DEPLOY_PROFILE" != "offline" ]]; then
-        echo "  3) Telegram-бот"
-    fi
+    echo "  3) Telegram-бот"
     echo ""
 
-    local max_choice=2
-    [[ "$DEPLOY_PROFILE" != "offline" ]] && max_choice=3
+    local max_choice=3
 
     _ask_choice "Уведомления [1-${max_choice}, Enter=1]: " 1 "$max_choice" 1
     case "$REPLY" in
@@ -907,13 +833,11 @@ _wizard_alerts() {
             }
             ;;
         3)
-            if [[ "$DEPLOY_PROFILE" != "offline" ]]; then
-                ALERT_MODE="telegram"
-                _ask "Токен Telegram-бота:" ""
-                ALERT_TELEGRAM_TOKEN="$REPLY"
-                _ask "Telegram Chat ID:" ""
-                ALERT_TELEGRAM_CHAT_ID="$REPLY"
-            fi
+            ALERT_MODE="telegram"
+            _ask "Токен Telegram-бота:" ""
+            ALERT_TELEGRAM_TOKEN="$REPLY"
+            _ask "Telegram Chat ID:" ""
+            ALERT_TELEGRAM_CHAT_ID="$REPLY"
             ;;
         *) ALERT_MODE="none";;
     esac
@@ -922,17 +846,12 @@ _wizard_alerts() {
 
 _wizard_security() {
     # UFW
-    if [[ "$DEPLOY_PROFILE" == "vps" ]]; then
-        echo "  UFW файрвол будет настроен автоматически (VPS)"
-        ENABLE_UFW="true"
-    else
-        echo "Безопасность:"
-        echo "  1) Настроить UFW файрвол"
-        echo "  2) Пропустить (по умолчанию)"
-        echo ""
-        _ask_choice "UFW [1-2, Enter=2]: " 1 2 2
-        [[ "$REPLY" == "1" ]] && ENABLE_UFW="true" || ENABLE_UFW="${ENABLE_UFW:-false}"
-    fi
+    echo "Безопасность:"
+    echo "  1) Настроить UFW файрвол"
+    echo "  2) Пропустить (по умолчанию)"
+    echo ""
+    _ask_choice "UFW [1-2, Enter=2]: " 1 2 2
+    [[ "$REPLY" == "1" ]] && ENABLE_UFW="true" || ENABLE_UFW="${ENABLE_UFW:-false}"
 
     # Fail2ban (SSH jail only)
     echo "  Fail2ban (защита от перебора SSH):"
@@ -942,21 +861,10 @@ _wizard_security() {
     _ask_choice "Fail2ban [1-2, Enter=2]: " 1 2 2
     [[ "$REPLY" == "1" ]] && ENABLE_FAIL2BAN="true" || ENABLE_FAIL2BAN="${ENABLE_FAIL2BAN:-false}"
     echo ""
-
-    # Authelia 2FA (VPS only)
-    if [[ "$DEPLOY_PROFILE" == "vps" ]]; then
-        echo "Включить Authelia 2FA (двухфакторная аутентификация)?"
-        echo "  1) Нет (по умолчанию)"
-        echo "  2) Да"
-        _ask_choice "Выбор [1-2, Enter=1]: " 1 2 1
-        if [[ "$REPLY" == "2" ]]; then
-            ENABLE_AUTHELIA="true"
-        fi
-    fi
 }
 
 _wizard_tunnel() {
-    if [[ "$DEPLOY_PROFILE" != "lan" && "$DEPLOY_PROFILE" != "vpn" ]]; then
+    if [[ "$DEPLOY_PROFILE" != "lan" ]]; then
         return 0
     fi
 
@@ -1129,7 +1037,6 @@ run_wizard() {
     _wizard_vector_store
     _wizard_etl
     _wizard_hf_token
-    _wizard_offline_warning
     _wizard_tls
     _wizard_monitoring
     _wizard_alerts
