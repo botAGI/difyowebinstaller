@@ -67,7 +67,7 @@ get_service_list() {
         enable_dbgpt="$(grep '^ENABLE_DBGPT=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
         enable_crawl4ai="$(grep '^ENABLE_CRAWL4AI=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
         [[ "$enable_searxng" == "true" ]] && services+=(searxng)
-        [[ "$enable_notebook" == "true" ]] && services+=(surrealdb notebook)
+        [[ "$enable_notebook" == "true" ]] && services+=(surrealdb open-notebook)
         [[ "$enable_dbgpt" == "true" ]] && services+=(dbgpt)
         [[ "$enable_crawl4ai" == "true" ]] && services+=(crawl4ai)
     else
