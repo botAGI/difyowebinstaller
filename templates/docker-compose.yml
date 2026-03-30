@@ -256,7 +256,7 @@ services:
     volumes:
       - agmind_pipelines_data:/app/pipelines
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:9099/ || exit 1"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9099/')"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
@@ -315,7 +315,7 @@ services:
       - agmind_vllm_cache:/root/.cache/huggingface
     ipc: host
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -551,7 +551,7 @@ services:
       - ./litellm-config.yaml:/app/config.yaml:ro
     command: ["--config", "/app/config.yaml", "--port", "4000", "--num_workers", "2"]
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf --max-time 5 http://localhost:4000/health || exit 1"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health')"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
@@ -1023,6 +1023,7 @@ services:
     <<: *security-defaults
     image: docker.io/surrealdb/surrealdb:${SURREALDB_VERSION:-v2.2.1}
     container_name: agmind-surrealdb
+    user: "0:0"
     restart: on-failure:5
     mem_limit: ${SURREALDB_MEM_LIMIT:-256m}
     profiles:
@@ -1059,7 +1060,7 @@ services:
       surrealdb:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf --max-time 5 http://localhost:8502/ || exit 1"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8502/')"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
@@ -1086,7 +1087,7 @@ services:
       litellm:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf --max-time 5 http://localhost:5670/ || exit 1"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5670/')"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
@@ -1105,7 +1106,7 @@ services:
     profiles:
       - crawl4ai
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf --max-time 5 http://localhost:11235/health || exit 1"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:11235/health')"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
