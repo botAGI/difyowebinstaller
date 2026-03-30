@@ -703,7 +703,7 @@ Plans:
 8. При сборке `build-offline-bundle.sh` верифицирует состав bundle: список образов в tar.gz совпадает с `docker compose config --images` для всех профилей; missing образы = exit 1
 9. Manifest с размерами каждого образа выводится при сборке bundle; extra образы (в bundle, но не в compose) показываются как warning
 
-**Plans:** 1/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 - [ ] 30-01-PLAN.md — Dify init retry 60s + flock + --dry-run preflight с DNS
@@ -744,7 +744,7 @@ Plans:
 - [x] **Phase 27: UX Polish** — Streaming model download progress (all providers), graceful timeout with recovery instructions (v2.6) (completed 2026-03-24)
 - [x] **Phase 28: Release Branch Workflow** — Installer/agmind update via release branch, full release notes, Telegram escape, credentials.txt endpoints, FILES_URL auto-populate (v2.7) (completed 2026-03-29)
 - [x] **Phase 29: Docling GPU/OCR** — CUDA image auto-selection, persistent model volumes, Russian OCR default, model preload at install (v2.7) (completed 2026-03-29)
-- [ ] **Phase 30: Reliability & Validation** — Dify init retry, --dry-run preflight, HTTP HEAD image validation, offline bundle E2E test (v2.7)
+- [x] **Phase 30: Reliability & Validation** — Dify init retry, --dry-run preflight, HTTP HEAD image validation, offline bundle E2E test (v2.7) (completed 2026-03-30)
 
 ## Progress
 
@@ -779,7 +779,7 @@ Plans:
 | 27. UX Polish | 1/1 | Complete    | 2026-03-24 | — |
 | 28. Release Branch Workflow | 3/3 | Complete    | 2026-03-29 | — |
 | 29. Docling GPU/OCR | 2/2 | Complete    | 2026-03-29 | — |
-| 30. Reliability & Validation | 1/3 | In Progress|  | — |
+| 30. Reliability & Validation | 3/3 | Complete   | 2026-03-30 | — |
 
 ---
 *Roadmap created: 2026-03-17*
