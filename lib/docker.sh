@@ -192,12 +192,6 @@ install_nvidia_toolkit() {
 # Ref: https://docs.docker.com/engine/daemon/troubleshoot/#dns-resolver-found-in-resolvconf-and-containers-cant-resolve-dns
 
 configure_docker_dns() {
-    # Skip for offline profile
-    if [[ "${DEPLOY_PROFILE:-}" == "offline" ]]; then
-        log_info "Offline profile: skipping DNS configuration"
-        return 0
-    fi
-
     # Allow user to skip DNS changes
     if [[ "${SKIP_DNS_FIX:-false}" == "true" ]]; then
         log_info "SKIP_DNS_FIX=true: skipping DNS configuration"

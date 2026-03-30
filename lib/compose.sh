@@ -160,12 +160,6 @@ _check_image_exists() {
 validate_images_exist() {
     local docker_dir="${INSTALL_DIR}/docker"
 
-    # Skip for offline profile
-    if [[ "${DEPLOY_PROFILE:-}" == "offline" ]]; then
-        log_info "Offline profile: skipping image validation"
-        return 0
-    fi
-
     # Skip if explicitly disabled
     if [[ "${SKIP_IMAGE_VALIDATION:-false}" == "true" ]]; then
         log_info "Image validation skipped (SKIP_IMAGE_VALIDATION=true)"
@@ -234,11 +228,6 @@ compose_pull() {
 
     build_compose_profiles
     local profiles="$COMPOSE_PROFILE_STRING"
-
-    if [[ "${DEPLOY_PROFILE:-}" == "offline" ]]; then
-        log_info "Offline profile: skipping image pull"
-        return 0
-    fi
 
     # Pre-pull: validate images exist in registries (HTTP HEAD)
     validate_images_exist || {
@@ -404,9 +393,6 @@ compose_start() {
 
     # --- Up (--pull missing as safety net for anything pull phase missed) ---
     local pull_flag="--pull missing"
-    if [[ "${DEPLOY_PROFILE:-}" == "offline" ]]; then
-        pull_flag="--pull never"
-    fi
 
     log_info "Starting containers (profiles: ${profiles:-core})..."
     if [[ -n "$profiles" ]]; then
