@@ -283,6 +283,115 @@ tar czf "$BUNDLE_FILE" -C "$STAGING" .
 
 bundle_size=$(du -sh "$BUNDLE_FILE" | cut -f1)
 
+# ──────────────────────────────────────────
+# Stage 6: Bundle Verification
+# ──────────────────────────────────────────
+echo ""
+echo -e "${BOLD}Stage 6: Bundle Verification${NC}"
+
+# Get expected images from compose (default services)
+COMPOSE_FILE="${SCRIPT_DIR}/templates/docker-compose.yml"
+expected_images="$(docker compose -f "$COMPOSE_FILE" config --images 2>/dev/null | sort -u)"
+
+# Also collect images from named profiles (tei, reranker, docling)
+for profile in tei reranker docling; do
+    _profile_imgs="$(COMPOSE_PROFILES="$profile" docker compose -f "$COMPOSE_FILE" config --images 2>/dev/null | sort -u)" || true
+    if [[ -n "$_profile_imgs" ]]; then
+        expected_images="$(printf '%s\n%s' "$expected_images" "$_profile_imgs" | sort -u)"
+    fi
+done
+
+# Add Docling CPU image (always expected in bundle)
+DOCLING_IMAGE_CPU="${DOCLING_IMAGE_CPU:-ghcr.io/docling-project/docling-serve:v1.14.3}"
+expected_images="$(printf '%s\n%s' "$expected_images" "$DOCLING_IMAGE_CPU" | sort -u)"
+
+# Add Docling CUDA image if flag set
+if [[ "${INCLUDE_DOCLING_CUDA}" == "true" ]]; then
+    DOCLING_IMAGE_CUDA="${DOCLING_IMAGE_CUDA:-quay.io/docling-project/docling-serve-cu128:v1.14.3}"
+    expected_images="$(printf '%s\n%s' "$expected_images" "$DOCLING_IMAGE_CUDA" | sort -u)"
+fi
+
+# Remove blank lines from expected_images
+expected_images="$(echo "$expected_images" | sed '/^[[:space:]]*$/d')"
+
+# Get actual images saved in bundle from tar manifest
+actual_images=""
+if [[ -f "${STAGING}/agmind-images.tar.gz" ]]; then
+    actual_images="$(tar -xzf "${STAGING}/agmind-images.tar.gz" manifest.json -O 2>/dev/null \
+        | grep -oP '"RepoTags":\["[^"]*"' \
+        | grep -oP '[^"[]*:[^"[]*$' \
+        | sort -u)" || true
+fi
+
+# Fallback: check locally available images (they were pulled in Stage 2)
+if [[ -z "$actual_images" ]]; then
+    actual_images=""
+    while IFS= read -r img; do
+        [[ -z "$img" ]] && continue
+        if docker image inspect "$img" >/dev/null 2>&1; then
+            actual_images="$(printf '%s\n%s' "$actual_images" "$img")"
+        fi
+    done <<< "$expected_images"
+    actual_images="$(echo "$actual_images" | sort -u | sed '/^[[:space:]]*$/d')"
+fi
+
+# Compare expected vs actual
+missing=0
+extra=0
+echo ""
+echo -e "  ${BOLD}Expected vs Bundle:${NC}"
+
+while IFS= read -r img; do
+    [[ -z "$img" ]] && continue
+    if echo "$actual_images" | grep -qF "$img"; then
+        echo -e "  ${GREEN}[OK]${NC}      ${img}"
+    else
+        echo -e "  ${RED}[MISSING]${NC} ${img}"
+        missing=$((missing + 1))
+    fi
+done <<< "$expected_images"
+
+# Check for extra images (in bundle but not expected)
+while IFS= read -r img; do
+    [[ -z "$img" ]] && continue
+    if ! echo "$expected_images" | grep -qF "$img"; then
+        echo -e "  ${YELLOW}[EXTRA]${NC}   ${img}"
+        extra=$((extra + 1))
+    fi
+done <<< "$actual_images"
+
+# Image manifest with sizes
+echo ""
+echo -e "  ${BOLD}Image Manifest:${NC}"
+echo ""
+printf "  %-60s %s\n" "IMAGE" "SIZE"
+printf "  %-60s %s\n" "$(printf '%.0s─' {1..60})" "──────"
+while IFS= read -r img; do
+    [[ -z "$img" ]] && continue
+    img_size="$(docker image inspect "$img" --format='{{.Size}}' 2>/dev/null || echo "0")"
+    if [[ "$img_size" -gt 1073741824 ]] 2>/dev/null; then
+        img_size="$(echo "scale=1; $img_size / 1073741824" | bc 2>/dev/null || echo "?")GB"
+    elif [[ "$img_size" -gt 1048576 ]] 2>/dev/null; then
+        img_size="$(echo "scale=0; $img_size / 1048576" | bc 2>/dev/null || echo "?")MB"
+    else
+        img_size="${img_size}B"
+    fi
+    printf "  %-60s %s\n" "$img" "$img_size"
+done <<< "$expected_images"
+
+# Summary
+echo ""
+if [[ $missing -gt 0 ]]; then
+    echo -e "  ${RED}FAIL: ${missing} image(s) missing from bundle!${NC}"
+    echo -e "  ${RED}This bundle will fail on air-gapped installation.${NC}"
+    exit 1
+elif [[ $extra -gt 0 ]]; then
+    echo -e "  ${YELLOW}WARN: ${extra} extra image(s) in bundle (not required by compose)${NC}"
+    echo -e "  ${GREEN}All required images present.${NC}"
+else
+    echo -e "  ${GREEN}All required images present. Bundle is complete.${NC}"
+fi
+
 echo ""
 echo -e "${BOLD}${CYAN}═══════════════════════════════════════${NC}"
 echo -e "${GREEN}  Offline bundle created!${NC}"
