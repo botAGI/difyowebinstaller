@@ -274,6 +274,7 @@ preflight_bind_mount_check() {
         "volumes/redis/redis.conf"
         "volumes/ssrf_proxy/squid.conf"
         "volumes/sandbox/conf/config.yaml"
+        "litellm-config.yaml"
         "monitoring/prometheus.yml"
         "monitoring/alert_rules.yml"
         "monitoring/alertmanager.yml"
