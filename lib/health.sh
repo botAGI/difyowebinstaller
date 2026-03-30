@@ -192,7 +192,7 @@ wait_healthy() {
     local compose_file="${INSTALL_DIR}/docker/docker-compose.yml"
 
     # Critical services: exit of any of these = immediate failure
-    local critical_services="db redis sandbox ssrf_proxy api worker web plugin_daemon nginx litellm"
+    local critical_services="db redis sandbox ssrf_proxy api worker web plugin_daemon nginx"
 
     # GPU services: extended startup time for model loading / CUDA init
     local gpu_services=" vllm tei ollama "
