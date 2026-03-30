@@ -753,7 +753,7 @@ services:
       plugin_daemon:
         condition: service_healthy
       open-webui:
-        condition: service_healthy
+        condition: service_started
     networks:
       - agmind-frontend
       - agmind-backend
