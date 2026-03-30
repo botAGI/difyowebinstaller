@@ -154,6 +154,76 @@ _check_image_exists() {
     esac
 }
 
+# Validate that all required images exist in their registries before pulling.
+# Uses HTTP HEAD (not GET) to avoid Docker Hub rate-limit consumption.
+# Returns: 0 = all found, 1 = some not found (blocks install)
+validate_images_exist() {
+    local docker_dir="${INSTALL_DIR}/docker"
+
+    # Skip for offline profile
+    if [[ "${DEPLOY_PROFILE:-}" == "offline" ]]; then
+        log_info "Offline profile: skipping image validation"
+        return 0
+    fi
+
+    # Skip if explicitly disabled
+    if [[ "${SKIP_IMAGE_VALIDATION:-false}" == "true" ]]; then
+        log_info "Image validation skipped (SKIP_IMAGE_VALIDATION=true)"
+        return 0
+    fi
+
+    cd "$docker_dir"
+    build_compose_profiles
+    local profiles="$COMPOSE_PROFILE_STRING"
+
+    local images_raw
+    if [[ -n "$profiles" ]]; then
+        images_raw="$(COMPOSE_PROFILES="$profiles" docker compose config --images 2>/dev/null)" || return 0
+    else
+        images_raw="$(docker compose config --images 2>/dev/null)" || return 0
+    fi
+    [[ -z "$images_raw" ]] && return 0
+
+    local -a images
+    mapfile -t images <<< "$images_raw"
+    local total=${#images[@]}
+    [[ $total -eq 0 ]] && return 0
+
+    log_info "Validating ${total} images exist in registries..."
+
+    local not_found=0
+    local -a missing_images=()
+
+    for img in "${images[@]}"; do
+        if _check_image_exists "$img"; then
+            : # exists, ok
+        else
+            local rc=$?
+            if [[ $rc -eq 2 ]]; then
+                # Registry error (405, timeout, etc.) — skip with warn
+                log_warn "Cannot verify image: ${img} — skipping check"
+            else
+                # 404 — image not found
+                log_error "WARNING: image not found: ${img}"
+                not_found=$((not_found + 1))
+                missing_images+=("$img")
+            fi
+        fi
+    done
+
+    if [[ $not_found -gt 0 ]]; then
+        log_error "Blocking install: ${not_found} image(s) not found in registries:"
+        for m in "${missing_images[@]}"; do
+            log_error "  - ${m}"
+        done
+        log_error "Check tags in versions.env or set SKIP_IMAGE_VALIDATION=true to bypass"
+        return 1
+    fi
+
+    log_info "All ${total} images verified"
+    return 0
+}
+
 # ============================================================================
 # PULL IMAGES (standalone phase — called from install.sh phase_pull)
 # ============================================================================
@@ -169,6 +239,12 @@ compose_pull() {
         log_info "Offline profile: skipping image pull"
         return 0
     fi
+
+    # Pre-pull: validate images exist in registries (HTTP HEAD)
+    validate_images_exist || {
+        log_error "Image validation failed — aborting pull"
+        return 1
+    }
 
     # Bind mount safety before pull (ensures compose config is valid)
     ensure_bind_mount_files

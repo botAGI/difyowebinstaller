@@ -98,6 +98,11 @@ log_success() { echo -e "${GREEN}OK $*${NC}"; }
 log_warn()    { echo -e "${YELLOW}!! $*${NC}"; }
 log_error()   { echo -e "${RED}!! $*${NC}"; }
 
+# Source compose lib for validate_images_exist() (and helpers)
+# shellcheck source=../lib/compose.sh
+_UPDATE_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${_UPDATE_SCRIPT_DIR}/../lib/compose.sh" 2>/dev/null || true
+
 # Exclusive lock — prevent parallel operations
 LOCK_FILE="/var/lock/agmind-operation.lock"
 exec 9>"$LOCK_FILE"
@@ -1133,6 +1138,13 @@ main() {
     echo ""
 
     cd "${INSTALL_DIR}/docker"
+
+    # Validate images exist before pulling (HTTP HEAD) — warn-only for update
+    if [[ "${SKIP_IMAGE_VALIDATION:-false}" != "true" ]]; then
+        validate_images_exist || {
+            log_warn "Some images may not exist — proceeding with caution"
+        }
+    fi
 
     if perform_bundle_update; then
         # Update RELEASE file
