@@ -434,19 +434,23 @@ _save_credentials() {
             echo ""
             echo "=== Open Notebook (Исследовательский ассистент) ==="
             echo "  URL:           http://agmind-notebook:8502  (internal)"
+            echo "  LiteLLM API:   http://agmind-litellm:4000/v1"
+            echo "  LiteLLM Key:   ${LITELLM_MASTER_KEY:-see .env}"
             echo "  Настройте LLM провайдер в Settings после первого входа."
         fi
         if [[ "${ENABLE_DBGPT:-false}" == "true" ]]; then
             echo ""
             echo "=== DB-GPT (Аналитика данных) ==="
             echo "  URL:           http://agmind-dbgpt:5670  (internal)"
-            echo "  LLM через LiteLLM (автонастройка)."
+            echo "  LiteLLM API:   http://agmind-litellm:4000/v1"
+            echo "  LiteLLM Key:   ${LITELLM_MASTER_KEY:-see .env}"
         fi
         if [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]]; then
             echo ""
             echo "=== Crawl4AI (Веб-краулер) ==="
             echo "  API:           http://agmind-crawl4ai:11235  (internal)"
-            echo "  Playground:    http://agmind-crawl4ai:11235/playground  (internal)"
+            echo "  API Docs:      http://agmind-crawl4ai:11235/docs  (internal)"
+            echo "  Dify:          HTTP Request tool → POST http://agmind-crawl4ai:11235/crawl"
         fi
         echo ""
         echo "# ---"
