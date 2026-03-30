@@ -41,6 +41,120 @@ build_compose_profiles() {
 }
 
 # ============================================================================
+# PRE-PULL IMAGE VALIDATION (HTTP HEAD to registry API)
+# ============================================================================
+
+# Parse image reference into registry, repo, tag components.
+# Examples:
+#   nginx:1.25           -> docker.io, library/nginx, 1.25
+#   ghcr.io/org/img:v1   -> ghcr.io, org/img, v1
+#   quay.io/org/img:v1   -> quay.io, org/img, v1
+_parse_image_ref() {
+    local image="$1"
+    local -n _registry=$2 _repo=$3 _tag=$4
+
+    # Split tag
+    if [[ "$image" == *":"* ]]; then
+        _tag="${image##*:}"
+        image="${image%:*}"
+    else
+        _tag="latest"
+    fi
+
+    # Split registry/repo
+    if [[ "$image" == *"/"*"/"* ]]; then
+        # Has registry: ghcr.io/org/repo or registry-1.docker.io/library/nginx
+        _registry="${image%%/*}"
+        _repo="${image#*/}"
+    elif [[ "$image" == *"."*"/"* ]]; then
+        # Domain-like first segment: gcr.io/repo
+        _registry="${image%%/*}"
+        _repo="${image#*/}"
+    else
+        # Docker Hub shorthand: library/nginx or just nginx
+        _registry="docker.io"
+        if [[ "$image" == *"/"* ]]; then
+            _repo="$image"
+        else
+            _repo="library/${image}"
+        fi
+    fi
+}
+
+# Get anonymous bearer token for registry API.
+# Docker Hub requires token from auth.docker.io; others may work without.
+_get_registry_token() {
+    local registry="$1"
+    local repo="$2"
+
+    case "$registry" in
+        docker.io|registry-1.docker.io)
+            # Docker Hub v2 token
+            curl -sf --max-time 5 \
+                "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${repo}:pull" \
+                2>/dev/null | grep -o '"token":"[^"]*"' | cut -d'"' -f4
+            ;;
+        ghcr.io)
+            # GHCR anonymous token
+            curl -sf --max-time 5 \
+                "https://ghcr.io/token?scope=repository:${repo}:pull" \
+                2>/dev/null | grep -o '"token":"[^"]*"' | cut -d'"' -f4
+            ;;
+        quay.io)
+            # Quay.io — anonymous access without token for public repos
+            echo ""
+            ;;
+        *)
+            # Other registries — try without token
+            echo ""
+            ;;
+    esac
+}
+
+# Check if a single image:tag exists in its registry via HTTP HEAD.
+# Returns: 0 = exists, 1 = not found (404), 2 = registry error (skip)
+_check_image_exists() {
+    local full_image="$1"
+
+    # Parse image into registry, repo, tag
+    local registry repo tag
+    _parse_image_ref "$full_image" registry repo tag
+
+    # Get auth token (anonymous)
+    local token=""
+    token="$(_get_registry_token "$registry" "$repo")" || true
+
+    # HEAD request to manifest endpoint
+    local url
+    case "$registry" in
+        docker.io|registry-1.docker.io)
+            url="https://registry-1.docker.io/v2/${repo}/manifests/${tag}"
+            ;;
+        *)
+            url="https://${registry}/v2/${repo}/manifests/${tag}"
+            ;;
+    esac
+
+    local http_code
+    local auth_header=""
+    [[ -n "$token" ]] && auth_header="Authorization: Bearer ${token}"
+
+    http_code="$(curl -s -o /dev/null -w '%{http_code}' \
+        --max-time 10 \
+        -I \
+        ${auth_header:+-H "$auth_header"} \
+        -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+        -H "Accept: application/vnd.oci.image.manifest.v1+json" \
+        "$url" 2>/dev/null)" || { return 2; }
+
+    case "$http_code" in
+        200|301|302) return 0 ;;   # exists (or redirect = exists)
+        404)         return 1 ;;   # not found
+        *)           return 2 ;;   # registry error (401, 403, 405, 429, 500, etc.)
+    esac
+}
+
+# ============================================================================
 # PULL IMAGES (standalone phase — called from install.sh phase_pull)
 # ============================================================================
 
