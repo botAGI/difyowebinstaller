@@ -31,17 +31,36 @@ Requirements for milestone v2.7 Release Workflow + Platform Expansion.
 - [x] **RLBL-02**: Offline bundle e2e тест — build → airgap simulate → install → verify
 - [x] **RLBL-03**: install.sh --dry-run — preflight checks (prereqs, ports, disk, DNS) без запуска контейнеров
 
+## v2.8 Requirements
+
+Requirements for milestone v2.8 New Services + Wizard Simplification.
+
+### Wizard Simplification (WZRD)
+
+- [x] **WZRD-01**: Wizard deploy profile сокращён до 2 пунктов: LAN (по умолчанию) и VDS/VPS (переключение на ветку agmind-caddy)
+- [x] **WZRD-02**: Offline профиль полностью удалён из wizard, install.sh и всех связанных скриптов
+- [x] **WZRD-03**: `scripts/build-offline-bundle.sh` удалён
+- [ ] **WZRD-04**: Ветка `agmind-caddy` создана от main; VDS/VPS в wizard делает `git fetch origin agmind-caddy && git checkout agmind-caddy && exec bash install.sh --vds`
+- [x] **WZRD-05**: `lib/health.sh` и `lib/detect.sh` затрекены в git (не только копируются инсталлером)
+
+### Core Services (CSVC)
+
+- [ ] **CSVC-01**: LiteLLM контейнер `agmind-litellm`, порт 4000, `litellm-config.yaml` генерируется wizard'ом на основе выбранных LLM провайдеров
+- [ ] **CSVC-02**: LiteLLM переиспользует PostgreSQL; Dify/Open WebUI получают `LLM_BASE_URL=http://agmind-litellm:4000/v1` в `.env`
+- [ ] **CSVC-03**: SearXNG контейнер `agmind-searxng`, порт 8888, JSON API включён по умолчанию
+- [ ] **CSVC-04**: SearXNG минимальный конфиг: Google, Bing, DuckDuckGo, Wikipedia; ~256 MB RAM
+
+### Optional Services (OSVC)
+
+- [ ] **OSVC-01**: Open Notebook — wizard `y/N`, compose profile=notebook, PostgreSQL + LiteLLM reuse, ~512 MB RAM
+- [ ] **OSVC-02**: DB-GPT — wizard `y/N`, compose profile=dbgpt, через LiteLLM, ~1 GB RAM
+- [ ] **OSVC-03**: Crawl4AI — wizard `y/N`, compose profile=crawl4ai, REST API, ~2 GB RAM (Chromium)
+
 ## Future (v3.0)
-
-### New Services
-
-- **NSVC-01**: DB-GPT как опциональный сервис (COMPOSE_PROFILE=dbgpt, SQLite, подключается к Ollama)
-- **NSVC-02**: Open Notebook как опциональный сервис (COMPOSE_PROFILE=notebook, SurrealDB sidecar)
 
 ### Infrastructure
 
 - **UXPL-02**: install.sh full dry-run mode (полная симуляция всех фаз, ~40-60 call sites)
-- **CADDY-01**: Caddy reverse proxy + subdomains вместо nginx
 
 ## Out of Scope
 
@@ -52,11 +71,10 @@ Requirements for milestone v2.7 Release Workflow + Platform Expansion.
 | Multi-node / cluster | Single-node focus |
 | Auto-update | Only manual `agmind update` |
 | CDN for update distribution | GitHub Releases sufficient |
-| Caddy migration (v2.7) | Deferred to v3.0 — large scope, nginx works |
 
 ## Priority Hints
 
-Within Release & Update: RELU-01/02/03 (branching) and RELU-06/07 (quick fixes) first. RELU-04 (pre-pull) last — depends on update infrastructure.
+Phase 31 (Wizard Simplify) first — убирает offline, расчищает для новых сервисов. LiteLLM (32) до Open Notebook/DB-GPT (34-35) — они через него работают.
 
 ## Traceability
 
@@ -77,13 +95,26 @@ Within Release & Update: RELU-01/02/03 (branching) and RELU-06/07 (quick fixes) 
 | RLBL-03 | Phase 30 | Complete |
 | RELU-04 | Phase 30 | Complete |
 | RLBL-02 | Phase 30 | Complete |
+| WZRD-01 | Phase 31 | Planned |
+| WZRD-02 | Phase 31 | Planned |
+| WZRD-03 | Phase 31 | Planned |
+| WZRD-04 | Phase 31 | Planned |
+| WZRD-05 | Phase 31 | Planned |
+| CSVC-01 | Phase 32 | Planned |
+| CSVC-02 | Phase 32 | Planned |
+| CSVC-03 | Phase 33 | Planned |
+| CSVC-04 | Phase 33 | Planned |
+| OSVC-01 | Phase 34 | Planned |
+| OSVC-02 | Phase 35 | Planned |
+| OSVC-03 | Phase 36 | Planned |
 
 **Coverage:**
 
-- v2.7 requirements: 15 total
-- Mapped to phases: 15
+- v2.7 requirements: 15 total (all complete)
+- v2.8 requirements: 12 total
+- Mapped to phases: 12
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-29*
-*Last updated: 2026-03-29 — traceability mapped to phases 28-32*
+*Last updated: 2026-03-30 — v2.8 requirements added, 12 reqs mapped to phases 31-36*

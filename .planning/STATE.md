@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: Install Stability + Update Robustness
 status: Awaiting plan-phase
-stopped_at: Completed 30-reliability-validation-02-PLAN.md
-last_updated: "2026-03-30T00:39:45.612Z"
-last_activity: "2026-03-29 — Roadmap created: phases 28-32, 15 requirements mapped"
+stopped_at: Completed 31-wizard-simplify-caddy-branch-01-PLAN.md
+last_updated: "2026-03-30T03:37:56.725Z"
+last_activity: "2026-03-30 — v2.8 roadmap created: phases 31-36, 12 requirements mapped"
 progress:
-  total_phases: 6
+  total_phases: 12
   completed_phases: 3
-  total_plans: 8
-  completed_plans: 8
+  total_plans: 10
+  completed_plans: 9
   percent: 0
 ---
 
-# State: AGmind Installer v2.7
+# State: AGmind Installer v2.8
 
 ## Project Reference
 
@@ -22,16 +22,16 @@ See: .planning/PROJECT.md (updated 2026-03-29)
 
 **Core value:** One command installs, secures, and monitors a production-ready AI stack
 
-**Current focus:** v2.7 roadmap defined — ready for Phase 28 planning
+**Current focus:** v2.8 — new services (LiteLLM, SearXNG, Open Notebook, DB-GPT, Crawl4AI) + wizard simplification
 
 ## Current Position
 
-Phase: 28 (Release Branch Workflow) — Not started
-Plan: —
+Phase: 31 (Wizard Simplify + Caddy Branch) — Plan 01 complete
+Plan: 01 done
 Status: Awaiting plan-phase
-Last activity: 2026-03-29 — Roadmap created: phases 28-32, 15 requirements mapped
+Last activity: 2026-03-30 — Phase 31 Plan 01 complete: 2-choice wizard, offline profile removed
 
-Progress: `[░░░░░░░░░░] 0%`
+Progress: `[█████████░] 90%`
 
 ## Performance Metrics
 
@@ -44,7 +44,8 @@ Progress: `[░░░░░░░░░░] 0%`
 - v2.4 phases: 3 complete (3 plans)
 - v2.5 phases: 6 complete (9 plans)
 - v2.6 phases: 3 complete (5 plans)
-- v2.7 phases: 5 planned (0 complete)
+- v2.7 phases: 3 complete (8 plans)
+- v2.8 phases: 6 planned (0 complete)
 
 ## Accumulated Context
 
@@ -68,7 +69,7 @@ Progress: `[░░░░░░░░░░] 0%`
 - v2.7: installer-generated files (.env, credentials.txt, checkpoints) must be in .gitignore before Phase 28 ships
 - v2.7: Docling CUDA = quay.io/docling-project/docling-serve-cu128 (cu128 preferred over cu124/cu126)
 - v2.7: RLBL-03 scoped to preflight checks only (prereqs/ports/disk/DNS) — full dry-run deferred to v3.0 (UXPL-02)
-- v2.7: NSVC-01 (DB-GPT) and NSVC-02 (Open Notebook) deferred to v3.0
+- v2.8: NSVC-01 (DB-GPT) and NSVC-02 (Open Notebook) moved from v3.0 to v2.8 as optional services
 - [Phase 28]: TEI container port is 80 (not 8080) — credentials.txt uses correct port
 - [Phase 28]: Model provider host-access URLs omitted in credentials.txt — no ports published to host
 - [Phase 28]: UPDATE_BRANCH defaults to 'release'; --main sets it to 'main' for one-time dev fetch
@@ -85,6 +86,8 @@ Progress: `[░░░░░░░░░░] 0%`
 - [Phase 30-reliability-validation]: HTTP HEAD (not docker manifest inspect, not GET) — avoids push scope bug docker/cli#4345 and rate-limit
 - [Phase 30-reliability-validation]: validate_images_exist() blocks compose_pull() on 404; warn-only in update.sh (user may have custom images)
 - [Phase 30-reliability-validation]: update.sh sources lib/compose.sh via _UPDATE_SCRIPT_DIR to get validate_images_exist() without code duplication
+- [Phase 31]: VDS/VPS wizard choice executes git fetch+checkout agmind-caddy then exec install.sh --vds — process replacement, never returns
+- [Phase 31]: Offline profile fully removed from codebase; LAN is now default choice 1 in simplified 2-choice wizard
 
 ### Architecture Notes
 
@@ -122,7 +125,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-30T00:35:45.904Z
-Stopped at: Completed 30-reliability-validation-02-PLAN.md
+Last session: 2026-03-30T03:37:56.722Z
+Stopped at: Completed 31-wizard-simplify-caddy-branch-01-PLAN.md
 Resume file: None
-Next step: `/gsd:plan-phase 28`
+Next step: `/gsd:plan-phase 31`

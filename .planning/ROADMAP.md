@@ -9,7 +9,8 @@
 - ✅ **v2.4 Wizard Models + GPU Management** — Phases 16-18 (shipped 2026-03-23)
 - ✅ **v2.5 Modular Model Selection + Xinference Removal** — Phases 19-24 (shipped 2026-03-23)
 - ✅ **v2.6 Install Stability + Update Robustness** — Phases 25-27 (shipped 2026-03-25)
-- [ ] **v2.7 Release Workflow + Platform Expansion** — Phases 28-32 (in progress)
+- ✅ **v2.7 Release Workflow + Platform Expansion** — Phases 28-30 (shipped 2026-03-30)
+- [ ] **v2.8 New Services + Wizard Simplification** — Phases 31-36 (in progress)
 
 ---
 
@@ -712,6 +713,127 @@ Plans:
 
 ---
 
+</details>
+
+<details>
+<summary>v2.8 New Services + Wizard Simplification (Phases 31-36) — IN PROGRESS</summary>
+
+### Phase 31: Wizard Simplify + Caddy Branch
+
+**Goal:** Wizard сокращён до LAN/VDS. Offline профиль и build-offline-bundle.sh удалены. Ветка agmind-caddy создана. health.sh/detect.sh затрекены в git.
+
+**Depends on:** Phase 30
+**Requirements:** WZRD-01, WZRD-02, WZRD-03, WZRD-04, WZRD-05
+
+**Success Criteria** (what must be TRUE):
+
+1. Wizard deploy profile показывает 2 пункта: `1) LAN` и `2) VDS/VPS`; выбор VDS/VPS выполняет `git fetch origin agmind-caddy && git checkout agmind-caddy && exec bash install.sh --vds`
+2. Все упоминания `offline` профиля удалены из wizard.sh, install.sh, lib/compose.sh, lib/detect.sh, lib/config.sh; `DEPLOY_PROFILE=offline` нигде не обрабатывается
+3. `scripts/build-offline-bundle.sh` удалён из репозитория
+4. Ветка `agmind-caddy` существует в origin, создана от main
+5. `lib/health.sh` и `lib/detect.sh` отслеживаются git (`git ls-files lib/health.sh lib/detect.sh` возвращает оба файла)
+6. `git reset --hard origin/main` не удаляет health.sh и detect.sh
+
+**Plans:** 1/2 plans executed
+
+Plans:
+- [ ] 31-01-PLAN.md — Wizard simplify to LAN/VDS-VPS + offline removal from all scripts
+- [ ] 31-02-PLAN.md — Create agmind-caddy branch + add --vds flag + final verification
+
+---
+
+### Phase 32: LiteLLM — AI Gateway
+
+**Goal:** LiteLLM как core-сервис: единый OpenAI-совместимый прокси ко всем LLM, fallback, cost tracking. Wizard генерирует litellm-config.yaml.
+
+**Depends on:** Phase 31
+**Requirements:** CSVC-01, CSVC-02
+
+**Success Criteria** (what must be TRUE):
+
+1. Контейнер `agmind-litellm` запускается на порту 4000, использует существующий PostgreSQL для хранения ключей и cost tracking
+2. `litellm-config.yaml` генерируется в `phase_config()` на основе выбранных LLM провайдеров (Ollama/vLLM/external API); включает fallback chain
+3. Dify и Open WebUI получают `LLM_BASE_URL=http://agmind-litellm:4000/v1` в `.env` — все LLM-запросы идут через LiteLLM
+4. `agmind doctor` проверяет health endpoint LiteLLM; `credentials.txt` содержит LiteLLM URL и master key
+5. После установки `curl http://localhost:4000/health` возвращает HTTP 200
+
+**Plans:** TBD
+
+---
+
+### Phase 33: SearXNG — Private Search
+
+**Goal:** SearXNG как core-сервис: приватный метапоисковик с JSON API для AI-агентов.
+
+**Depends on:** Phase 31
+**Requirements:** CSVC-03, CSVC-04
+
+**Success Criteria** (what must be TRUE):
+
+1. Контейнер `agmind-searxng` запускается на порту 8888; JSON API включён (`formats: [html, json]` в settings.yml)
+2. Минимальный конфиг содержит движки: Google, Bing, DuckDuckGo, Wikipedia
+3. `curl http://localhost:8888/search?q=test&format=json` возвращает JSON с результатами
+4. `agmind doctor` проверяет SearXNG health; `credentials.txt` содержит SearXNG URL
+5. Потребление RAM контейнера не превышает 512 MB в idle
+
+**Plans:** TBD
+
+---
+
+### Phase 34: Open Notebook
+
+**Goal:** Open Notebook как опциональный сервис (wizard y/N): аналог Google NotebookLM — загрузка документов, диалог с цитатами.
+
+**Depends on:** Phase 32 (LiteLLM)
+**Requirements:** OSVC-01
+
+**Success Criteria** (what must be TRUE):
+
+1. Wizard спрашивает `Установить Open Notebook? (аналог Google NotebookLM) [y/N]`; при `y` добавляет `notebook` в COMPOSE_PROFILES
+2. Контейнер `agmind-notebook` использует PostgreSQL и LiteLLM (не прямой Ollama)
+3. Отдельный порт в credentials.txt; `agmind doctor` проверяет health если профиль включён
+4. При `N` — никаких следов сервиса в docker compose ps
+
+**Plans:** TBD
+
+---
+
+### Phase 35: DB-GPT — AI Database Analytics
+
+**Goal:** DB-GPT как опциональный сервис (wizard y/N): Text-to-SQL, AI-аналитика по базам данных за любой период.
+
+**Depends on:** Phase 32 (LiteLLM)
+**Requirements:** OSVC-02
+
+**Success Criteria** (what must be TRUE):
+
+1. Wizard спрашивает `Установить DB-GPT? (AI-аналитика по базам данных) [y/N]`; при `y` добавляет `dbgpt` в COMPOSE_PROFILES
+2. Контейнер `agmind-dbgpt` использует LiteLLM для LLM-запросов; подключение к клиентским БД настраивается после установки
+3. Отдельный порт в credentials.txt; `agmind doctor` проверяет health если профиль включён
+4. При `N` — никаких следов сервиса в docker compose ps
+
+**Plans:** TBD
+
+---
+
+### Phase 36: Crawl4AI — Web Crawler for RAG
+
+**Goal:** Crawl4AI как опциональный сервис (wizard y/N): веб-краулер, Markdown output, REST API для наполнения RAG.
+
+**Depends on:** Phase 31
+**Requirements:** OSVC-03
+
+**Success Criteria** (what must be TRUE):
+
+1. Wizard спрашивает `Установить Crawl4AI? (веб-краулер для наполнения RAG) [y/N]`; при `y` добавляет `crawl4ai` в COMPOSE_PROFILES
+2. Контейнер `agmind-crawl4ai` с REST API; deep crawl, anti-bot detection, proxy support
+3. `agmind doctor` проверяет health если профиль включён; credentials.txt содержит Crawl4AI URL
+4. При `N` — никаких следов сервиса в docker compose ps; ~2 GB RAM при включении (Chromium)
+
+**Plans:** TBD
+
+---
+
 ## Phases
 
 - [x] **Phase 1: Surgery** — Remove Dify API automation and enforce three-layer boundary
@@ -745,6 +867,12 @@ Plans:
 - [x] **Phase 28: Release Branch Workflow** — Installer/agmind update via release branch, full release notes, Telegram escape, credentials.txt endpoints, FILES_URL auto-populate (v2.7) (completed 2026-03-29)
 - [x] **Phase 29: Docling GPU/OCR** — CUDA image auto-selection, persistent model volumes, Russian OCR default, model preload at install (v2.7) (completed 2026-03-29)
 - [x] **Phase 30: Reliability & Validation** — Dify init retry, --dry-run preflight, HTTP HEAD image validation, offline bundle E2E test (v2.7) (completed 2026-03-30)
+- [ ] **Phase 31: Wizard Simplify + Caddy Branch** — LAN/VDS wizard, удаление Offline, ветка agmind-caddy, track health.sh/detect.sh (v2.8)
+- [ ] **Phase 32: LiteLLM** — AI Gateway, litellm-config.yaml из wizard, fallback chain, cost tracking (v2.8)
+- [ ] **Phase 33: SearXNG** — Приватный поиск, JSON API, 243 движка (v2.8)
+- [ ] **Phase 34: Open Notebook** — Опциональный, wizard y/N, аналог Google NotebookLM (v2.8)
+- [ ] **Phase 35: DB-GPT** — Опциональный, wizard y/N, Text-to-SQL AI-аналитика (v2.8)
+- [ ] **Phase 36: Crawl4AI** — Опциональный, wizard y/N, веб-краулер для RAG (v2.8)
 
 ## Progress
 
@@ -779,8 +907,14 @@ Plans:
 | 27. UX Polish | 1/1 | Complete    | 2026-03-24 | — |
 | 28. Release Branch Workflow | 3/3 | Complete    | 2026-03-29 | — |
 | 29. Docling GPU/OCR | 2/2 | Complete    | 2026-03-29 | — |
-| 30. Reliability & Validation | 3/3 | Complete    | 2026-03-30 | — |
+| 30. Reliability & Validation | v2.7 | 3/3 | Complete | 2026-03-30 |
+| 31. Wizard Simplify + Caddy Branch | 1/2 | In Progress|  | — |
+| 32. LiteLLM | v2.8 | 0/TBD | Not started | — |
+| 33. SearXNG | v2.8 | 0/TBD | Not started | — |
+| 34. Open Notebook | v2.8 | 0/TBD | Not started | — |
+| 35. DB-GPT | v2.8 | 0/TBD | Not started | — |
+| 36. Crawl4AI | v2.8 | 0/TBD | Not started | — |
 
 ---
 *Roadmap created: 2026-03-17*
-*Last updated: 2026-03-30 — v2.7 roadmap: phases 28-30, merged 30-32 into single reliability phase*
+*Last updated: 2026-03-30 — v2.8 roadmap: phases 31-36, 6 new services + wizard simplification*
