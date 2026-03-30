@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: Install Stability + Update Robustness
 status: Awaiting plan-phase
-stopped_at: Completed 33-01-PLAN.md
-last_updated: "2026-03-30T05:54:02.200Z"
-last_activity: "2026-03-30 — Phase 33 Plan 01 complete: 5 optional service definitions + version pins + SearXNG config"
+stopped_at: Completed 33-02-PLAN.md
+last_updated: "2026-03-30T05:59:00Z"
+last_activity: "2026-03-30 — Phase 33 Plan 02 complete: wizard integration, compose profiles, health, secrets, credentials for 4 optional services"
 progress:
   total_phases: 9
   completed_phases: 5
   total_plans: 14
-  completed_plans: 13
-  percent: 93
+  completed_plans: 14
+  percent: 100
 ---
 
 # State: AGmind Installer v2.8
@@ -26,12 +26,12 @@ See: .planning/PROJECT.md (updated 2026-03-29)
 
 ## Current Position
 
-Phase: 33 (Optional Services — SearXNG, Open Notebook, DB-GPT, Crawl4AI) — Plan 01 complete
-Plan: 01 done
+Phase: 33 (Optional Services — SearXNG, Open Notebook, DB-GPT, Crawl4AI) — Plan 02 complete
+Plan: 02 done
 Status: Awaiting plan-phase
-Last activity: 2026-03-30 — Phase 33 Plan 01 complete: 5 optional service definitions + version pins + SearXNG config
+Last activity: 2026-03-30 — Phase 33 Plan 02 complete: wizard integration, compose profiles, health, secrets, credentials for 4 optional services
 
-Progress: `[█████████░] 93%`
+Progress: `[██████████] 100%`
 
 ## Performance Metrics
 
@@ -92,6 +92,7 @@ Progress: `[█████████░] 93%`
 - [Phase 32-litellm-ai-gateway]: LiteLLM nginx location at /litellm/ proxies to litellm/ui/ path (trailing slashes for path rewriting)
 - [Phase 32-litellm-ai-gateway]: litellm added to critical_services (not gpu_services) in wait_healthy — CPU-only API gateway
 - [Phase 33]: SurrealDB as Open Notebook backend (not PostgreSQL); DB-GPT routes through LiteLLM; SearXNG secret_key placeholder for install-time substitution
+- [Phase 33]: SearXNG settings.yml generated into docker/ dir (same pattern as litellm-config.yaml); volume mount changed to ./searxng-settings.yml
 
 ### Architecture Notes
 
@@ -129,7 +130,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-30T05:54:02.197Z
-Stopped at: Completed 33-01-PLAN.md
+Last session: 2026-03-30T05:59:00Z
+Stopped at: Completed 33-02-PLAN.md
 Resume file: None
-Next step: `/gsd:plan-phase 31`
+Next step: Phase 33 complete — all optional services integrated

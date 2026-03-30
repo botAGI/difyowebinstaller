@@ -781,7 +781,7 @@ Plans:
 5. Все 4 сервиса: при `N` — никаких следов в `docker compose ps`; при `y` — порт в credentials.txt, `agmind doctor` проверяет health
 6. `curl http://localhost:8888/search?q=test&format=json` возвращает JSON (SearXNG)
 
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 33-01-PLAN.md — Docker-compose service definitions + versions.env + SearXNG config
@@ -824,7 +824,7 @@ Plans:
 - [x] **Phase 30: Reliability & Validation** — Dify init retry, --dry-run preflight, HTTP HEAD image validation, offline bundle E2E test (v2.7) (completed 2026-03-30)
 - [x] **Phase 31: Wizard Simplify + Caddy Branch** — LAN/VDS wizard, удаление Offline, ветка agmind-caddy, track health.sh/detect.sh (v2.8) (completed 2026-03-30)
 - [x] **Phase 32: LiteLLM** — AI Gateway, litellm-config.yaml из wizard, fallback chain, cost tracking (v2.8) (completed 2026-03-30)
-- [ ] **Phase 33: Optional Services** — SearXNG + Open Notebook + DB-GPT + Crawl4AI, все wizard y/N (v2.8)
+- [x] **Phase 33: Optional Services** — SearXNG + Open Notebook + DB-GPT + Crawl4AI, все wizard y/N (v2.8) (completed 2026-03-30)
 
 ## Progress
 
@@ -862,7 +862,7 @@ Plans:
 | 30. Reliability & Validation | v2.7 | 3/3 | Complete | 2026-03-30 |
 | 31. Wizard Simplify + Caddy Branch | 2/2 | Complete    | 2026-03-30 | — |
 | 32. LiteLLM | 2/2 | Complete    | 2026-03-30 | — |
-| 33. Optional Services | 1/2 | In Progress|  | — |
+| 33. Optional Services | 2/2 | Complete   | 2026-03-30 | — |
 
 ---
 *Roadmap created: 2026-03-17*
