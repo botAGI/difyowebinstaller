@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: Install Stability + Update Robustness
 status: Awaiting plan-phase
-stopped_at: "Checkpoint reached: 32-02 Task 2 — awaiting user verification of LiteLLM full integration"
-last_updated: "2026-03-30T04:54:40.609Z"
-last_activity: "2026-03-30 — Phase 31 Plan 01 complete: 2-choice wizard, offline profile removed"
+stopped_at: Completed 33-01-PLAN.md
+last_updated: "2026-03-30T05:54:02.200Z"
+last_activity: "2026-03-30 — Phase 33 Plan 01 complete: 5 optional service definitions + version pins + SearXNG config"
 progress:
-  total_phases: 12
+  total_phases: 9
   completed_phases: 5
-  total_plans: 12
-  completed_plans: 12
-  percent: 90
+  total_plans: 14
+  completed_plans: 13
+  percent: 93
 ---
 
 # State: AGmind Installer v2.8
@@ -26,12 +26,12 @@ See: .planning/PROJECT.md (updated 2026-03-29)
 
 ## Current Position
 
-Phase: 31 (Wizard Simplify + Caddy Branch) — Plan 01 complete
+Phase: 33 (Optional Services — SearXNG, Open Notebook, DB-GPT, Crawl4AI) — Plan 01 complete
 Plan: 01 done
 Status: Awaiting plan-phase
-Last activity: 2026-03-30 — Phase 31 Plan 01 complete: 2-choice wizard, offline profile removed
+Last activity: 2026-03-30 — Phase 33 Plan 01 complete: 5 optional service definitions + version pins + SearXNG config
 
-Progress: `[█████████░] 90%`
+Progress: `[█████████░] 93%`
 
 ## Performance Metrics
 
@@ -45,7 +45,7 @@ Progress: `[█████████░] 90%`
 - v2.5 phases: 6 complete (9 plans)
 - v2.6 phases: 3 complete (5 plans)
 - v2.7 phases: 3 complete (8 plans)
-- v2.8 phases: 6 planned (0 complete)
+- v2.8 phases: 3 planned (2 complete)
 
 ## Accumulated Context
 
@@ -91,6 +91,7 @@ Progress: `[█████████░] 90%`
 - [Phase 31]: agmind-caddy branch created locally from main; user must push with git push origin agmind-caddy
 - [Phase 32-litellm-ai-gateway]: LiteLLM nginx location at /litellm/ proxies to litellm/ui/ path (trailing slashes for path rewriting)
 - [Phase 32-litellm-ai-gateway]: litellm added to critical_services (not gpu_services) in wait_healthy — CPU-only API gateway
+- [Phase 33]: SurrealDB as Open Notebook backend (not PostgreSQL); DB-GPT routes through LiteLLM; SearXNG secret_key placeholder for install-time substitution
 
 ### Architecture Notes
 
@@ -128,7 +129,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-30T04:54:36.545Z
-Stopped at: Checkpoint reached: 32-02 Task 2 — awaiting user verification of LiteLLM full integration
+Last session: 2026-03-30T05:54:02.197Z
+Stopped at: Completed 33-01-PLAN.md
 Resume file: None
 Next step: `/gsd:plan-phase 31`

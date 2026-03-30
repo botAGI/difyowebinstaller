@@ -10,7 +10,7 @@
 - ✅ **v2.5 Modular Model Selection + Xinference Removal** — Phases 19-24 (shipped 2026-03-23)
 - ✅ **v2.6 Install Stability + Update Robustness** — Phases 25-27 (shipped 2026-03-25)
 - ✅ **v2.7 Release Workflow + Platform Expansion** — Phases 28-30 (shipped 2026-03-30)
-- [ ] **v2.8 New Services + Wizard Simplification** — Phases 31-36 (in progress)
+- [ ] **v2.8 New Services + Wizard Simplification** — Phases 31-33 (in progress)
 
 ---
 
@@ -716,7 +716,7 @@ Plans:
 </details>
 
 <details>
-<summary>v2.8 New Services + Wizard Simplification (Phases 31-36) — IN PROGRESS</summary>
+<summary>v2.8 New Services + Wizard Simplification (Phases 31-33) — IN PROGRESS</summary>
 
 ### Phase 31: Wizard Simplify + Caddy Branch
 
@@ -765,76 +765,27 @@ Plans:
 
 ---
 
-### Phase 33: SearXNG — Private Search
+### Phase 33: Optional Services (SearXNG + Open Notebook + DB-GPT + Crawl4AI)
 
-**Goal:** SearXNG как core-сервис: приватный метапоисковик с JSON API для AI-агентов.
+**Goal:** Четыре опциональных сервиса через wizard `y/N` + compose profiles. Каждый: docker-compose service, versions.env, wizard step, credentials.txt, agmind doctor.
 
-**Depends on:** Phase 31
-**Requirements:** CSVC-03, CSVC-04
-
-**Success Criteria** (what must be TRUE):
-
-1. Контейнер `agmind-searxng` запускается на порту 8888; JSON API включён (`formats: [html, json]` в settings.yml)
-2. Минимальный конфиг содержит движки: Google, Bing, DuckDuckGo, Wikipedia
-3. `curl http://localhost:8888/search?q=test&format=json` возвращает JSON с результатами
-4. `agmind doctor` проверяет SearXNG health; `credentials.txt` содержит SearXNG URL
-5. Потребление RAM контейнера не превышает 512 MB в idle
-
-**Plans:** TBD
-
----
-
-### Phase 34: Open Notebook
-
-**Goal:** Open Notebook как опциональный сервис (wizard y/N): аналог Google NotebookLM — загрузка документов, диалог с цитатами.
-
-**Depends on:** Phase 32 (LiteLLM)
-**Requirements:** OSVC-01
+**Depends on:** Phase 32 (LiteLLM — для Open Notebook и DB-GPT)
+**Requirements:** OSVC-01, OSVC-02, OSVC-03, OSVC-04
 
 **Success Criteria** (what must be TRUE):
 
-1. Wizard спрашивает `Установить Open Notebook? (аналог Google NotebookLM) [y/N]`; при `y` добавляет `notebook` в COMPOSE_PROFILES
-2. Контейнер `agmind-notebook` использует PostgreSQL и LiteLLM (не прямой Ollama)
-3. Отдельный порт в credentials.txt; `agmind doctor` проверяет health если профиль включён
-4. При `N` — никаких следов сервиса в docker compose ps
+1. **SearXNG**: wizard `y/N`, compose profile=searxng, контейнер `agmind-searxng` порт 8888, JSON API (`formats: [html, json]`), движки Google/Bing/DuckDuckGo/Wikipedia, ~256 MB RAM
+2. **Open Notebook**: wizard `y/N`, compose profile=notebook, контейнер `agmind-notebook` использует SurrealDB + LiteLLM, ~512 MB RAM
+3. **DB-GPT**: wizard `y/N`, compose profile=dbgpt, контейнер `agmind-dbgpt` через LiteLLM, ~1 GB RAM
+4. **Crawl4AI**: wizard `y/N`, compose profile=crawl4ai, контейнер `agmind-crawl4ai` REST API, ~2 GB RAM (Chromium)
+5. Все 4 сервиса: при `N` — никаких следов в `docker compose ps`; при `y` — порт в credentials.txt, `agmind doctor` проверяет health
+6. `curl http://localhost:8888/search?q=test&format=json` возвращает JSON (SearXNG)
 
-**Plans:** TBD
+**Plans:** 1/2 plans executed
 
----
-
-### Phase 35: DB-GPT — AI Database Analytics
-
-**Goal:** DB-GPT как опциональный сервис (wizard y/N): Text-to-SQL, AI-аналитика по базам данных за любой период.
-
-**Depends on:** Phase 32 (LiteLLM)
-**Requirements:** OSVC-02
-
-**Success Criteria** (what must be TRUE):
-
-1. Wizard спрашивает `Установить DB-GPT? (AI-аналитика по базам данных) [y/N]`; при `y` добавляет `dbgpt` в COMPOSE_PROFILES
-2. Контейнер `agmind-dbgpt` использует LiteLLM для LLM-запросов; подключение к клиентским БД настраивается после установки
-3. Отдельный порт в credentials.txt; `agmind doctor` проверяет health если профиль включён
-4. При `N` — никаких следов сервиса в docker compose ps
-
-**Plans:** TBD
-
----
-
-### Phase 36: Crawl4AI — Web Crawler for RAG
-
-**Goal:** Crawl4AI как опциональный сервис (wizard y/N): веб-краулер, Markdown output, REST API для наполнения RAG.
-
-**Depends on:** Phase 31
-**Requirements:** OSVC-03
-
-**Success Criteria** (what must be TRUE):
-
-1. Wizard спрашивает `Установить Crawl4AI? (веб-краулер для наполнения RAG) [y/N]`; при `y` добавляет `crawl4ai` в COMPOSE_PROFILES
-2. Контейнер `agmind-crawl4ai` с REST API; deep crawl, anti-bot detection, proxy support
-3. `agmind doctor` проверяет health если профиль включён; credentials.txt содержит Crawl4AI URL
-4. При `N` — никаких следов сервиса в docker compose ps; ~2 GB RAM при включении (Chromium)
-
-**Plans:** TBD
+Plans:
+- [ ] 33-01-PLAN.md — Docker-compose service definitions + versions.env + SearXNG config
+- [ ] 33-02-PLAN.md — Wizard steps + compose profiles + health + credentials + secrets
 
 ---
 
@@ -873,10 +824,7 @@ Plans:
 - [x] **Phase 30: Reliability & Validation** — Dify init retry, --dry-run preflight, HTTP HEAD image validation, offline bundle E2E test (v2.7) (completed 2026-03-30)
 - [x] **Phase 31: Wizard Simplify + Caddy Branch** — LAN/VDS wizard, удаление Offline, ветка agmind-caddy, track health.sh/detect.sh (v2.8) (completed 2026-03-30)
 - [x] **Phase 32: LiteLLM** — AI Gateway, litellm-config.yaml из wizard, fallback chain, cost tracking (v2.8) (completed 2026-03-30)
-- [ ] **Phase 33: SearXNG** — Приватный поиск, JSON API, 243 движка (v2.8)
-- [ ] **Phase 34: Open Notebook** — Опциональный, wizard y/N, аналог Google NotebookLM (v2.8)
-- [ ] **Phase 35: DB-GPT** — Опциональный, wizard y/N, Text-to-SQL AI-аналитика (v2.8)
-- [ ] **Phase 36: Crawl4AI** — Опциональный, wizard y/N, веб-краулер для RAG (v2.8)
+- [ ] **Phase 33: Optional Services** — SearXNG + Open Notebook + DB-GPT + Crawl4AI, все wizard y/N (v2.8)
 
 ## Progress
 
@@ -913,12 +861,9 @@ Plans:
 | 29. Docling GPU/OCR | 2/2 | Complete    | 2026-03-29 | — |
 | 30. Reliability & Validation | v2.7 | 3/3 | Complete | 2026-03-30 |
 | 31. Wizard Simplify + Caddy Branch | 2/2 | Complete    | 2026-03-30 | — |
-| 32. LiteLLM | 2/2 | Complete   | 2026-03-30 | — |
-| 33. SearXNG | v2.8 | 0/TBD | Not started | — |
-| 34. Open Notebook | v2.8 | 0/TBD | Not started | — |
-| 35. DB-GPT | v2.8 | 0/TBD | Not started | — |
-| 36. Crawl4AI | v2.8 | 0/TBD | Not started | — |
+| 32. LiteLLM | 2/2 | Complete    | 2026-03-30 | — |
+| 33. Optional Services | 1/2 | In Progress|  | — |
 
 ---
 *Roadmap created: 2026-03-17*
-*Last updated: 2026-03-30 — Phase 32 LiteLLM planned: 2 plans, 2 waves*
+*Last updated: 2026-03-30 — Phases 33-36 merged into Phase 33 Optional Services; SearXNG moved from core to optional*
