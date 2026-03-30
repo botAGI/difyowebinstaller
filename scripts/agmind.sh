@@ -636,6 +636,16 @@ cmd_init_dify() {
         exit 1
     fi
 
+    # Prevent parallel init-dify runs (flock)
+    local lock_file="/var/lock/agmind-init-dify.lock"
+    if [[ "$(uname)" != "Darwin" ]]; then
+        exec 8>"$lock_file"
+        if ! flock -n 8; then
+            echo -e "${RED}Another init-dify is already running${NC}" >&2
+            exit 1
+        fi
+    fi
+
     if [[ -f "${AGMIND_DIR}/.dify_initialized" ]]; then
         echo -e "${GREEN}Dify already initialized${NC}"
         echo "  To re-initialize, remove ${AGMIND_DIR}/.dify_initialized and retry."

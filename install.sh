@@ -260,14 +260,14 @@ _init_dify_admin() {
         attempts=$((attempts + 1))
     done
     if [[ $attempts -ge $max_attempts ]]; then
-        log_warn "Dify API not ready after 10 min, skipping auto-init"
-        log_warn "Run 'agmind init-dify' manually after API is healthy"
+        log_warn "[dify-init] Dify API not ready after 10 min, skipping auto-init"
+        log_warn "[dify-init] Run 'agmind init-dify' manually after API is healthy"
         return 0
     fi
     # Extra settle time — API may accept /health before init endpoints are ready
     sleep 5
 
-    log_info "Initializing Dify admin (two-step: init → setup)..."
+    log_info "[dify-init] Initializing Dify admin (two-step: init → setup)..."
 
     # Two-step init: POST /console/api/init → check → POST /console/api/setup
     # Step 1 returns a session cookie required by step 2
@@ -313,23 +313,23 @@ _init_dify_admin() {
 
         # Check result
         if echo "$resp" | grep -qi "ALREADY_INIT\|already.*setup\|already.*initialized"; then
-            log_info "Dify already initialized"
+            log_info "[dify-init] Dify already initialized"
             touch "${INSTALL_DIR}/.dify_initialized"
             return 0
         elif echo "$resp" | grep -q "HTTP_2"; then
-            log_success "Dify admin initialized"
+            log_success "[dify-init] Dify admin initialized"
             touch "${INSTALL_DIR}/.dify_initialized"
             return 0
         elif echo "$resp" | grep -q "INIT_FAIL"; then
-            log_warn "Dify init step failed (attempt ${try}/3): $(echo "$resp" | head -c 200)"
+            log_warn "[dify-init] Dify init step failed (attempt ${try}/3): $(echo "$resp" | head -c 200)"
         else
-            log_warn "Dify setup step failed (attempt ${try}/3): $(echo "$resp" | head -c 200)"
+            log_warn "[dify-init] Dify setup step failed (attempt ${try}/3): $(echo "$resp" | head -c 200)"
         fi
 
         [[ $try -lt 3 ]] || break
-        sleep 30
+        sleep 60
     done
-    log_warn "Dify init failed after 3 attempts — run 'agmind init-dify' manually"
+    log_warn "[dify-init] Dify init failed after 3 attempts — run 'agmind init-dify' manually"
 }
 
 _save_credentials() {
