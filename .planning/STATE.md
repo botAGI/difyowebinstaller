@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: Install Stability + Update Robustness
 status: Awaiting plan-phase
-stopped_at: "Checkpoint reached: 31-02 Task 2 — awaiting user verification of all phase 31 WZRD requirements"
-last_updated: "2026-03-30T03:41:13.490Z"
+stopped_at: "Checkpoint reached: 32-02 Task 2 — awaiting user verification of LiteLLM full integration"
+last_updated: "2026-03-30T04:54:40.609Z"
 last_activity: "2026-03-30 — Phase 31 Plan 01 complete: 2-choice wizard, offline profile removed"
 progress:
   total_phases: 12
-  completed_phases: 4
-  total_plans: 10
-  completed_plans: 10
+  completed_phases: 5
+  total_plans: 12
+  completed_plans: 12
   percent: 90
 ---
 
@@ -89,6 +89,8 @@ Progress: `[█████████░] 90%`
 - [Phase 31]: VDS/VPS wizard choice executes git fetch+checkout agmind-caddy then exec install.sh --vds — process replacement, never returns
 - [Phase 31]: Offline profile fully removed from codebase; LAN is now default choice 1 in simplified 2-choice wizard
 - [Phase 31]: agmind-caddy branch created locally from main; user must push with git push origin agmind-caddy
+- [Phase 32-litellm-ai-gateway]: LiteLLM nginx location at /litellm/ proxies to litellm/ui/ path (trailing slashes for path rewriting)
+- [Phase 32-litellm-ai-gateway]: litellm added to critical_services (not gpu_services) in wait_healthy — CPU-only API gateway
 
 ### Architecture Notes
 
@@ -126,7 +128,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-30T03:41:10.604Z
-Stopped at: Checkpoint reached: 31-02 Task 2 — awaiting user verification of all phase 31 WZRD requirements
+Last session: 2026-03-30T04:54:36.545Z
+Stopped at: Checkpoint reached: 32-02 Task 2 — awaiting user verification of LiteLLM full integration
 Resume file: None
 Next step: `/gsd:plan-phase 31`

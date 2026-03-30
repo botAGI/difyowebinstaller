@@ -757,7 +757,11 @@ Plans:
 4. `agmind doctor` проверяет health endpoint LiteLLM; `credentials.txt` содержит LiteLLM URL и master key
 5. После установки `curl http://localhost:4000/health` возвращает HTTP 200
 
-**Plans:** TBD
+**Plans:** 2/2 plans complete
+
+Plans:
+- [ ] 32-01-PLAN.md — LiteLLM docker-compose, versions.env, litellm-config.yaml generation, env templates, init SQL
+- [ ] 32-02-PLAN.md — Nginx proxy, credentials.txt, agmind doctor, wait_healthy integration
 
 ---
 
@@ -868,7 +872,7 @@ Plans:
 - [x] **Phase 29: Docling GPU/OCR** — CUDA image auto-selection, persistent model volumes, Russian OCR default, model preload at install (v2.7) (completed 2026-03-29)
 - [x] **Phase 30: Reliability & Validation** — Dify init retry, --dry-run preflight, HTTP HEAD image validation, offline bundle E2E test (v2.7) (completed 2026-03-30)
 - [x] **Phase 31: Wizard Simplify + Caddy Branch** — LAN/VDS wizard, удаление Offline, ветка agmind-caddy, track health.sh/detect.sh (v2.8) (completed 2026-03-30)
-- [ ] **Phase 32: LiteLLM** — AI Gateway, litellm-config.yaml из wizard, fallback chain, cost tracking (v2.8)
+- [x] **Phase 32: LiteLLM** — AI Gateway, litellm-config.yaml из wizard, fallback chain, cost tracking (v2.8) (completed 2026-03-30)
 - [ ] **Phase 33: SearXNG** — Приватный поиск, JSON API, 243 движка (v2.8)
 - [ ] **Phase 34: Open Notebook** — Опциональный, wizard y/N, аналог Google NotebookLM (v2.8)
 - [ ] **Phase 35: DB-GPT** — Опциональный, wizard y/N, Text-to-SQL AI-аналитика (v2.8)
@@ -908,8 +912,8 @@ Plans:
 | 28. Release Branch Workflow | 3/3 | Complete    | 2026-03-29 | — |
 | 29. Docling GPU/OCR | 2/2 | Complete    | 2026-03-29 | — |
 | 30. Reliability & Validation | v2.7 | 3/3 | Complete | 2026-03-30 |
-| 31. Wizard Simplify + Caddy Branch | 2/2 | Complete   | 2026-03-30 | — |
-| 32. LiteLLM | v2.8 | 0/TBD | Not started | — |
+| 31. Wizard Simplify + Caddy Branch | 2/2 | Complete    | 2026-03-30 | — |
+| 32. LiteLLM | 2/2 | Complete   | 2026-03-30 | — |
 | 33. SearXNG | v2.8 | 0/TBD | Not started | — |
 | 34. Open Notebook | v2.8 | 0/TBD | Not started | — |
 | 35. DB-GPT | v2.8 | 0/TBD | Not started | — |
@@ -917,4 +921,4 @@ Plans:
 
 ---
 *Roadmap created: 2026-03-17*
-*Last updated: 2026-03-30 — v2.8 roadmap: phases 31-36, 6 new services + wizard simplification*
+*Last updated: 2026-03-30 — Phase 32 LiteLLM planned: 2 plans, 2 waves*

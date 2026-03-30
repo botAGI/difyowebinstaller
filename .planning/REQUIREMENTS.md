@@ -45,8 +45,8 @@ Requirements for milestone v2.8 New Services + Wizard Simplification.
 
 ### Core Services (CSVC)
 
-- [ ] **CSVC-01**: LiteLLM контейнер `agmind-litellm`, порт 4000, `litellm-config.yaml` генерируется wizard'ом на основе выбранных LLM провайдеров
-- [ ] **CSVC-02**: LiteLLM переиспользует PostgreSQL; Dify/Open WebUI получают `LLM_BASE_URL=http://agmind-litellm:4000/v1` в `.env`
+- [x] **CSVC-01**: LiteLLM контейнер `agmind-litellm`, порт 4000, `litellm-config.yaml` генерируется wizard'ом на основе выбранных LLM провайдеров
+- [x] **CSVC-02**: LiteLLM переиспользует PostgreSQL; Dify/Open WebUI получают `LLM_BASE_URL=http://agmind-litellm:4000/v1` в `.env`
 - [ ] **CSVC-03**: SearXNG контейнер `agmind-searxng`, порт 8888, JSON API включён по умолчанию
 - [ ] **CSVC-04**: SearXNG минимальный конфиг: Google, Bing, DuckDuckGo, Wikipedia; ~256 MB RAM
 
