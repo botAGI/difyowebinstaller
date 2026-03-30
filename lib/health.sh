@@ -195,7 +195,7 @@ wait_healthy() {
     local critical_services="db redis sandbox ssrf_proxy api worker web plugin_daemon nginx"
 
     # GPU services: extended startup time for model loading / CUDA init
-    local gpu_services=" vllm tei ollama "
+    local gpu_services=" vllm tei tei-rerank ollama docling "
 
     local services
     read -ra services <<< "$(get_service_list)"
