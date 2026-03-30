@@ -942,6 +942,58 @@ _wizard_backups() {
     fi
 }
 
+_wizard_searxng() {
+    if [[ "${NON_INTERACTIVE:-false}" == "true" ]]; then
+        ENABLE_SEARXNG="${ENABLE_SEARXNG:-false}"
+        return
+    fi
+    echo ""
+    echo -e "${CYAN}--- SearXNG (поисковый движок) ---${NC}"
+    echo "  Мета-поисковик (Google, Bing, DuckDuckGo, Wikipedia)."
+    echo "  JSON API для интеграции с Dify/агентами. ~256 MB RAM."
+    _ask "Включить SearXNG? [y/N]:" "n"
+    [[ "${REPLY,,}" =~ ^y ]] && ENABLE_SEARXNG=true || ENABLE_SEARXNG=false
+}
+
+_wizard_notebook() {
+    if [[ "${NON_INTERACTIVE:-false}" == "true" ]]; then
+        ENABLE_NOTEBOOK="${ENABLE_NOTEBOOK:-false}"
+        return
+    fi
+    echo ""
+    echo -e "${CYAN}--- Open Notebook (исследовательский ассистент) ---${NC}"
+    echo "  Альтернатива Google NotebookLM. PDF, видео, аудио, веб."
+    echo "  Работает через LiteLLM. ~512 MB RAM + SurrealDB (~256 MB)."
+    _ask "Включить Open Notebook? [y/N]:" "n"
+    [[ "${REPLY,,}" =~ ^y ]] && ENABLE_NOTEBOOK=true || ENABLE_NOTEBOOK=false
+}
+
+_wizard_dbgpt() {
+    if [[ "${NON_INTERACTIVE:-false}" == "true" ]]; then
+        ENABLE_DBGPT="${ENABLE_DBGPT:-false}"
+        return
+    fi
+    echo ""
+    echo -e "${CYAN}--- DB-GPT (аналитика данных) ---${NC}"
+    echo "  AI-агент для анализа данных и SQL. Работает через LiteLLM."
+    echo "  ~1 GB RAM."
+    _ask "Включить DB-GPT? [y/N]:" "n"
+    [[ "${REPLY,,}" =~ ^y ]] && ENABLE_DBGPT=true || ENABLE_DBGPT=false
+}
+
+_wizard_crawl4ai() {
+    if [[ "${NON_INTERACTIVE:-false}" == "true" ]]; then
+        ENABLE_CRAWL4AI="${ENABLE_CRAWL4AI:-false}"
+        return
+    fi
+    echo ""
+    echo -e "${CYAN}--- Crawl4AI (веб-краулер) ---${NC}"
+    echo "  REST API для извлечения данных из веб-страниц (Chromium)."
+    echo "  Playground + мониторинг. ~2 GB RAM."
+    _ask "Включить Crawl4AI? [y/N]:" "n"
+    [[ "${REPLY,,}" =~ ^y ]] && ENABLE_CRAWL4AI=true || ENABLE_CRAWL4AI=false
+}
+
 _wizard_summary() {
     echo -e "${CYAN}=== Сводка установки ===${NC}"
     echo "  Профиль:      ${DEPLOY_PROFILE}"
@@ -957,6 +1009,10 @@ _wizard_summary() {
     [[ "$ENABLE_UFW" == "true" ]] && echo "  UFW:          включён"
     [[ "$ENABLE_FAIL2BAN" == "true" ]] && echo "  Fail2ban:     SSH jail"
     [[ "$ENABLE_AUTHELIA" == "true" ]] && echo "  Authelia:     2FA включена"
+    [[ "${ENABLE_SEARXNG:-false}" == "true" ]] && echo "  SearXNG:      включён (порт 8888)"
+    [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]] && echo "  Open Notebook: включён"
+    [[ "${ENABLE_DBGPT:-false}" == "true" ]] && echo "  DB-GPT:       включён"
+    [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]] && echo "  Crawl4AI:     включён"
     [[ "$ENABLE_TUNNEL" == "true" ]] && echo "  Туннель:      ${TUNNEL_VPS_HOST}:${TUNNEL_REMOTE_PORT}"
     echo "  Бэкапы:       ${BACKUP_TARGET} (${BACKUP_SCHEDULE})"
 
@@ -1043,6 +1099,10 @@ run_wizard() {
     _wizard_security
     _wizard_tunnel
     _wizard_backups
+    _wizard_searxng
+    _wizard_notebook
+    _wizard_dbgpt
+    _wizard_crawl4ai
     _wizard_summary
     _wizard_confirm
 
@@ -1059,6 +1119,7 @@ run_wizard() {
     export BACKUP_TARGET BACKUP_SCHEDULE
     export REMOTE_BACKUP_HOST REMOTE_BACKUP_PORT REMOTE_BACKUP_USER REMOTE_BACKUP_KEY REMOTE_BACKUP_PATH
     export ADMIN_UI_OPEN
+    export ENABLE_SEARXNG ENABLE_NOTEBOOK ENABLE_DBGPT ENABLE_CRAWL4AI
 }
 
 # Run if executed directly

@@ -35,6 +35,10 @@ build_compose_profiles() {
     [[ "${LLM_PROVIDER:-}" == "vllm" ]] && profiles="${profiles:+$profiles,}vllm"
     [[ "${EMBED_PROVIDER:-}" == "tei" ]] && profiles="${profiles:+$profiles,}tei"
     [[ "${ENABLE_RERANKER:-false}" == "true" ]] && profiles="${profiles:+$profiles,}reranker"
+    [[ "${ENABLE_SEARXNG:-false}" == "true" ]] && profiles="${profiles:+$profiles,}searxng"
+    [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]] && profiles="${profiles:+$profiles,}notebook"
+    [[ "${ENABLE_DBGPT:-false}" == "true" ]] && profiles="${profiles:+$profiles,}dbgpt"
+    [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]] && profiles="${profiles:+$profiles,}crawl4ai"
 
     COMPOSE_PROFILE_STRING="$profiles"
     export COMPOSE_PROFILE_STRING
@@ -422,7 +426,7 @@ compose_down() {
 
     cd "$docker_dir"
     log_info "Stopping all containers..."
-    COMPOSE_PROFILES=vps,monitoring,qdrant,weaviate,etl,authelia,ollama,vllm,tei,reranker \
+    COMPOSE_PROFILES=vps,monitoring,qdrant,weaviate,etl,authelia,ollama,vllm,tei,reranker,searxng,notebook,dbgpt,crawl4ai \
         docker compose down --remove-orphans 2>/dev/null || true
     log_success "All containers stopped"
 }
@@ -438,7 +442,7 @@ _cleanup_stale_containers() {
     # Stop ALL profiles — docker compose down without profiles won't touch
     # services that have profiles: [monitoring], etc.
     log_info "Cleaning up stale containers..."
-    COMPOSE_PROFILES=vps,monitoring,qdrant,weaviate,etl,authelia,ollama,vllm,tei,reranker \
+    COMPOSE_PROFILES=vps,monitoring,qdrant,weaviate,etl,authelia,ollama,vllm,tei,reranker,searxng,notebook,dbgpt,crawl4ai \
         docker compose down --remove-orphans 2>/dev/null || true
 
     # Force-remove any agmind containers docker compose missed
