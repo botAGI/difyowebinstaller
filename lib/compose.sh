@@ -147,8 +147,7 @@ _check_image_exists() {
         --max-time 10 \
         -I \
         ${auth_header:+-H "$auth_header"} \
-        -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
-        -H "Accept: application/vnd.oci.image.manifest.v1+json" \
+        -H "Accept: application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json" \
         "$url" 2>/dev/null)" || { return 2; }
 
     case "$http_code" in

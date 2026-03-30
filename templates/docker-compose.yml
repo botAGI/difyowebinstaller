@@ -333,7 +333,7 @@ services:
   # ==================== TEI (tei profile) ====================
   tei:
     <<: *logging-defaults
-    image: ghcr.io/huggingface/text-embeddings-inference:${TEI_EMBED_VERSION:-${TEI_VERSION:-cuda-1.9.2}}
+    image: ghcr.io/huggingface/text-embeddings-inference:${TEI_EMBED_VERSION:-${TEI_VERSION:-cuda-1.9.3}}
     container_name: agmind-tei
     restart: unless-stopped
     mem_limit: ${TEI_MEM_LIMIT:-8g}
@@ -367,7 +367,7 @@ services:
   # re-scores top 10-20 results, latency ~50-100ms per query.
   tei-rerank:
     <<: *logging-defaults
-    image: ghcr.io/huggingface/text-embeddings-inference:${TEI_RERANK_VERSION:-cpu-1.9}
+    image: ghcr.io/huggingface/text-embeddings-inference:${TEI_RERANK_VERSION:-cpu-1.9.3}
     container_name: agmind-tei-rerank
     restart: unless-stopped
     mem_limit: ${TEI_RERANK_MEM_LIMIT:-12g}
@@ -997,7 +997,7 @@ services:
   # ==================== SearXNG (Search Engine) ====================
   searxng:
     <<: *security-defaults
-    image: docker.io/searxng/searxng:${SEARXNG_VERSION:-2024.12.23-42c82f418}
+    image: docker.io/searxng/searxng:${SEARXNG_VERSION:-2026.3.29-7ac4ff39f}
     container_name: agmind-searxng
     restart: on-failure:5
     mem_limit: ${SEARXNG_MEM_LIMIT:-256m}
@@ -1097,7 +1097,7 @@ services:
   # ==================== Crawl4AI (Web Crawler API) ====================
   crawl4ai:
     <<: *security-defaults
-    image: docker.io/unclecode/crawl4ai:${CRAWL4AI_VERSION:-v0.8.5}
+    image: docker.io/unclecode/crawl4ai:${CRAWL4AI_VERSION:-0.8.6}
     container_name: agmind-crawl4ai
     restart: on-failure:5
     mem_limit: ${CRAWL4AI_MEM_LIMIT:-2g}
