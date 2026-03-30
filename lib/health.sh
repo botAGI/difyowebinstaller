@@ -87,6 +87,7 @@ check_container() {
     # ssrf_proxy → ssrf-proxy, plugin_daemon → plugin-daemon, open-webui → openwebui
     local cname="${name//_/-}"
     [[ "$cname" == "open-webui" ]] && cname="openwebui"
+    [[ "$cname" == "open-notebook" ]] && cname="notebook"
 
     # Exact name match to avoid confusion with init-containers (BUG-V3-039)
     # e.g. "agmind-redis" must not match "agmind-redis-lock-cleaner"
