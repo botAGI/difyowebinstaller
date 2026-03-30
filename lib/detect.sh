@@ -490,10 +490,10 @@ preflight_checks() {
     if docker compose -f "${INSTALL_DIR:-/opt/agmind}/docker/docker-compose.yml" ps --status running nginx 2>/dev/null | grep -q nginx; then
         agmind_nginx_up=true
     fi
-    for port in 80 443; do
+    for port in 80 443 5432; do
         if ss -tlnp 2>/dev/null | grep -q ":${port} " || \
            lsof -i ":${port}" -sTCP:LISTEN &>/dev/null 2>&1; then
-            if [[ "$agmind_nginx_up" == "true" ]]; then
+            if [[ "$agmind_nginx_up" == "true" && "$port" -ne 5432 ]]; then
                 echo -e "  ${GREEN}[PASS]${NC} Port ${port}: in use (agmind)"
             else
                 echo -e "  ${YELLOW}[WARN]${NC} Port ${port}: in use"
@@ -538,6 +538,24 @@ preflight_checks() {
         fi
     else
         echo -e "  ${CYAN}[SKIP]${NC} Internet: skipped (offline profile)"
+    fi
+
+    # --- 11. DNS resolution (skip for offline) ---
+    if [[ "${DEPLOY_PROFILE:-}" != "offline" ]]; then
+        local dns_ok=true
+        for host in hub.docker.com ghcr.io; do
+            if getent hosts "$host" >/dev/null 2>&1; then
+                echo -e "  ${GREEN}[PASS]${NC} DNS: ${host}"
+            elif nslookup "$host" >/dev/null 2>&1; then
+                echo -e "  ${GREEN}[PASS]${NC} DNS: ${host}"
+            else
+                echo -e "  ${RED}[FAIL]${NC} DNS: cannot resolve ${host}"
+                errors=$((errors + 1))
+                dns_ok=false
+            fi
+        done
+    else
+        echo -e "  ${CYAN}[SKIP]${NC} DNS: skipped (offline profile)"
     fi
 
     # --- Summary ---

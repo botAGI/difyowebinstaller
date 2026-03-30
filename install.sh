@@ -577,8 +577,10 @@ main() {
     # Parse args
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --non-interactive) NON_INTERACTIVE=true;; --force-restart) FORCE_RESTART=true;;
-            --help|-h) echo "Usage: sudo bash install.sh [--non-interactive] [--force-restart]"; exit 0;;
+            --non-interactive) NON_INTERACTIVE=true;;
+            --force-restart) FORCE_RESTART=true;;
+            --dry-run) DRY_RUN=true;;
+            --help|-h) echo "Usage: sudo bash install.sh [--non-interactive] [--force-restart] [--dry-run]"; exit 0;;
         esac; shift
     done
 
@@ -632,6 +634,12 @@ main() {
     # Phase table
     local t=10
     [[ $start -le 1  ]] && run_phase 1  $t "Diagnostics"   phase_diagnostics
+    if [[ "${DRY_RUN:-false}" == "true" ]]; then
+        preflight_checks || true
+        preflight_rc=$?
+        log_info "Dry-run complete — exiting without starting containers"
+        exit "$preflight_rc"
+    fi
     [[ $start -le 2  ]] && run_phase 2  $t "Wizard"        phase_wizard
     [[ $start -le 3  ]] && run_phase 3  $t "Docker"        phase_docker
     [[ $start -le 4  ]] && run_phase 4  $t "Configuration" phase_config
