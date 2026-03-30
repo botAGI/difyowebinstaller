@@ -84,6 +84,7 @@ _status_dashboard() {
     [[ -z "$domain" ]] && domain="$(_get_ip)"
     echo "  Open WebUI:   http://${domain}"
     echo "  Dify Console: http://${domain}:3000"
+    echo "  LiteLLM UI:   http://${domain}/litellm/"
     if [[ "$(_read_env ADMIN_UI_OPEN "false")" == "true" ]]; then
         local ip; ip="$(_get_ip)"
         echo "  Portainer:    https://${ip}:9443"
@@ -282,6 +283,15 @@ cmd_doctor() {
                     _check WARN "Restarts: ${cname}" "${rcount} перезапусков" "docker logs --tail 30 ${cname}"
                 fi
             done <<< "$restarts"
+        fi
+
+        # LiteLLM
+        if docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'agmind-litellm'; then
+            if docker exec agmind-litellm curl -sf --max-time 5 http://localhost:4000/health >/dev/null 2>&1; then
+                _check OK "LiteLLM Gateway" "healthy (port 4000)"
+            else
+                _check WARN "LiteLLM Gateway" "Container running but health check failed" "docker compose restart agmind-litellm"
+            fi
         fi
     fi
 
