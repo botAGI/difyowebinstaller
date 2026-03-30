@@ -740,7 +740,7 @@ services:
       - ./volumes/certbot/www:/var/www/certbot:ro
       - ./volumes/certbot/ssl:/etc/nginx/ssl:ro
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:80/ 2>/dev/null && wget -q --spider http://localhost:3000/ 2>/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/health && curl -sf http://localhost:3000/ || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
