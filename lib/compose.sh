@@ -397,6 +397,11 @@ compose_start() {
     # --- Up (--pull missing as safety net for anything pull phase missed) ---
     local pull_flag="--pull missing"
 
+    # --- Start DB first, ensure databases exist before other services ---
+    log_info "Starting database..."
+    docker compose up -d $pull_flag db
+    create_plugin_db
+
     log_info "Starting containers (profiles: ${profiles:-core})..."
     if [[ -n "$profiles" ]]; then
         COMPOSE_PROFILES="$profiles" docker compose up -d $pull_flag
@@ -406,7 +411,6 @@ compose_start() {
 
     # --- Post-up tasks ---
     sync_db_password
-    create_plugin_db
     _retry_stuck_containers "$profiles"
     _fix_storage_permissions
     post_launch_status
