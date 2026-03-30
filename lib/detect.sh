@@ -528,35 +528,27 @@ preflight_checks() {
     fi
 
     # --- 10. Internet connectivity ---
-    if [[ "${DEPLOY_PROFILE:-}" != "offline" ]]; then
-        if curl -sf --connect-timeout 5 https://hub.docker.com >/dev/null 2>&1 || \
-           wget -q --spider --timeout=5 https://hub.docker.com 2>/dev/null; then
-            echo -e "  ${GREEN}[PASS]${NC} Internet: available"
-        else
-            echo -e "  ${YELLOW}[WARN]${NC} Internet: unavailable (required for image pulls)"
-            warnings=$((warnings + 1))
-        fi
+    if curl -sf --connect-timeout 5 https://hub.docker.com >/dev/null 2>&1 || \
+       wget -q --spider --timeout=5 https://hub.docker.com 2>/dev/null; then
+        echo -e "  ${GREEN}[PASS]${NC} Internet: available"
     else
-        echo -e "  ${CYAN}[SKIP]${NC} Internet: skipped (offline profile)"
+        echo -e "  ${YELLOW}[WARN]${NC} Internet: unavailable (required for image pulls)"
+        warnings=$((warnings + 1))
     fi
 
-    # --- 11. DNS resolution (skip for offline) ---
-    if [[ "${DEPLOY_PROFILE:-}" != "offline" ]]; then
-        local dns_ok=true
-        for host in hub.docker.com ghcr.io; do
-            if getent hosts "$host" >/dev/null 2>&1; then
-                echo -e "  ${GREEN}[PASS]${NC} DNS: ${host}"
-            elif nslookup "$host" >/dev/null 2>&1; then
-                echo -e "  ${GREEN}[PASS]${NC} DNS: ${host}"
-            else
-                echo -e "  ${RED}[FAIL]${NC} DNS: cannot resolve ${host}"
-                errors=$((errors + 1))
-                dns_ok=false
-            fi
-        done
-    else
-        echo -e "  ${CYAN}[SKIP]${NC} DNS: skipped (offline profile)"
-    fi
+    # --- 11. DNS resolution ---
+    local dns_ok=true
+    for host in hub.docker.com ghcr.io; do
+        if getent hosts "$host" >/dev/null 2>&1; then
+            echo -e "  ${GREEN}[PASS]${NC} DNS: ${host}"
+        elif nslookup "$host" >/dev/null 2>&1; then
+            echo -e "  ${GREEN}[PASS]${NC} DNS: ${host}"
+        else
+            echo -e "  ${RED}[FAIL]${NC} DNS: cannot resolve ${host}"
+            errors=$((errors + 1))
+            dns_ok=false
+        fi
+    done
 
     # --- Summary ---
     echo ""

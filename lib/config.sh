@@ -542,8 +542,8 @@ http_access deny metadata
 SQUIDEOF
 
     # RFC1918 blocking: VPS/VPN — block all private nets for SSRF safety
-    # LAN/Offline — allow RFC1918 so Dify sandbox can call internal webhooks
-    if [[ "${DEPLOY_PROFILE:-vps}" == "lan" || "${DEPLOY_PROFILE:-vps}" == "offline" ]]; then
+    # LAN — allow RFC1918 so Dify sandbox can call internal webhooks
+    if [[ "${DEPLOY_PROFILE:-vps}" == "lan" ]]; then
         cat >> "$squid_conf" << 'SQUIDEOF'
 # LAN profile: allow RFC1918 for internal webhook calls from Dify sandbox
 # Metadata endpoints are still blocked above

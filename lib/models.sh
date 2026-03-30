@@ -213,7 +213,7 @@ pull_model() {
 }
 
 # ============================================================================
-# CHECK PRE-LOADED MODELS (offline mode)
+# CHECK PRE-LOADED MODELS
 # ============================================================================
 
 check_ollama_models() {
@@ -263,15 +263,6 @@ download_models() {
     local profile="${DEPLOY_PROFILE:-lan}"
     local llm_provider="${LLM_PROVIDER:-ollama}"
     local embed_provider="${EMBED_PROVIDER:-ollama}"
-
-    # Offline: check only, no download
-    if [[ "$profile" == "offline" ]]; then
-        log_info "Offline profile: skipping model download"
-        if [[ "$llm_provider" == "ollama" || "$embed_provider" == "ollama" ]]; then
-            check_ollama_models
-        fi
-        return 0
-    fi
 
     # Ollama models
     local need_ollama=false
