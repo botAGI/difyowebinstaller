@@ -1080,6 +1080,7 @@ services:
     environment:
       - OPENAI_API_KEY=${LITELLM_MASTER_KEY:-}
       - OPENAI_API_BASE=http://litellm:4000/v1
+      - SILICONFLOW_API_KEY=unused
       - DBGPT_LANG=ru
     volumes:
       - agmind_dbgpt_data:/app/pilot/data
