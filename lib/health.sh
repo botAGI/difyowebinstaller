@@ -59,6 +59,17 @@ get_service_list() {
         if [[ "$etl_type" == "unstructured_api" ]]; then
             services+=(docling)
         fi
+
+        # Optional services
+        local enable_searxng enable_notebook enable_dbgpt enable_crawl4ai
+        enable_searxng="$(grep '^ENABLE_SEARXNG=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+        enable_notebook="$(grep '^ENABLE_NOTEBOOK=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+        enable_dbgpt="$(grep '^ENABLE_DBGPT=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+        enable_crawl4ai="$(grep '^ENABLE_CRAWL4AI=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+        [[ "$enable_searxng" == "true" ]] && services+=(searxng)
+        [[ "$enable_notebook" == "true" ]] && services+=(surrealdb open-notebook)
+        [[ "$enable_dbgpt" == "true" ]] && services+=(dbgpt)
+        [[ "$enable_crawl4ai" == "true" ]] && services+=(crawl4ai)
     else
         services+=(weaviate)
     fi
