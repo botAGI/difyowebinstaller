@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: Install Stability + Update Robustness
 status: Awaiting plan-phase
-stopped_at: Completed 29-docling-gpu-ocr-01-PLAN.md
-last_updated: "2026-03-29T14:06:11.042Z"
+stopped_at: Completed 30-reliability-validation-03-PLAN.md
+last_updated: "2026-03-30T00:33:41.824Z"
 last_activity: "2026-03-29 — Roadmap created: phases 28-32, 15 requirements mapped"
 progress:
-  total_phases: 8
+  total_phases: 6
   completed_phases: 2
-  total_plans: 5
-  completed_plans: 5
+  total_plans: 8
+  completed_plans: 6
   percent: 0
 ---
 
@@ -80,6 +80,7 @@ Progress: `[░░░░░░░░░░] 0%`
 - [Phase 29-docling-gpu-ocr]: GPU option (item 3) in Docling wizard hidden unless nvidia container runtime detected via docker info
 - [Phase 29-docling-gpu-ocr]: DOCLING_SERVE_VERSION removed from versions.env; replaced by DOCLING_IMAGE_CPU and DOCLING_IMAGE_CUDA full image:tag refs
 - [Phase 29-docling-gpu-ocr]: OCR_LANG hardcoded to rus,eng; not user-configurable (DOCL-03)
+- [Phase 30-reliability-validation]: Stage 6 verification positioned after tar creation to catch missing images before success message; exit 1 on missing images prevents misleading bundle complete output
 
 ### Architecture Notes
 
@@ -88,7 +89,7 @@ Progress: `[░░░░░░░░░░] 0%`
 - `docker-compose.yml`: CUDA_VISIBLE_DEVICES uses env vars `${VLLM_CUDA_DEVICE:-0}` / `${TEI_CUDA_DEVICE:-0}`
 - `docker-compose.yml`: profiles tei, reranker, docling fully wired to ENABLE_* flags
 - `update.sh`: Xinference orphan cleanup on pre-v2.5 -> v2.5+ upgrades
-- `lib/compose.sh`: will receive `validate_images_exist()` in Phase 31
+- `lib/compose.sh`: will receive `validate_images_exist()` in Phase 30
 - `scripts/update.sh`: will be refactored for git branch fetch in Phase 28
 
 ### Phase 28 Critical Pitfalls (from research)
@@ -102,7 +103,7 @@ Progress: `[░░░░░░░░░░] 0%`
 - C-03: Docling CUDA image selected for wrong host CUDA version — map sm version to CUDA before selecting image
 - N-06: nvidia-smi working does not imply container GPU passthrough works — check `docker info` runtime list
 
-### Phase 31 Critical Pitfalls (from research)
+### Phase 30 Critical Pitfalls (from research, ex-Phase 31)
 
 - C-02: `docker manifest inspect` requires push scope, breaks read-only tokens (docker/cli#4345) — use HTTP HEAD
 - M-04: GET requests count against Docker Hub rate limit — HEAD requests are free
@@ -117,7 +118,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-29T14:01:02.672Z
-Stopped at: Completed 29-docling-gpu-ocr-01-PLAN.md
+Last session: 2026-03-30T00:33:41.821Z
+Stopped at: Completed 30-reliability-validation-03-PLAN.md
 Resume file: None
 Next step: `/gsd:plan-phase 28`

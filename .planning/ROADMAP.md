@@ -684,54 +684,31 @@ Plans:
 
 ---
 
-### Phase 30: Reliability Fixes
+### Phase 30: Reliability & Validation
 
-**Goal:** Dify init не падает при медленном старте; `install.sh --dry-run` запускает только preflight checks без контейнеров — оператор видит проблемы окружения до установки.
+**Goal:** Dify init retry с flock, `--dry-run` preflight checks, HTTP HEAD валидация образов перед pull, offline bundle E2E тест — полный цикл проверок надёжности установки.
 
-**Depends on:** Phase 28
-**Requirements:** RLBL-01, RLBL-03
+**Depends on:** Phase 28, Phase 29
+**Requirements:** RLBL-01, RLBL-02, RLBL-03, RELU-04
 
 **Success Criteria** (what must be TRUE):
 
-1. При медленном старте Dify init повторяется автоматически до 3 раз с интервалом >= 60 секунд; лог повторов пишется в `/opt/agmind/logs/dify-init.log`; flock предотвращает параллельный запуск
+1. При медленном старте Dify init повторяется автоматически до 3 раз с интервалом >= 60 секунд; лог повторов пишется в install.log с префиксом `[dify-init]`; flock предотвращает параллельный запуск
 2. `install.sh --dry-run` проверяет зависимости (docker, docker compose, curl), порты (80, 443, 5432), диск (>= 20 GB) и DNS — выводит итог PASS/FAIL по каждому пункту без запуска контейнеров
 3. При `--dry-run` с заблокированным портом 443 вывод содержит строку вида `FAIL: port 443 is in use` — оператор устраняет конфликт до установки
+4. Перед `compose_pull()` функция `validate_images_exist()` в `lib/compose.sh` выполняет HTTP HEAD к registry API для каждого образа из активных профилей — несуществующий тег выводит `WARNING: image not found: name:tag` и установка останавливается до pull
+5. В offline профиле (`DEPLOY_PROFILE=offline`) валидация пропускается; `SKIP_IMAGE_VALIDATION=true` отключает проверку для CI
+6. Проверка использует HTTP HEAD (не `docker manifest inspect`) — не потребляет Docker Hub rate-limit quota и не требует push scope
+7. `build-offline-bundle.sh` включает все v2.7 образы; запуск без `INCLUDE_DOCLING_CUDA` собирает CPU-only bundle; с флагом — CUDA вариант
+8. При сборке `build-offline-bundle.sh` верифицирует состав bundle: список образов в tar.gz совпадает с `docker compose config --images` для всех профилей; missing образы = exit 1
+9. Manifest с размерами каждого образа выводится при сборке bundle; extra образы (в bundle, но не в compose) показываются как warning
 
-**Plans:** TBD
+**Plans:** 1/3 plans executed
 
----
-
-### Phase 31: Pre-Pull Image Validation
-
-**Goal:** Перед `docker pull` и `agmind update` проверяется доступность каждого образа через HTTP HEAD к registry API — несуществующие теги обнаруживаются до начала операции.
-
-**Depends on:** Phase 28
-**Requirements:** RELU-04
-
-**Success Criteria** (what must be TRUE):
-
-1. Перед `compose_pull()` функция `validate_images_exist()` в `lib/compose.sh` выполняет HTTP HEAD к registry API для каждого образа из активных профилей — несуществующий тег выводит `WARNING: image not found: name:tag` и установка останавливается до pull
-2. В offline профиле (`DEPLOY_PROFILE=offline`) валидация пропускается; `SKIP_IMAGE_VALIDATION=true` отключает проверку для CI
-3. Проверка использует HTTP HEAD (не `docker manifest inspect`) — не потребляет Docker Hub rate-limit quota и не требует push scope
-
-**Plans:** TBD
-
----
-
-### Phase 32: Offline Bundle E2E Test
-
-**Goal:** Offline bundle проходит полный lifecycle тест — все v2.7 образы включены, установка без интернета завершается успехом и подтверждается `agmind doctor`.
-
-**Depends on:** Phase 29, Phase 30, Phase 31
-**Requirements:** RLBL-02
-
-**Success Criteria** (what must be TRUE):
-
-1. `build-offline-bundle.sh` включает все v2.7 образы; запуск без `INCLUDE_DOCLING_CUDA` собирает CPU-only bundle; с флагом — CUDA вариант
-2. Установка из offline bundle на машине без интернета проходит все 10 фаз без ошибок `image not found` — `docker ps` после установки показывает все обязательные сервисы running
-3. После установки `agmind doctor` возвращает exit code 0 — все endpoints отвечают, все обязательные контейнеры healthy
-
-**Plans:** TBD
+Plans:
+- [ ] 30-01-PLAN.md — Dify init retry 60s + flock + --dry-run preflight с DNS
+- [ ] 30-02-PLAN.md — HTTP HEAD валидация образов (validate_images_exist)
+- [ ] 30-03-PLAN.md — Offline bundle verification + manifest
 
 ---
 
@@ -767,9 +744,7 @@ Plans:
 - [x] **Phase 27: UX Polish** — Streaming model download progress (all providers), graceful timeout with recovery instructions (v2.6) (completed 2026-03-24)
 - [x] **Phase 28: Release Branch Workflow** — Installer/agmind update via release branch, full release notes, Telegram escape, credentials.txt endpoints, FILES_URL auto-populate (v2.7) (completed 2026-03-29)
 - [x] **Phase 29: Docling GPU/OCR** — CUDA image auto-selection, persistent model volumes, Russian OCR default, model preload at install (v2.7) (completed 2026-03-29)
-- [ ] **Phase 30: Reliability Fixes** — Dify init retry/fallback with flock, install.sh --dry-run preflight checks (v2.7)
-- [ ] **Phase 31: Pre-Pull Image Validation** — HTTP HEAD validation before docker pull/update, offline/CI skip (v2.7)
-- [ ] **Phase 32: Offline Bundle E2E Test** — build → airgap simulate → install → verify, all v2.7 images included (v2.7)
+- [ ] **Phase 30: Reliability & Validation** — Dify init retry, --dry-run preflight, HTTP HEAD image validation, offline bundle E2E test (v2.7)
 
 ## Progress
 
@@ -804,10 +779,8 @@ Plans:
 | 27. UX Polish | 1/1 | Complete    | 2026-03-24 | — |
 | 28. Release Branch Workflow | 3/3 | Complete    | 2026-03-29 | — |
 | 29. Docling GPU/OCR | 2/2 | Complete    | 2026-03-29 | — |
-| 30. Reliability Fixes | v2.7 | 0/TBD | Not started | — |
-| 31. Pre-Pull Image Validation | v2.7 | 0/TBD | Not started | — |
-| 32. Offline Bundle E2E Test | v2.7 | 0/TBD | Not started | — |
+| 30. Reliability & Validation | 1/3 | In Progress|  | — |
 
 ---
 *Roadmap created: 2026-03-17*
-*Last updated: 2026-03-29 — v2.7 roadmap: phases 28-32, 15 requirements mapped*
+*Last updated: 2026-03-30 — v2.7 roadmap: phases 28-30, merged 30-32 into single reliability phase*
