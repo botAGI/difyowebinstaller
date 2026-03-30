@@ -39,6 +39,7 @@ TIMEOUT_START="${TIMEOUT_START:-300}"
 TIMEOUT_HEALTH="${TIMEOUT_HEALTH:-300}"
 TIMEOUT_GPU_HEALTH="${TIMEOUT_GPU_HEALTH:-900}"  # 15 min default; 0 = no limit
 TIMEOUT_MODELS="${TIMEOUT_MODELS:-1200}"
+VDS_MODE="${VDS_MODE:-false}"
 
 # --- Exclusive lock ---
 _acquire_lock() {
@@ -580,7 +581,8 @@ main() {
             --non-interactive) NON_INTERACTIVE=true;;
             --force-restart) FORCE_RESTART=true;;
             --dry-run) DRY_RUN=true;;
-            --help|-h) echo "Usage: sudo bash install.sh [--non-interactive] [--force-restart] [--dry-run]"; exit 0;;
+            --vds) DEPLOY_PROFILE="vps"; VDS_MODE=true;;
+            --help|-h) echo "Usage: sudo bash install.sh [--non-interactive] [--force-restart] [--dry-run] [--vds]"; exit 0;;
         esac; shift
     done
 
