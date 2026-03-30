@@ -232,6 +232,16 @@ services:
       - ENABLE_OPENAI_API=${ENABLE_OPENAI_API:-false}
       - OPENAI_API_BASE_URL=${OPENAI_API_BASE_URL:-}
       - PIPELINES_URLS=http://pipelines:9099
+      # Disable HuggingFace model downloads — Open WebUI is UI-only proxy
+      - ENABLE_RAG=false
+      - RAG_EMBEDDING_MODEL=
+      - USE_EMBEDDING_MODEL_DOCKER=
+      - USE_RERANKING_MODEL_DOCKER=
+      - USE_AUXILIARY_EMBEDDING_MODEL_DOCKER=
+      - AUXILIARY_EMBEDDING_MODEL=
+      - RAG_RERANKING_MODEL=
+      - WHISPER_MODEL=
+      - ENABLE_RAG_LOCAL_WEB_FETCH=false
     volumes:
       - agmind_openwebui_data:/app/backend/data
     depends_on:
