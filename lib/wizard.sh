@@ -349,11 +349,14 @@ _wizard_ollama_model() {
     echo "  14) llama3.1:70b-instruct-q4_K_M"
     echo "  15) qwen3:32b"
     echo ""
+    echo " -- MoE (активных параметров << общих) --"
+    echo "  16) qwen3.5:35b-a3b  (35B total, 3B active)"
+    echo ""
     echo " -- Своя модель --"
-    echo "  16) Ввести вручную (имя из реестра Ollama)"
+    echo "  17) Ввести вручную (имя из реестра Ollama)"
     echo ""
 
-    _ask_choice "Модель [1-16, Enter=6]: " 1 16 6
+    _ask_choice "Модель [1-17, Enter=6]: " 1 17 6
     local ollama_models=(
         ""  # 0 placeholder
         "gemma3:4b"
@@ -371,10 +374,11 @@ _wizard_ollama_model() {
         "qwen2.5:72b-instruct-q4_K_M"
         "llama3.1:70b-instruct-q4_K_M"
         "qwen3:32b"
+        "qwen3.5:35b-a3b"
     )
-    if [[ "$REPLY" -ge 1 && "$REPLY" -le 15 ]]; then
+    if [[ "$REPLY" -ge 1 && "$REPLY" -le 16 ]]; then
         LLM_MODEL="${ollama_models[$REPLY]}"
-    elif [[ "$REPLY" -eq 16 ]]; then
+    elif [[ "$REPLY" -eq 17 ]]; then
         _ask "Имя модели:" "qwen2.5:14b"
         LLM_MODEL="$REPLY"
         validate_model_name "$LLM_MODEL" || { LLM_MODEL="qwen2.5:14b"; log_warn "Некорректное имя модели, используется значение по умолчанию"; }
@@ -417,13 +421,14 @@ _get_vllm_vram_req() {
         "meta-llama/Llama-3.3-70B-Instruct")               echo "140" ;;
         "bullpoint/Qwen3-Coder-Next-AWQ-4bit")             echo "12"  ;;
         "stelterlab/NVIDIA-Nemotron-3-Nano-30B-A3B-AWQ")   echo "4"   ;;
+        "Qwen/Qwen3.5-35B-A3B")                            echo "6"   ;;
         *)                                                  echo "0"   ;;
     esac
 }
 
 _wizard_vllm_model() {
     # VRAM requirements in GB per model (indices 1-16 match menu numbers)
-    local -a vram_req=(0 5 6 10 10 20 16 16 16 16 28 28 28 48 140 12 4)
+    local -a vram_req=(0 5 6 10 10 20 16 16 16 16 28 28 28 48 140 12 4 6)
 
     local vram_gb=0
     if [[ "${DETECTED_GPU_VRAM:-0}" -gt 0 ]]; then
@@ -443,7 +448,7 @@ _wizard_vllm_model() {
     local rec_idx=0
     if [[ "$effective_vram" -gt 0 ]]; then
         local i
-        for i in 16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1; do
+        for i in 17 16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1; do
             if [[ "${vram_req[$i]}" -le "$effective_vram" ]]; then
                 rec_idx="$i"
                 break
@@ -490,12 +495,13 @@ _wizard_vllm_model() {
     echo " -- MoE (активных параметров << общих) --"
     _vllm_line 15 "15" "bullpoint/Qwen3-Coder-Next-AWQ-4bit" "  80B total, 14B active"
     _vllm_line 16 "16" "stelterlab/NVIDIA-Nemotron-3-Nano-30B-A3B-AWQ" "  30B total, 3B active"
+    _vllm_line 17 "17" "Qwen/Qwen3.5-35B-A3B" "  35B total, 3B active"
     echo ""
     echo " -- Своя модель --"
-    echo " 17) Ввести HuggingFace репозиторий (org/model-name)"
+    echo " 18) Ввести HuggingFace репозиторий (org/model-name)"
     echo ""
 
-    _ask_choice "Модель [1-17, Enter=6]: " 1 17 6
+    _ask_choice "Модель [1-18, Enter=6]: " 1 18 6
 
     local vllm_models=(
         ""  # 0 placeholder
@@ -515,9 +521,10 @@ _wizard_vllm_model() {
         "meta-llama/Llama-3.3-70B-Instruct"
         "bullpoint/Qwen3-Coder-Next-AWQ-4bit"
         "stelterlab/NVIDIA-Nemotron-3-Nano-30B-A3B-AWQ"
+        "Qwen/Qwen3.5-35B-A3B"
     )
 
-    if [[ "$REPLY" -ge 1 && "$REPLY" -le 16 ]]; then
+    if [[ "$REPLY" -ge 1 && "$REPLY" -le 17 ]]; then
         VLLM_MODEL="${vllm_models[$REPLY]}"
 
         # VRAM guard: warn if selected model exceeds effective GPU (raw - TEI embed offset)
@@ -538,7 +545,7 @@ _wizard_vllm_model() {
                 fi
             fi
         fi
-    elif [[ "$REPLY" -eq 17 ]]; then
+    elif [[ "$REPLY" -eq 18 ]]; then
         _ask "HuggingFace репозиторий (org/model):" "Qwen/Qwen2.5-14B-Instruct"
         VLLM_MODEL="${REPLY:-Qwen/Qwen2.5-14B-Instruct}"
         # No VRAM check for custom models (per decision)

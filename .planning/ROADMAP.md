@@ -779,7 +779,7 @@ Plans:
 | 27. UX Polish | 1/1 | Complete    | 2026-03-24 | — |
 | 28. Release Branch Workflow | 3/3 | Complete    | 2026-03-29 | — |
 | 29. Docling GPU/OCR | 2/2 | Complete    | 2026-03-29 | — |
-| 30. Reliability & Validation | 3/3 | Complete   | 2026-03-30 | — |
+| 30. Reliability & Validation | 3/3 | Complete    | 2026-03-30 | — |
 
 ---
 *Roadmap created: 2026-03-17*
