@@ -283,6 +283,10 @@ download_models() {
     if [[ "$llm_provider" == "vllm" ]]; then
         local vllm_health
         vllm_health="$(docker inspect --format='{{.State.Health.Status}}' agmind-vllm 2>/dev/null || echo "none")"
+        if [[ "$vllm_health" != "healthy" ]] \
+            && docker exec agmind-vllm curl -sf --max-time 3 http://localhost:8000/health >/dev/null 2>&1; then
+            vllm_health="healthy"
+        fi
         if [[ "$vllm_health" == "healthy" ]]; then
             log_success "vLLM model already loaded"
         else
@@ -301,6 +305,11 @@ download_models() {
     if [[ "$embed_provider" == "tei" ]]; then
         local tei_health
         tei_health="$(docker inspect --format='{{.State.Health.Status}}' agmind-tei 2>/dev/null || echo "none")"
+        # Docker reports "starting" during start_period even if TEI already serves /health
+        if [[ "$tei_health" != "healthy" ]] \
+            && docker exec agmind-tei curl -sf --max-time 3 http://localhost:80/health >/dev/null 2>&1; then
+            tei_health="healthy"
+        fi
         if [[ "$tei_health" == "healthy" ]]; then
             log_success "TEI model already loaded"
         else
