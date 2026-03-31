@@ -755,12 +755,12 @@ enable_gpu_compose() {
     esac
 
     # If vLLM and TEI share the same GPU, calculate VRAM split dynamically:
-    # Reserve 4 GB for TEI + CUDA overhead, give the rest to vLLM.
-    # Formula: (total_vram_mb - 4000) / total_vram_mb
-    #   12 GB → 0.67   16 GB → 0.75   24 GB → 0.83   32 GB → 0.87
+    # Reserve 3 GB for TEI + CUDA overhead, give the rest to vLLM.
+    # Formula: (total_vram_mb - 3000) / total_vram_mb
+    #   12 GB → 0.75   16 GB → 0.81   24 GB → 0.87   32 GB → 0.91
     if [[ "${LLM_PROVIDER:-}" == "vllm" && "${EMBED_PROVIDER:-}" == "tei" ]]; then
         local env_file="${INSTALL_DIR}/docker/.env"
-        local tei_reserve_mb=4000
+        local tei_reserve_mb=3000
         local total_vram_mb=""
         total_vram_mb=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d '[:space:]') || true
 
