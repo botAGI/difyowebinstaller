@@ -942,6 +942,29 @@ _wizard_backups() {
     fi
 }
 
+_wizard_litellm() {
+    # LAN — локальные модели, прокси не нужен; VPS — multi-user, прокси полезен
+    local default_litellm="false"
+    [[ "${DEPLOY_PROFILE:-lan}" == "vps" ]] && default_litellm="true"
+
+    if [[ "${NON_INTERACTIVE:-false}" == "true" ]]; then
+        ENABLE_LITELLM="${ENABLE_LITELLM:-$default_litellm}"
+        return
+    fi
+    echo ""
+    echo -e "${CYAN}--- LiteLLM (AI Gateway) ---${NC}"
+    echo "  Универсальный прокси для LLM (логирование, rate-limit, fallback)."
+    echo "  Если нет — Open WebUI и Dify подключатся к Ollama/vLLM напрямую."
+    echo "  ~1 GB RAM + PostgreSQL таблица."
+    if [[ "$default_litellm" == "true" ]]; then
+        _ask "Включить LiteLLM? [Y/n]:" "y"
+        [[ "${REPLY,,}" =~ ^n ]] && ENABLE_LITELLM=false || ENABLE_LITELLM=true
+    else
+        _ask "Включить LiteLLM? [y/N]:" "n"
+        [[ "${REPLY,,}" =~ ^y ]] && ENABLE_LITELLM=true || ENABLE_LITELLM=false
+    fi
+}
+
 _wizard_searxng() {
     if [[ "${NON_INTERACTIVE:-false}" == "true" ]]; then
         ENABLE_SEARXNG="${ENABLE_SEARXNG:-false}"
@@ -963,7 +986,7 @@ _wizard_notebook() {
     echo ""
     echo -e "${CYAN}--- Open Notebook (исследовательский ассистент) ---${NC}"
     echo "  Альтернатива Google NotebookLM. PDF, видео, аудио, веб."
-    echo "  Работает через LiteLLM. ~512 MB RAM + SurrealDB (~256 MB)."
+    echo "  ~512 MB RAM + SurrealDB (~256 MB)."
     _ask "Включить Open Notebook? [y/N]:" "n"
     [[ "${REPLY,,}" =~ ^y ]] && ENABLE_NOTEBOOK=true || ENABLE_NOTEBOOK=false
 }
@@ -975,7 +998,7 @@ _wizard_dbgpt() {
     fi
     echo ""
     echo -e "${CYAN}--- DB-GPT (аналитика данных) ---${NC}"
-    echo "  AI-агент для анализа данных и SQL. Работает через LiteLLM."
+    echo "  AI-агент для анализа данных и SQL."
     echo "  ~1 GB RAM."
     _ask "Включить DB-GPT? [y/N]:" "n"
     [[ "${REPLY,,}" =~ ^y ]] && ENABLE_DBGPT=true || ENABLE_DBGPT=false
@@ -1009,6 +1032,7 @@ _wizard_summary() {
     [[ "$ENABLE_UFW" == "true" ]] && echo "  UFW:          включён"
     [[ "$ENABLE_FAIL2BAN" == "true" ]] && echo "  Fail2ban:     SSH jail"
     [[ "$ENABLE_AUTHELIA" == "true" ]] && echo "  Authelia:     2FA включена"
+    [[ "${ENABLE_LITELLM:-true}" == "true" ]] && echo "  LiteLLM:      включён (AI Gateway)"
     [[ "${ENABLE_SEARXNG:-false}" == "true" ]] && echo "  SearXNG:      включён (порт 8888)"
     [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]] && echo "  Open Notebook: включён"
     [[ "${ENABLE_DBGPT:-false}" == "true" ]] && echo "  DB-GPT:       включён"
@@ -1099,6 +1123,7 @@ run_wizard() {
     _wizard_security
     _wizard_tunnel
     _wizard_backups
+    _wizard_litellm
     _wizard_searxng
     _wizard_notebook
     _wizard_dbgpt
@@ -1119,7 +1144,7 @@ run_wizard() {
     export BACKUP_TARGET BACKUP_SCHEDULE
     export REMOTE_BACKUP_HOST REMOTE_BACKUP_PORT REMOTE_BACKUP_USER REMOTE_BACKUP_KEY REMOTE_BACKUP_PATH
     export ADMIN_UI_OPEN
-    export ENABLE_SEARXNG ENABLE_NOTEBOOK ENABLE_DBGPT ENABLE_CRAWL4AI
+    export ENABLE_LITELLM ENABLE_SEARXNG ENABLE_NOTEBOOK ENABLE_DBGPT ENABLE_CRAWL4AI
 }
 
 # Run if executed directly

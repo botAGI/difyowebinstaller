@@ -553,6 +553,8 @@ services:
     container_name: agmind-litellm
     restart: on-failure:5
     mem_limit: ${LITELLM_MEM_LIMIT:-1g}
+    profiles:
+      - litellm
     environment:
       - DATABASE_URL=postgresql://${DB_USERNAME:-postgres}:${DB_PASSWORD:-}@db:5432/litellm
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-}
@@ -1089,15 +1091,12 @@ services:
     profiles:
       - dbgpt
     environment:
-      - OPENAI_API_KEY=${LITELLM_MASTER_KEY:-}
-      - OPENAI_API_BASE=http://litellm:4000/v1
+      - OPENAI_API_KEY=${DBGPT_API_KEY:-${LITELLM_MASTER_KEY:-}}
+      - OPENAI_API_BASE=${DBGPT_API_BASE:-http://litellm:4000/v1}
       - SILICONFLOW_API_KEY=unused
       - DBGPT_LANG=ru
     volumes:
       - agmind_dbgpt_data:/app/pilot/data
-    depends_on:
-      litellm:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5670/')"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}

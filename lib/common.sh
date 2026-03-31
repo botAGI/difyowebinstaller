@@ -274,13 +274,15 @@ preflight_bind_mount_check() {
         "volumes/redis/redis.conf"
         "volumes/ssrf_proxy/squid.conf"
         "volumes/sandbox/conf/config.yaml"
-        "litellm-config.yaml"
         "monitoring/prometheus.yml"
         "monitoring/alert_rules.yml"
         "monitoring/alertmanager.yml"
         "monitoring/loki-config.yml"
         "monitoring/promtail-config.yml"
     )
+    local enable_litellm
+    enable_litellm="$(grep '^ENABLE_LITELLM=' "${docker_dir}/.env" 2>/dev/null | cut -d'=' -f2- || echo "true")"
+    [[ "$enable_litellm" == "true" ]] && all_bind_files+=("litellm-config.yaml")
     for f in "${all_bind_files[@]}"; do
         local full="${docker_dir}/${f}"
         if [[ ! -f "$full" ]]; then

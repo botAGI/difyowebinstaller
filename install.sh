@@ -411,18 +411,20 @@ _save_credentials() {
             echo "  model name for endpoint: ${RERANK_MODEL:-BAAI/bge-reranker-base}"
         fi
         # LiteLLM AI Gateway
-        echo ""
-        echo "=== LiteLLM AI Gateway ==="
-        echo "  Dashboard: http://${DOMAIN:-$ip}:4001/ui/"
-        echo "  API:       http://agmind-litellm:4000/v1  (internal, for Dify/OWUI)"
-        echo "  Master Key: ${LITELLM_MASTER_KEY:-see .env}"
-        echo ""
-        echo "  Dify Model Provider (Settings -> Model Provider -> OpenAI-API-compatible):"
-        echo "    Model Type:              LLM"
-        echo "    Model Name:              litellm"
-        echo "    API endpoint URL:        http://agmind-litellm:4000/v1"
-        echo "    API Key:                 ${LITELLM_MASTER_KEY:-see .env}"
-        echo "    model name for endpoint: *"
+        if [[ "${ENABLE_LITELLM:-true}" == "true" ]]; then
+            echo ""
+            echo "=== LiteLLM AI Gateway ==="
+            echo "  Dashboard: http://${DOMAIN:-$ip}:4001/ui/"
+            echo "  API:       http://agmind-litellm:4000/v1  (internal, for Dify/OWUI)"
+            echo "  Master Key: ${LITELLM_MASTER_KEY:-see .env}"
+            echo ""
+            echo "  Dify Model Provider (Settings -> Model Provider -> OpenAI-API-compatible):"
+            echo "    Model Type:              LLM"
+            echo "    Model Name:              litellm"
+            echo "    API endpoint URL:        http://agmind-litellm:4000/v1"
+            echo "    API Key:                 ${LITELLM_MASTER_KEY:-see .env}"
+            echo "    model name for endpoint: *"
+        fi
         # Optional Services
         if [[ "${ENABLE_SEARXNG:-false}" == "true" ]]; then
             echo ""
@@ -434,16 +436,12 @@ _save_credentials() {
             echo ""
             echo "=== Open Notebook (Исследовательский ассистент) ==="
             echo "  URL:           http://agmind-notebook:8502  (internal)"
-            echo "  LiteLLM API:   http://agmind-litellm:4000/v1"
-            echo "  LiteLLM Key:   ${LITELLM_MASTER_KEY:-see .env}"
             echo "  Настройте LLM провайдер в Settings после первого входа."
         fi
         if [[ "${ENABLE_DBGPT:-false}" == "true" ]]; then
             echo ""
             echo "=== DB-GPT (Аналитика данных) ==="
             echo "  URL:           http://agmind-dbgpt:5670  (internal)"
-            echo "  LiteLLM API:   http://agmind-litellm:4000/v1"
-            echo "  LiteLLM Key:   ${LITELLM_MASTER_KEY:-see .env}"
         fi
         if [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]]; then
             echo ""
@@ -574,7 +572,9 @@ _show_final_summary() {
     echo -e "    Login:         admin@agmind.ai"
     echo -e "    Pass:          ${owui_pass:-см. credentials.txt}"
     echo ""
-    echo -e "  ${BOLD}LiteLLM UI:${NC}      ${GREEN}http://${ip}/litellm/${NC}"
+    if [[ "${ENABLE_LITELLM:-true}" == "true" ]]; then
+        echo -e "  ${BOLD}LiteLLM UI:${NC}      ${GREEN}http://${ip}:4001/ui/${NC}"
+    fi
     if [[ "${MONITORING_MODE:-}" == "local" ]]; then
         echo ""
         echo -e "  ${BOLD}Grafana:${NC}         ${GREEN}http://${ip}:${GRAFANA_PORT:-3001}${NC}"
