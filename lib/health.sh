@@ -60,6 +60,11 @@ get_service_list() {
             services+=(docling)
         fi
 
+        # LiteLLM
+        local enable_litellm
+        enable_litellm="$(grep '^ENABLE_LITELLM=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "true")"
+        [[ "$enable_litellm" == "true" ]] && services+=(litellm)
+
         # Optional services
         local enable_searxng enable_notebook enable_dbgpt enable_crawl4ai
         enable_searxng="$(grep '^ENABLE_SEARXNG=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"

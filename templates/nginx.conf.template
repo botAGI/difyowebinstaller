@@ -62,10 +62,10 @@ http {
         server open-webui:8080;
     }
 
-    # Upstream: LiteLLM AI Gateway
-    upstream litellm {
-        server litellm:4000;
-    }
+    #__LITELLM__# Upstream: LiteLLM AI Gateway
+    #__LITELLM__upstream litellm {
+    #__LITELLM__    server litellm:4000;
+    #__LITELLM__}
 
     # Plugin Daemon resolved dynamically (allows nginx to start even if daemon is down)
     resolver 127.0.0.11 valid=10s;
@@ -139,23 +139,23 @@ http {
         }
     }
 
-    # =============================================
-    # LiteLLM Dashboard — separate port (Next.js SPA
-    # incompatible with sub-path reverse proxy)
-    # =============================================
-    server {
-        listen 4001;
-        server_name _;
-
-        location / {
-            proxy_pass http://litellm/;
-            proxy_http_version 1.1;
-            proxy_set_header Host $host:$server_port;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-        }
-    }
+    #__LITELLM__# =============================================
+    #__LITELLM__# LiteLLM Dashboard — separate port (Next.js SPA
+    #__LITELLM__# incompatible with sub-path reverse proxy)
+    #__LITELLM__# =============================================
+    #__LITELLM__server {
+    #__LITELLM__    listen 4001;
+    #__LITELLM__    server_name _;
+    #__LITELLM__
+    #__LITELLM__    location / {
+    #__LITELLM__        proxy_pass http://litellm/;
+    #__LITELLM__        proxy_http_version 1.1;
+    #__LITELLM__        proxy_set_header Host $host:$server_port;
+    #__LITELLM__        proxy_set_header X-Real-IP $remote_addr;
+    #__LITELLM__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #__LITELLM__        proxy_set_header X-Forwarded-Proto $scheme;
+    #__LITELLM__    }
+    #__LITELLM__}
 
     # =============================================
     # Dify Console — separate server on port 3000

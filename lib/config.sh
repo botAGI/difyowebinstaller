@@ -43,7 +43,9 @@ generate_config() {
     generate_redis_config
     generate_sandbox_config
     _generate_squid_config
-    _generate_litellm_config
+    if [[ "${ENABLE_LITELLM:-true}" == "true" ]]; then
+        _generate_litellm_config
+    fi
     _generate_searxng_config "$template_dir"
 
     # Validate secrets
@@ -306,6 +308,7 @@ _generate_env_file() {
         -e "s|__DOCLING_IMAGE__|${DOCLING_IMAGE:-}|g" \
         -e "s|__OCR_LANG__|${OCR_LANG:-rus,eng}|g" \
         -e "s|__NVIDIA_VISIBLE_DEVICES__|${NVIDIA_VISIBLE_DEVICES:-}|g" \
+        -e "s|__ENABLE_LITELLM__|$(escape_sed "${ENABLE_LITELLM:-true}")|g" \
         -e "s|__ENABLE_SEARXNG__|$(escape_sed "${ENABLE_SEARXNG:-false}")|g" \
         -e "s|__ENABLE_NOTEBOOK__|$(escape_sed "${ENABLE_NOTEBOOK:-false}")|g" \
         -e "s|__ENABLE_DBGPT__|$(escape_sed "${ENABLE_DBGPT:-false}")|g" \
@@ -320,32 +323,59 @@ _generate_env_file() {
 
 _append_provider_vars() {
     local env_file="${INSTALL_DIR}/docker/.env"
+    local use_litellm="${ENABLE_LITELLM:-true}"
     {
         echo ""
-        echo "# --- Provider-specific WebUI vars (via LiteLLM) ---"
+        if [[ "$use_litellm" == "true" ]]; then
+            echo "# --- Provider-specific WebUI vars (via LiteLLM) ---"
+        else
+            echo "# --- Provider-specific WebUI vars (direct, no LiteLLM) ---"
+        fi
         case "${LLM_PROVIDER:-ollama}" in
             ollama)
-                # Ollama direct connection kept for model management (pull/list/delete)
                 echo "OLLAMA_BASE_URL=http://ollama:11434"
                 echo "ENABLE_OLLAMA_API=true"
-                # LLM requests routed through LiteLLM gateway
-                echo "ENABLE_OPENAI_API=true"
-                echo "OPENAI_API_BASE_URL=http://agmind-litellm:4000/v1"
+                if [[ "$use_litellm" == "true" ]]; then
+                    echo "ENABLE_OPENAI_API=true"
+                    echo "OPENAI_API_BASE_URL=http://agmind-litellm:4000/v1"
+                else
+                    echo "ENABLE_OPENAI_API=false"
+                    echo "OPENAI_API_BASE_URL="
+                fi
                 ;;
             vllm)
                 echo "OLLAMA_BASE_URL="
                 echo "ENABLE_OLLAMA_API=false"
                 echo "ENABLE_OPENAI_API=true"
-                echo "OPENAI_API_BASE_URL=http://agmind-litellm:4000/v1"
+                if [[ "$use_litellm" == "true" ]]; then
+                    echo "OPENAI_API_BASE_URL=http://agmind-litellm:4000/v1"
+                else
+                    echo "OPENAI_API_BASE_URL=http://vllm:8000/v1"
+                fi
                 [[ -n "${VLLM_CUDA_SUFFIX:-}" ]] && echo "VLLM_CUDA_SUFFIX=${VLLM_CUDA_SUFFIX}"
                 ;;
             external|skip)
                 echo "OLLAMA_BASE_URL="
                 echo "ENABLE_OLLAMA_API=false"
                 echo "ENABLE_OPENAI_API=true"
-                echo "OPENAI_API_BASE_URL=http://agmind-litellm:4000/v1"
+                if [[ "$use_litellm" == "true" ]]; then
+                    echo "OPENAI_API_BASE_URL=http://agmind-litellm:4000/v1"
+                else
+                    echo "OPENAI_API_BASE_URL="
+                fi
                 ;;
         esac
+        # DB-GPT API endpoint (used if ENABLE_DBGPT=true)
+        if [[ "$use_litellm" == "true" ]]; then
+            echo "DBGPT_API_BASE=http://litellm:4000/v1"
+            echo "DBGPT_API_KEY=${LITELLM_MASTER_KEY:-}"
+        else
+            case "${LLM_PROVIDER:-ollama}" in
+                ollama) echo "DBGPT_API_BASE=http://ollama:11434/v1"; echo "DBGPT_API_KEY=unused" ;;
+                vllm)   echo "DBGPT_API_BASE=http://vllm:8000/v1"; echo "DBGPT_API_KEY=unused" ;;
+                *)      echo "DBGPT_API_BASE="; echo "DBGPT_API_KEY=unused" ;;
+            esac
+        fi
     } >> "$env_file"
 }
 
@@ -425,6 +455,13 @@ generate_nginx_config() {
         key_path="/etc/nginx/ssl/key.pem"
     fi
     _atomic_sed "$nginx_conf" -e "s|__TLS_CERT_PATH__|${cert_path}|g" -e "s|__TLS_KEY_PATH__|${key_path}|g"
+
+    # LiteLLM markers
+    if [[ "${ENABLE_LITELLM:-true}" == "true" ]]; then
+        _atomic_sed "$nginx_conf" 's|#__LITELLM__||g'
+    else
+        _atomic_sed "$nginx_conf" '/#__LITELLM__/d'
+    fi
 }
 
 # ============================================================================

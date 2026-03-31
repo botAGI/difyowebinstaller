@@ -84,7 +84,7 @@ _status_dashboard() {
     [[ -z "$domain" ]] && domain="$(_get_ip)"
     echo "  Open WebUI:   http://${domain}"
     echo "  Dify Console: http://${domain}:3000"
-    echo "  LiteLLM UI:   http://${domain}/litellm/"
+    [[ "$(_read_env ENABLE_LITELLM "true")" == "true" ]] && echo "  LiteLLM UI:   http://${domain}:4001/ui/"
     if [[ "$(_read_env ADMIN_UI_OPEN "false")" == "true" ]]; then
         local ip; ip="$(_get_ip)"
         echo "  Portainer:    https://${ip}:9443"
