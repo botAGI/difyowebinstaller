@@ -5,7 +5,7 @@
 <h1 align="center">AGMind</h1>
 
 <p align="center">
-  <strong>Enterprise AI Stack — one command, production-ready platform</strong>
+  <strong>Private AI Stack — one command, production-ready platform</strong>
 </p>
 
 <p align="center">
@@ -25,7 +25,7 @@
 
 ## Обзор
 
-AGMind — установщик корпоративной RAG-платформы, который разворачивает полный AI-стек одной командой:
+AGMind — установщик RAG-платформы, который разворачивает полный AI-стек одной командой:
 **Dify + Open WebUI + Ollama/vLLM + Weaviate/Qdrant + мониторинг** — от 23 до 37 контейнеров
 в Docker Compose с интерактивным визардом и автодетектом оборудования.
 
@@ -309,7 +309,7 @@ Copyright 2024-2026 AGMind Contributors.
 
 ## Overview
 
-AGMind is an enterprise RAG platform installer that deploys a production-ready AI stack
+AGMind is a RAG platform installer that deploys a production-ready AI stack
 with a single command: **Dify + Open WebUI + Ollama/vLLM + Weaviate/Qdrant + monitoring** —
 23 to 37 containers via Docker Compose, with an interactive wizard and automatic hardware detection.
 
