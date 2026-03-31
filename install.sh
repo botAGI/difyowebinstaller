@@ -413,7 +413,7 @@ _save_credentials() {
         # LiteLLM AI Gateway
         echo ""
         echo "=== LiteLLM AI Gateway ==="
-        echo "  UI:        http://${DOMAIN:-$ip}/litellm/"
+        echo "  Dashboard: http://${DOMAIN:-$ip}:4001/ui/"
         echo "  API:       http://agmind-litellm:4000/v1  (internal, for Dify/OWUI)"
         echo "  Master Key: ${LITELLM_MASTER_KEY:-see .env}"
         echo ""

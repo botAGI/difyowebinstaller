@@ -132,22 +132,28 @@ http {
         }
 
         # =============================================
-        # LiteLLM UI — AI Gateway admin dashboard
-        # =============================================
-        location /litellm/ {
-            proxy_pass http://litellm/ui/;
-            proxy_http_version 1.1;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-        }
-
-        # =============================================
         # Block old-style hex token URLs (security)
         # =============================================
         location ~ "^/[a-f0-9]{24,}/" {
             return 404;
+        }
+    }
+
+    # =============================================
+    # LiteLLM Dashboard — separate port (Next.js SPA
+    # incompatible with sub-path reverse proxy)
+    # =============================================
+    server {
+        listen 4001;
+        server_name _;
+
+        location / {
+            proxy_pass http://litellm/;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host:$server_port;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
         }
     }
 
@@ -324,16 +330,6 @@ http {
     #__TLS__        proxy_read_timeout 600s;
     #__TLS__        proxy_send_timeout 600s;
     #__TLS__        proxy_buffering off;
-    #__TLS__    }
-    #__TLS__
-    #__TLS__    # LiteLLM UI
-    #__TLS__    location /litellm/ {
-    #__TLS__        proxy_pass http://litellm/ui/;
-    #__TLS__        proxy_http_version 1.1;
-    #__TLS__        proxy_set_header Host $host;
-    #__TLS__        proxy_set_header X-Real-IP $remote_addr;
-    #__TLS__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    #__TLS__        proxy_set_header X-Forwarded-Proto $scheme;
     #__TLS__    }
     #__TLS__
     #__TLS__    # Block old-style hex token URLs
