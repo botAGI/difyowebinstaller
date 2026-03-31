@@ -295,30 +295,6 @@ shellcheck lib/*.sh scripts/*.sh install.sh
 
 ---
 
-## Дорожная карта
-
-### Текущая версия: v3.0
-
-- Модульный установщик (13 библиотек, 9 фаз)
-- 6 опциональных сервисов (LiteLLM, SearXNG, Notebook, DB-GPT, Crawl4AI, Docling)
-- GPU auto-detect и VRAM-сплит
-- Day-2 CLI с 15+ командами
-- Мониторинг Prometheus/Grafana/Loki + алертинг Telegram/webhook
-
-### Планы
-
-- Полный dry-run режим (проверка без запуска контейнеров)
-- Web-интерфейс установщика
-- Multi-node / кластерный деплой
-- Интеграция с Kubernetes (Helm chart)
-
-### Видение
-
-AGMind закрывает разрыв между «попробовать LLM на ноутбуке» и «развернуть AI-платформу
-для команды». Один инженер, один сервер, одна команда — рабочая платформа.
-
----
-
 ## Лицензия
 
 [Apache License 2.0](LICENSE)
@@ -600,30 +576,6 @@ For large changes, please open an issue first to discuss the approach.
 3. **502 Bad Gateway** → `agmind doctor` → check health: `docker compose ps`
 4. **Disk full** → `docker system prune -a` → `agmind backup` → remove old backups
 5. **Disaster recovery** → `agmind restore /var/backups/agmind/latest/`
-
----
-
-## Roadmap
-
-### Current: v3.0
-
-- Modular installer (13 libraries, 9 phases)
-- 6 optional services (LiteLLM, SearXNG, Notebook, DB-GPT, Crawl4AI, Docling)
-- GPU auto-detect and VRAM splitting
-- Day-2 CLI with 15+ commands
-- Monitoring: Prometheus/Grafana/Loki + alerting via Telegram/webhook
-
-### Planned
-
-- Full dry-run mode (validation without starting containers)
-- Web-based installer UI
-- Multi-node / cluster deployment
-- Kubernetes integration (Helm chart)
-
-### Vision
-
-AGMind bridges the gap between "trying an LLM on a laptop" and "deploying an AI platform
-for a team." One engineer, one server, one command — working platform.
 
 ---
 
