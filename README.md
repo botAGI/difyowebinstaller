@@ -241,7 +241,7 @@ shellcheck lib/*.sh scripts/*.sh install.sh
 
 ### Git-flow
 
-- `main` — стабильная ветка (LAN-профиль)
+- `release` — стабильная ветка (LAN-профиль)
 - `agmind-caddy` — VPS-профиль с Caddy
 - PR → code review → merge
 - Все Docker-образы привязаны к версиям через `versions.env`. Тег `:latest` запрещён.
@@ -549,7 +549,7 @@ shellcheck lib/*.sh scripts/*.sh install.sh
 
 ### Git Flow
 
-- `main` — stable branch (LAN profile)
+- `release` — stable branch (LAN profile)
 - `agmind-caddy` — VPS profile with Caddy
 - PR → code review → merge
 - All Docker images pinned to specific versions via `versions.env`. The `:latest` tag is forbidden.
