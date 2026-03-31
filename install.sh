@@ -397,7 +397,7 @@ _save_credentials() {
             echo "=== TEI Embedding (Dify → Settings → Model Provider → OpenAI-API-compatible) ==="
             echo "  Model Type:              Text Embedding"
             echo "  Model Name:              ${EMBEDDING_MODEL:-deepvk/USER-bge-m3}"
-            echo "  API endpoint URL:        http://agmind-tei:80/v1"
+            echo "  API endpoint URL:        http://agmind-tei:80"
             echo "  API Key:                 none"
             echo "  model name for endpoint: ${EMBEDDING_MODEL:-deepvk/USER-bge-m3}"
         fi
@@ -406,7 +406,7 @@ _save_credentials() {
             echo "=== TEI Reranker (Dify → Settings → Model Provider → OpenAI-API-compatible) ==="
             echo "  Model Type:              Rerank"
             echo "  Model Name:              ${RERANK_MODEL:-BAAI/bge-reranker-base}"
-            echo "  API endpoint URL:        http://agmind-tei-rerank:80/v1"
+            echo "  API endpoint URL:        http://agmind-tei-rerank:80"
             echo "  API Key:                 none"
             echo "  model name for endpoint: ${RERANK_MODEL:-BAAI/bge-reranker-base}"
         fi
