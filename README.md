@@ -69,8 +69,14 @@ Prometheus + Grafana (4 дашборда) + Loki (логи) + Alertmanager (Tele
 Node Exporter + cAdvisor для метрик хоста и контейнеров. Portainer для визуального управления.
 
 ### Опциональные сервисы
-LiteLLM (AI Gateway), SearXNG (метапоиск), Open Notebook (исследовательский ассистент),
-DB-GPT (SQL-аналитика), Crawl4AI (веб-краулер). Каждый включается одним `y` в визарде.
+
+Каждый включается одним `y` в визарде:
+
+- **LiteLLM** — AI Gateway: единый OpenAI-совместимый API поверх всех провайдеров. Логирование запросов, rate-limit, fallback между моделями. ~1 GB RAM.
+- **SearXNG** — приватный метапоисковик (Google, Bing, DuckDuckGo, Wikipedia). JSON API для интеграции с Dify-агентами. ~256 MB RAM.
+- **Open Notebook** — альтернатива Google NotebookLM. Загрузка PDF, видео, аудио, веб-страниц — AI-суммаризация и Q&A. Хранение в SurrealDB. ~768 MB RAM.
+- **DB-GPT** — AI-агент для анализа данных: генерация SQL, визуализация, чат с базами данных. ~1 GB RAM.
+- **Crawl4AI** — REST API для извлечения данных из веб-страниц. Chromium-рендеринг, AI-парсинг, playground. ~2 GB RAM.
 
 ---
 
@@ -353,8 +359,14 @@ Prometheus + Grafana (4 dashboards) + Loki (logs) + Alertmanager (Telegram/webho
 Node Exporter + cAdvisor for host and container metrics. Portainer for visual management.
 
 ### Optional Services
-LiteLLM (AI Gateway), SearXNG (metasearch), Open Notebook (research assistant),
-DB-GPT (SQL analytics), Crawl4AI (web crawler). Each toggled with a single `y` in the wizard.
+
+Each toggled with a single `y` in the wizard:
+
+- **LiteLLM** — AI Gateway: unified OpenAI-compatible API over all providers. Request logging, rate limiting, model fallback. ~1 GB RAM.
+- **SearXNG** — private metasearch engine (Google, Bing, DuckDuckGo, Wikipedia). JSON API for Dify agent integration. ~256 MB RAM.
+- **Open Notebook** — Google NotebookLM alternative. Upload PDFs, videos, audio, web pages — AI summarization and Q&A. SurrealDB storage. ~768 MB RAM.
+- **DB-GPT** — AI agent for data analysis: SQL generation, visualization, chat with databases. ~1 GB RAM.
+- **Crawl4AI** — REST API for web page data extraction. Chromium rendering, AI parsing, playground UI. ~2 GB RAM.
 
 ---
 
