@@ -72,9 +72,12 @@ http {
     #__DBGPT__    server dbgpt:5670;
     #__DBGPT__}
 
-    #__NOTEBOOK__# Upstream: Open Notebook
+    #__NOTEBOOK__# Upstream: Open Notebook (frontend + API)
     #__NOTEBOOK__upstream open_notebook {
     #__NOTEBOOK__    server open-notebook:8502;
+    #__NOTEBOOK__}
+    #__NOTEBOOK__upstream open_notebook_api {
+    #__NOTEBOOK__    server open-notebook:5055;
     #__NOTEBOOK__}
 
     #__SEARXNG__# Upstream: SearXNG
@@ -200,8 +203,7 @@ http {
     #__DBGPT__}
 
     #__NOTEBOOK__# =============================================
-    #__NOTEBOOK__# Open Notebook — separate port (Streamlit app,
-    #__NOTEBOOK__# root-relative WebSocket URLs break with sub-path)
+    #__NOTEBOOK__# Open Notebook — frontend (Next.js)
     #__NOTEBOOK__# =============================================
     #__NOTEBOOK__server {
     #__NOTEBOOK__    listen 8502;
@@ -220,6 +222,27 @@ http {
     #__NOTEBOOK__        proxy_set_header Connection "upgrade";
     #__NOTEBOOK__        proxy_read_timeout 600s;
     #__NOTEBOOK__        proxy_send_timeout 600s;
+    #__NOTEBOOK__    }
+    #__NOTEBOOK__}
+    #__NOTEBOOK__
+    #__NOTEBOOK__# =============================================
+    #__NOTEBOOK__# Open Notebook — API (FastAPI)
+    #__NOTEBOOK__# =============================================
+    #__NOTEBOOK__server {
+    #__NOTEBOOK__    listen 5055;
+    #__NOTEBOOK__    server_name _;
+    #__NOTEBOOK__
+    #__NOTEBOOK__    client_max_body_size 50M;
+    #__NOTEBOOK__
+    #__NOTEBOOK__    location / {
+    #__NOTEBOOK__        proxy_pass http://open_notebook_api;
+    #__NOTEBOOK__        proxy_http_version 1.1;
+    #__NOTEBOOK__        proxy_set_header Host $host:$server_port;
+    #__NOTEBOOK__        proxy_set_header X-Real-IP $remote_addr;
+    #__NOTEBOOK__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #__NOTEBOOK__        proxy_set_header X-Forwarded-Proto $scheme;
+    #__NOTEBOOK__        proxy_read_timeout 300s;
+    #__NOTEBOOK__        proxy_send_timeout 300s;
     #__NOTEBOOK__    }
     #__NOTEBOOK__}
 
