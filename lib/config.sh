@@ -808,6 +808,27 @@ enable_gpu_compose() {
             log_warn "Could not query GPU VRAM — using conservative VLLM_GPU_MEM_UTIL=${vllm_util}"
         fi
         echo "VLLM_GPU_MEM_UTIL=${vllm_util}" >> "$env_file"
+
+        # Auto-enable --enforce-eager when model weights leave <25% VRAM for
+        # KV cache + CUDA graphs.  CUDA graph profiling can allocate 3-5 GiB
+        # temporarily, causing OOM on tight configs (e.g. 27B-AWQ on 32 GB).
+        if [[ -n "$total_vram_mb" && "$total_vram_mb" -gt 0 ]] 2>/dev/null; then
+            local model_vram_gb=0
+            # source wizard.sh helper if available
+            if type -t _get_vllm_vram_req &>/dev/null; then
+                model_vram_gb="$(_get_vllm_vram_req "${VLLM_MODEL:-}")"
+            fi
+            if [[ "$model_vram_gb" -gt 0 ]]; then
+                local model_vram_mb=$((model_vram_gb * 1024))
+                local avail_for_kv=$((total_vram_mb - tei_reserve_mb - model_vram_mb))
+                # If less than 25% of total VRAM left for KV cache — disable CUDA graphs
+                local threshold=$((total_vram_mb / 4))
+                if [[ $avail_for_kv -lt $threshold ]]; then
+                    log_info "Tight VRAM: ${model_vram_gb} GB model + TEI on ${total_vram_mb} MB → enabling --enforce-eager"
+                    echo "VLLM_EXTRA_ARGS=--enforce-eager" >> "$env_file"
+                fi
+            fi
+        fi
     fi
 }
 
