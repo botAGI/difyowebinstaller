@@ -731,6 +731,10 @@ services:
       - "${EXPOSE_NGINX_SSL_PORT:-443}:443"
       - "${EXPOSE_DIFY_PORT:-3000}:3000"
       - "${EXPOSE_LITELLM_PORT:-4001}:4001"
+      - "${EXPOSE_DBGPT_PORT:-5670}:5670"
+      - "${EXPOSE_NOTEBOOK_PORT:-8502}:8502"
+      - "${EXPOSE_SEARXNG_PORT:-8888}:8888"
+      - "${EXPOSE_CRAWL4AI_PORT:-11235}:11235"
     environment:
       NGINX_SERVER_NAME: ${NGINX_SERVER_NAME:-_}
       NGINX_HTTPS_ENABLED: ${NGINX_HTTPS_ENABLED:-false}
@@ -1016,10 +1020,6 @@ services:
     mem_limit: ${SEARXNG_MEM_LIMIT:-256m}
     profiles:
       - searxng
-    ports:
-      - "${SEARXNG_PORT:-8888}:8080"
-    environment:
-      - SEARXNG_BASE_URL=http://localhost:8888/
     volumes:
       - ./searxng-settings.yml:/etc/searxng/settings.yml:ro
     healthcheck:

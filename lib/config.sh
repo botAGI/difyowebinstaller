@@ -313,6 +313,7 @@ _generate_env_file() {
         -e "s|__ENABLE_NOTEBOOK__|$(escape_sed "${ENABLE_NOTEBOOK:-false}")|g" \
         -e "s|__ENABLE_DBGPT__|$(escape_sed "${ENABLE_DBGPT:-false}")|g" \
         -e "s|__ENABLE_CRAWL4AI__|$(escape_sed "${ENABLE_CRAWL4AI:-false}")|g" \
+        -e "s|__ENABLE_DIFY_PREMIUM__|$(escape_sed "${ENABLE_DIFY_PREMIUM:-true}")|g" \
         -e "s|__SEARXNG_SECRET_KEY__|$(escape_sed "${_SEARXNG_SECRET_KEY}")|g" \
         -e "s|__SURREALDB_PASSWORD__|$(escape_sed "${_SURREALDB_PASSWORD}")|g" \
         -e "s|__NOTEBOOK_ENCRYPTION_KEY__|$(escape_sed "${_NOTEBOOK_ENCRYPTION_KEY}")|g" \
@@ -461,6 +462,34 @@ generate_nginx_config() {
         _atomic_sed "$nginx_conf" 's|#__LITELLM__||g'
     else
         _atomic_sed "$nginx_conf" '/#__LITELLM__/d'
+    fi
+
+    # DB-GPT markers
+    if [[ "${ENABLE_DBGPT:-false}" == "true" ]]; then
+        _atomic_sed "$nginx_conf" 's|#__DBGPT__||g'
+    else
+        _atomic_sed "$nginx_conf" '/#__DBGPT__/d'
+    fi
+
+    # Open Notebook markers
+    if [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]]; then
+        _atomic_sed "$nginx_conf" 's|#__NOTEBOOK__||g'
+    else
+        _atomic_sed "$nginx_conf" '/#__NOTEBOOK__/d'
+    fi
+
+    # SearXNG markers
+    if [[ "${ENABLE_SEARXNG:-false}" == "true" ]]; then
+        _atomic_sed "$nginx_conf" 's|#__SEARXNG__||g'
+    else
+        _atomic_sed "$nginx_conf" '/#__SEARXNG__/d'
+    fi
+
+    # Crawl4AI markers
+    if [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]]; then
+        _atomic_sed "$nginx_conf" 's|#__CRAWL4AI__||g'
+    else
+        _atomic_sed "$nginx_conf" '/#__CRAWL4AI__/d'
     fi
 }
 
