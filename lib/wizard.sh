@@ -370,6 +370,7 @@ _get_vllm_vram_req() {
         "Qwen/Qwen3-8B-AWQ")                               echo "6"   ;;
         "Qwen/Qwen2.5-14B-Instruct-AWQ")                   echo "10"  ;;
         "Qwen/Qwen3-14B-AWQ")                              echo "10"  ;;
+        "QuantTrio/Qwen3.5-27B-AWQ")                       echo "16"  ;;
         "Qwen/Qwen2.5-32B-Instruct-AWQ")                   echo "20"  ;;
         "Qwen/Qwen2.5-7B-Instruct")                        echo "16"  ;;
         "Qwen/Qwen3-8B")                                   echo "16"  ;;
@@ -389,7 +390,7 @@ _get_vllm_vram_req() {
 
 _wizard_vllm_model() {
     # VRAM requirements in GB per model (indices 1-16 match menu numbers)
-    local -a vram_req=(0 5 6 10 10 20 16 16 16 16 28 28 28 48 140 12 4 6)
+    local -a vram_req=(0 5 6 10 10 16 20 16 16 16 16 28 28 28 48 140 12 4 6)
 
     local vram_gb=0
     if [[ "${DETECTED_GPU_VRAM:-0}" -gt 0 ]]; then
@@ -409,7 +410,7 @@ _wizard_vllm_model() {
     local rec_idx=0
     if [[ "$effective_vram" -gt 0 ]]; then
         local i
-        for i in 17 16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1; do
+        for i in 18 17 16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1; do
             if [[ "${vram_req[$i]}" -le "$effective_vram" ]]; then
                 rec_idx="$i"
                 break
@@ -436,33 +437,34 @@ _wizard_vllm_model() {
     _vllm_line 2  " 2" "Qwen/Qwen3-8B-AWQ"
     _vllm_line 3  " 3" "Qwen/Qwen2.5-14B-Instruct-AWQ"
     _vllm_line 4  " 4" "Qwen/Qwen3-14B-AWQ"
-    _vllm_line 5  " 5" "Qwen/Qwen2.5-32B-Instruct-AWQ"
+    _vllm_line 5  " 5" "QuantTrio/Qwen3.5-27B-AWQ"
+    _vllm_line 6  " 6" "Qwen/Qwen2.5-32B-Instruct-AWQ"
     echo ""
     echo " -- 7-8B bf16 (полная точность) --"
-    _vllm_line 6  " 6" "Qwen/Qwen2.5-7B-Instruct"
-    _vllm_line 7  " 7" "Qwen/Qwen3-8B"
-    _vllm_line 8  " 8" "mistralai/Mistral-7B-Instruct-v0.3"
-    _vllm_line 9  " 9" "meta-llama/Llama-3.1-8B-Instruct" "  (HF_TOKEN)"
+    _vllm_line 7  " 7" "Qwen/Qwen2.5-7B-Instruct"
+    _vllm_line 8  " 8" "Qwen/Qwen3-8B"
+    _vllm_line 9  " 9" "mistralai/Mistral-7B-Instruct-v0.3"
+    _vllm_line 10 "10" "meta-llama/Llama-3.1-8B-Instruct" "  (HF_TOKEN)"
     echo ""
     echo " -- 14B bf16 --"
-    _vllm_line 10 "10" "Qwen/Qwen2.5-14B-Instruct"
-    _vllm_line 11 "11" "Qwen/Qwen3-14B"
-    _vllm_line 12 "12" "microsoft/phi-4"
+    _vllm_line 11 "11" "Qwen/Qwen2.5-14B-Instruct"
+    _vllm_line 12 "12" "Qwen/Qwen3-14B"
+    _vllm_line 13 "13" "microsoft/phi-4"
     echo ""
     echo " -- 32B+ bf16 --"
-    _vllm_line 13 "13" "Qwen/Qwen2.5-32B-Instruct"
-    _vllm_line 14 "14" "meta-llama/Llama-3.3-70B-Instruct" "  (HF_TOKEN)"
+    _vllm_line 14 "14" "Qwen/Qwen2.5-32B-Instruct"
+    _vllm_line 15 "15" "meta-llama/Llama-3.3-70B-Instruct" "  (HF_TOKEN)"
     echo ""
     echo " -- MoE (активных параметров << общих) --"
-    _vllm_line 15 "15" "bullpoint/Qwen3-Coder-Next-AWQ-4bit" "  80B total, 14B active"
-    _vllm_line 16 "16" "stelterlab/NVIDIA-Nemotron-3-Nano-30B-A3B-AWQ" "  30B total, 3B active"
-    _vllm_line 17 "17" "Qwen/Qwen3.5-35B-A3B" "  35B total, 3B active"
+    _vllm_line 16 "16" "bullpoint/Qwen3-Coder-Next-AWQ-4bit" "  80B total, 14B active"
+    _vllm_line 17 "17" "stelterlab/NVIDIA-Nemotron-3-Nano-30B-A3B-AWQ" "  30B total, 3B active"
+    _vllm_line 18 "18" "Qwen/Qwen3.5-35B-A3B" "  35B total, 3B active"
     echo ""
     echo " -- Своя модель --"
-    echo " 18) Ввести HuggingFace репозиторий (org/model-name)"
+    echo " 19) Ввести HuggingFace репозиторий (org/model-name)"
     echo ""
 
-    _ask_choice "Модель [1-18, Enter=6]: " 1 18 6
+    _ask_choice "Модель [1-19, Enter=5]: " 1 19 5
 
     local vllm_models=(
         ""  # 0 placeholder
@@ -470,6 +472,7 @@ _wizard_vllm_model() {
         "Qwen/Qwen3-8B-AWQ"
         "Qwen/Qwen2.5-14B-Instruct-AWQ"
         "Qwen/Qwen3-14B-AWQ"
+        "QuantTrio/Qwen3.5-27B-AWQ"
         "Qwen/Qwen2.5-32B-Instruct-AWQ"
         "Qwen/Qwen2.5-7B-Instruct"
         "Qwen/Qwen3-8B"
@@ -485,7 +488,7 @@ _wizard_vllm_model() {
         "Qwen/Qwen3.5-35B-A3B"
     )
 
-    if [[ "$REPLY" -ge 1 && "$REPLY" -le 17 ]]; then
+    if [[ "$REPLY" -ge 1 && "$REPLY" -le 18 ]]; then
         VLLM_MODEL="${vllm_models[$REPLY]}"
 
         # VRAM guard: warn if selected model exceeds effective GPU (raw - TEI embed offset)
@@ -506,9 +509,9 @@ _wizard_vllm_model() {
                 fi
             fi
         fi
-    elif [[ "$REPLY" -eq 18 ]]; then
-        _ask "HuggingFace репозиторий (org/model):" "Qwen/Qwen2.5-14B-Instruct"
-        VLLM_MODEL="${REPLY:-Qwen/Qwen2.5-14B-Instruct}"
+    elif [[ "$REPLY" -eq 19 ]]; then
+        _ask "HuggingFace репозиторий (org/model):" "QuantTrio/Qwen3.5-27B-AWQ"
+        VLLM_MODEL="${REPLY:-QuantTrio/Qwen3.5-27B-AWQ}"
         # No VRAM check for custom models (per decision)
     fi
     echo ""
@@ -540,7 +543,7 @@ _wizard_llm_model() {
         validate_model_name "$LLM_MODEL" || LLM_MODEL="qwen2.5:14b"
     fi
     if [[ "$LLM_PROVIDER" == "vllm" && -z "$VLLM_MODEL" ]]; then
-        VLLM_MODEL="Qwen/Qwen2.5-14B-Instruct"
+        VLLM_MODEL="QuantTrio/Qwen3.5-27B-AWQ"
     fi
 
     # VRAM guard for vllm in NON_INTERACTIVE mode (BFIX-41)

@@ -29,6 +29,7 @@ declare -A MODEL_SIZES=(
     ["Qwen/Qwen3-8B-AWQ"]="4.5 GB"
     ["Qwen/Qwen2.5-14B-Instruct-AWQ"]="8 GB"
     ["Qwen/Qwen3-14B-AWQ"]="8 GB"
+    ["QuantTrio/Qwen3.5-27B-AWQ"]="16 GB"
     ["Qwen/Qwen2.5-32B-Instruct-AWQ"]="18 GB"
     ["Qwen/Qwen2.5-7B-Instruct"]="14 GB"
     ["Qwen/Qwen3-8B"]="16 GB"
@@ -291,8 +292,9 @@ download_models() {
             log_success "vLLM model already loaded"
         else
             local vllm_size=""
-            [[ -n "${LLM_MODEL:-}" ]] && vllm_size="${MODEL_SIZES[${LLM_MODEL}]:-}"
-            local vllm_label="vLLM model: ${LLM_MODEL:-unknown}"
+            local _vllm_name="${VLLM_MODEL:-${LLM_MODEL:-unknown}}"
+            [[ -n "$_vllm_name" && "$_vllm_name" != "unknown" ]] && vllm_size="${MODEL_SIZES[$_vllm_name]:-}"
+            local vllm_label="vLLM model: ${_vllm_name}"
             [[ -n "$vllm_size" ]] && vllm_label="${vllm_label} (~${vllm_size})"
             log_info "Waiting for ${vllm_label}..."
             if ! _stream_gpu_model_logs "agmind-vllm" "vLLM" "${TIMEOUT_GPU_HEALTH:-0}"; then

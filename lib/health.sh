@@ -190,9 +190,9 @@ _parse_gpu_progress() {
 
 wait_healthy() {
     local timeout="${1:-300}"
-    local gpu_timeout="${2:-${TIMEOUT_GPU_HEALTH:-600}}"
+    local gpu_timeout="${2:-${TIMEOUT_GPU_HEALTH:-900}}"
     [[ "$timeout" =~ ^[0-9]+$ ]] || timeout=300
-    [[ "$gpu_timeout" =~ ^[0-9]+$ ]] || gpu_timeout=600
+    [[ "$gpu_timeout" =~ ^[0-9]+$ ]] || gpu_timeout=900
     local interval=5
     local elapsed=0
     local compose_file="${INSTALL_DIR}/docker/docker-compose.yml"
@@ -280,22 +280,12 @@ wait_healthy() {
     fi
 
     echo ""
-    log_info "Waiting for GPU services — loading models..."
+    log_info "Waiting for GPU services — loading models (timeout: ${gpu_timeout}s)..."
 
     local gpu_done=""
-    local inactivity_timeout=120  # stall = no log change AND no HTTP response for 2 min
+    local gpu_elapsed=0
 
-    # Per-service inactivity tracking
-    local -A last_log_hash=()
-    local -A last_change_ts=()
-    local now_ts
-    now_ts="$(date +%s)"
-    for svc in "${gpu_svcs[@]}"; do
-        last_log_hash[$svc]=""
-        last_change_ts[$svc]="$now_ts"
-    done
-
-    while true; do
+    while [[ $gpu_elapsed -lt $gpu_timeout ]]; do
         local gpu_ready=0
 
         for svc in "${gpu_svcs[@]}"; do
@@ -322,30 +312,12 @@ wait_healthy() {
                 gpu_ready=$((gpu_ready + 1))
                 continue
             fi
-
-            # Still starting — check log activity (any line, including healthchecks)
-            local cur_line
-            cur_line="$(docker compose -f "$compose_file" logs --tail=1 --no-log-prefix "$svc" 2>/dev/null | tr -d '\r')"
-            local cur_hash
-            cur_hash="$(echo "$cur_line" | cksum | cut -d' ' -f1)"
-            if [[ "$cur_hash" != "${last_log_hash[$svc]:-}" ]]; then
-                last_log_hash[$svc]="$cur_hash"
-                last_change_ts[$svc]="$(date +%s)"
-            fi
-            local idle_secs=$(( $(date +%s) - ${last_change_ts[$svc]} ))
-            if [[ $idle_secs -ge $inactivity_timeout ]]; then
-                echo ""
-                log_warn "GPU service '${svc}': no activity for ${idle_secs}s — continuing without it"
-                log_warn "Check manually: docker logs --tail 20 agmind-${svc}"
-                gpu_done="${gpu_done} ${svc} "
-                optional_exited="${optional_exited} ${svc} "
-                gpu_ready=$((gpu_ready + 1))
-            fi
         done
 
         [[ $gpu_ready -ge ${#gpu_svcs[@]} ]] && break
 
         sleep "$interval"
+        gpu_elapsed=$((gpu_elapsed + interval))
 
         # Compact progress line (works in both TTY and non-TTY)
         local progress_info=""
@@ -355,21 +327,30 @@ wait_healthy() {
             svc_progress="$(_parse_gpu_progress "$svc" "$compose_file")"
             progress_info="${progress_info:+${progress_info} | }${svc}: ${svc_progress}"
         done
-        echo -e "  ${progress_info}"
+        echo -e "  ${progress_info}  [${gpu_elapsed}/${gpu_timeout}s]"
     done
     echo ""
 
-    # GPU timeout is a WARNING, not a failure — installation continues
-    local still_waiting=""
+    # Check which GPU services are still not ready
+    local still_loading=""
     for svc in "${gpu_svcs[@]}"; do
-        [[ "$gpu_done" == *" $svc "* ]] || still_waiting="${still_waiting:+${still_waiting}, }${svc}"
+        [[ "$gpu_done" == *" $svc "* ]] && continue
+        # Container still alive — it's loading, not broken
+        local status
+        status="$(docker compose -f "$compose_file" ps --format '{{.Status}}' "$svc" 2>/dev/null || echo "")"
+        if echo "$status" | grep -qi "up\|starting"; then
+            still_loading="${still_loading:+${still_loading}, }${svc}"
+        else
+            optional_exited="${optional_exited} ${svc} "
+            log_warn "GPU service '${svc}' is not running (${status})"
+        fi
     done
 
-    if [[ -n "$still_waiting" ]]; then
-        log_warn "GPU services still loading: ${still_waiting}"
-        log_warn "Installation continues — models will finish downloading in background"
+    if [[ -n "$still_loading" ]]; then
+        log_warn "GPU services still loading: ${still_loading}"
+        log_warn "Installation continues — models will finish in background"
         log_warn "Check later: agmind status"
-    else
+    elif [[ -z "$still_loading" ]]; then
         log_success "All GPU services ready!"
     fi
 

@@ -382,10 +382,10 @@ _save_credentials() {
             echo ""
             echo "=== vLLM (Dify → Settings → Model Provider → OpenAI-API-compatible) ==="
             echo "  Model Type:              LLM"
-            echo "  Model Name:              ${VLLM_MODEL:-Qwen/Qwen2.5-14B-Instruct}"
+            echo "  Model Name:              ${VLLM_MODEL:-QuantTrio/Qwen3.5-27B-AWQ}"
             echo "  API endpoint URL:        http://agmind-vllm:8000/v1"
             echo "  API Key:                 none"
-            echo "  model name for endpoint: ${VLLM_MODEL:-Qwen/Qwen2.5-14B-Instruct}"
+            echo "  model name for endpoint: ${VLLM_MODEL:-QuantTrio/Qwen3.5-27B-AWQ}"
         fi
         if [[ "${LLM_PROVIDER:-}" == "ollama" || "${EMBED_PROVIDER:-}" == "ollama" ]]; then
             echo ""

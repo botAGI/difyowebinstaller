@@ -243,7 +243,7 @@ _generate_env_file() {
     safe_embedding_model="$(escape_sed "${EMBEDDING_MODEL:-bge-m3}")"
     safe_llm_provider="$(escape_sed "${LLM_PROVIDER:-ollama}")"
     safe_embed_provider="$(escape_sed "${EMBED_PROVIDER:-ollama}")"
-    safe_vllm_model="$(escape_sed "${VLLM_MODEL:-Qwen/Qwen2.5-14B-Instruct}")"
+    safe_vllm_model="$(escape_sed "${VLLM_MODEL:-QuantTrio/Qwen3.5-27B-AWQ}")"
     safe_hf_token="$(escape_sed "${HF_TOKEN:-}")"
     safe_enable_reranker="$(escape_sed "${ENABLE_RERANKER:-false}")"
     safe_rerank_model="$(escape_sed "${RERANK_MODEL:-}")"
@@ -689,7 +689,7 @@ _generate_litellm_config() {
       api_base: http://ollama:11434"
             ;;
         vllm)
-            local vllm_model="${VLLM_MODEL:-Qwen/Qwen2.5-14B-Instruct}"
+            local vllm_model="${VLLM_MODEL:-QuantTrio/Qwen3.5-27B-AWQ}"
             model_list="  - model_name: ${vllm_model}
     litellm_params:
       model: openai/${vllm_model}
@@ -784,12 +784,14 @@ enable_gpu_compose() {
     esac
 
     # If vLLM and TEI share the same GPU, calculate VRAM split dynamically:
-    # Reserve 3 GB for TEI + CUDA overhead, give the rest to vLLM.
-    # Formula: (total_vram_mb - 3000) / total_vram_mb
-    #   12 GB → 0.75   16 GB → 0.81   24 GB → 0.87   32 GB → 0.91
+    # Reserve 4 GB for TEI (~1.3 GB) + CUDA driver/context (~0.5 GB) + system (~1.5 GB) + headroom.
+    # Note: nvidia-smi reports ~500 MiB more than CUDA-visible total,
+    # so we over-reserve to compensate for this gap.
+    # Formula: (total_vram_mb - 4000) / total_vram_mb
+    #   12 GB → 0.67   16 GB → 0.75   24 GB → 0.83   32 GB → 0.88
     if [[ "${LLM_PROVIDER:-}" == "vllm" && "${EMBED_PROVIDER:-}" == "tei" ]]; then
         local env_file="${INSTALL_DIR}/docker/.env"
-        local tei_reserve_mb=3000
+        local tei_reserve_mb=4000
         local total_vram_mb=""
         total_vram_mb=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d '[:space:]') || true
 
