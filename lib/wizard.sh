@@ -64,6 +64,7 @@ _init_wizard_defaults() {
     REMOTE_BACKUP_KEY="${REMOTE_BACKUP_KEY:-}"
     REMOTE_BACKUP_PATH="${REMOTE_BACKUP_PATH:-/var/backups/agmind-remote}"
     ADMIN_UI_OPEN="${ADMIN_UI_OPEN:-false}"
+    ENABLE_DIFY_PREMIUM="${ENABLE_DIFY_PREMIUM:-true}"
     NON_INTERACTIVE="${NON_INTERACTIVE:-false}"
 }
 
@@ -1017,6 +1018,26 @@ _wizard_crawl4ai() {
     [[ "${REPLY,,}" =~ ^y ]] && ENABLE_CRAWL4AI=true || ENABLE_CRAWL4AI=false
 }
 
+_wizard_dify_premium() {
+    if [[ "${NON_INTERACTIVE:-false}" == "true" ]]; then
+        ENABLE_DIFY_PREMIUM="${ENABLE_DIFY_PREMIUM:-true}"
+        return
+    fi
+    echo ""
+    echo -e "${CYAN}--- Dify Premium Features ---${NC}"
+    echo "  Разблокирует: замена лого, балансировка моделей,"
+    echo "  безлимит участников/приложений/документов, приоритетная обработка."
+    echo "  Не требует лицензию, не включает биллинг."
+    echo ""
+    echo "  1) Да  — разблокировать (рекомендуется)"
+    echo "  2) Нет — оставить Community Edition"
+    _ask_choice "Premium [1-2, Enter=1]: " 1 2 1
+    case "$REPLY" in
+        1) ENABLE_DIFY_PREMIUM="true" ;;
+        2) ENABLE_DIFY_PREMIUM="false" ;;
+    esac
+}
+
 _wizard_summary() {
     echo -e "${CYAN}=== Сводка установки ===${NC}"
     echo "  Профиль:      ${DEPLOY_PROFILE}"
@@ -1034,9 +1055,10 @@ _wizard_summary() {
     [[ "$ENABLE_AUTHELIA" == "true" ]] && echo "  Authelia:     2FA включена"
     [[ "${ENABLE_LITELLM:-true}" == "true" ]] && echo "  LiteLLM:      включён (AI Gateway)"
     [[ "${ENABLE_SEARXNG:-false}" == "true" ]] && echo "  SearXNG:      включён (порт 8888)"
-    [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]] && echo "  Open Notebook: включён"
-    [[ "${ENABLE_DBGPT:-false}" == "true" ]] && echo "  DB-GPT:       включён"
-    [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]] && echo "  Crawl4AI:     включён"
+    [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]] && echo "  Open Notebook: включён (порт 8502)"
+    [[ "${ENABLE_DBGPT:-false}" == "true" ]] && echo "  DB-GPT:       включён (порт 5670)"
+    [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]] && echo "  Crawl4AI:     включён (порт 11235)"
+    [[ "${ENABLE_DIFY_PREMIUM:-true}" == "true" ]] && echo "  Dify Premium: включён (патч после запуска)"
     [[ "$ENABLE_TUNNEL" == "true" ]] && echo "  Туннель:      ${TUNNEL_VPS_HOST}:${TUNNEL_REMOTE_PORT}"
     echo "  Бэкапы:       ${BACKUP_TARGET} (${BACKUP_SCHEDULE})"
 
@@ -1128,6 +1150,7 @@ run_wizard() {
     _wizard_notebook
     _wizard_dbgpt
     _wizard_crawl4ai
+    _wizard_dify_premium
     _wizard_summary
     _wizard_confirm
 
@@ -1145,6 +1168,7 @@ run_wizard() {
     export REMOTE_BACKUP_HOST REMOTE_BACKUP_PORT REMOTE_BACKUP_USER REMOTE_BACKUP_KEY REMOTE_BACKUP_PATH
     export ADMIN_UI_OPEN
     export ENABLE_LITELLM ENABLE_SEARXNG ENABLE_NOTEBOOK ENABLE_DBGPT ENABLE_CRAWL4AI
+    export ENABLE_DIFY_PREMIUM
 }
 
 # Run if executed directly

@@ -183,7 +183,15 @@ phase_models_graceful() {
     fi
 }
 phase_backups()     { setup_backups; setup_tunnel; }
-phase_complete()    { create_openwebui_admin; _init_dify_admin; _save_credentials; _install_cli; _install_crons; _install_systemd_service; verify_services || true; _show_final_summary; }
+phase_complete()    { create_openwebui_admin; _init_dify_admin; _save_credentials; _install_cli; _install_crons; _install_systemd_service; verify_services || true; _show_final_summary; _apply_dify_patches; }
+
+_apply_dify_patches() {
+    [[ "${ENABLE_DIFY_PREMIUM:-false}" == "true" ]] || return 0
+    log_info "Applying Dify premium features patch..."
+    bash "${INSTALLER_DIR}/scripts/patch_dify_features.sh" \
+        "${COMPOSE_PROJECT_NAME:-agmind}-api" \
+        "$INSTALL_DIR" || log_warn "Dify premium patch had warnings (non-fatal)"
+}
 
 _confirm_continue() {
     if [[ "$NON_INTERACTIVE" == "true" ]]; then log_warn "Non-interactive: continuing despite: $1"; return 0; fi
@@ -230,7 +238,7 @@ _check_critical_services() {
 }
 
 _copy_runtime_files() {
-    local scripts=(backup.sh restore.sh uninstall.sh update.sh agmind.sh health-gen.sh rotate_secrets.sh dr-drill.sh generate-manifest.sh redis-lock-cleanup.sh)
+    local scripts=(backup.sh restore.sh uninstall.sh update.sh agmind.sh health-gen.sh rotate_secrets.sh dr-drill.sh generate-manifest.sh redis-lock-cleanup.sh patch_dify_features.sh)
     for s in "${scripts[@]}"; do
         [[ -f "${INSTALLER_DIR}/scripts/${s}" ]] && cp "${INSTALLER_DIR}/scripts/${s}" "${INSTALL_DIR}/scripts/"
     done
@@ -429,25 +437,25 @@ _save_credentials() {
         if [[ "${ENABLE_SEARXNG:-false}" == "true" ]]; then
             echo ""
             echo "=== SearXNG (Поисковый движок) ==="
-            echo "  URL:           http://${ip}:${SEARXNG_PORT:-8888}"
-            echo "  JSON API:      http://${ip}:${SEARXNG_PORT:-8888}/search?q=test&format=json"
+            echo "  URL:           http://${ip}:${EXPOSE_SEARXNG_PORT:-8888}"
+            echo "  JSON API:      http://${ip}:${EXPOSE_SEARXNG_PORT:-8888}/search?q=test&format=json"
         fi
         if [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]]; then
             echo ""
             echo "=== Open Notebook (Исследовательский ассистент) ==="
-            echo "  URL:           http://agmind-notebook:8502  (internal)"
+            echo "  URL:           http://${ip}:${EXPOSE_NOTEBOOK_PORT:-8502}"
             echo "  Настройте LLM провайдер в Settings после первого входа."
         fi
         if [[ "${ENABLE_DBGPT:-false}" == "true" ]]; then
             echo ""
             echo "=== DB-GPT (Аналитика данных) ==="
-            echo "  URL:           http://agmind-dbgpt:5670  (internal)"
+            echo "  URL:           http://${ip}:${EXPOSE_DBGPT_PORT:-5670}"
         fi
         if [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]]; then
             echo ""
             echo "=== Crawl4AI (Веб-краулер) ==="
-            echo "  API:           http://agmind-crawl4ai:11235  (internal)"
-            echo "  API Docs:      http://agmind-crawl4ai:11235/docs  (internal)"
+            echo "  API:           http://${ip}:${EXPOSE_CRAWL4AI_PORT:-11235}"
+            echo "  API Docs:      http://${ip}:${EXPOSE_CRAWL4AI_PORT:-11235}/docs"
             echo "  Dify:          HTTP Request tool → POST http://agmind-crawl4ai:11235/crawl"
         fi
         echo ""
@@ -574,6 +582,18 @@ _show_final_summary() {
     echo ""
     if [[ "${ENABLE_LITELLM:-true}" == "true" ]]; then
         echo -e "  ${BOLD}LiteLLM UI:${NC}      ${GREEN}http://${ip}:4001/ui/${NC}"
+    fi
+    if [[ "${ENABLE_DBGPT:-false}" == "true" ]]; then
+        echo -e "  ${BOLD}DB-GPT:${NC}          ${GREEN}http://${ip}:${EXPOSE_DBGPT_PORT:-5670}${NC}"
+    fi
+    if [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]]; then
+        echo -e "  ${BOLD}Open Notebook:${NC}   ${GREEN}http://${ip}:${EXPOSE_NOTEBOOK_PORT:-8502}${NC}"
+    fi
+    if [[ "${ENABLE_SEARXNG:-false}" == "true" ]]; then
+        echo -e "  ${BOLD}SearXNG:${NC}         ${GREEN}http://${ip}:${EXPOSE_SEARXNG_PORT:-8888}${NC}"
+    fi
+    if [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]]; then
+        echo -e "  ${BOLD}Crawl4AI:${NC}        ${GREEN}http://${ip}:${EXPOSE_CRAWL4AI_PORT:-11235}/docs${NC}"
     fi
     if [[ "${MONITORING_MODE:-}" == "local" ]]; then
         echo ""
