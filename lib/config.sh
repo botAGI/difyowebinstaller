@@ -616,6 +616,7 @@ _generate_squid_config() {
     cat > "$squid_conf" << 'SQUIDEOF'
 # AGMind SSRF Proxy — Block metadata, optionally block RFC1918
 acl localnet src 172.16.0.0/12
+acl localnet src 10.0.0.0/8
 acl SSL_ports port 443
 acl Safe_ports port 80 443 1025-65535
 acl CONNECT method CONNECT
@@ -651,8 +652,9 @@ SQUIDEOF
 
     cat >> "$squid_conf" << 'SQUIDEOF'
 
-# Allow Docker internal networks
+# Allow Docker internal networks (both default 172.x and custom 10.x subnets)
 acl docker_nets src 172.16.0.0/12
+acl docker_nets src 10.0.0.0/8
 http_access allow docker_nets
 
 http_access deny !Safe_ports
