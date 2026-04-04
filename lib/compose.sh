@@ -463,7 +463,12 @@ compose_down() {
 
     cd "$docker_dir"
     log_info "Stopping all containers..."
-    COMPOSE_PROFILES=vps,monitoring,qdrant,weaviate,etl,authelia,ollama,vllm,tei,reranker,litellm,searxng,notebook,dbgpt,crawl4ai \
+    # Source service map if not already loaded
+    if [[ -z "${_SERVICE_MAP_LOADED:-}" ]]; then
+        # shellcheck source=service-map.sh
+        source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/service-map.sh"
+    fi
+    COMPOSE_PROFILES="${ALL_COMPOSE_PROFILES}" \
         docker compose down --remove-orphans 2>/dev/null || true
     log_success "All containers stopped"
 }
@@ -479,7 +484,12 @@ _cleanup_stale_containers() {
     # Stop ALL profiles — docker compose down without profiles won't touch
     # services that have profiles: [monitoring], etc.
     log_info "Cleaning up stale containers..."
-    COMPOSE_PROFILES=vps,monitoring,qdrant,weaviate,etl,authelia,ollama,vllm,tei,reranker,litellm,searxng,notebook,dbgpt,crawl4ai \
+    # Source service map if not already loaded
+    if [[ -z "${_SERVICE_MAP_LOADED:-}" ]]; then
+        # shellcheck source=service-map.sh
+        source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/service-map.sh"
+    fi
+    COMPOSE_PROFILES="${ALL_COMPOSE_PROFILES}" \
         docker compose down --remove-orphans 2>/dev/null || true
 
     # Force-remove any agmind containers docker compose missed

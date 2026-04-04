@@ -17,6 +17,11 @@ command -v log_error   >/dev/null 2>&1 || log_error()   { echo -e "  ✗ $*"; }
 RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
 CYAN="${CYAN:-\033[0;36m}"; BOLD="${BOLD:-\033[1m}"; NC="${NC:-\033[0m}"
 
+# Service mappings — single source of truth
+_HEALTH_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=service-map.sh
+source "${_HEALTH_SCRIPT_DIR}/service-map.sh"
+
 # ============================================================================
 # SERVICE LIST (dynamic based on .env)
 # ============================================================================
