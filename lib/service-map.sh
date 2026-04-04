@@ -44,7 +44,7 @@ declare -A NAME_TO_VERSION_KEY=(
     [litellm]=LITELLM_VERSION
     [searxng]=SEARXNG_VERSION
     [surrealdb]=SURREALDB_VERSION
-    [open-notebook]=NOTEBOOK_VERSION
+    [open-notebook]=OPEN_NOTEBOOK_VERSION
     [dbgpt]=DBGPT_VERSION
     [crawl4ai]=CRAWL4AI_VERSION
 )
@@ -59,6 +59,8 @@ declare -A NAME_TO_SERVICES=(
     [ollama]="ollama"
     [vllm]="vllm"
     [tei]="tei"
+    [tei-embed]="tei"
+    [tei-rerank]="tei-rerank"
     [postgres]="db"
     [redis]="redis"
     [weaviate]="weaviate"

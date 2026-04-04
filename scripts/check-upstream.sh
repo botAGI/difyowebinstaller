@@ -216,6 +216,12 @@ load_current_versions() {
         value=$(echo "$value" | tr -d '[:space:]')
         CURRENT_VERSIONS["$key"]="$value"
     done < "$VERSIONS_FILE"
+    # Synthesize DOCLING_SERVE_VERSION from DOCLING_IMAGE_CPU tag
+    # (versions.env uses full image refs, not separate version vars)
+    local docling_img="${CURRENT_VERSIONS[DOCLING_IMAGE_CPU]:-}"
+    if [[ -n "$docling_img" && "$docling_img" == *":"* ]]; then
+        CURRENT_VERSIONS[DOCLING_SERVE_VERSION]="${docling_img##*:}"
+    fi
 }
 
 check_component() {
@@ -375,7 +381,11 @@ main() {
 
     echo "${#ALL_RESULTS[@]} component(s) checked, ${update_count} update(s) available." >&2
     generate_report
-    set_output "has_updates" "true"
+    if [[ $update_count -gt 0 ]]; then
+        set_output "has_updates" "true"
+    else
+        set_output "has_updates" "false"
+    fi
     set_output "date" "$TODAY"
     echo "Report: ${REPORT_FILE}" >&2
 }

@@ -59,10 +59,16 @@ _parse_image_ref() {
     local image="$1"
     local -n _registry=$2 _repo=$3 _tag=$4
 
-    # Split tag
+    # Split tag: last colon is a tag only if the part after it has no slash
+    # (avoids confusing registry:port with image:tag)
     if [[ "$image" == *":"* ]]; then
-        _tag="${image##*:}"
-        image="${image%:*}"
+        local _maybe_tag="${image##*:}"
+        if [[ "$_maybe_tag" != *"/"* ]]; then
+            _tag="$_maybe_tag"
+            image="${image%:*}"
+        else
+            _tag="latest"
+        fi
     else
         _tag="latest"
     fi
@@ -203,15 +209,16 @@ validate_images_exist() {
     for img in "${images[@]}"; do
         # Launch background check
         (
-            if _check_image_exists "$img"; then
-                echo "OK" > "${tmpdir}/$(echo "$img" | md5sum | cut -d' ' -f1)"
+            local _key
+            _key="$(printf '%s' "$img" | tr '/:@' '___')"
+            local rc=0
+            _check_image_exists "$img" || rc=$?
+            if [[ $rc -eq 0 ]]; then
+                echo "OK" > "${tmpdir}/${_key}"
+            elif [[ $rc -eq 2 ]]; then
+                echo "SKIP" > "${tmpdir}/${_key}"
             else
-                local rc=$?
-                if [[ $rc -eq 2 ]]; then
-                    echo "SKIP" > "${tmpdir}/$(echo "$img" | md5sum | cut -d' ' -f1)"
-                else
-                    echo "MISSING" > "${tmpdir}/$(echo "$img" | md5sum | cut -d' ' -f1)"
-                fi
+                echo "MISSING" > "${tmpdir}/${_key}"
             fi
         ) &
         pids+=($!)
@@ -230,10 +237,10 @@ validate_images_exist() {
 
     # Collect results
     for img in "${images[@]}"; do
-        local hash
-        hash="$(echo "$img" | md5sum | cut -d' ' -f1)"
+        local _key
+        _key="$(printf '%s' "$img" | tr '/:@' '___')"
         local result
-        result="$(cat "${tmpdir}/${hash}" 2>/dev/null || echo "SKIP")"
+        result="$(cat "${tmpdir}/${_key}" 2>/dev/null || echo "SKIP")"
         case "$result" in
             OK)      : ;;
             SKIP)    log_warn "Cannot verify image: ${img} — skipping check" ;;
@@ -534,6 +541,8 @@ _retry_stuck_containers() {
         fi
     done
 
+    # Re-check after last retry
+    created="$(docker ps -a --filter "name=agmind-" --filter "status=created" --format '{{.ID}}' 2>/dev/null | wc -l | tr -d ' ')"
     if [[ "${created:-0}" -gt 0 ]]; then
         local stuck_names
         stuck_names="$(docker ps -a --filter "name=agmind-" --filter "status=created" --format '{{.Names}}' 2>/dev/null | tr '\n' ', ')"
@@ -594,6 +603,7 @@ sync_db_password() {
     done
     log_error "PostgreSQL not ready after 90s — password sync skipped"
     log_error "If auth fails, run: docker exec -it agmind-db psql -U postgres -c \"ALTER USER postgres WITH PASSWORD '\$(grep DB_PASSWORD ${env_file} | cut -d= -f2-)'\;\""
+    return 1
 }
 
 # ============================================================================
@@ -644,6 +654,8 @@ create_plugin_db() {
         sleep 2
         attempts=$((attempts + 1))
     done
+    log_error "PostgreSQL not ready after 30s — plugin DB creation skipped"
+    return 1
 }
 
 # ============================================================================
