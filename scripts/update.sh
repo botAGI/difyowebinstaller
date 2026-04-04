@@ -287,10 +287,26 @@ check_pg_major_upgrade() {
     fi
 }
 
-# Get current release tag from RELEASE file
+# Get current release tag from RELEASE file.
+# BUG-V3-044: fallback chain when RELEASE file missing.
 get_current_release() {
     if [[ -f "$RELEASE_FILE" ]]; then
         cat "$RELEASE_FILE" 2>/dev/null | tr -d '[:space:]'
+        return
+    fi
+    # Fallback 1: exact tag on current commit
+    local tag=""
+    tag="$(cd "${INSTALL_DIR}" && git describe --tags --exact-match 2>/dev/null || true)"
+    # Fallback 2: nearest tag + commits ahead (e.g. v1.2-3-gabcdef)
+    [[ -z "$tag" ]] && tag="$(cd "${INSTALL_DIR}" && git describe --tags --always 2>/dev/null || true)"
+    # Fallback 3: hash of versions.env content
+    if [[ -z "$tag" && -f "${INSTALL_DIR}/docker/versions.env" ]]; then
+        tag="dev-$(md5sum "${INSTALL_DIR}/docker/versions.env" | cut -c1-8)"
+    fi
+    if [[ -n "$tag" ]]; then
+        # Persist for next time
+        echo "$tag" > "$RELEASE_FILE"
+        echo "$tag"
     else
         echo "unknown"
     fi

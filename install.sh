@@ -512,9 +512,23 @@ _obtain_letsencrypt_cert() {
 _install_cli() {
     [[ -d /usr/local/bin ]] && ln -sf "${INSTALL_DIR}/scripts/agmind.sh" /usr/local/bin/agmind && log_success "'agmind' command available"
     date -u +%Y-%m-%dT%H:%M:%SZ > "${INSTALL_DIR}/.agmind_installed"
-    # Write current release tag for update system (BUG-V3-044)
+    # Write RELEASE tag for update system (BUG-V3-044: fallback when RELEASE file missing)
     if [[ -f "${INSTALLER_DIR}/RELEASE" ]]; then
         cp "${INSTALLER_DIR}/RELEASE" "${INSTALL_DIR}/RELEASE"
+    else
+        local release_tag=""
+        # Try git describe (works if installed from tagged commit)
+        release_tag="$(cd "${INSTALLER_DIR}" && git describe --tags --exact-match 2>/dev/null || true)"
+        # Fallback: git describe --always (short hash with tag prefix if available)
+        [[ -z "$release_tag" ]] && release_tag="$(cd "${INSTALLER_DIR}" && git describe --tags --always 2>/dev/null || true)"
+        # Last resort: hash of versions.env content
+        if [[ -z "$release_tag" && -f "${INSTALL_DIR}/docker/versions.env" ]]; then
+            release_tag="dev-$(md5sum "${INSTALL_DIR}/docker/versions.env" | cut -c1-8)"
+        fi
+        if [[ -n "$release_tag" ]]; then
+            echo "$release_tag" > "${INSTALL_DIR}/RELEASE"
+            log_info "RELEASE tag set to: ${release_tag} (fallback)"
+        fi
     fi
 }
 
