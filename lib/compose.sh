@@ -7,6 +7,7 @@
 set -euo pipefail
 
 INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
+IMAGE_VALIDATION_TIMEOUT="${IMAGE_VALIDATION_TIMEOUT:-20}"
 
 # ============================================================================
 # BUILD PROFILES
@@ -88,32 +89,35 @@ _parse_image_ref() {
 
 # Get anonymous bearer token for registry API.
 # Docker Hub requires token from auth.docker.io; others may work without.
+# Retries up to 3 times with 5s sleep on failure.
 _get_registry_token() {
     local registry="$1"
     local repo="$2"
+    local max_attempts=3
+    local attempt=0 token_url=""
 
     case "$registry" in
         docker.io|registry-1.docker.io)
-            # Docker Hub v2 token
-            curl -sf --max-time 5 \
-                "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${repo}:pull" \
-                2>/dev/null | grep -o '"token":"[^"]*"' | cut -d'"' -f4
+            token_url="https://auth.docker.io/token?service=registry.docker.io&scope=repository:${repo}:pull"
             ;;
         ghcr.io)
-            # GHCR anonymous token
-            curl -sf --max-time 5 \
-                "https://ghcr.io/token?scope=repository:${repo}:pull" \
-                2>/dev/null | grep -o '"token":"[^"]*"' | cut -d'"' -f4
+            token_url="https://ghcr.io/token?scope=repository:${repo}:pull"
             ;;
-        quay.io)
-            # Quay.io — anonymous access without token for public repos
-            echo ""
-            ;;
-        *)
-            # Other registries — try without token
-            echo ""
-            ;;
+        quay.io) echo ""; return ;;
+        *)       echo ""; return ;;
     esac
+
+    while [[ $attempt -lt $max_attempts ]]; do
+        local result
+        result="$(curl -sf --max-time 10 "$token_url" 2>/dev/null | grep -o '"token":"[^"]*"' | cut -d'"' -f4)" || true
+        if [[ -n "$result" ]]; then
+            echo "$result"
+            return
+        fi
+        attempt=$((attempt + 1))
+        [[ $attempt -lt $max_attempts ]] && sleep 5
+    done
+    echo ""
 }
 
 # Check if a single image:tag exists in its registry via HTTP HEAD.
@@ -145,7 +149,7 @@ _check_image_exists() {
     [[ -n "$token" ]] && auth_header="Authorization: Bearer ${token}"
 
     http_code="$(curl -s -o /dev/null -w '%{http_code}' \
-        --max-time 10 \
+        --max-time "${IMAGE_VALIDATION_TIMEOUT:-20}" \
         -I \
         ${auth_header:+-H "$auth_header"} \
         -H "Accept: application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json" \
@@ -191,23 +195,52 @@ validate_images_exist() {
 
     local not_found=0
     local -a missing_images=()
+    local max_parallel=5
+    local -a pids=()
+    local tmpdir
+    tmpdir="$(mktemp -d)"
 
     for img in "${images[@]}"; do
-        if _check_image_exists "$img"; then
-            : # exists, ok
-        else
-            local rc=$?
-            if [[ $rc -eq 2 ]]; then
-                # Registry error (405, timeout, etc.) — skip with warn
-                log_warn "Cannot verify image: ${img} — skipping check"
+        # Launch background check
+        (
+            if _check_image_exists "$img"; then
+                echo "OK" > "${tmpdir}/$(echo "$img" | md5sum | cut -d' ' -f1)"
             else
-                # 404 — image not found
-                log_error "WARNING: image not found: ${img}"
-                not_found=$((not_found + 1))
-                missing_images+=("$img")
+                local rc=$?
+                if [[ $rc -eq 2 ]]; then
+                    echo "SKIP" > "${tmpdir}/$(echo "$img" | md5sum | cut -d' ' -f1)"
+                else
+                    echo "MISSING" > "${tmpdir}/$(echo "$img" | md5sum | cut -d' ' -f1)"
+                fi
             fi
+        ) &
+        pids+=($!)
+
+        # Throttle: wait if we hit max_parallel
+        if [[ ${#pids[@]} -ge $max_parallel ]]; then
+            wait "${pids[0]}" 2>/dev/null || true
+            pids=("${pids[@]:1}")
         fi
     done
+
+    # Wait for remaining jobs
+    for pid in "${pids[@]}"; do
+        wait "$pid" 2>/dev/null || true
+    done
+
+    # Collect results
+    for img in "${images[@]}"; do
+        local hash
+        hash="$(echo "$img" | md5sum | cut -d' ' -f1)"
+        local result
+        result="$(cat "${tmpdir}/${hash}" 2>/dev/null || echo "SKIP")"
+        case "$result" in
+            OK)      : ;;
+            SKIP)    log_warn "Cannot verify image: ${img} — skipping check" ;;
+            MISSING) log_error "WARNING: image not found: ${img}"; not_found=$((not_found + 1)); missing_images+=("$img") ;;
+        esac
+    done
+    rm -rf "$tmpdir"
 
     if [[ $not_found -gt 0 ]]; then
         log_error "Blocking install: ${not_found} image(s) not found in registries:"
@@ -475,14 +508,15 @@ _retry_stuck_containers() {
     cd "$docker_dir"
 
     log_info "Waiting for dependency cascade..."
-    local retry created=0
+    local retry backoff=10 created=0
     for retry in 1 2 3; do
         created="$(docker ps -a --filter "name=agmind-" --filter "status=created" --format '{{.ID}}' 2>/dev/null | wc -l | tr -d ' ')"
         if [[ "${created:-0}" -eq 0 ]]; then
             break
         fi
-        log_info "Retry ${retry}/3: ${created} containers in Created state, restarting..."
-        sleep 10
+        log_info "Retry ${retry}/3: ${created} containers in Created state, waiting ${backoff}s..."
+        sleep "$backoff"
+        backoff=$((backoff * 2))
         if [[ -n "$profiles" ]]; then
             COMPOSE_PROFILES="$profiles" docker compose up -d 2>&1 | tail -5
         else
