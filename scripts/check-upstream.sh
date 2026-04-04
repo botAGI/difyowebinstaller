@@ -30,6 +30,7 @@ DAILY_CHECKS=(
     "Plugin Daemon|PLUGIN_DAEMON_VERSION|langgenius/dify-plugin-daemon|gh"
     "Sandbox|SANDBOX_VERSION|langgenius/dify-sandbox|gh"
     "Docling|DOCLING_SERVE_VERSION|docling-project/docling-serve|gh"
+    "LiteLLM|LITELLM_VERSION|BerriAI/litellm|gh"
 )
 
 MONTHLY_CHECKS=(
@@ -37,6 +38,11 @@ MONTHLY_CHECKS=(
     "Certbot|CERTBOT_VERSION|certbot/certbot|gh"
     "Portainer|PORTAINER_VERSION|portainer/portainer-ce|hub"
     "Squid|SQUID_VERSION|ubuntu/squid|hub"
+    "SearXNG|SEARXNG_VERSION|searxng/searxng|hub"
+    "SurrealDB|SURREALDB_VERSION|surrealdb/surrealdb|gh"
+    "Open Notebook|OPEN_NOTEBOOK_VERSION|lfnovo/open-notebook|gh"
+    "DB-GPT|DBGPT_VERSION|eosphoros-ai/DB-GPT|gh"
+    "Crawl4AI|CRAWL4AI_VERSION|unclecode/crawl4ai|gh"
 )
 
 SEMIANNUAL_CHECKS=(
