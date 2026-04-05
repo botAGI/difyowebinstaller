@@ -1,5 +1,7 @@
 .DS_Store
-.claude/
+# .claude/ — only settings.json tracked, rest ignored
+.claude/*
+!.claude/settings.json
 
 # Python
 __pycache__/
@@ -13,11 +15,15 @@ __pycache__/
 .age/
 
 # Internal dev artifacts (kept locally, not in repo)
-.planning/
-/workflows/
-CLAUDE.md
-SPEC.md
+# NOTE: temporarily commented out for device transfer
+# .planning/
+# /workflows/
+# CLAUDE.md
+# SPEC.md
 references/
+
+# Claude Code local settings (machine-specific)
+.claude/settings.local.json
 
 # Editor
 *.swp

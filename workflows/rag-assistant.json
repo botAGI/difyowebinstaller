@@ -1,0 +1,836 @@
+{
+  "id": "f04baedd-13fa-46c8-a1c6-590ce23ef179",
+  "graph": {
+    "nodes": [
+      {
+        "id": "start",
+        "type": "custom",
+        "data": {
+          "variables": [],
+          "type": "start",
+          "title": "Начало",
+          "selected": true
+        },
+        "position": {
+          "x": -375.20125493445494,
+          "y": 69.02311861672925
+        },
+        "positionAbsolute": {
+          "x": -375.20125493445494,
+          "y": 69.02311861672925
+        },
+        "width": 242,
+        "height": 72,
+        "selected": true
+      },
+      {
+        "id": "ifelse",
+        "type": "custom",
+        "data": {
+          "cases": [
+            {
+              "id": "has_file",
+              "case_id": "has_file",
+              "logical_operator": "and",
+              "conditions": [
+                {
+                  "id": "c1",
+                  "varType": "array[file]",
+                  "variable_selector": [
+                    "sys",
+                    "files"
+                  ],
+                  "comparison_operator": "not empty",
+                  "value": ""
+                }
+              ]
+            },
+            {
+              "id": "is_list",
+              "case_id": "is_list",
+              "logical_operator": "and",
+              "conditions": [
+                {
+                  "id": "c2",
+                  "varType": "string",
+                  "variable_selector": [
+                    "sys",
+                    "query"
+                  ],
+                  "comparison_operator": "start with",
+                  "value": "/list"
+                }
+              ]
+            },
+            {
+              "id": "is_delete",
+              "case_id": "is_delete",
+              "logical_operator": "and",
+              "conditions": [
+                {
+                  "id": "c3",
+                  "varType": "string",
+                  "variable_selector": [
+                    "sys",
+                    "query"
+                  ],
+                  "comparison_operator": "start with",
+                  "value": "/delete"
+                }
+              ]
+            }
+          ],
+          "type": "if-else",
+          "title": "Файл или вопрос?",
+          "selected": false
+        },
+        "position": {
+          "x": -99.47592476459926,
+          "y": 175.98361765612458
+        },
+        "positionAbsolute": {
+          "x": -99.47592476459926,
+          "y": 175.98361765612458
+        },
+        "width": 241,
+        "height": 219,
+        "selected": false
+      },
+      {
+        "id": "kb_retrieval",
+        "type": "custom",
+        "data": {
+          "type": "knowledge-retrieval",
+          "title": "Поиск по документам",
+          "query_variable_selector": [
+            "sys",
+            "query"
+          ],
+          "dataset_ids": [
+            "f7331e9d-0ae9-4175-93fe-db1f82236acd"
+          ],
+          "retrieval_mode": "multiple",
+          "multiple_retrieval_config": {
+            "top_k": 5,
+            "score_threshold": 0.3,
+            "reranking_enable": false
+          },
+          "selected": false
+        },
+        "position": {
+          "x": 391.78083147933125,
+          "y": 576.1319754275216
+        },
+        "positionAbsolute": {
+          "x": 391.78083147933125,
+          "y": 576.1319754275216
+        },
+        "width": 241,
+        "height": 89,
+        "selected": false
+      },
+      {
+        "id": "llm_rag",
+        "type": "custom",
+        "data": {
+          "model": {
+            "provider": "langgenius/ollama/ollama",
+            "name": "qwen2.5:14b",
+            "mode": "chat",
+            "completion_params": {
+              "temperature": 0.1,
+              "num_predict": 2048
+            }
+          },
+          "prompt_template": [
+            {
+              "role": "system",
+              "text": "Ты — ассистент по документации. Отвечай на основе предоставленного контекста из документов.\n\nТвои возможности (расскажи пользователю если спросит):\n- Ответы на вопросы по загруженным документам\n- Загрузка файлов: пользователь прикрепляет файл через скрепку — он автоматически попадает в базу знаний\n- /list — показать список всех загруженных документов\n- /delete <ID> — удалить документ из базы (ID можно узнать через /list)\n\nПравила:\n- Если в контексте нет информации для ответа — скажи \"В загруженных документах ответ не найден.\"\n- Если спрашивают какие документы загружены — предложи использовать команду /list\n- Если хотят удалить — предложи сначала /list, потом /delete <ID>\n- Отвечай кратко, по делу. Язык ответа = язык вопроса.\n\nКонтекст из документов:\n{{#context#}}",
+              "id": "6d51be8e-0565-4187-8d75-20b8cc80048d"
+            },
+            {
+              "role": "user",
+              "text": "{{#sys.query#}}",
+              "id": "a0578d40-dcdd-4c14-8a4f-c2cf39b7280c"
+            }
+          ],
+          "context": {
+            "enabled": true,
+            "variable_selector": [
+              "kb_retrieval",
+              "result"
+            ]
+          },
+          "vision": {
+            "enabled": false
+          },
+          "memory": {
+            "window": {
+              "enabled": true,
+              "size": 18
+            },
+            "query_prompt_template": "",
+            "role_prefix": {
+              "user": "",
+              "assistant": ""
+            }
+          },
+          "type": "llm",
+          "title": "LLM RAG",
+          "selected": false
+        },
+        "position": {
+          "x": 743.7793765802475,
+          "y": 665.6276506724231
+        },
+        "positionAbsolute": {
+          "x": 743.7793765802475,
+          "y": 665.6276506724231
+        },
+        "width": 241,
+        "height": 87,
+        "selected": false
+      },
+      {
+        "id": "answer_rag",
+        "type": "custom",
+        "data": {
+          "variables": [],
+          "answer": "{{#llm_rag.text#}}",
+          "type": "answer",
+          "title": "Ответ RAG",
+          "selected": false
+        },
+        "position": {
+          "x": 1109.6146364649749,
+          "y": 780.5187938616309
+        },
+        "positionAbsolute": {
+          "x": 1109.6146364649749,
+          "y": 780.5187938616309
+        },
+        "width": 241,
+        "height": 101,
+        "selected": false
+      },
+      {
+        "id": "http_upload",
+        "type": "custom",
+        "data": {
+          "type": "http-request",
+          "title": "Загрузка в KB",
+          "method": "post",
+          "url": "http://api:5001/v1/datasets/f7331e9d-0ae9-4175-93fe-db1f82236acd/document/create-by-file",
+          "authorization": {
+            "type": "api-key",
+            "config": {
+              "type": "bearer",
+              "api_key": "dataset-fOVOjwiSdhlQJMgrQI6sBSWG",
+              "header": ""
+            }
+          },
+          "headers": "",
+          "params": "",
+          "body": {
+            "type": "form-data",
+            "data": [
+              {
+                "key": "data",
+                "type": "text",
+                "value": "{\"indexing_technique\": \"high_quality\", \"process_rule\": {\"mode\": \"custom\", \"rules\": {\"pre_processing_rules\": [{\"id\": \"remove_extra_spaces\", \"enabled\": true}, {\"id\": \"remove_urls_emails\", \"enabled\": false}], \"segmentation\": {\"separator\": \"\\\\n\\\\n\", \"max_tokens\": 1000, \"chunk_overlap\": 200}}}}",
+                "file": []
+              },
+              {
+                "key": "file",
+                "type": "file",
+                "value": "",
+                "file": [
+                  "sys",
+                  "files"
+                ]
+              }
+            ]
+          },
+          "timeout": {
+            "connect": 30,
+            "read": 300,
+            "write": 300
+          },
+          "retry_config": {
+            "retry_enabled": true,
+            "max_retries": 3,
+            "retry_interval": 100
+          },
+          "selected": false
+        },
+        "position": {
+          "x": 759.4036591162437,
+          "y": 1.5717673679431527
+        },
+        "positionAbsolute": {
+          "x": 759.4036591162437,
+          "y": 1.5717673679431527
+        },
+        "width": 241,
+        "height": 168,
+        "selected": false
+      },
+      {
+        "id": "answer_upload",
+        "type": "custom",
+        "data": {
+          "variables": [],
+          "answer": "✅ Документ загружен в базу знаний и проиндексирован. Теперь можете задавать вопросы по его содержимому.",
+          "type": "answer",
+          "title": "Ответ загрузка",
+          "selected": false
+        },
+        "position": {
+          "x": 1280,
+          "y": -12.408482151754527
+        },
+        "positionAbsolute": {
+          "x": 1280,
+          "y": -12.408482151754527
+        },
+        "width": 241,
+        "height": 147,
+        "selected": false
+      },
+      {
+        "id": "http_list",
+        "type": "custom",
+        "data": {
+          "type": "http-request",
+          "title": "Список документов",
+          "method": "get",
+          "url": "http://api:5001/v1/datasets/f7331e9d-0ae9-4175-93fe-db1f82236acd/documents?page=1&limit=50",
+          "authorization": {
+            "type": "api-key",
+            "config": {
+              "type": "bearer",
+              "api_key": "dataset-fOVOjwiSdhlQJMgrQI6sBSWG",
+              "header": ""
+            }
+          },
+          "headers": "",
+          "params": "",
+          "body": {
+            "type": "none",
+            "data": []
+          },
+          "timeout": {
+            "connect": 10,
+            "read": 30,
+            "write": 30
+          },
+          "retry_config": {
+            "retry_enabled": true,
+            "max_retries": 3,
+            "retry_interval": 100
+          },
+          "selected": false
+        },
+        "position": {
+          "x": 753.482661037453,
+          "y": 230.5274433718276
+        },
+        "positionAbsolute": {
+          "x": 753.482661037453,
+          "y": 230.5274433718276
+        },
+        "width": 241,
+        "height": 168,
+        "selected": false
+      },
+      {
+        "id": "code_list",
+        "type": "custom",
+        "data": {
+          "type": "code",
+          "title": "Формат списка",
+          "code_language": "python3",
+          "code": "import json\n\ndef main(body: str) -> dict:\n    try:\n        data = json.loads(body)\n        docs = data.get(\"data\", [])\n        if not docs:\n            return {\"result\": \"База знаний пуста. Загрузите документ через скрепку.\"}\n        lines = [\"Документы в базе знаний:\\n\"]\n        for i, doc in enumerate(docs, 1):\n            name = doc.get(\"name\", \"?\")\n            doc_id = doc.get(\"id\", \"?\")\n            words = doc.get(\"word_count\", 0)\n            status = \"OK\" if doc.get(\"indexing_status\") == \"completed\" else \"...\"\n            lines.append(str(i) + \". [\" + status + \"] \" + name + \" (\" + str(words) + \" слов)\")\n            lines.append(\"   /delete \" + doc_id)\n        lines.append(\"\\nДля удаления скопируйте команду /delete с ID\")\n        return {\"result\": \"\\n\".join(lines)}\n    except Exception as e:\n        return {\"result\": \"Ошибка: \" + str(e)}\n",
+          "variables": [
+            {
+              "variable": "body",
+              "value_selector": [
+                "http_list",
+                "body"
+              ]
+            }
+          ],
+          "outputs": {
+            "result": {
+              "type": "string",
+              "children": null
+            }
+          },
+          "selected": false
+        },
+        "position": {
+          "x": 1097.0279416522399,
+          "y": 221.001913237343
+        },
+        "positionAbsolute": {
+          "x": 1097.0279416522399,
+          "y": 221.001913237343
+        },
+        "width": 241,
+        "height": 51,
+        "selected": false
+      },
+      {
+        "id": "answer_list",
+        "type": "custom",
+        "data": {
+          "type": "answer",
+          "title": "Ответ список",
+          "answer": "{{#code_list.result#}}",
+          "variables": [],
+          "selected": false
+        },
+        "position": {
+          "x": 1473.2321827281173,
+          "y": 215.55875316049452
+        },
+        "positionAbsolute": {
+          "x": 1473.2321827281173,
+          "y": 215.55875316049452
+        },
+        "width": 241,
+        "height": 101,
+        "selected": false
+      },
+      {
+        "id": "code_delete",
+        "type": "custom",
+        "data": {
+          "type": "code",
+          "title": "Извлечь ID",
+          "code_language": "python3",
+          "code": "def main(query: str) -> dict:\n    parts = query.strip().split(maxsplit=1)\n    if len(parts) < 2 or not parts[1].strip():\n        return {\"doc_id\": \"\", \"error\": \"Укажите ID документа после /delete. Используйте /list для просмотра.\"}\n    return {\"doc_id\": parts[1].strip(), \"error\": \"\"}\n",
+          "variables": [
+            {
+              "variable": "query",
+              "value_selector": [
+                "sys",
+                "query"
+              ]
+            }
+          ],
+          "outputs": {
+            "doc_id": {
+              "type": "string",
+              "children": null
+            },
+            "error": {
+              "type": "string",
+              "children": null
+            }
+          },
+          "selected": false
+        },
+        "position": {
+          "x": 406.4812061383691,
+          "y": 432.8997926994043
+        },
+        "positionAbsolute": {
+          "x": 406.4812061383691,
+          "y": 432.8997926994043
+        },
+        "width": 241,
+        "height": 51,
+        "selected": false
+      },
+      {
+        "id": "ifelse_delete",
+        "type": "custom",
+        "data": {
+          "type": "if-else",
+          "title": "ID указан?",
+          "cases": [
+            {
+              "id": "has_id",
+              "case_id": "has_id",
+              "logical_operator": "and",
+              "conditions": [
+                {
+                  "id": "cd1",
+                  "varType": "string",
+                  "variable_selector": [
+                    "code_delete",
+                    "doc_id"
+                  ],
+                  "comparison_operator": "not empty",
+                  "value": ""
+                }
+              ]
+            }
+          ],
+          "selected": false
+        },
+        "position": {
+          "x": 1050.7610809990288,
+          "y": 439.7037427954647
+        },
+        "positionAbsolute": {
+          "x": 1050.7610809990288,
+          "y": 439.7037427954647
+        },
+        "width": 241,
+        "height": 123,
+        "selected": false
+      },
+      {
+        "id": "http_delete",
+        "type": "custom",
+        "data": {
+          "type": "http-request",
+          "title": "Удалить документ",
+          "method": "delete",
+          "url": "http://api:5001/v1/datasets/f7331e9d-0ae9-4175-93fe-db1f82236acd/documents/{{#code_delete.doc_id#}}",
+          "authorization": {
+            "type": "api-key",
+            "config": {
+              "type": "bearer",
+              "api_key": "dataset-fOVOjwiSdhlQJMgrQI6sBSWG",
+              "header": ""
+            }
+          },
+          "headers": "",
+          "params": "",
+          "body": {
+            "type": "none",
+            "data": []
+          },
+          "timeout": {
+            "connect": 10,
+            "read": 30,
+            "write": 30
+          },
+          "retry_config": {
+            "retry_enabled": true,
+            "max_retries": 3,
+            "retry_interval": 100
+          },
+          "selected": false
+        },
+        "position": {
+          "x": 1436.4908522093908,
+          "y": 439.7037427954647
+        },
+        "positionAbsolute": {
+          "x": 1436.4908522093908,
+          "y": 439.7037427954647
+        },
+        "width": 241,
+        "height": 170,
+        "selected": false
+      },
+      {
+        "id": "answer_delete_ok",
+        "type": "custom",
+        "data": {
+          "type": "answer",
+          "title": "Ответ удалено",
+          "answer": "🗑️ Документ удалён из базы знаний.",
+          "variables": [],
+          "selected": false
+        },
+        "position": {
+          "x": 1770.510602689693,
+          "y": 432.8997926994043
+        },
+        "positionAbsolute": {
+          "x": 1770.510602689693,
+          "y": 432.8997926994043
+        },
+        "width": 241,
+        "height": 115,
+        "selected": false
+      },
+      {
+        "id": "answer_delete_err",
+        "type": "custom",
+        "data": {
+          "type": "answer",
+          "title": "Ответ нет ID",
+          "answer": "{{#code_delete.error#}}",
+          "variables": [],
+          "selected": false
+        },
+        "position": {
+          "x": 1450.0987524015118,
+          "y": 726.1319754275218
+        },
+        "positionAbsolute": {
+          "x": 1450.0987524015118,
+          "y": 726.1319754275218
+        },
+        "width": 241,
+        "height": 101,
+        "selected": false
+      }
+    ],
+    "edges": [
+      {
+        "id": "e1",
+        "source": "start",
+        "sourceHandle": "source",
+        "target": "ifelse",
+        "targetHandle": "target",
+        "type": "custom",
+        "data": {
+          "sourceType": "start",
+          "targetType": "if-else"
+        }
+      },
+      {
+        "id": "e2",
+        "source": "ifelse",
+        "sourceHandle": "false",
+        "target": "kb_retrieval",
+        "targetHandle": "target",
+        "type": "custom",
+        "data": {
+          "sourceType": "if-else",
+          "targetType": "knowledge-retrieval"
+        }
+      },
+      {
+        "id": "e3",
+        "source": "kb_retrieval",
+        "sourceHandle": "source",
+        "target": "llm_rag",
+        "targetHandle": "target",
+        "type": "custom",
+        "data": {
+          "sourceType": "knowledge-retrieval",
+          "targetType": "llm"
+        }
+      },
+      {
+        "id": "e4",
+        "source": "llm_rag",
+        "sourceHandle": "source",
+        "target": "answer_rag",
+        "targetHandle": "target",
+        "type": "custom",
+        "data": {
+          "sourceType": "llm",
+          "targetType": "answer"
+        }
+      },
+      {
+        "id": "e5",
+        "source": "ifelse",
+        "sourceHandle": "has_file",
+        "target": "http_upload",
+        "targetHandle": "target",
+        "type": "custom",
+        "data": {
+          "sourceType": "if-else",
+          "targetType": "http-request"
+        }
+      },
+      {
+        "id": "e6",
+        "source": "http_upload",
+        "sourceHandle": "source",
+        "target": "answer_upload",
+        "targetHandle": "target",
+        "type": "custom",
+        "data": {
+          "sourceType": "http-request",
+          "targetType": "answer"
+        }
+      },
+      {
+        "id": "e_list1",
+        "source": "ifelse",
+        "sourceHandle": "is_list",
+        "target": "http_list",
+        "targetHandle": "target",
+        "type": "custom",
+        "data": {
+          "sourceType": "if-else",
+          "targetType": "http-request"
+        }
+      },
+      {
+        "id": "e_list2",
+        "source": "http_list",
+        "sourceHandle": "source",
+        "target": "code_list",
+        "targetHandle": "target",
+        "type": "custom",
+        "data": {
+          "sourceType": "http-request",
+          "targetType": "code"
+        }
+      },
+      {
+        "id": "e_list3",
+        "source": "code_list",
+        "sourceHandle": "source",
+        "target": "answer_list",
+        "targetHandle": "target",
+        "type": "custom",
+        "data": {
+          "sourceType": "code",
+          "targetType": "answer"
+        }
+      },
+      {
+        "id": "e_del1",
+        "source": "ifelse",
+        "sourceHandle": "is_delete",
+        "target": "code_delete",
+        "targetHandle": "target",
+        "type": "custom",
+        "data": {
+          "sourceType": "if-else",
+          "targetType": "code"
+        }
+      },
+      {
+        "id": "e_del2",
+        "source": "code_delete",
+        "sourceHandle": "source",
+        "target": "ifelse_delete",
+        "targetHandle": "target",
+        "type": "custom",
+        "data": {
+          "sourceType": "code",
+          "targetType": "if-else"
+        }
+      },
+      {
+        "id": "e_del3",
+        "source": "ifelse_delete",
+        "sourceHandle": "has_id",
+        "target": "http_delete",
+        "targetHandle": "target",
+        "type": "custom",
+        "data": {
+          "sourceType": "if-else",
+          "targetType": "http-request"
+        }
+      },
+      {
+        "id": "e_del4",
+        "source": "http_delete",
+        "sourceHandle": "source",
+        "target": "answer_delete_ok",
+        "targetHandle": "target",
+        "type": "custom",
+        "data": {
+          "sourceType": "http-request",
+          "targetType": "answer"
+        }
+      },
+      {
+        "id": "e_del5",
+        "source": "ifelse_delete",
+        "sourceHandle": "false",
+        "target": "answer_delete_err",
+        "targetHandle": "target",
+        "type": "custom",
+        "data": {
+          "sourceType": "if-else",
+          "targetType": "answer"
+        }
+      }
+    ],
+    "viewport": {
+      "x": 316.4008350528445,
+      "y": 171.8488934435989,
+      "zoom": 0.7348672358568639
+    }
+  },
+  "features": {
+    "opening_statement": "👋 Привет! Я ассистент по документам.\n\n📄 Задайте вопрос — найду ответ в документах\n📎 Прикрепите файл — загружу в базу знаний\n📋 /list — список документов\n🗑️ /delete <ID> — удалить документ",
+    "suggested_questions": [
+      "Какие документы загружены?",
+      "Что ты умеешь?"
+    ],
+    "suggested_questions_after_answer": {
+      "enabled": true
+    },
+    "text_to_speech": {
+      "enabled": false,
+      "voice": "",
+      "language": ""
+    },
+    "speech_to_text": {
+      "enabled": false
+    },
+    "retriever_resource": {
+      "enabled": true
+    },
+    "sensitive_word_avoidance": {
+      "enabled": false
+    },
+    "file_upload": {
+      "image": {
+        "enabled": false,
+        "number_limits": 3,
+        "transfer_methods": [
+          "local_file",
+          "remote_url"
+        ]
+      },
+      "enabled": true,
+      "allowed_file_types": [
+        "document"
+      ],
+      "allowed_file_extensions": [
+        ".pdf",
+        ".doc",
+        ".docx",
+        ".txt",
+        ".csv",
+        ".xlsx",
+        ".md",
+        ".pptx"
+      ],
+      "allowed_file_upload_methods": [
+        "local_file"
+      ],
+      "number_limits": 5,
+      "fileUploadConfig": {
+        "file_size_limit": 15,
+        "batch_count_limit": 5,
+        "file_upload_limit": 20,
+        "image_file_size_limit": 10,
+        "video_file_size_limit": 100,
+        "audio_file_size_limit": 50,
+        "workflow_file_upload_limit": 10,
+        "image_file_batch_limit": 10,
+        "single_chunk_attachment_limit": 10,
+        "attachment_image_file_size_limit": 2
+      }
+    }
+  },
+  "hash": "d75d6f3eb55830c5a56f8f9ac68abc37f4af02ca3b278a2f17e4ce7e87d7b823",
+  "version": "draft",
+  "marked_name": "",
+  "marked_comment": "",
+  "created_by": {
+    "id": "e06e2f7e-12bf-40bc-9294-ee633b2e67ca",
+    "name": "Admin",
+    "email": "admin@admin.com"
+  },
+  "created_at": 1773011756,
+  "updated_by": {
+    "id": "e06e2f7e-12bf-40bc-9294-ee633b2e67ca",
+    "name": "Admin",
+    "email": "admin@admin.com"
+  },
+  "updated_at": 1773017511,
+  "tool_published": false,
+  "environment_variables": [],
+  "conversation_variables": [],
+  "rag_pipeline_variables": []
+}
