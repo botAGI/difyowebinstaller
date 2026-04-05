@@ -107,17 +107,17 @@ _ask_choice() {
 # ============================================================================
 
 _wizard_profile() {
-    echo "Выберите профиль развёртывания:"
-    echo "  1) LAN     — локальная / офисная сеть (по умолчанию)"
-    echo "  2) VDS/VPS — публичный сервер (переключение на ветку agmind-caddy)"
-    echo ""
-
     if [[ "${NON_INTERACTIVE}" == "true" && -n "${DEPLOY_PROFILE}" ]]; then
         return 0
     fi
 
-    _ask_choice "Профиль [1-2, Enter=1]: " 1 2 1
-    case "$REPLY" in
+    local choice
+    choice=$(wt_menu "Профиль развёртывания" \
+        "Выберите профиль развёртывания:" \
+        "1" "LAN  -- локальная / офисная сеть (по умолчанию)" \
+        "2" "VDS/VPS -- публичный сервер (ветка agmind-caddy)")
+
+    case "$choice" in
         2)
             log_info "Переключение на ветку agmind-caddy для VDS/VPS..."
             git fetch origin agmind-caddy && git checkout agmind-caddy && exec bash install.sh --vds
@@ -132,14 +132,17 @@ _wizard_security_defaults() {
 }
 
 _wizard_admin_ui() {
-    echo "Portainer и Grafana привязаны к localhost (127.0.0.1) по умолчанию."
-    _ask "Открыть доступ из LAN? [no/yes] (по умолчанию: no):" "no"
-    if [[ "$REPLY" == "yes" ]]; then
+    if [[ "${NON_INTERACTIVE}" == "true" ]]; then
+        return 0
+    fi
+
+    if wt_yesno "Доступ к Admin UI" \
+        "Portainer и Grafana привязаны к localhost (127.0.0.1) по умолчанию.\n\nОткрыть доступ из LAN?" \
+        --defaultno; then
         ADMIN_UI_OPEN=true
     else
         ADMIN_UI_OPEN=false
     fi
-    echo ""
 }
 
 _wizard_domain() {
@@ -153,17 +156,16 @@ _wizard_vector_store() {
         return 0
     fi
 
-    echo "Выберите векторное хранилище:"
-    echo "  1) Weaviate  — стабильный, проверенный (по умолчанию)"
-    echo "  2) Qdrant    — быстрый, REST/gRPC API"
-    echo ""
+    local choice
+    choice=$(wt_menu "Векторное хранилище" \
+        "Выберите векторное хранилище:" \
+        "1" "Weaviate -- стабильный, проверенный (по умолчанию)" \
+        "2" "Qdrant   -- быстрый, REST/gRPC API")
 
-    _ask_choice "Выбор [1-2, Enter=1]: " 1 2 1
-    case "$REPLY" in
+    case "$choice" in
         2) VECTOR_STORE="qdrant";;
         *) VECTOR_STORE="weaviate";;
     esac
-    echo ""
 }
 
 _wizard_etl() {
@@ -175,19 +177,24 @@ _wizard_etl() {
         fi
     fi
 
-    echo "Расширенная обработка документов (Docling)?"
-    echo "  1) Нет — стандартный Dify ETL (по умолчанию)"
-    echo "  2) Да — Docling CPU"
-    if [[ "$has_nvidia_runtime" == "true" ]]; then
-        echo "  3) Да — Docling GPU (CUDA)"
+    if [[ "${NON_INTERACTIVE}" == "true" ]]; then
+        return 0
     fi
-    echo ""
 
-    local max_choice=2
-    [[ "$has_nvidia_runtime" == "true" ]] && max_choice=3
+    local -a menu_args=(
+        "1" "Нет -- стандартный Dify ETL (по умолчанию)"
+        "2" "Да  -- Docling CPU"
+    )
+    if [[ "$has_nvidia_runtime" == "true" ]]; then
+        menu_args+=("3" "Да  -- Docling GPU (CUDA)")
+    fi
 
-    _ask_choice "Выбор [1-${max_choice}, Enter=1]: " 1 "$max_choice" 1
-    case "$REPLY" in
+    local choice
+    choice=$(wt_menu "Обработка документов (Docling)" \
+        "Расширенная обработка документов (Docling)?" \
+        "${menu_args[@]}")
+
+    case "$choice" in
         2)
             ENABLE_DOCLING="true"
             DOCLING_IMAGE="${DOCLING_IMAGE_CPU}"
@@ -205,17 +212,16 @@ _wizard_etl() {
             ;;
     esac
     OCR_LANG="rus,eng"
-    echo ""
 }
 
 _wizard_llm_provider() {
     local default_provider="vllm"
-    local default_idx=2
+    local default_tag="2"
     local gpu_note=""
     if [[ "${DETECTED_GPU:-none}" != "nvidia" ]]; then
         default_provider="ollama"
-        default_idx=1
-        gpu_note="  (NVIDIA GPU не обнаружен — по умолчанию: Ollama)"
+        default_tag="1"
+        gpu_note=" (NVIDIA GPU не обнаружен)"
     fi
 
     # Respect env override only in non-interactive mode
@@ -224,15 +230,18 @@ _wizard_llm_provider() {
         return 0
     fi
 
-    echo "Выберите LLM-провайдер:${gpu_note}"
-    echo "  1) Ollama"
-    echo "  2) vLLM"
-    echo "  3) Внешний API"
-    echo "  4) Пропустить"
-    echo ""
+    local choice
+    choice=$(wt_menu "LLM-провайдер" \
+        "Выберите LLM-провайдер:${gpu_note}" \
+        "1" "Ollama" \
+        "2" "vLLM" \
+        "3" "Внешний API" \
+        "4" "Пропустить")
 
-    _ask_choice "Выбор [1-4, Enter=${default_idx}]: " 1 4 "$default_idx"
-    case "$REPLY" in
+    # Default to detected preference if empty
+    choice="${choice:-$default_tag}"
+
+    case "$choice" in
         1) LLM_PROVIDER="ollama";;
         2) LLM_PROVIDER="vllm";;
         3) LLM_PROVIDER="external";;
@@ -243,9 +252,8 @@ _wizard_llm_provider() {
     # Blackwell GPU (sm_120+): auto-apply CUDA 13.0 build for vLLM
     if [[ "$LLM_PROVIDER" == "vllm" ]] && _is_blackwell_gpu; then
         VLLM_CUDA_SUFFIX="-cu130"
-        log_info "Blackwell GPU (compute ${DETECTED_GPU_COMPUTE}) → vLLM с CUDA 13.0 (-cu130)"
+        log_info "Blackwell GPU (compute ${DETECTED_GPU_COMPUTE}) -> vLLM с CUDA 13.0 (-cu130)"
     fi
-    echo ""
 }
 
 # Check if GPU is Blackwell architecture (compute capability >= 12.0)
@@ -275,39 +283,6 @@ _wizard_ollama_model() {
         *7b*)  rec_idx=2;;
     esac
 
-    echo "Выберите LLM-модель:"
-    echo ""
-    echo " -- 4-8B [быстрые, 8GB+ RAM, 6GB+ VRAM] --"
-    echo "  1) gemma3:4b$([ "$rec_idx" -eq 1 ] && echo '  [рекомендуется]')"
-    echo "  2) qwen2.5:7b$([ "$rec_idx" -eq 2 ] && echo '  [рекомендуется]')"
-    echo "  3) qwen3:8b"
-    echo "  4) llama3.1:8b"
-    echo "  5) mistral:7b"
-    echo ""
-    echo " -- 12-14B [баланс, 16GB+ RAM, 10GB+ VRAM] --"
-    echo "  6) qwen2.5:14b$([ "$rec_idx" -eq 6 ] && echo '  [рекомендуется]')"
-    echo "  7) phi-4:14b"
-    echo "  8) mistral-nemo:12b"
-    echo "  9) gemma3:12b"
-    echo ""
-    echo " -- 27-32B [качество, 32GB+ RAM, 16GB+ VRAM] --"
-    echo "  10) qwen2.5:32b$([ "$rec_idx" -eq 10 ] && echo '  [рекомендуется]')"
-    echo "  11) gemma3:27b"
-    echo "  12) command-r:35b"
-    echo ""
-    echo " -- 60B+ [макс. качество, 64GB+ RAM, 24GB+ VRAM] --"
-    echo "  13) qwen2.5:72b-instruct-q4_K_M$([ "$rec_idx" -eq 13 ] && echo '  [рекомендуется]')"
-    echo "  14) llama3.1:70b-instruct-q4_K_M"
-    echo "  15) qwen3:32b"
-    echo ""
-    echo " -- MoE (активных параметров << общих) --"
-    echo "  16) qwen3.5:35b-a3b  (35B total, 3B active)"
-    echo ""
-    echo " -- Своя модель --"
-    echo "  17) Ввести вручную (имя из реестра Ollama)"
-    echo ""
-
-    _ask_choice "Модель [1-17, Enter=6]: " 1 17 6
     local ollama_models=(
         ""  # 0 placeholder
         "gemma3:4b"
@@ -327,14 +302,48 @@ _wizard_ollama_model() {
         "qwen3:32b"
         "qwen3.5:35b-a3b"
     )
-    if [[ "$REPLY" -ge 1 && "$REPLY" -le 16 ]]; then
-        LLM_MODEL="${ollama_models[$REPLY]}"
-    elif [[ "$REPLY" -eq 17 ]]; then
-        _ask "Имя модели:" "qwen2.5:14b"
-        LLM_MODEL="$REPLY"
+
+    # Build menu items with recommended tag
+    _ollama_label() {
+        local idx="$1" name="$2" extra="${3:-}"
+        local label="${name}${extra}"
+        [[ "$idx" -eq "$rec_idx" ]] && label="${name}${extra}  [*]"
+        echo "$label"
+    }
+
+    local choice
+    choice=$(wt_menu "LLM-модель (Ollama)" \
+        "Выберите LLM-модель. [*] = рекомендуется для вашего GPU." \
+        "1"  "$(_ollama_label 1  "gemma3:4b"      "  | 8GB+ RAM, 6GB+ VRAM")" \
+        "2"  "$(_ollama_label 2  "qwen2.5:7b"     "  | 8GB+ RAM, 6GB+ VRAM")" \
+        "3"  "$(_ollama_label 3  "qwen3:8b"       "  | 8GB+ RAM, 6GB+ VRAM")" \
+        "4"  "$(_ollama_label 4  "llama3.1:8b"    "  | 8GB+ RAM, 6GB+ VRAM")" \
+        "5"  "$(_ollama_label 5  "mistral:7b"     "  | 8GB+ RAM, 6GB+ VRAM")" \
+        "6"  "$(_ollama_label 6  "qwen2.5:14b"    "  | 16GB+ RAM, 10GB+ VRAM")" \
+        "7"  "$(_ollama_label 7  "phi-4:14b"      "  | 16GB+ RAM, 10GB+ VRAM")" \
+        "8"  "$(_ollama_label 8  "mistral-nemo:12b" "  | 16GB+ RAM, 10GB+ VRAM")" \
+        "9"  "$(_ollama_label 9  "gemma3:12b"     "  | 16GB+ RAM, 10GB+ VRAM")" \
+        "10" "$(_ollama_label 10 "qwen2.5:32b"    "  | 32GB+ RAM, 16GB+ VRAM")" \
+        "11" "$(_ollama_label 11 "gemma3:27b"     "  | 32GB+ RAM, 16GB+ VRAM")" \
+        "12" "$(_ollama_label 12 "command-r:35b"  "  | 32GB+ RAM, 16GB+ VRAM")" \
+        "13" "$(_ollama_label 13 "qwen2.5:72b Q4" "  | 64GB+ RAM, 24GB+ VRAM")" \
+        "14" "$(_ollama_label 14 "llama3.1:70b Q4" "  | 64GB+ RAM, 24GB+ VRAM")" \
+        "15" "$(_ollama_label 15 "qwen3:32b"      "  | 64GB+ RAM, 24GB+ VRAM")" \
+        "16" "$(_ollama_label 16 "qwen3.5:35b-a3b" "  | MoE 35B/3B active")" \
+        "17" "Ввести вручную (имя из реестра Ollama)")
+
+    choice="${choice:-6}"
+
+    if [[ "$choice" -ge 1 && "$choice" -le 16 ]]; then
+        LLM_MODEL="${ollama_models[$choice]}"
+    elif [[ "$choice" -eq 17 ]]; then
+        local custom_model
+        custom_model=$(wt_input "Своя модель Ollama" "Имя модели:" "qwen2.5:14b")
+        LLM_MODEL="${custom_model:-qwen2.5:14b}"
         validate_model_name "$LLM_MODEL" || { LLM_MODEL="qwen2.5:14b"; log_warn "Некорректное имя модели, используется значение по умолчанию"; }
     fi
-    echo ""
+
+    unset -f _ollama_label
 }
 
 # Dynamic VRAM offset: GPU reservation for TEI embedding service.
@@ -379,27 +388,27 @@ _get_vllm_weights_gb() {
 }
 
 # Returns KV cache size in GB per 1K tokens for a model.
-# Formula: 2 × layers × kv_heads × head_dim × dtype_bytes / 1024^3 × 1024 tokens
+# Formula: 2 x layers x kv_heads x head_dim x dtype_bytes / 1024^3 x 1024 tokens
 # Outputs "0" for unknown models.
 _get_vllm_kv_per_1k() {
     local model="${1:-}"
     # KV cache GB per 1K tokens (fp16=2B, rounded up)
-    # 7B  (32L, 8KV, 128d):  2×32×8×128×2 × 1024 / 1073741824 ≈ 0.125
-    # 8B  (32L, 8KV, 128d):  same ≈ 0.125
-    # 14B (40L, 8KV, 128d):  2×40×8×128×2 × 1024 / 1073741824 ≈ 0.156
-    # 27B (28L, 4KV, 128d):  2×28×4×128×2 × 1024 / 1073741824 ≈ 0.028 (GQA, few KV heads)
-    # 32B (64L, 8KV, 128d):  2×64×8×128×2 × 1024 / 1073741824 ≈ 0.250
-    # 70B (80L, 8KV, 128d):  2×80×8×128×2 × 1024 / 1073741824 ≈ 0.313
+    # 7B  (32L, 8KV, 128d):  2x32x8x128x2 x 1024 / 1073741824 ~ 0.125
+    # 8B  (32L, 8KV, 128d):  same ~ 0.125
+    # 14B (40L, 8KV, 128d):  2x40x8x128x2 x 1024 / 1073741824 ~ 0.156
+    # 27B (28L, 4KV, 128d):  2x28x4x128x2 x 1024 / 1073741824 ~ 0.028 (GQA, few KV heads)
+    # 32B (64L, 8KV, 128d):  2x64x8x128x2 x 1024 / 1073741824 ~ 0.250
+    # 70B (80L, 8KV, 128d):  2x80x8x128x2 x 1024 / 1073741824 ~ 0.313
     # MoE models share KV across experts — same as base layer count
     case "$model" in
-        *7B*|*8B*)       echo "125" ;;   # 0.125 GB/1K tokens (×1000 for int math)
+        *7B*|*8B*)       echo "125" ;;   # 0.125 GB/1K tokens (x1000 for int math)
         *14B*|*phi-4*)   echo "156" ;;   # 0.156
         *27B*|*Qwen3.5-27B*)  echo "80"  ;;   # 0.08 (GQA, 4 KV heads)
         *32B*)           echo "250" ;;   # 0.250
         *70B*)           echo "313" ;;   # 0.313
         *35B-A3B*)       echo "20"  ;;   # hybrid: only 10/40 layers have KV (2 heads, dim 256)
         *30B-A3B*)       echo "60"  ;;   # small active params
-        *Coder-Next*)    echo "156" ;;   # 14B active ≈ 14B KV
+        *Coder-Next*)    echo "156" ;;   # 14B active ~ 14B KV
         *)               echo "0"   ;;
     esac
 }
@@ -415,7 +424,7 @@ _calc_vllm_total_gb() {
         echo "$weights"
         return
     fi
-    # KV cache GB = kv_per_1k/1000 × (ctx/1024) + ~1 GB CUDA overhead
+    # KV cache GB = kv_per_1k/1000 x (ctx/1024) + ~1 GB CUDA overhead
     local kv_gb=$(( (kv_per_1k * ctx / 1024 + 500) / 1000 + 1 ))
     echo $(( weights + kv_gb ))
 }
@@ -431,7 +440,7 @@ _wizard_vllm_model() {
     # Model weights in GB (indices 1-18 match menu numbers)
     #                       1   2   3   4   5   6   7   8   9  10  11  12  13  14   15  16  17  18
     local -a weights_gb=(0  4   5   8   8  15  18  14  16  14  16  28  28  28  64  140  12   4  72)
-    # KV cache GB per 1K tokens ×1000 (for int math)
+    # KV cache GB per 1K tokens x1000 (for int math)
     local -a kv_per_1k=(0 125 125 156 156  80 250 125 125 125 125 156 156 156 250  313 156  60  20)
     # Default context for display (32K)
     local default_ctx=32768
@@ -462,8 +471,8 @@ _wizard_vllm_model() {
         [[ "$effective_vram" -lt 0 ]] && effective_vram=0
     fi
 
-    # Find largest fitting model for [recommended] tag.
-    # Check dense models first (14→1), then MoE (16→18) — so dense bf16 > AWQ > MoE.
+    # Find largest fitting model for [*] tag.
+    # Check dense models first (14->1), then MoE (16->18) — so dense bf16 > AWQ > MoE.
     local rec_idx=0
     if [[ "$effective_vram" -gt 0 ]]; then
         local i
@@ -478,55 +487,43 @@ _wizard_vllm_model() {
     local mem_label="VRAM"
     [[ "${DETECTED_GPU_UNIFIED_MEMORY:-false}" == "true" ]] && mem_label="GPU mem"
 
-    # Helper: print model line
-    _vllm_line() {
-        local idx="$1" num="$2" label="$3" suffix="${4:-}"
-        local tag=""
-        [[ "$idx" -eq "$rec_idx" ]] && tag="  ${GREEN}[рекомендуется]${NC}"
-        echo -e "  ${num}) ${label}  [~${vram_total[$idx]} GB: веса ${weights_gb[$idx]}+KV ~$((vram_total[$idx]-weights_gb[$idx]))]${tag}${suffix}"
+    # Helper: build label for a vLLM model menu item
+    _vllm_label() {
+        local idx="$1" name="$2" suffix="${3:-}"
+        local rec_mark=""
+        [[ "$idx" -eq "$rec_idx" ]] && rec_mark="  [*]"
+        echo "${name}  [~${vram_total[$idx]} GB]${suffix}${rec_mark}"
     }
 
-    echo "Выберите модель vLLM:"
-    echo -e "  ${CYAN}(оценка памяти: веса + KV-кэш при 32K контексте)${NC}"
-    echo ""
+    local vram_note=""
     if [[ "$vram_gb" -eq 0 ]]; then
-        echo -e "  ${YELLOW}GPU память не определена — метка [рекомендуется] недоступна${NC}"
-        echo ""
+        vram_note="\n(GPU память не определена -- метка [*] недоступна)"
     fi
-    echo " -- AWQ квантизация (компактный размер) --"
-    _vllm_line 1  " 1" "Qwen/Qwen2.5-7B-Instruct-AWQ"
-    _vllm_line 2  " 2" "Qwen/Qwen3-8B-AWQ"
-    _vllm_line 3  " 3" "Qwen/Qwen2.5-14B-Instruct-AWQ"
-    _vllm_line 4  " 4" "Qwen/Qwen3-14B-AWQ"
-    _vllm_line 5  " 5" "QuantTrio/Qwen3.5-27B-AWQ"
-    _vllm_line 6  " 6" "Qwen/Qwen2.5-32B-Instruct-AWQ"
-    echo ""
-    echo " -- 7-8B bf16 (полная точность) --"
-    _vllm_line 7  " 7" "Qwen/Qwen2.5-7B-Instruct"
-    _vllm_line 8  " 8" "Qwen/Qwen3-8B"
-    _vllm_line 9  " 9" "mistralai/Mistral-7B-Instruct-v0.3"
-    _vllm_line 10 "10" "meta-llama/Llama-3.1-8B-Instruct" "  (HF_TOKEN)"
-    echo ""
-    echo " -- 14B bf16 --"
-    _vllm_line 11 "11" "Qwen/Qwen2.5-14B-Instruct"
-    _vllm_line 12 "12" "Qwen/Qwen3-14B"
-    _vllm_line 13 "13" "microsoft/phi-4"
-    echo ""
-    echo " -- 32B+ bf16 --"
-    _vllm_line 14 "14" "Qwen/Qwen2.5-32B-Instruct"
-    _vllm_line 15 "15" "meta-llama/Llama-3.3-70B-Instruct" "  (HF_TOKEN)"
-    echo ""
-    echo " -- MoE (активных параметров << общих) --"
-    _vllm_line 16 "16" "bullpoint/Qwen3-Coder-Next-AWQ-4bit" "  80B total, 14B active"
-    _vllm_line 17 "17" "stelterlab/NVIDIA-Nemotron-3-Nano-30B-A3B-AWQ" "  30B total, 3B active"
-    _vllm_line 18 "18" "Qwen/Qwen3.5-35B-A3B" "  35B total, 3B active"
-    echo ""
-    echo " -- Своя модель --"
-    echo " 19) Ввести HuggingFace репозиторий (org/model-name)"
-    echo ""
 
-    _ask_choice "Модель [1-19, Enter=5]: " 1 19 5
-    local model_choice="$REPLY"
+    local choice
+    choice=$(wt_menu "Модель vLLM" \
+        "Выберите модель. Оценка: веса + KV-кэш при 32K контексте. [*]=рекомендуется.${vram_note}" \
+        "1"  "$(_vllm_label 1  "Qwen2.5-7B-Instruct-AWQ")" \
+        "2"  "$(_vllm_label 2  "Qwen3-8B-AWQ")" \
+        "3"  "$(_vllm_label 3  "Qwen2.5-14B-Instruct-AWQ")" \
+        "4"  "$(_vllm_label 4  "Qwen3-14B-AWQ")" \
+        "5"  "$(_vllm_label 5  "Qwen3.5-27B-AWQ")" \
+        "6"  "$(_vllm_label 6  "Qwen2.5-32B-Instruct-AWQ")" \
+        "7"  "$(_vllm_label 7  "Qwen2.5-7B-Instruct bf16")" \
+        "8"  "$(_vllm_label 8  "Qwen3-8B bf16")" \
+        "9"  "$(_vllm_label 9  "Mistral-7B-v0.3 bf16")" \
+        "10" "$(_vllm_label 10 "Llama-3.1-8B bf16" "  (HF_TOKEN)")" \
+        "11" "$(_vllm_label 11 "Qwen2.5-14B-Instruct bf16")" \
+        "12" "$(_vllm_label 12 "Qwen3-14B bf16")" \
+        "13" "$(_vllm_label 13 "microsoft/phi-4 bf16")" \
+        "14" "$(_vllm_label 14 "Qwen2.5-32B-Instruct bf16")" \
+        "15" "$(_vllm_label 15 "Llama-3.3-70B bf16" "  (HF_TOKEN)")" \
+        "16" "$(_vllm_label 16 "Qwen3-Coder-Next AWQ" "  MoE 80B/14B")" \
+        "17" "$(_vllm_label 17 "Nemotron-Nano-30B-A3B AWQ" "  MoE 30B/3B")" \
+        "18" "$(_vllm_label 18 "Qwen3.5-35B-A3B" "  MoE 35B/3B")" \
+        "19" "Ввести HuggingFace репозиторий (org/model-name)")
+
+    local model_choice="${choice:-5}"
 
     local vllm_models=(
         ""  # 0 placeholder
@@ -553,16 +550,12 @@ _wizard_vllm_model() {
     if [[ "$model_choice" -ge 1 && "$model_choice" -le 18 ]]; then
         VLLM_MODEL="${vllm_models[$model_choice]}"
     elif [[ "$model_choice" -eq 19 ]]; then
-        _ask "HuggingFace репозиторий (org/model):" "QuantTrio/Qwen3.5-27B-AWQ"
-        VLLM_MODEL="${REPLY:-QuantTrio/Qwen3.5-27B-AWQ}"
+        local custom_model
+        custom_model=$(wt_input "Своя модель vLLM" "HuggingFace репозиторий (org/model):" "QuantTrio/Qwen3.5-27B-AWQ")
+        VLLM_MODEL="${custom_model:-QuantTrio/Qwen3.5-27B-AWQ}"
     fi
 
     # --- Context length selection ---
-    echo ""
-    echo "Максимальный контекст (max-model-len):"
-    echo ""
-
-    # Calculate VRAM for each context option
     local -a ctx_options=(4096 8192 16384 32768 65536 131072)
     local -a ctx_labels=("4K" "8K" "16K" "32K" "64K" "128K")
     local model_w=0 model_kv=0
@@ -571,7 +564,9 @@ _wizard_vllm_model() {
         model_kv=${kv_per_1k[$model_choice]}
     fi
 
-    local ci default_ctx_idx=4  # default = 32K (index 4, 1-based)
+    # Build context menu items with VRAM estimation
+    local -a ctx_menu_args=()
+    local ci
     for ci in $(seq 0 5); do
         local ctx_val=${ctx_options[$ci]}
         local total_est="?"
@@ -583,17 +578,20 @@ _wizard_vllm_model() {
         local fit_tag=""
         if [[ "$effective_vram" -gt 0 && "$total_est" != "?" ]]; then
             if [[ "$total_est" -le "$effective_vram" ]]; then
-                fit_tag="  ${GREEN}[OK]${NC}"
+                fit_tag="  [OK]"
             else
-                fit_tag="  ${RED}[не влезет]${NC}"
+                fit_tag="  [!OOM]"
             fi
         fi
-        echo -e "  ${num}) ${ctx_labels[$ci]}  (~${total_est} GB: веса ${model_w}+KV ~$((total_est-model_w)))${fit_tag}"
+        ctx_menu_args+=("${num}" "${ctx_labels[$ci]}  (~${total_est} GB)${fit_tag}")
     done
-    echo ""
 
-    _ask_choice "Контекст [1-6, Enter=4 (32K)]: " 1 6 4
-    local ctx_choice="$REPLY"
+    local ctx_choice
+    ctx_choice=$(wt_menu "Контекст (max-model-len)" \
+        "Максимальный контекст. Оценка: веса ${model_w} GB + KV-кэш." \
+        "${ctx_menu_args[@]}")
+
+    ctx_choice="${ctx_choice:-4}"
     VLLM_MAX_MODEL_LEN="${ctx_options[$((ctx_choice - 1))]}"
 
     # Recalculate total VRAM with chosen context
@@ -610,25 +608,23 @@ _wizard_vllm_model() {
         local effective_vram_check=$(( vram_gb > 0 ? vram_gb - vram_offset_guard : 0 ))
         [[ "$effective_vram_check" -lt 0 ]] && effective_vram_check=0
         if [[ "$vram_gb" -gt 0 && "$total_with_ctx" -gt "$effective_vram_check" ]]; then
-            echo ""
-            echo -e "  ${YELLOW}Модель + KV-кэш (${ctx_labels[$((ctx_choice-1))]}) ≈ ${total_with_ctx} GB, доступно ${effective_vram_check} GB ${mem_label}. Возможен OOM.${NC}"
             if [[ "${NON_INTERACTIVE}" != "true" ]]; then
-                read -rp "  Продолжить? (y/N): " confirm
-                if [[ ! "${confirm}" =~ ^[Yy]$ ]]; then
-                    unset -f _vllm_line
+                if ! wt_yesno "VRAM предупреждение" \
+                    "Модель + KV-кэш (${ctx_labels[$((ctx_choice-1))]}) = ~${total_with_ctx} GB, доступно ${effective_vram_check} GB ${mem_label}.\nВозможен OOM. Продолжить?"\
+                    --defaultno; then
+                    unset -f _vllm_label
                     _wizard_vllm_model
                     return
                 fi
             fi
         fi
 
-        echo ""
-        echo -e "  ${CYAN}Итого: ${VLLM_MODEL} @ ${ctx_labels[$((ctx_choice-1))]} ≈ ${total_with_ctx} GB (веса ${model_w} + KV ~$((total_with_ctx - model_w)))${NC}"
+        wt_info "vLLM" "Итого: ${VLLM_MODEL} @ ${ctx_labels[$((ctx_choice-1))]} = ~${total_with_ctx} GB (веса ${model_w} + KV ~$((total_with_ctx - model_w)))"
+        sleep 1
     fi
-    echo ""
 
     # Clean up nested function
-    unset -f _vllm_line
+    unset -f _vllm_label
 }
 
 _wizard_llm_model() {
@@ -693,15 +689,17 @@ _wizard_embed_provider() {
         return 0
     fi
 
-    echo "Выберите провайдер эмбеддингов:"
-    echo "  1) Как LLM"
-    echo "  2) TEI (Text Embeddings Inference)"
-    echo "  3) Внешний API"
-    echo "  4) Пропустить"
-    echo ""
+    local choice
+    choice=$(wt_menu "Провайдер эмбеддингов" \
+        "Выберите провайдер эмбеддингов:" \
+        "1" "Как LLM (Ollama/vLLM -> TEI)" \
+        "2" "TEI (Text Embeddings Inference)" \
+        "3" "Внешний API" \
+        "4" "Пропустить")
 
-    _ask_choice "Выбор [1-4, Enter=1]: " 1 4 1
-    case "$REPLY" in
+    choice="${choice:-1}"
+
+    case "$choice" in
         1) case "$LLM_PROVIDER" in
                ollama)   EMBED_PROVIDER="ollama";;
                vllm)     EMBED_PROVIDER="tei";;
@@ -714,11 +712,10 @@ _wizard_embed_provider() {
         4) EMBED_PROVIDER="skip";;
         *) EMBED_PROVIDER="ollama";;
     esac
-    echo ""
 }
 
 _wizard_embedding_model() {
-    # CPU-only models (no safetensors → Candle/CUDA fails, ONNX fallback only)
+    # CPU-only models (no safetensors -> Candle/CUDA fails, ONNX fallback only)
     local -a cpu_only_models=("BAAI/bge-m3")
 
     _is_cpu_embed_model() {
@@ -747,30 +744,27 @@ _wizard_embedding_model() {
 
     # --- TEI provider: show model menu ---
     if [[ "$EMBED_PROVIDER" == "tei" ]]; then
-        echo "Выберите модель эмбеддингов TEI:"
-        echo ""
-        echo " -- GPU (CUDA) --"
-        echo "  1) deepvk/USER-bge-m3                          — 359M, русский fine-tune  [по умолчанию]"
-        echo "  2) intfloat/multilingual-e5-base               — 278M, мультиязычная"
-        echo "  3) intfloat/multilingual-e5-large              — 560M, лучшее качество"
-        echo "  4) intfloat/multilingual-e5-small              — 118M, быстрая"
-        echo ""
-        echo " -- CPU only (медленнее) --"
-        echo "  5) BAAI/bge-m3                                 — 568M, ⚠ CPU only"
-        echo ""
-        echo " -- Своя модель --"
-        echo "  6) Ввод вручную                                — полный HuggingFace ID"
-        echo ""
+        local choice
+        choice=$(wt_menu "Модель эмбеддингов (TEI)" \
+            "Выберите модель эмбеддингов TEI:" \
+            "1" "deepvk/USER-bge-m3           -- 359M, русский fine-tune [по умолчанию]" \
+            "2" "intfloat/multilingual-e5-base -- 278M, мультиязычная" \
+            "3" "intfloat/multilingual-e5-large -- 560M, лучшее качество" \
+            "4" "intfloat/multilingual-e5-small -- 118M, быстрая" \
+            "5" "BAAI/bge-m3                   -- 568M, CPU only" \
+            "6" "Ввод вручную (HuggingFace ID)")
 
-        _ask_choice "Выбор [1-6, Enter=1]: " 1 6 1
-        case "$REPLY" in
+        choice="${choice:-1}"
+
+        case "$choice" in
             1) EMBEDDING_MODEL="deepvk/USER-bge-m3";;
             2) EMBEDDING_MODEL="intfloat/multilingual-e5-base";;
             3) EMBEDDING_MODEL="intfloat/multilingual-e5-large";;
             4) EMBEDDING_MODEL="intfloat/multilingual-e5-small";;
             5) EMBEDDING_MODEL="BAAI/bge-m3";;
-            6) _ask "HuggingFace model ID:" ""
-               EMBEDDING_MODEL="${REPLY:-deepvk/USER-bge-m3}"
+            6) local custom_embed
+               custom_embed=$(wt_input "Своя модель TEI" "HuggingFace model ID:" "deepvk/USER-bge-m3")
+               EMBEDDING_MODEL="${custom_embed:-deepvk/USER-bge-m3}"
                validate_model_name "$EMBEDDING_MODEL" || {
                    EMBEDDING_MODEL="deepvk/USER-bge-m3"
                    log_warn "Некорректное имя модели, используется deepvk/USER-bge-m3"
@@ -781,21 +775,21 @@ _wizard_embedding_model() {
         # CPU-only models need ONNX backend
         if _is_cpu_embed_model "$EMBEDDING_MODEL"; then
             TEI_EMBED_VERSION="cpu-1.9"
-            echo -e "  ${YELLOW}⚠ ${EMBEDDING_MODEL} — CPU only (нет safetensors, ONNX fallback)${NC}"
+            wt_info "TEI" "${EMBEDDING_MODEL} -- CPU only (ONNX fallback)"
+            sleep 1
         fi
-        echo ""
         return 0
     fi
 
     # --- Ollama provider: simple prompt (existing behavior) ---
     if [[ "$EMBED_PROVIDER" == "ollama" ]]; then
-        _ask "Модель эмбеддингов [bge-m3]:" "bge-m3"
-        EMBEDDING_MODEL="${REPLY:-bge-m3}"
+        local embed_model
+        embed_model=$(wt_input "Модель эмбеддингов (Ollama)" "Модель эмбеддингов:" "bge-m3")
+        EMBEDDING_MODEL="${embed_model:-bge-m3}"
         validate_model_name "$EMBEDDING_MODEL" || {
             EMBEDDING_MODEL="bge-m3"
             log_warn "Некорректное имя модели, используется значение по умолчанию"
         }
-        echo ""
         return 0
     fi
 
@@ -812,39 +806,39 @@ _wizard_reranker_model() {
     fi
 
     # --- Ask yes/no ---
-    echo "Включить реранкер? (Улучшает качество RAG, +~1 GB VRAM)"
-    echo ""
-    _ask "Включить реранкер? [y/N]:" "n"
-    if [[ "$REPLY" != "y" && "$REPLY" != "Y" ]]; then
+    if wt_yesno "Реранкер" \
+        "Включить реранкер?\nУлучшает качество RAG, +~1 GB VRAM." \
+        --defaultno; then
+        ENABLE_RERANKER="true"
+    else
         ENABLE_RERANKER="false"
         return 0
     fi
-    ENABLE_RERANKER="true"
 
     # --- Show model menu ---
-    echo ""
-    echo "Выберите модель реранкера TEI:"
-    echo ""
-    echo "  1) BAAI/bge-reranker-v2-m3                    — мультиязычный, ~2.2 GB RAM"
-    echo "  2) BAAI/bge-reranker-base                     — компактный, ~1.2 GB RAM  [по умолчанию]"
-    echo "  3) cross-encoder/ms-marco-MiniLM-L-6-v2       — быстрый, ~0.5 GB RAM"
-    echo "  4) Ввод вручную                                — полный HuggingFace ID"
-    echo ""
+    local choice
+    choice=$(wt_menu "Модель реранкера (TEI)" \
+        "Выберите модель реранкера TEI:" \
+        "1" "BAAI/bge-reranker-v2-m3              -- мультиязычный, ~2.2 GB RAM" \
+        "2" "BAAI/bge-reranker-base               -- компактный, ~1.2 GB RAM [по умолчанию]" \
+        "3" "cross-encoder/ms-marco-MiniLM-L-6-v2 -- быстрый, ~0.5 GB RAM" \
+        "4" "Ввод вручную (HuggingFace ID)")
 
-    _ask_choice "Выбор [1-4, Enter=2]: " 1 4 2
-    case "$REPLY" in
+    choice="${choice:-2}"
+
+    case "$choice" in
         1) RERANK_MODEL="BAAI/bge-reranker-v2-m3";;
         2) RERANK_MODEL="BAAI/bge-reranker-base";;
         3) RERANK_MODEL="cross-encoder/ms-marco-MiniLM-L-6-v2";;
-        4) _ask "HuggingFace model ID:" ""
-           RERANK_MODEL="${REPLY:-BAAI/bge-reranker-base}"
+        4) local custom_rerank
+           custom_rerank=$(wt_input "Своя модель реранкера" "HuggingFace model ID:" "BAAI/bge-reranker-base")
+           RERANK_MODEL="${custom_rerank:-BAAI/bge-reranker-base}"
            validate_model_name "$RERANK_MODEL" || {
                RERANK_MODEL="BAAI/bge-reranker-base"
                log_warn "Некорректное имя модели, используется BAAI/bge-reranker-base"
            };;
         *) RERANK_MODEL="BAAI/bge-reranker-base";;
     esac
-    echo ""
 }
 
 _wizard_hf_token() {
@@ -854,9 +848,13 @@ _wizard_hf_token() {
     if [[ -n "$HF_TOKEN" ]]; then
         return 0
     fi
+    if [[ "${NON_INTERACTIVE}" == "true" ]]; then
+        return 0
+    fi
 
-    _ask "Токен HuggingFace (Enter — пропустить):" ""
-    HF_TOKEN="$REPLY"
+    local token
+    token=$(wt_input "HuggingFace Token" "Токен HuggingFace (оставьте пустым для пропуска):" "")
+    HF_TOKEN="$token"
 }
 
 
@@ -865,32 +863,37 @@ _wizard_tls() {
     if [[ "$TLS_MODE" != "none" ]]; then
         return 0
     fi
+    if [[ "${NON_INTERACTIVE}" == "true" ]]; then
+        return 0
+    fi
 
-    echo "Настройка TLS (HTTPS):"
-    echo "  1) Без TLS (по умолчанию)"
-    echo "  2) Самоподписанный сертификат"
-    echo "  3) Свой сертификат (указать пути)"
-    echo ""
+    local choice
+    choice=$(wt_menu "Настройка TLS (HTTPS)" \
+        "Настройка TLS (HTTPS):" \
+        "1" "Без TLS (по умолчанию)" \
+        "2" "Самоподписанный сертификат" \
+        "3" "Свой сертификат (указать пути)")
 
-    _ask_choice "TLS [1-3, Enter=1]: " 1 3 1
-    case "$REPLY" in
+    choice="${choice:-1}"
+
+    case "$choice" in
         2) TLS_MODE="self-signed";;
         3)
             TLS_MODE="custom"
-            _ask "Путь к сертификату (.pem):" ""
-            TLS_CERT_PATH="$(validate_path "$REPLY" 2>/dev/null)" || {
+            local cert_path key_path
+            cert_path=$(wt_input "TLS сертификат" "Путь к сертификату (.pem):" "")
+            TLS_CERT_PATH="$(validate_path "$cert_path" 2>/dev/null)" || {
                 log_error "Некорректный путь к сертификату, TLS отключён"
                 TLS_MODE="none"; TLS_CERT_PATH=""
             }
-            _ask "Путь к ключу (.pem):" ""
-            TLS_KEY_PATH="$(validate_path "$REPLY" 2>/dev/null)" || {
+            key_path=$(wt_input "TLS ключ" "Путь к ключу (.pem):" "")
+            TLS_KEY_PATH="$(validate_path "$key_path" 2>/dev/null)" || {
                 log_error "Некорректный путь к ключу, TLS отключён"
                 TLS_MODE="none"; TLS_KEY_PATH=""
             }
             ;;
         *) TLS_MODE="none";;
     esac
-    echo ""
 }
 
 _wizard_monitoring() {
@@ -898,32 +901,35 @@ _wizard_monitoring() {
     if [[ "${NON_INTERACTIVE}" == "true" && "$MONITORING_MODE" != "none" ]]; then
         return 0
     fi
+    if [[ "${NON_INTERACTIVE}" == "true" ]]; then
+        return 0
+    fi
 
-    echo "Мониторинг:"
-    echo "  1) Отключён (по умолчанию)"
-    echo "  2) Локальный (Grafana + Portainer + Prometheus)"
-    echo "  3) Внешний (endpoint + токен)"
-    echo ""
+    local choice
+    choice=$(wt_menu "Мониторинг" \
+        "Мониторинг:" \
+        "1" "Отключён (по умолчанию)" \
+        "2" "Локальный (Grafana + Portainer + Prometheus)" \
+        "3" "Внешний (endpoint + токен)")
 
-    local max_choice=3
+    choice="${choice:-1}"
 
-    _ask_choice "Мониторинг [1-${max_choice}, Enter=1]: " 1 "$max_choice" 1
-    case "$REPLY" in
+    case "$choice" in
         2) MONITORING_MODE="local";;
         3)
             MONITORING_MODE="external"
-            _ask "Endpoint (URL):" ""
-            MONITORING_ENDPOINT="$REPLY"
+            local endpoint token
+            endpoint=$(wt_input "Мониторинг (внешний)" "Endpoint (URL):" "")
+            MONITORING_ENDPOINT="$endpoint"
             validate_url "$MONITORING_ENDPOINT" || {
                 log_error "Некорректный URL, мониторинг отключён"
                 MONITORING_MODE="none"; MONITORING_ENDPOINT=""
             }
-            _ask "Токен:" ""
-            MONITORING_TOKEN="$REPLY"
+            token=$(wt_input "Мониторинг (внешний)" "Токен:" "")
+            MONITORING_TOKEN="$token"
             ;;
         *) MONITORING_MODE="none";;
     esac
-    echo ""
 }
 
 _wizard_alerts() {
@@ -931,21 +937,25 @@ _wizard_alerts() {
     if [[ "${NON_INTERACTIVE}" == "true" && "$ALERT_MODE" != "none" ]]; then
         return 0
     fi
+    if [[ "${NON_INTERACTIVE}" == "true" ]]; then
+        return 0
+    fi
 
-    echo "Уведомления о сбоях:"
-    echo "  1) Отключены (по умолчанию)"
-    echo "  2) Webhook (URL)"
-    echo "  3) Telegram-бот"
-    echo ""
+    local choice
+    choice=$(wt_menu "Уведомления о сбоях" \
+        "Уведомления о сбоях:" \
+        "1" "Отключены (по умолчанию)" \
+        "2" "Webhook (URL)" \
+        "3" "Telegram-бот")
 
-    local max_choice=3
+    choice="${choice:-1}"
 
-    _ask_choice "Уведомления [1-${max_choice}, Enter=1]: " 1 "$max_choice" 1
-    case "$REPLY" in
+    case "$choice" in
         2)
             ALERT_MODE="webhook"
-            _ask "Webhook URL:" ""
-            ALERT_WEBHOOK_URL="$REPLY"
+            local webhook_url
+            webhook_url=$(wt_input "Webhook" "Webhook URL:" "")
+            ALERT_WEBHOOK_URL="$webhook_url"
             validate_url "$ALERT_WEBHOOK_URL" || {
                 log_error "Некорректный URL, уведомления отключены"
                 ALERT_MODE="none"; ALERT_WEBHOOK_URL=""
@@ -953,85 +963,103 @@ _wizard_alerts() {
             ;;
         3)
             ALERT_MODE="telegram"
-            _ask "Токен Telegram-бота:" ""
-            ALERT_TELEGRAM_TOKEN="$REPLY"
-            _ask "Telegram Chat ID:" ""
-            ALERT_TELEGRAM_CHAT_ID="$REPLY"
+            local tg_token tg_chat
+            tg_token=$(wt_input "Telegram-бот" "Токен Telegram-бота:" "")
+            ALERT_TELEGRAM_TOKEN="$tg_token"
+            tg_chat=$(wt_input "Telegram-бот" "Telegram Chat ID:" "")
+            ALERT_TELEGRAM_CHAT_ID="$tg_chat"
             ;;
         *) ALERT_MODE="none";;
     esac
-    echo ""
 }
 
 _wizard_security() {
-    # UFW
-    echo "Безопасность:"
-    echo "  1) Настроить UFW файрвол"
-    echo "  2) Пропустить (по умолчанию)"
-    echo ""
-    _ask_choice "UFW [1-2, Enter=2]: " 1 2 2
-    [[ "$REPLY" == "1" ]] && ENABLE_UFW="true" || ENABLE_UFW="${ENABLE_UFW:-false}"
+    if [[ "${NON_INTERACTIVE}" == "true" ]]; then
+        return 0
+    fi
 
-    # Fail2ban (SSH jail only)
-    echo "  Fail2ban (защита от перебора SSH):"
-    echo "  1) Включить"
-    echo "  2) Пропустить (по умолчанию)"
-    echo ""
-    _ask_choice "Fail2ban [1-2, Enter=2]: " 1 2 2
-    [[ "$REPLY" == "1" ]] && ENABLE_FAIL2BAN="true" || ENABLE_FAIL2BAN="${ENABLE_FAIL2BAN:-false}"
-    echo ""
+    local result
+    result=$(wt_checklist "Безопасность" \
+        "Выберите компоненты безопасности:" \
+        "ufw"      "UFW файрвол"                    "OFF" \
+        "fail2ban" "Fail2ban (защита от перебора SSH)" "OFF")
+
+    local parsed
+    parsed=$(wt_parse "$result")
+
+    ENABLE_UFW="${ENABLE_UFW:-false}"
+    ENABLE_FAIL2BAN="${ENABLE_FAIL2BAN:-false}"
+
+    local item
+    for item in $parsed; do
+        case "$item" in
+            ufw)      ENABLE_UFW="true";;
+            fail2ban) ENABLE_FAIL2BAN="true";;
+        esac
+    done
 }
 
 _wizard_tunnel() {
     if [[ "$DEPLOY_PROFILE" != "lan" ]]; then
         return 0
     fi
-
-    echo "Обратный SSH-туннель (доступ к LAN через VPS)?"
-    echo "  1) Нет (по умолчанию)"
-    echo "  2) Да"
-    echo ""
-    _ask_choice "Туннель [1-2, Enter=1]: " 1 2 1
-    if [[ "$REPLY" == "2" ]]; then
-        ENABLE_TUNNEL="true"
-        _ask "Хост VPS:" ""
-        TUNNEL_VPS_HOST="$REPLY"
-        validate_hostname "$TUNNEL_VPS_HOST" || { log_warn "Некорректный хост, туннель отключён"; ENABLE_TUNNEL="false"; return 0; }
-        _ask "SSH-порт VPS [22]:" "22"
-        TUNNEL_VPS_PORT="${REPLY:-22}"
-        _ask "Удалённый порт для веб [8080]:" "8080"
-        TUNNEL_REMOTE_PORT="${REPLY:-8080}"
+    if [[ "${NON_INTERACTIVE}" == "true" ]]; then
+        return 0
     fi
-    echo ""
+
+    if wt_yesno "SSH-туннель" \
+        "Обратный SSH-туннель (доступ к LAN через VPS)?\nВыберите Да, если хотите пробросить доступ через внешний сервер." \
+        --defaultno; then
+        ENABLE_TUNNEL="true"
+
+        local vps_host vps_port remote_port
+        vps_host=$(wt_input "SSH-туннель" "Хост VPS:" "")
+        TUNNEL_VPS_HOST="$vps_host"
+        validate_hostname "$TUNNEL_VPS_HOST" || { log_warn "Некорректный хост, туннель отключён"; ENABLE_TUNNEL="false"; return 0; }
+
+        vps_port=$(wt_input "SSH-туннель" "SSH-порт VPS:" "22")
+        TUNNEL_VPS_PORT="${vps_port:-22}"
+
+        remote_port=$(wt_input "SSH-туннель" "Удалённый порт для веб:" "8080")
+        TUNNEL_REMOTE_PORT="${remote_port:-8080}"
+    fi
 }
 
 _wizard_backups() {
-    echo "Настройка бэкапов:"
-    echo "  1) Локальные (/var/backups/agmind/)"
-    echo "  2) Удалённые (SCP/rsync)"
-    echo "  3) Оба варианта"
-    echo ""
+    if [[ "${NON_INTERACTIVE}" == "true" ]]; then
+        return 0
+    fi
 
-    _ask_choice "Бэкапы [1-3, Enter=1]: " 1 3 1
-    case "$REPLY" in
+    local choice
+    choice=$(wt_menu "Настройка бэкапов" \
+        "Настройка бэкапов:" \
+        "1" "Локальные (/var/backups/agmind/)" \
+        "2" "Удалённые (SCP/rsync)" \
+        "3" "Оба варианта")
+
+    choice="${choice:-1}"
+
+    case "$choice" in
         1) BACKUP_TARGET="local";;
         2) BACKUP_TARGET="remote";;
         3) BACKUP_TARGET="both";;
     esac
-    echo ""
 
-    echo "Расписание бэкапов:"
-    echo "  1) Ежедневно в 03:00 (по умолчанию)"
-    echo "  2) Каждые 12 часов (03:00 и 15:00)"
-    echo "  3) Своё cron-выражение"
-    echo ""
+    local sched_choice
+    sched_choice=$(wt_menu "Расписание бэкапов" \
+        "Расписание бэкапов:" \
+        "1" "Ежедневно в 03:00 (по умолчанию)" \
+        "2" "Каждые 12 часов (03:00 и 15:00)" \
+        "3" "Своё cron-выражение")
 
-    _ask_choice "Расписание [1-3, Enter=1]: " 1 3 1
-    case "$REPLY" in
+    sched_choice="${sched_choice:-1}"
+
+    case "$sched_choice" in
         2) BACKUP_SCHEDULE="0 3,15 * * *";;
         3)
-            _ask "Cron-выражение:" "0 3 * * *"
-            BACKUP_SCHEDULE="$REPLY"
+            local cron_expr
+            cron_expr=$(wt_input "Cron-расписание" "Cron-выражение:" "0 3 * * *")
+            BACKUP_SCHEDULE="${cron_expr:-0 3 * * *}"
             validate_cron "$BACKUP_SCHEDULE" || {
                 log_warn "Некорректное cron-выражение, используется значение по умолчанию"
                 BACKUP_SCHEDULE="0 3 * * *"
@@ -1039,28 +1067,28 @@ _wizard_backups() {
             ;;
         *) BACKUP_SCHEDULE="0 3 * * *";;
     esac
-    echo ""
 
     # Remote backup details
     if [[ "$BACKUP_TARGET" != "local" ]]; then
-        _ask "SSH-хост для бэкапов:" ""
-        REMOTE_BACKUP_HOST="$REPLY"
+        local r_host r_port r_user r_key
+        r_host=$(wt_input "Удалённый бэкап" "SSH-хост для бэкапов:" "")
+        REMOTE_BACKUP_HOST="$r_host"
         validate_hostname "$REMOTE_BACKUP_HOST" || {
             log_error "Некорректный хост, переключение на локальные бэкапы"
             BACKUP_TARGET="local"
             return 0
         }
-        _ask "SSH-порт [22]:" "22"
-        REMOTE_BACKUP_PORT="${REPLY:-22}"
+        r_port=$(wt_input "Удалённый бэкап" "SSH-порт:" "22")
+        REMOTE_BACKUP_PORT="${r_port:-22}"
         validate_port "$REMOTE_BACKUP_PORT" || { REMOTE_BACKUP_PORT="22"; log_warn "Используется порт по умолчанию 22"; }
-        _ask "SSH-пользователь:" ""
-        REMOTE_BACKUP_USER="$REPLY"
-        _ask "Путь к SSH-ключу (Enter — сгенерировать):" ""
-        REMOTE_BACKUP_KEY="$REPLY"
-        echo ""
+        r_user=$(wt_input "Удалённый бэкап" "SSH-пользователь:" "")
+        REMOTE_BACKUP_USER="$r_user"
+        r_key=$(wt_input "Удалённый бэкап" "Путь к SSH-ключу (пусто -- сгенерировать):" "")
+        REMOTE_BACKUP_KEY="$r_key"
     fi
 }
 
+# Individual optional service functions kept for backward compatibility and NI mode
 _wizard_litellm() {
     # LAN — локальные модели, прокси не нужен; VPS — multi-user, прокси полезен
     local default_litellm="false"
@@ -1070,18 +1098,7 @@ _wizard_litellm() {
         ENABLE_LITELLM="${ENABLE_LITELLM:-$default_litellm}"
         return
     fi
-    echo ""
-    echo -e "${CYAN}--- LiteLLM (AI Gateway) ---${NC}"
-    echo "  Универсальный прокси для LLM (логирование, rate-limit, fallback)."
-    echo "  Если нет — Open WebUI и Dify подключатся к Ollama/vLLM напрямую."
-    echo "  ~1 GB RAM + PostgreSQL таблица."
-    if [[ "$default_litellm" == "true" ]]; then
-        _ask "Включить LiteLLM? [Y/n]:" "y"
-        [[ "${REPLY,,}" =~ ^n ]] && ENABLE_LITELLM=false || ENABLE_LITELLM=true
-    else
-        _ask "Включить LiteLLM? [y/N]:" "n"
-        [[ "${REPLY,,}" =~ ^y ]] && ENABLE_LITELLM=true || ENABLE_LITELLM=false
-    fi
+    # Interactive handled by _wizard_optional_services
 }
 
 _wizard_searxng() {
@@ -1089,12 +1106,7 @@ _wizard_searxng() {
         ENABLE_SEARXNG="${ENABLE_SEARXNG:-false}"
         return
     fi
-    echo ""
-    echo -e "${CYAN}--- SearXNG (поисковый движок) ---${NC}"
-    echo "  Мета-поисковик (Google, Bing, DuckDuckGo, Wikipedia)."
-    echo "  JSON API для интеграции с Dify/агентами. ~256 MB RAM."
-    _ask "Включить SearXNG? [y/N]:" "n"
-    [[ "${REPLY,,}" =~ ^y ]] && ENABLE_SEARXNG=true || ENABLE_SEARXNG=false
+    # Interactive handled by _wizard_optional_services
 }
 
 _wizard_notebook() {
@@ -1102,12 +1114,7 @@ _wizard_notebook() {
         ENABLE_NOTEBOOK="${ENABLE_NOTEBOOK:-false}"
         return
     fi
-    echo ""
-    echo -e "${CYAN}--- Open Notebook (исследовательский ассистент) ---${NC}"
-    echo "  Альтернатива Google NotebookLM. PDF, видео, аудио, веб."
-    echo "  ~512 MB RAM + SurrealDB (~256 MB)."
-    _ask "Включить Open Notebook? [y/N]:" "n"
-    [[ "${REPLY,,}" =~ ^y ]] && ENABLE_NOTEBOOK=true || ENABLE_NOTEBOOK=false
+    # Interactive handled by _wizard_optional_services
 }
 
 _wizard_dbgpt() {
@@ -1115,12 +1122,7 @@ _wizard_dbgpt() {
         ENABLE_DBGPT="${ENABLE_DBGPT:-false}"
         return
     fi
-    echo ""
-    echo -e "${CYAN}--- DB-GPT (аналитика данных) ---${NC}"
-    echo "  AI-агент для анализа данных и SQL."
-    echo "  ~1 GB RAM."
-    _ask "Включить DB-GPT? [y/N]:" "n"
-    [[ "${REPLY,,}" =~ ^y ]] && ENABLE_DBGPT=true || ENABLE_DBGPT=false
+    # Interactive handled by _wizard_optional_services
 }
 
 _wizard_crawl4ai() {
@@ -1128,12 +1130,53 @@ _wizard_crawl4ai() {
         ENABLE_CRAWL4AI="${ENABLE_CRAWL4AI:-false}"
         return
     fi
-    echo ""
-    echo -e "${CYAN}--- Crawl4AI (веб-краулер) ---${NC}"
-    echo "  REST API для извлечения данных из веб-страниц (Chromium)."
-    echo "  Playground + мониторинг. ~2 GB RAM."
-    _ask "Включить Crawl4AI? [y/N]:" "n"
-    [[ "${REPLY,,}" =~ ^y ]] && ENABLE_CRAWL4AI=true || ENABLE_CRAWL4AI=false
+    # Interactive handled by _wizard_optional_services
+}
+
+_wizard_optional_services() {
+    # Handle NI mode via individual functions
+    if [[ "${NON_INTERACTIVE:-false}" == "true" ]]; then
+        _wizard_litellm
+        _wizard_searxng
+        _wizard_notebook
+        _wizard_dbgpt
+        _wizard_crawl4ai
+        return 0
+    fi
+
+    # Determine LiteLLM default state
+    local litellm_default="OFF"
+    [[ "${DEPLOY_PROFILE:-lan}" == "vps" ]] && litellm_default="ON"
+
+    local result
+    result=$(wt_checklist "Дополнительные сервисы" \
+        "Выберите дополнительные сервисы для установки:" \
+        "litellm"  "LiteLLM  -- AI Gateway, прокси для LLM (~1 GB RAM)"            "$litellm_default" \
+        "searxng"  "SearXNG  -- мета-поисковик для агентов (~256 MB RAM)"           "OFF" \
+        "notebook" "Open Notebook -- исследовательский ассистент (~512 MB RAM)"     "OFF" \
+        "dbgpt"    "DB-GPT   -- AI-агент для анализа данных и SQL (~1 GB RAM)"      "OFF" \
+        "crawl4ai" "Crawl4AI -- веб-краулер с REST API (~2 GB RAM)"                 "OFF")
+
+    local parsed
+    parsed=$(wt_parse "$result")
+
+    # Default everything to false, then enable selected
+    ENABLE_LITELLM="false"
+    ENABLE_SEARXNG="false"
+    ENABLE_NOTEBOOK="false"
+    ENABLE_DBGPT="false"
+    ENABLE_CRAWL4AI="false"
+
+    local item
+    for item in $parsed; do
+        case "$item" in
+            litellm)  ENABLE_LITELLM="true";;
+            searxng)  ENABLE_SEARXNG="true";;
+            notebook) ENABLE_NOTEBOOK="true";;
+            dbgpt)    ENABLE_DBGPT="true";;
+            crawl4ai) ENABLE_CRAWL4AI="true";;
+        esac
+    done
 }
 
 _wizard_dify_premium() {
@@ -1141,54 +1184,51 @@ _wizard_dify_premium() {
         ENABLE_DIFY_PREMIUM="${ENABLE_DIFY_PREMIUM:-true}"
         return
     fi
-    echo ""
-    echo -e "${CYAN}--- Dify Premium Features ---${NC}"
-    echo "  Разблокирует: замена лого, балансировка моделей,"
-    echo "  безлимит участников/приложений/документов, приоритетная обработка."
-    echo "  Не требует лицензию, не включает биллинг."
-    echo ""
-    echo "  1) Да  — разблокировать (рекомендуется)"
-    echo "  2) Нет — оставить Community Edition"
-    _ask_choice "Premium [1-2, Enter=1]: " 1 2 1
-    case "$REPLY" in
-        1) ENABLE_DIFY_PREMIUM="true" ;;
-        2) ENABLE_DIFY_PREMIUM="false" ;;
-    esac
+
+    if wt_yesno "Dify Premium Features" \
+        "Разблокировать Dify Premium?\n\nВключает: замену лого, балансировку моделей, безлимит участников/приложений/документов, приоритетную обработку.\nНе требует лицензию, не включает биллинг." ; then
+        ENABLE_DIFY_PREMIUM="true"
+    else
+        ENABLE_DIFY_PREMIUM="false"
+    fi
 }
 
 _wizard_summary() {
-    echo -e "${CYAN}=== Сводка установки ===${NC}"
-    echo "  Профиль:      ${DEPLOY_PROFILE}"
-    [[ -n "$DOMAIN" ]] && echo "  Домен:        ${DOMAIN}"
-    echo "  Вектор. БД:   ${VECTOR_STORE}"
-    [[ "$ENABLE_DOCLING" == "true" ]] && echo "  ETL:          Docling (${DOCLING_IMAGE##*/})"
+    if [[ "${NON_INTERACTIVE}" == "true" ]]; then
+        return 0
+    fi
+
+    local summary=""
+    summary+="Профиль:      ${DEPLOY_PROFILE}\n"
+    [[ -n "$DOMAIN" ]] && summary+="Домен:        ${DOMAIN}\n"
+    summary+="Вектор. БД:   ${VECTOR_STORE}\n"
+    [[ "$ENABLE_DOCLING" == "true" ]] && summary+="ETL:          Docling (${DOCLING_IMAGE##*/})\n"
     if [[ "${LLM_PROVIDER:-}" == "vllm" && -n "${VLLM_MAX_MODEL_LEN:-}" ]]; then
         local ctx_k=$(( VLLM_MAX_MODEL_LEN / 1024 ))
-        echo "  LLM:          ${LLM_PROVIDER} (${VLLM_MODEL}) ctx=${ctx_k}K"
+        summary+="LLM:          ${LLM_PROVIDER} (${VLLM_MODEL}) ctx=${ctx_k}K\n"
     else
-        echo "  LLM:          ${LLM_PROVIDER} ${LLM_MODEL}${VLLM_MODEL:+ (${VLLM_MODEL})}"
+        summary+="LLM:          ${LLM_PROVIDER} ${LLM_MODEL}${VLLM_MODEL:+ (${VLLM_MODEL})}\n"
     fi
-    echo "  Эмбеддинги:   ${EMBED_PROVIDER} ${EMBEDDING_MODEL}"
-    [[ "${ENABLE_RERANKER:-}" == "true" ]] && echo "  Реранкер:     ${RERANK_MODEL} (~1 GB)"
-    [[ "$TLS_MODE" != "none" ]] && echo "  TLS:          ${TLS_MODE}"
-    [[ "$MONITORING_MODE" != "none" ]] && echo "  Мониторинг:   ${MONITORING_MODE}"
-    [[ "$ALERT_MODE" != "none" ]] && echo "  Уведомления:  ${ALERT_MODE}"
-    [[ "$ENABLE_UFW" == "true" ]] && echo "  UFW:          включён"
-    [[ "$ENABLE_FAIL2BAN" == "true" ]] && echo "  Fail2ban:     SSH jail"
-    [[ "$ENABLE_AUTHELIA" == "true" ]] && echo "  Authelia:     2FA включена"
-    [[ "${ENABLE_LITELLM:-true}" == "true" ]] && echo "  LiteLLM:      включён (AI Gateway)"
-    [[ "${ENABLE_SEARXNG:-false}" == "true" ]] && echo "  SearXNG:      включён (порт 8888)"
-    [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]] && echo "  Open Notebook: включён (порт 8502)"
-    [[ "${ENABLE_DBGPT:-false}" == "true" ]] && echo "  DB-GPT:       включён (порт 5670)"
-    [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]] && echo "  Crawl4AI:     включён (порт 11235)"
-    [[ "${ENABLE_DIFY_PREMIUM:-true}" == "true" ]] && echo "  Dify Premium: включён (патч после запуска)"
-    [[ "$ENABLE_TUNNEL" == "true" ]] && echo "  Туннель:      ${TUNNEL_VPS_HOST}:${TUNNEL_REMOTE_PORT}"
-    echo "  Бэкапы:       ${BACKUP_TARGET} (${BACKUP_SCHEDULE})"
+    summary+="Эмбеддинги:   ${EMBED_PROVIDER} ${EMBEDDING_MODEL}\n"
+    [[ "${ENABLE_RERANKER:-}" == "true" ]] && summary+="Реранкер:     ${RERANK_MODEL} (~1 GB)\n"
+    [[ "$TLS_MODE" != "none" ]] && summary+="TLS:          ${TLS_MODE}\n"
+    [[ "$MONITORING_MODE" != "none" ]] && summary+="Мониторинг:   ${MONITORING_MODE}\n"
+    [[ "$ALERT_MODE" != "none" ]] && summary+="Уведомления:  ${ALERT_MODE}\n"
+    [[ "$ENABLE_UFW" == "true" ]] && summary+="UFW:          включён\n"
+    [[ "$ENABLE_FAIL2BAN" == "true" ]] && summary+="Fail2ban:     SSH jail\n"
+    [[ "$ENABLE_AUTHELIA" == "true" ]] && summary+="Authelia:     2FA включена\n"
+    [[ "${ENABLE_LITELLM:-true}" == "true" ]] && summary+="LiteLLM:      включён (AI Gateway)\n"
+    [[ "${ENABLE_SEARXNG:-false}" == "true" ]] && summary+="SearXNG:      включён (порт 8888)\n"
+    [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]] && summary+="Open Notebook: включён (порт 8502)\n"
+    [[ "${ENABLE_DBGPT:-false}" == "true" ]] && summary+="DB-GPT:       включён (порт 5670)\n"
+    [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]] && summary+="Crawl4AI:     включён (порт 11235)\n"
+    [[ "${ENABLE_DIFY_PREMIUM:-true}" == "true" ]] && summary+="Dify Premium: включён (патч после запуска)\n"
+    [[ "$ENABLE_TUNNEL" == "true" ]] && summary+="Туннель:      ${TUNNEL_VPS_HOST}:${TUNNEL_REMOTE_PORT}\n"
+    summary+="Бэкапы:       ${BACKUP_TARGET} (${BACKUP_SCHEDULE})\n"
 
     # VRAM plan (only for vLLM — Ollama manages VRAM internally)
     if [[ "${LLM_PROVIDER:-}" == "vllm" ]]; then
-        echo ""
-        echo -e "${CYAN}--- GPU память ---${NC}"
+        summary+="\n--- GPU память ---\n"
         local vllm_weights vllm_total vllm_ctx_label
         vllm_weights=$(_get_vllm_weights_gb "${VLLM_MODEL:-}")
         vllm_total=$(_get_vllm_vram_req "${VLLM_MODEL:-}")
@@ -1202,29 +1242,29 @@ _wizard_summary() {
         [[ "$vllm_total" == "0" ]] && vllm_total="?"
         if [[ "$vllm_total" != "?" && "$vllm_weights" -gt 0 ]]; then
             local kv_est=$(( vllm_total - vllm_weights ))
-            echo "  vLLM:         ~${vllm_total} GB   (веса ${vllm_weights} + KV ~${kv_est} @ ${vllm_ctx_label})   ${VLLM_MODEL:-unknown}"
+            summary+="vLLM:         ~${vllm_total} GB   (веса ${vllm_weights} + KV ~${kv_est} @ ${vllm_ctx_label})   ${VLLM_MODEL:-unknown}\n"
         else
-            echo "  vLLM:         ${vllm_total} GB   (${VLLM_MODEL:-unknown})"
+            summary+="vLLM:         ${vllm_total} GB   (${VLLM_MODEL:-unknown})\n"
         fi
 
         local embed_vram=0
         if [[ "${EMBED_PROVIDER:-}" == "tei" ]]; then
             if [[ "${TEI_EMBED_VERSION:-cuda}" == cpu-* ]]; then
-                echo "  TEI-embed:    CPU (8 GB RAM)   (${EMBEDDING_MODEL:-unknown})"
+                summary+="TEI-embed:    CPU (8 GB RAM)   (${EMBEDDING_MODEL:-unknown})\n"
             else
                 embed_vram=2
-                echo "  TEI-embed:    ${embed_vram} GB   (${EMBEDDING_MODEL:-unknown})"
+                summary+="TEI-embed:    ${embed_vram} GB   (${EMBEDDING_MODEL:-unknown})\n"
             fi
         fi
 
         if [[ "${ENABLE_RERANKER:-}" == "true" ]]; then
-            echo "  TEI-rerank:   CPU (4 GB RAM)   (${RERANK_MODEL:-unknown})"
+            summary+="TEI-rerank:   CPU (4 GB RAM)   (${RERANK_MODEL:-unknown})\n"
         fi
 
-        echo "  ─────────────────"
+        summary+="---------------------\n"
 
         if [[ "$vllm_total" == "?" ]]; then
-            echo "  Итого:        ? GB (неизвестная модель)"
+            summary+="Итого:        ? GB (неизвестная модель)\n"
         else
             local total_vram=$(( vllm_total + embed_vram ))
             local gpu_vram_mb="${DETECTED_GPU_VRAM:-0}"
@@ -1232,30 +1272,29 @@ _wizard_summary() {
                 local gpu_vram_gb=$(( gpu_vram_mb / 1024 ))
                 local mem_type="VRAM"
                 [[ "${DETECTED_GPU_UNIFIED_MEMORY:-false}" == "true" ]] && mem_type="unified memory"
-                echo "  Итого:        ~${total_vram} GB / ${gpu_vram_gb} GB ${mem_type} доступно"
+                summary+="Итого:        ~${total_vram} GB / ${gpu_vram_gb} GB ${mem_type} доступно\n"
                 if [[ "$total_vram" -gt "$gpu_vram_gb" ]]; then
-                    echo -e "  ${YELLOW}⚠ ${mem_type} бюджет превышен! Возможен OOM.${NC}"
+                    summary+="!! ${mem_type} бюджет превышен! Возможен OOM.\n"
                 fi
             else
-                echo "  Итого:        ~${total_vram} GB"
-                echo -e "  ${YELLOW}GPU память не определена — проверьте вручную${NC}"
+                summary+="Итого:        ~${total_vram} GB\n"
+                summary+="GPU память не определена -- проверьте вручную\n"
             fi
         fi
     fi
 
-    echo ""
+    wt_msg "Сводка установки" "$(echo -e "$summary")"
 }
 
 _wizard_confirm() {
     if [[ "${NON_INTERACTIVE}" == "true" ]]; then
         return 0
     fi
-    _ask "Начать установку? (yes/no):" "no"
-    if [[ "$REPLY" != "yes" ]]; then
+
+    if ! wt_yesno "Подтверждение" "Начать установку?"; then
         echo "Отменено."
         exit 0
     fi
-    echo ""
 }
 
 # ============================================================================
@@ -1283,11 +1322,7 @@ run_wizard() {
     _wizard_security
     _wizard_tunnel
     _wizard_backups
-    _wizard_litellm
-    _wizard_searxng
-    _wizard_notebook
-    _wizard_dbgpt
-    _wizard_crawl4ai
+    _wizard_optional_services
     _wizard_dify_premium
     _wizard_summary
     _wizard_confirm
@@ -1316,5 +1351,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     source "${SCRIPT_DIR}/common.sh"
     # shellcheck source=detect.sh
     source "${SCRIPT_DIR}/detect.sh"
+    # shellcheck source=tui.sh
+    source "${SCRIPT_DIR}/tui.sh"
     run_wizard
 fi
