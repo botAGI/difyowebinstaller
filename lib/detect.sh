@@ -76,14 +76,16 @@ detect_gpu() {
         esac
         DETECTED_GPU_COMPUTE="${FORCE_GPU_COMPUTE:-}"
         DETECTED_GPU_UNIFIED_MEMORY="false"
-        export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM DETECTED_GPU_COMPUTE DETECTED_GPU_UNIFIED_MEMORY
+        DETECTED_DGX_SPARK="false"
+        export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM DETECTED_GPU_COMPUTE DETECTED_GPU_UNIFIED_MEMORY DETECTED_DGX_SPARK
         return 0
     fi
 
     # ENV override: skip detection entirely
     if [[ "${SKIP_GPU_DETECT:-false}" == "true" ]]; then
         DETECTED_GPU_UNIFIED_MEMORY="false"
-        export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM DETECTED_GPU_COMPUTE DETECTED_GPU_UNIFIED_MEMORY
+        DETECTED_DGX_SPARK="false"
+        export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM DETECTED_GPU_COMPUTE DETECTED_GPU_UNIFIED_MEMORY DETECTED_DGX_SPARK
         return 0
     fi
 
@@ -123,7 +125,18 @@ detect_gpu() {
                 DETECTED_GPU_UNIFIED_MEMORY="false"
             fi
 
-            export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM DETECTED_GPU_COMPUTE DETECTED_GPU_UNIFIED_MEMORY
+            # DGX Spark detection: GB10 (Blackwell, SM 12.1, unified memory, arm64)
+            # Requires NVIDIA NGC vLLM image instead of upstream (SM121 support).
+            # TEI has no arm64 images — use vLLM --runner pooling for embed/rerank.
+            DETECTED_DGX_SPARK="false"
+            if [[ "${DETECTED_GPU_UNIFIED_MEMORY}" == "true" ]] && \
+               echo "$DETECTED_GPU_NAME" | grep -qi 'GB10' && \
+               [[ "$(uname -m)" == "aarch64" ]]; then
+                DETECTED_DGX_SPARK="true"
+                log_info "DGX Spark detected (GB10, arm64, unified memory)"
+            fi
+
+            export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM DETECTED_GPU_COMPUTE DETECTED_GPU_UNIFIED_MEMORY DETECTED_DGX_SPARK
             return 0
         fi
     fi
@@ -135,7 +148,8 @@ detect_gpu() {
         DETECTED_GPU_VRAM="$(rocm-smi --showmeminfo vram 2>/dev/null | grep 'Total' | awk '{print $NF}' || echo "0")"
         [[ "${DETECTED_GPU_VRAM}" =~ ^[0-9]+$ ]] || DETECTED_GPU_VRAM="0"
         DETECTED_GPU_UNIFIED_MEMORY="false"
-        export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM DETECTED_GPU_COMPUTE DETECTED_GPU_UNIFIED_MEMORY
+        DETECTED_DGX_SPARK="false"
+        export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM DETECTED_GPU_COMPUTE DETECTED_GPU_UNIFIED_MEMORY DETECTED_DGX_SPARK
         return 0
     fi
 
@@ -145,7 +159,8 @@ detect_gpu() {
             DETECTED_GPU="intel"
             DETECTED_GPU_NAME="$(lspci 2>/dev/null | grep -i 'vga.*intel' | head -1 | sed 's/.*: //' || echo "")"
             DETECTED_GPU_UNIFIED_MEMORY="false"
-            export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM DETECTED_GPU_COMPUTE DETECTED_GPU_UNIFIED_MEMORY
+            DETECTED_DGX_SPARK="false"
+            export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM DETECTED_GPU_COMPUTE DETECTED_GPU_UNIFIED_MEMORY DETECTED_DGX_SPARK
             return 0
         fi
     fi
@@ -155,14 +170,16 @@ detect_gpu() {
         DETECTED_GPU="apple"
         DETECTED_GPU_NAME="Apple Silicon ($(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'M-series'))"
         DETECTED_GPU_UNIFIED_MEMORY="true"
+        DETECTED_DGX_SPARK="false"
         log_warn "Apple Silicon uses Metal natively, Docker GPU passthrough not supported"
-        export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM DETECTED_GPU_COMPUTE DETECTED_GPU_UNIFIED_MEMORY
+        export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM DETECTED_GPU_COMPUTE DETECTED_GPU_UNIFIED_MEMORY DETECTED_DGX_SPARK
         return 0
     fi
 
     # 5. CPU fallback — defaults already set
     DETECTED_GPU_UNIFIED_MEMORY="false"
-    export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM DETECTED_GPU_COMPUTE DETECTED_GPU_UNIFIED_MEMORY
+    DETECTED_DGX_SPARK="false"
+    export DETECTED_GPU DETECTED_GPU_NAME DETECTED_GPU_VRAM DETECTED_GPU_COMPUTE DETECTED_GPU_UNIFIED_MEMORY DETECTED_DGX_SPARK
 }
 
 # ============================================================================
