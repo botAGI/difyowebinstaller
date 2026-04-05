@@ -371,6 +371,7 @@ _append_provider_vars() {
         # DGX Spark / vLLM embed/rerank vars (written regardless of LLM provider)
         if [[ -n "${VLLM_IMAGE:-}" ]]; then echo "VLLM_IMAGE=${VLLM_IMAGE}"; fi
         if [[ -n "${VLLM_CMD_PREFIX:-}" ]]; then echo "VLLM_CMD_PREFIX=${VLLM_CMD_PREFIX}"; fi
+        if [[ -n "${VLLM_EXTRA_ARGS:-}" ]]; then echo "VLLM_EXTRA_ARGS=${VLLM_EXTRA_ARGS}"; fi
         if [[ "${EMBED_PROVIDER:-}" == "vllm-embed" ]]; then echo "EMBED_PROVIDER=vllm-embed"; fi
         if [[ -n "${VLLM_EMBED_MODEL:-}" && "${EMBED_PROVIDER:-}" == "vllm-embed" ]]; then echo "VLLM_EMBED_MODEL=${VLLM_EMBED_MODEL}"; fi
         if [[ "${RERANKER_PROVIDER:-tei}" == "vllm-rerank" ]]; then echo "RERANKER_PROVIDER=vllm-rerank"; fi

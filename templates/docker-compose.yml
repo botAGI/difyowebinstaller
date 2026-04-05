@@ -412,7 +412,7 @@ services:
   # ==================== vLLM Embedding (DGX Spark / arm64) ==================
   vllm-embed:
     <<: *logging-defaults
-    image: ${VLLM_IMAGE:-nvcr.io/nvidia/vllm:26.02-py3}
+    image: ${VLLM_EMBED_IMAGE:-nvcr.io/nvidia/vllm:${VLLM_NGC_VERSION:-26.03-py3}}
     container_name: agmind-vllm-embed
     restart: unless-stopped
     mem_limit: ${VLLM_EMBED_MEM_LIMIT:-16g}
@@ -448,7 +448,7 @@ services:
   # ==================== vLLM Reranker (DGX Spark / arm64) ===================
   vllm-rerank:
     <<: *logging-defaults
-    image: ${VLLM_IMAGE:-nvcr.io/nvidia/vllm:26.02-py3}
+    image: ${VLLM_RERANK_IMAGE:-nvcr.io/nvidia/vllm:${VLLM_NGC_VERSION:-26.03-py3}}
     container_name: agmind-vllm-rerank
     restart: unless-stopped
     mem_limit: ${VLLM_RERANK_MEM_LIMIT:-8g}
