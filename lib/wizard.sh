@@ -33,6 +33,7 @@ _init_wizard_defaults() {
     LLM_MODEL="${LLM_MODEL:-}"
     VLLM_MODEL="${VLLM_MODEL:-}"
     VLLM_IMAGE="${VLLM_IMAGE:-}"
+    VLLM_CMD_PREFIX="${VLLM_CMD_PREFIX:-}"
     VLLM_CUDA_SUFFIX="${VLLM_CUDA_SUFFIX:-}"
     VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-}"
     EMBED_PROVIDER="${EMBED_PROVIDER:-}"
@@ -267,9 +268,12 @@ _wizard_llm_provider() {
     fi
 
     # DGX Spark: use NVIDIA NGC vLLM image (SM121 support)
+    # NGC entrypoint is nvidia_entrypoint.sh (not vllm directly),
+    # so command must start with "vllm serve" instead of bare "--model"
     if [[ "$LLM_PROVIDER" == "vllm" && "${DETECTED_DGX_SPARK:-false}" == "true" ]]; then
         VLLM_IMAGE="nvcr.io/nvidia/vllm:${VLLM_NGC_VERSION:-26.02-py3}"
-        VLLM_CUDA_SUFFIX=""  # NGC image doesn't use suffix
+        VLLM_CUDA_SUFFIX=""
+        VLLM_CMD_PREFIX="vllm serve"
         log_info "DGX Spark → NVIDIA NGC vLLM (${VLLM_IMAGE})"
     fi
 }
@@ -288,6 +292,7 @@ _apply_blackwell_cu130() {
         if [[ "${DETECTED_DGX_SPARK:-false}" == "true" ]]; then
             VLLM_IMAGE="nvcr.io/nvidia/vllm:${VLLM_NGC_VERSION:-26.02-py3}"
             VLLM_CUDA_SUFFIX=""
+            VLLM_CMD_PREFIX="vllm serve"
             log_info "DGX Spark (NI) → NVIDIA NGC vLLM (${VLLM_IMAGE})"
         else
             VLLM_CUDA_SUFFIX="-cu130"
@@ -1498,7 +1503,7 @@ run_wizard() {
     export DEPLOY_PROFILE DOMAIN CERTBOT_EMAIL VECTOR_STORE ENABLE_DOCLING
     export DOCLING_IMAGE OCR_LANG NVIDIA_VISIBLE_DEVICES
     export LLM_PROVIDER LLM_MODEL VLLM_MODEL VLLM_CUDA_SUFFIX VLLM_MAX_MODEL_LEN EMBED_PROVIDER EMBEDDING_MODEL TEI_EMBED_VERSION
-    export VLLM_IMAGE VLLM_EMBED_MODEL VLLM_RERANK_MODEL RERANKER_PROVIDER
+    export VLLM_IMAGE VLLM_CMD_PREFIX VLLM_EMBED_MODEL VLLM_RERANK_MODEL RERANKER_PROVIDER
     export ENABLE_RERANKER RERANK_MODEL RERANKER_ON_GPU TEI_RERANK_VERSION
     export HF_TOKEN TLS_MODE TLS_CERT_PATH TLS_KEY_PATH
     export MONITORING_MODE MONITORING_ENDPOINT MONITORING_TOKEN
