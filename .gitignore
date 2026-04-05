@@ -15,11 +15,10 @@ __pycache__/
 .age/
 
 # Internal dev artifacts (kept locally, not in repo)
-# NOTE: temporarily commented out for device transfer
-# .planning/
-# /workflows/
-# CLAUDE.md
-# SPEC.md
+.planning/
+/workflows/
+CLAUDE.md
+SPEC.md
 references/
 
 # Claude Code local settings (machine-specific)
