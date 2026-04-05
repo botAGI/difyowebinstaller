@@ -373,7 +373,7 @@ _get_vllm_weights_gb() {
         "meta-llama/Llama-3.3-70B-Instruct")               echo "140" ;;
         "bullpoint/Qwen3-Coder-Next-AWQ-4bit")             echo "12"  ;;
         "stelterlab/NVIDIA-Nemotron-3-Nano-30B-A3B-AWQ")   echo "4"   ;;
-        "Qwen/Qwen3.5-35B-A3B")                            echo "6"   ;;
+        "Qwen/Qwen3.5-35B-A3B")                            echo "72"  ;;
         *)                                                  echo "0"   ;;
     esac
 }
@@ -397,7 +397,7 @@ _get_vllm_kv_per_1k() {
         *27B*|*Qwen3.5-27B*)  echo "80"  ;;   # 0.08 (GQA, 4 KV heads)
         *32B*)           echo "250" ;;   # 0.250
         *70B*)           echo "313" ;;   # 0.313
-        *35B-A3B*)       echo "80"  ;;   # MoE, similar to 27B active
+        *35B-A3B*)       echo "20"  ;;   # hybrid: only 10/40 layers have KV (2 heads, dim 256)
         *30B-A3B*)       echo "60"  ;;   # small active params
         *Coder-Next*)    echo "156" ;;   # 14B active ≈ 14B KV
         *)               echo "0"   ;;
@@ -429,9 +429,10 @@ _get_vllm_vram_req() {
 
 _wizard_vllm_model() {
     # Model weights in GB (indices 1-18 match menu numbers)
-    local -a weights_gb=(0 4 5 8 8 15 18 14 16 14 16 28 28 28 64 140 12 4 6)
+    #                       1   2   3   4   5   6   7   8   9  10  11  12  13  14   15  16  17  18
+    local -a weights_gb=(0  4   5   8   8  15  18  14  16  14  16  28  28  28  64  140  12   4  72)
     # KV cache GB per 1K tokens ×1000 (for int math)
-    local -a kv_per_1k=(0 125 125 156 156 80 250 125 125 125 125 156 156 156 250 313 156 60 80)
+    local -a kv_per_1k=(0 125 125 156 156  80 250 125 125 125 125 156 156 156 250  313 156  60  20)
     # Default context for display (32K)
     local default_ctx=32768
 
