@@ -810,7 +810,7 @@ _wizard_reranker_model() {
 
     # --- Ask yes/no ---
     if wt_yesno "Реранкер" \
-        "Включить реранкер?\nУлучшает качество RAG, +~1 GB VRAM." \
+        "Включить реранкер?\nУлучшает качество RAG поиска. Работает на CPU (ONNX), ~1-2 GB RAM.\nGPU не требуется." \
         --defaultno; then
         ENABLE_RERANKER="true"
     else
@@ -820,10 +820,10 @@ _wizard_reranker_model() {
 
     # --- Show model menu ---
     local choice
-    choice=$(wt_menu "Модель реранкера (TEI)" \
-        "Выберите модель реранкера TEI:" \
+    choice=$(wt_menu "Модель реранкера (TEI, CPU)" \
+        "Реранкер работает на CPU (ONNX). Выберите модель:" \
         "1" "BAAI/bge-reranker-v2-m3              -- мультиязычный, ~2.2 GB RAM" \
-        "2" "BAAI/bge-reranker-base               -- компактный, ~1.2 GB RAM [по умолчанию]" \
+        "2" "BAAI/bge-reranker-base               -- компактный, ~1.2 GB RAM [*]" \
         "3" "cross-encoder/ms-marco-MiniLM-L-6-v2 -- быстрый, ~0.5 GB RAM" \
         "4" "Ввод вручную (HuggingFace ID)")
 
