@@ -35,7 +35,14 @@ build_compose_profiles() {
     fi
     if [[ "${LLM_PROVIDER:-}" == "vllm" ]]; then profiles="${profiles:+$profiles,}vllm"; fi
     if [[ "${EMBED_PROVIDER:-}" == "tei" ]]; then profiles="${profiles:+$profiles,}tei"; fi
-    if [[ "${ENABLE_RERANKER:-false}" == "true" ]]; then profiles="${profiles:+$profiles,}reranker"; fi
+    if [[ "${EMBED_PROVIDER:-}" == "vllm-embed" ]]; then profiles="${profiles:+$profiles,}vllm-embed"; fi
+    if [[ "${ENABLE_RERANKER:-false}" == "true" ]]; then
+        if [[ "${RERANKER_PROVIDER:-tei}" == "vllm-rerank" ]]; then
+            profiles="${profiles:+$profiles,}vllm-rerank"
+        else
+            profiles="${profiles:+$profiles,}reranker"
+        fi
+    fi
     if [[ "${ENABLE_LITELLM:-true}" == "true" ]]; then profiles="${profiles:+$profiles,}litellm"; fi
     if [[ "${ENABLE_SEARXNG:-false}" == "true" ]]; then profiles="${profiles:+$profiles,}searxng"; fi
     if [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]]; then profiles="${profiles:+$profiles,}notebook"; fi
@@ -664,7 +671,7 @@ create_plugin_db() {
 
 post_launch_status() {
     # GPU containers have long model-loading startup — exclude from stabilization wait
-    local gpu_containers=" agmind-vllm agmind-tei agmind-ollama "
+    local gpu_containers=" agmind-vllm agmind-tei agmind-ollama agmind-vllm-embed agmind-vllm-rerank "
 
     log_info "Waiting for containers to stabilize..."
     local elapsed=0

@@ -410,6 +410,14 @@ _save_credentials() {
             echo "  API Key:                 none"
             echo "  model name for endpoint: ${EMBEDDING_MODEL:-deepvk/USER-bge-m3}"
         fi
+        if [[ "${EMBED_PROVIDER:-}" == "vllm-embed" ]]; then
+            echo ""
+            echo "=== vLLM Embedding (DGX Spark) ==="
+            echo "  Model Type:              Text Embedding"
+            echo "  Model Name:              ${VLLM_EMBED_MODEL:-deepvk/USER-bge-m3}"
+            echo "  API endpoint URL:        http://agmind-vllm-embed:8000/v1"
+            echo "  API Key:                 none"
+        fi
         if [[ "${ENABLE_RERANKER:-false}" == "true" ]]; then
             echo ""
             echo "=== TEI Reranker (Dify → Settings → Model Provider → OpenAI-API-compatible) ==="
@@ -418,6 +426,14 @@ _save_credentials() {
             echo "  API endpoint URL:        http://agmind-tei-rerank:80"
             echo "  API Key:                 none"
             echo "  model name for endpoint: ${RERANK_MODEL:-BAAI/bge-reranker-base}"
+        fi
+        if [[ "${RERANKER_PROVIDER:-tei}" == "vllm-rerank" ]]; then
+            echo ""
+            echo "=== vLLM Reranker (DGX Spark) ==="
+            echo "  Model Type:              Rerank"
+            echo "  Model Name:              ${VLLM_RERANK_MODEL:-BAAI/bge-reranker-v2-m3}"
+            echo "  API endpoint:            http://agmind-vllm-rerank:8000/score"
+            echo "  API Key:                 none"
         fi
         # LiteLLM AI Gateway
         if [[ "${ENABLE_LITELLM:-true}" == "true" ]]; then

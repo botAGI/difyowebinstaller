@@ -355,6 +355,9 @@ _append_provider_vars() {
                     echo "OPENAI_API_BASE_URL=http://vllm:8000/v1"
                 fi
                 if [[ -n "${VLLM_CUDA_SUFFIX:-}" ]]; then echo "VLLM_CUDA_SUFFIX=${VLLM_CUDA_SUFFIX}"; fi
+                if [[ -n "${VLLM_IMAGE:-}" ]]; then echo "VLLM_IMAGE=${VLLM_IMAGE}"; fi
+                if [[ -n "${VLLM_EMBED_MODEL:-}" ]]; then echo "VLLM_EMBED_MODEL=${VLLM_EMBED_MODEL}"; fi
+                if [[ -n "${VLLM_RERANK_MODEL:-}" ]]; then echo "VLLM_RERANK_MODEL=${VLLM_RERANK_MODEL}"; fi
                 if [[ -n "${VLLM_MAX_MODEL_LEN:-}" ]]; then echo "VLLM_MAX_MODEL_LEN=${VLLM_MAX_MODEL_LEN}"; fi
                 ;;
             external|skip)

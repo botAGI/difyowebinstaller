@@ -32,6 +32,7 @@ _init_wizard_defaults() {
     LLM_PROVIDER="${LLM_PROVIDER:-}"
     LLM_MODEL="${LLM_MODEL:-}"
     VLLM_MODEL="${VLLM_MODEL:-}"
+    VLLM_IMAGE="${VLLM_IMAGE:-}"
     VLLM_CUDA_SUFFIX="${VLLM_CUDA_SUFFIX:-}"
     VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-}"
     EMBED_PROVIDER="${EMBED_PROVIDER:-}"
@@ -40,7 +41,10 @@ _init_wizard_defaults() {
     ENABLE_RERANKER="${ENABLE_RERANKER:-false}"
     RERANK_MODEL="${RERANK_MODEL:-}"
     RERANKER_ON_GPU="${RERANKER_ON_GPU:-false}"
+    RERANKER_PROVIDER="${RERANKER_PROVIDER:-tei}"
     TEI_RERANK_VERSION="${TEI_RERANK_VERSION:-}"
+    VLLM_EMBED_MODEL="${VLLM_EMBED_MODEL:-}"
+    VLLM_RERANK_MODEL="${VLLM_RERANK_MODEL:-}"
     HF_TOKEN="${HF_TOKEN:-}"
     TLS_MODE="${TLS_MODE:-none}"
     TLS_CERT_PATH="${TLS_CERT_PATH:-}"
@@ -261,6 +265,13 @@ _wizard_llm_provider() {
         VLLM_CUDA_SUFFIX="-cu130"
         log_info "Blackwell GPU (compute ${DETECTED_GPU_COMPUTE}) -> vLLM с CUDA 13.0 (-cu130)"
     fi
+
+    # DGX Spark: use NVIDIA NGC vLLM image (SM121 support)
+    if [[ "$LLM_PROVIDER" == "vllm" && "${DETECTED_DGX_SPARK:-false}" == "true" ]]; then
+        VLLM_IMAGE="nvcr.io/nvidia/vllm:${VLLM_NGC_VERSION:-26.02-py3}"
+        VLLM_CUDA_SUFFIX=""  # NGC image doesn't use suffix
+        log_info "DGX Spark → NVIDIA NGC vLLM (${VLLM_IMAGE})"
+    fi
 }
 
 # Check if GPU is Blackwell architecture (compute capability >= 12.0)
@@ -359,6 +370,10 @@ _get_vram_offset() {
     local offset=0
     # TEI embedding on CUDA reserves ~2 GB GPU VRAM
     if [[ "${EMBED_PROVIDER:-tei}" == "tei" && "${TEI_EMBED_VERSION:-cuda}" != cpu-* ]]; then
+        offset=$(( offset + 2 ))
+    fi
+    # vLLM-embed (DGX Spark) reserves ~2 GB GPU VRAM
+    if [[ "${EMBED_PROVIDER:-}" == "vllm-embed" ]]; then
         offset=$(( offset + 2 ))
     fi
     # TEI reranker on CUDA reserves ~1 GB GPU VRAM
@@ -706,6 +721,11 @@ _wizard_llm_model() {
 _wizard_embed_provider() {
     # Respect env override only in non-interactive mode
     if [[ "${NON_INTERACTIVE}" == "true" && -n "$EMBED_PROVIDER" ]]; then
+        # DGX Spark: force vllm-embed even if user specified tei
+        if [[ "${DETECTED_DGX_SPARK:-false}" == "true" && "$EMBED_PROVIDER" == "tei" ]]; then
+            log_warn "DGX Spark: TEI не поддерживает arm64, переключение на vLLM-embed"
+            EMBED_PROVIDER="vllm-embed"
+        fi
         return 0
     fi
 
@@ -722,12 +742,21 @@ _wizard_embed_provider() {
     case "$choice" in
         1) case "$LLM_PROVIDER" in
                ollama)   EMBED_PROVIDER="ollama";;
-               vllm)     EMBED_PROVIDER="tei";;
+               vllm)
+                   if [[ "${DETECTED_DGX_SPARK:-false}" == "true" ]]; then
+                       EMBED_PROVIDER="vllm-embed"
+                   else
+                       EMBED_PROVIDER="tei"
+                   fi;;
                external) EMBED_PROVIDER="external";;
                skip)     EMBED_PROVIDER="skip";;
                *)        EMBED_PROVIDER="ollama";;
            esac;;
-        2) EMBED_PROVIDER="tei";;
+        2) EMBED_PROVIDER="tei"
+           if [[ "${DETECTED_DGX_SPARK:-false}" == "true" ]]; then
+               log_warn "DGX Spark: TEI не поддерживает arm64, переключение на vLLM-embed"
+               EMBED_PROVIDER="vllm-embed"
+           fi;;
         3) EMBED_PROVIDER="external";;
         4) EMBED_PROVIDER="skip";;
         *) EMBED_PROVIDER="ollama";;
@@ -755,10 +784,34 @@ _wizard_embedding_model() {
         fi
         # Apply provider-aware default
         case "$EMBED_PROVIDER" in
-            tei)    EMBEDDING_MODEL="deepvk/USER-bge-m3";;
-            ollama) EMBEDDING_MODEL="${EMBEDDING_MODEL:-bge-m3}";;
-            *)      return 0;;
+            tei)        EMBEDDING_MODEL="deepvk/USER-bge-m3";;
+            vllm-embed) VLLM_EMBED_MODEL="${VLLM_EMBED_MODEL:-deepvk/USER-bge-m3}"
+                        EMBEDDING_MODEL="$VLLM_EMBED_MODEL";;
+            ollama)     EMBEDDING_MODEL="${EMBEDDING_MODEL:-bge-m3}";;
+            *)          return 0;;
         esac
+        return 0
+    fi
+
+    # --- vLLM-embed provider (DGX Spark): show model menu ---
+    if [[ "$EMBED_PROVIDER" == "vllm-embed" ]]; then
+        # DGX Spark: vLLM serves embeddings instead of TEI
+        local choice
+        choice=$(wt_menu "Модель эмбеддингов (vLLM)" \
+            "DGX Spark: эмбеддинги через vLLM (TEI не поддерживает arm64):" \
+            "1" "deepvk/USER-bge-m3     -- русский fine-tune, ~1 GB [*]" \
+            "2" "BAAI/bge-m3            -- мультиязычная, ~1 GB" \
+            "3" "Ввод вручную")
+        choice="${choice:-1}"
+        case "$choice" in
+            1) VLLM_EMBED_MODEL="deepvk/USER-bge-m3";;
+            2) VLLM_EMBED_MODEL="BAAI/bge-m3";;
+            3) local custom
+               custom=$(wt_input "Своя модель" "HuggingFace model ID:" "deepvk/USER-bge-m3")
+               VLLM_EMBED_MODEL="${custom:-deepvk/USER-bge-m3}";;
+            *) VLLM_EMBED_MODEL="deepvk/USER-bge-m3";;
+        esac
+        EMBEDDING_MODEL="$VLLM_EMBED_MODEL"
         return 0
     fi
 
@@ -849,8 +902,16 @@ _wizard_reranker_model() {
         hw_choice="${hw_choice:-gpu}"
 
         if [[ "$hw_choice" == "gpu" ]]; then
-            TEI_RERANK_VERSION="cuda-1.9.3"
-            RERANKER_ON_GPU="true"
+            if [[ "${DETECTED_DGX_SPARK:-false}" == "true" ]]; then
+                TEI_RERANK_VERSION=""
+                RERANKER_ON_GPU="true"
+                RERANKER_PROVIDER="vllm-rerank"
+                log_info "DGX Spark → реранкер через vLLM (TEI не поддерживает arm64)"
+            else
+                TEI_RERANK_VERSION="cuda-1.9.3"
+                RERANKER_ON_GPU="true"
+                RERANKER_PROVIDER="tei"
+            fi
         else
             TEI_RERANK_VERSION="cpu-1.9.3"
             RERANKER_ON_GPU="false"
@@ -887,11 +948,16 @@ _wizard_reranker_model() {
            };;
         *) RERANK_MODEL="BAAI/bge-reranker-base";;
     esac
+
+    # DGX Spark: sync VLLM_RERANK_MODEL with RERANK_MODEL
+    if [[ "${RERANKER_PROVIDER:-tei}" == "vllm-rerank" ]]; then
+        VLLM_RERANK_MODEL="$RERANK_MODEL"
+    fi
 }
 
 _wizard_hf_token() {
     # Prompt for HF token if any TEI/vLLM service needs HuggingFace models
-    if [[ "$LLM_PROVIDER" != "vllm" && "$EMBED_PROVIDER" != "tei" && "${ENABLE_RERANKER:-false}" != "true" ]]; then
+    if [[ "$LLM_PROVIDER" != "vllm" && "$EMBED_PROVIDER" != "tei" && "$EMBED_PROVIDER" != "vllm-embed" && "${ENABLE_RERANKER:-false}" != "true" ]]; then
         return 0
     fi
     if [[ -n "$HF_TOKEN" ]]; then
@@ -1312,7 +1378,10 @@ _wizard_summary() {
         fi
 
         local embed_vram=0
-        if [[ "${EMBED_PROVIDER:-}" == "tei" ]]; then
+        if [[ "${EMBED_PROVIDER:-}" == "vllm-embed" ]]; then
+            embed_vram=2
+            summary+="vLLM-embed:   ${embed_vram} GB   (${VLLM_EMBED_MODEL:-${EMBEDDING_MODEL:-unknown}})\n"
+        elif [[ "${EMBED_PROVIDER:-}" == "tei" ]]; then
             if [[ "${TEI_EMBED_VERSION:-cuda}" == cpu-* ]]; then
                 summary+="TEI-embed:    CPU (8 GB RAM)   (${EMBEDDING_MODEL:-unknown})\n"
             else
@@ -1323,7 +1392,10 @@ _wizard_summary() {
 
         local rerank_vram=0
         if [[ "${ENABLE_RERANKER:-}" == "true" ]]; then
-            if [[ "${RERANKER_ON_GPU:-false}" == "true" ]]; then
+            if [[ "${RERANKER_PROVIDER:-tei}" == "vllm-rerank" ]]; then
+                rerank_vram=1
+                summary+="vLLM-rerank:  ${rerank_vram} GB GPU   (${VLLM_RERANK_MODEL:-${RERANK_MODEL:-unknown}})\n"
+            elif [[ "${RERANKER_ON_GPU:-false}" == "true" ]]; then
                 rerank_vram=1
                 summary+="TEI-rerank:   ${rerank_vram} GB GPU   (${RERANK_MODEL:-unknown})\n"
             else
@@ -1413,6 +1485,7 @@ run_wizard() {
     export DEPLOY_PROFILE DOMAIN CERTBOT_EMAIL VECTOR_STORE ENABLE_DOCLING
     export DOCLING_IMAGE OCR_LANG NVIDIA_VISIBLE_DEVICES
     export LLM_PROVIDER LLM_MODEL VLLM_MODEL VLLM_CUDA_SUFFIX VLLM_MAX_MODEL_LEN EMBED_PROVIDER EMBEDDING_MODEL TEI_EMBED_VERSION
+    export VLLM_IMAGE VLLM_EMBED_MODEL VLLM_RERANK_MODEL RERANKER_PROVIDER
     export ENABLE_RERANKER RERANK_MODEL RERANKER_ON_GPU TEI_RERANK_VERSION
     export HF_TOKEN TLS_MODE TLS_CERT_PATH TLS_KEY_PATH
     export MONITORING_MODE MONITORING_ENDPOINT MONITORING_TOKEN

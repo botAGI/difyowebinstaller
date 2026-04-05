@@ -311,7 +311,7 @@ services:
   # ==================== vLLM (vllm profile) ====================
   vllm:
     <<: *logging-defaults
-    image: vllm/vllm-openai:${VLLM_VERSION:-v0.18.1}${VLLM_CUDA_SUFFIX:-}
+    image: ${VLLM_IMAGE:-vllm/vllm-openai:${VLLM_VERSION:-v0.18.1}${VLLM_CUDA_SUFFIX:-}}
     container_name: agmind-vllm
     restart: unless-stopped
     mem_limit: ${VLLM_MEM_LIMIT:-16g}
@@ -324,6 +324,10 @@ services:
     volumes:
       - agmind_vllm_cache:/root/.cache/huggingface
     ipc: host
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
@@ -402,6 +406,80 @@ services:
       timeout: 10s
       retries: 5
       start_period: 600s
+    networks:
+      - agmind-backend
+
+  # ==================== vLLM Embedding (DGX Spark / arm64) ==================
+  vllm-embed:
+    <<: *logging-defaults
+    <<: *security-defaults
+    image: ${VLLM_IMAGE:-nvcr.io/nvidia/vllm:26.02-py3}
+    container_name: agmind-vllm-embed
+    restart: unless-stopped
+    mem_limit: ${VLLM_EMBED_MEM_LIMIT:-16g}
+    profiles:
+      - vllm-embed
+    ipc: host
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    environment:
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
+      - CUDA_VISIBLE_DEVICES=${VLLM_EMBED_CUDA_DEVICE:-0}
+    command: vllm serve ${VLLM_EMBED_MODEL:-deepvk/USER-bge-m3} --runner pooling --host 0.0.0.0 --port 8000 --gpu-memory-utilization ${VLLM_EMBED_GPU_MEM_UTIL:-0.15} --trust-remote-code
+    volumes:
+      - agmind_vllm_embed_cache:/root/.cache/huggingface
+    #__GPU__deploy:
+    #__GPU__  resources:
+    #__GPU__    reservations:
+    #__GPU__      devices:
+    #__GPU__        - driver: nvidia
+    #__GPU__          count: all
+    #__GPU__          capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+    networks:
+      - agmind-backend
+
+  # ==================== vLLM Reranker (DGX Spark / arm64) ===================
+  vllm-rerank:
+    <<: *logging-defaults
+    <<: *security-defaults
+    image: ${VLLM_IMAGE:-nvcr.io/nvidia/vllm:26.02-py3}
+    container_name: agmind-vllm-rerank
+    restart: unless-stopped
+    mem_limit: ${VLLM_RERANK_MEM_LIMIT:-8g}
+    profiles:
+      - vllm-rerank
+    ipc: host
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    environment:
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
+      - CUDA_VISIBLE_DEVICES=${VLLM_RERANK_CUDA_DEVICE:-0}
+    command: vllm serve ${VLLM_RERANK_MODEL:-BAAI/bge-reranker-v2-m3} --runner pooling --host 0.0.0.0 --port 8000 --gpu-memory-utilization ${VLLM_RERANK_GPU_MEM_UTIL:-0.10} --trust-remote-code
+    volumes:
+      - agmind_vllm_rerank_cache:/root/.cache/huggingface
+    #__GPU__deploy:
+    #__GPU__  resources:
+    #__GPU__    reservations:
+    #__GPU__      devices:
+    #__GPU__        - driver: nvidia
+    #__GPU__          count: all
+    #__GPU__          capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
     networks:
       - agmind-backend
 
@@ -1178,5 +1256,7 @@ volumes:
   agmind_vllm_cache:
   agmind_tei_cache:
   agmind_tei_rerank_cache:
+  agmind_vllm_embed_cache:
+  agmind_vllm_rerank_cache:
   agmind_surrealdb_data:
   agmind_dbgpt_data:

@@ -94,4 +94,4 @@ declare -A SERVICE_GROUPS=(
 )
 
 # All known compose profiles (for compose down --remove-orphans)
-ALL_COMPOSE_PROFILES="vps,monitoring,qdrant,weaviate,etl,authelia,ollama,vllm,tei,reranker,docling,litellm,searxng,notebook,dbgpt,crawl4ai"
+ALL_COMPOSE_PROFILES="vps,monitoring,qdrant,weaviate,etl,authelia,ollama,vllm,tei,reranker,vllm-embed,vllm-rerank,docling,litellm,searxng,notebook,dbgpt,crawl4ai"
