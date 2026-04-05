@@ -389,13 +389,13 @@ services:
     command: --model-id ${RERANK_MODEL:-BAAI/bge-reranker-base} --port 80
     volumes:
       - agmind_tei_rerank_cache:/data
-    #__GPU_RERANK__ deploy:
-    #__GPU_RERANK__   resources:
-    #__GPU_RERANK__     reservations:
-    #__GPU_RERANK__       devices:
-    #__GPU_RERANK__         - driver: nvidia
-    #__GPU_RERANK__           device_ids: ['${TEI_RERANK_CUDA_DEVICE:-0}']
-    #__GPU_RERANK__           capabilities: [gpu]
+    #__GPU_RERANK__deploy:
+    #__GPU_RERANK__  resources:
+    #__GPU_RERANK__    reservations:
+    #__GPU_RERANK__      devices:
+    #__GPU_RERANK__        - driver: nvidia
+    #__GPU_RERANK__          device_ids: ['${TEI_RERANK_CUDA_DEVICE:-0}']
+    #__GPU_RERANK__          capabilities: [gpu]
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:80/health || exit 1"]
       interval: 30s
