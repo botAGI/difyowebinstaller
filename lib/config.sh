@@ -370,6 +370,7 @@ _append_provider_vars() {
         esac
         # DGX Spark / vLLM embed/rerank vars (written regardless of LLM provider)
         if [[ -n "${VLLM_IMAGE:-}" ]]; then echo "VLLM_IMAGE=${VLLM_IMAGE}"; fi
+        if [[ -n "${VLLM_CMD_PREFIX:-}" ]]; then echo "VLLM_CMD_PREFIX=${VLLM_CMD_PREFIX}"; fi
         if [[ -n "${VLLM_EMBED_MODEL:-}" && "${EMBED_PROVIDER:-}" == "vllm-embed" ]]; then echo "VLLM_EMBED_MODEL=${VLLM_EMBED_MODEL}"; fi
         if [[ -n "${VLLM_RERANK_MODEL:-}" && "${RERANKER_PROVIDER:-tei}" == "vllm-rerank" ]]; then echo "VLLM_RERANK_MODEL=${VLLM_RERANK_MODEL}"; fi
         # DB-GPT API endpoint (used if ENABLE_DBGPT=true)
