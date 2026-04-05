@@ -319,7 +319,11 @@ setup_security() {
     log_info "Setting up security..."
     configure_ufw
     configure_fail2ban
-    harden_ssh
+    # SSH hardening (disable password auth) — only for VPS/public servers.
+    # LAN: server behind NAT, risk of locking yourself out > benefit.
+    if [[ "${DEPLOY_PROFILE:-lan}" != "lan" ]]; then
+        harden_ssh
+    fi
     harden_docker_compose
     encrypt_secrets
     echo ""
