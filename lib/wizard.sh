@@ -365,6 +365,10 @@ _get_vram_offset() {
     if [[ "${RERANKER_ON_GPU:-false}" == "true" ]]; then
         offset=$(( offset + 1 ))
     fi
+    # Docling GPU (CUDA OCR + layout) reserves ~3 GB GPU VRAM
+    if [[ "${ENABLE_DOCLING:-false}" == "true" && "${NVIDIA_VISIBLE_DEVICES:-}" == "all" ]]; then
+        offset=$(( offset + 3 ))
+    fi
     echo "$offset"
 }
 
@@ -1327,12 +1331,18 @@ _wizard_summary() {
             fi
         fi
 
+        local docling_vram=0
+        if [[ "${ENABLE_DOCLING:-false}" == "true" && "${NVIDIA_VISIBLE_DEVICES:-}" == "all" ]]; then
+            docling_vram=3
+            summary+="Docling:      ~${docling_vram} GB GPU   (OCR + layout)\n"
+        fi
+
         summary+="---------------------\n"
 
         if [[ "$vllm_total" == "?" ]]; then
             summary+="Итого:        ? GB (неизвестная модель)\n"
         else
-            local total_vram=$(( vllm_total + embed_vram + rerank_vram ))
+            local total_vram=$(( vllm_total + embed_vram + rerank_vram + docling_vram ))
             local gpu_vram_mb="${DETECTED_GPU_VRAM:-0}"
             if [[ "$gpu_vram_mb" -gt 0 ]] 2>/dev/null; then
                 local gpu_vram_gb=$(( gpu_vram_mb / 1024 ))

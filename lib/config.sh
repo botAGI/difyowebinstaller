@@ -808,6 +808,10 @@ enable_gpu_compose() {
         if [[ "${RERANKER_ON_GPU:-false}" == "true" ]]; then
             tei_reserve_mb=$(( tei_reserve_mb + 1024 ))
         fi
+        # Add Docling GPU overhead if enabled
+        if [[ "${ENABLE_DOCLING:-false}" == "true" && "${NVIDIA_VISIBLE_DEVICES:-}" == "all" ]]; then
+            tei_reserve_mb=$(( tei_reserve_mb + 3072 ))
+        fi
         # Use DETECTED_GPU_VRAM (set by detect.sh, handles unified memory)
         # instead of re-querying nvidia-smi (which returns N/A on unified memory GPUs)
         local total_vram_mb="${DETECTED_GPU_VRAM:-0}"
