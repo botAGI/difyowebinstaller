@@ -459,6 +459,16 @@ _save_credentials() {
             echo "  API Docs:      http://${ip}:${EXPOSE_CRAWL4AI_PORT:-11235}/docs"
             echo "  Dify:          HTTP Request tool → POST http://agmind-crawl4ai:11235/crawl"
         fi
+        if [[ "${ENABLE_DOCLING:-false}" == "true" ]]; then
+            local _docling_mode="CPU"
+            if [[ "${NVIDIA_VISIBLE_DEVICES:-}" == "all" ]]; then _docling_mode="GPU"; fi
+            echo ""
+            echo "=== Docling (Обработка документов, ${_docling_mode}) ==="
+            echo "  API:           http://${ip}:${EXPOSE_DOCLING_PORT:-8765}"
+            echo "  API Docs:      http://${ip}:${EXPOSE_DOCLING_PORT:-8765}/docs"
+            echo "  Dify ETL:      настроен автоматически (Dify → Settings → Data Source → Docling)"
+            echo "  Dify Tool:     HTTP Request → POST http://agmind-docling:8765/v1/convert"
+        fi
         echo ""
         echo "# ---"
         echo "# ВНИМАНИЕ: Эти пароли актуальны на момент установки."
