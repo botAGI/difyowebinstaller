@@ -794,16 +794,27 @@ enable_gpu_compose() {
     if [[ "${LLM_PROVIDER:-}" == "vllm" && "${EMBED_PROVIDER:-}" == "tei" ]]; then
         local env_file="${INSTALL_DIR}/docker/.env"
         local tei_reserve_mb=4000
-        local total_vram_mb=""
-        total_vram_mb=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d '[:space:]') || true
+        # Use DETECTED_GPU_VRAM (set by detect.sh, handles unified memory)
+        # instead of re-querying nvidia-smi (which returns N/A on unified memory GPUs)
+        local total_vram_mb="${DETECTED_GPU_VRAM:-0}"
 
-        if [[ -n "$total_vram_mb" && "$total_vram_mb" -gt 0 ]] 2>/dev/null; then
+        if [[ "$total_vram_mb" -gt 0 ]] 2>/dev/null; then
             local vllm_util
-            vllm_util=$(LC_NUMERIC=C awk "BEGIN { printf \"%.2f\", ($total_vram_mb - $tei_reserve_mb) / $total_vram_mb }")
-            # Clamp to [0.40, 0.92] — never starve vLLM or oversubscribe
-            if LC_NUMERIC=C awk "BEGIN { exit ($vllm_util < 0.40) ? 0 : 1 }"; then vllm_util="0.40"; fi
-            if LC_NUMERIC=C awk "BEGIN { exit ($vllm_util > 0.92) ? 0 : 1 }"; then vllm_util="0.92"; fi
-            log_info "GPU VRAM ${total_vram_mb} MB — reserving ${tei_reserve_mb} MB for TEI → VLLM_GPU_MEM_UTIL=${vllm_util}"
+
+            if [[ "${DETECTED_GPU_UNIFIED_MEMORY:-false}" == "true" ]]; then
+                # Unified memory (GB10, Grace Hopper): GPU shares system RAM.
+                # vLLM gpu-memory-utilization controls fraction of total visible memory.
+                # With 128 GB unified, TEI's 2 GB is negligible — use high utilization
+                # but cap to avoid starving the OS and other services.
+                vllm_util="0.90"
+                log_info "Unified memory GPU (${total_vram_mb} MB) — VLLM_GPU_MEM_UTIL=${vllm_util}"
+            else
+                vllm_util=$(LC_NUMERIC=C awk "BEGIN { printf \"%.2f\", ($total_vram_mb - $tei_reserve_mb) / $total_vram_mb }")
+                # Clamp to [0.40, 0.92] — never starve vLLM or oversubscribe
+                if LC_NUMERIC=C awk "BEGIN { exit ($vllm_util < 0.40) ? 0 : 1 }"; then vllm_util="0.40"; fi
+                if LC_NUMERIC=C awk "BEGIN { exit ($vllm_util > 0.92) ? 0 : 1 }"; then vllm_util="0.92"; fi
+                log_info "GPU VRAM ${total_vram_mb} MB — reserving ${tei_reserve_mb} MB for TEI → VLLM_GPU_MEM_UTIL=${vllm_util}"
+            fi
         else
             # Fallback: can't query VRAM (e.g. CI), use conservative default
             local vllm_util="0.70"
@@ -814,7 +825,8 @@ enable_gpu_compose() {
         # Auto-enable --enforce-eager when model weights leave <25% VRAM for
         # KV cache + CUDA graphs.  CUDA graph profiling can allocate 3-5 GiB
         # temporarily, causing OOM on tight configs (e.g. 27B-AWQ on 32 GB).
-        if [[ -n "$total_vram_mb" && "$total_vram_mb" -gt 0 ]] 2>/dev/null; then
+        # Skip for unified memory — plenty of headroom, CUDA graphs are beneficial.
+        if [[ "$total_vram_mb" -gt 0 && "${DETECTED_GPU_UNIFIED_MEMORY:-false}" != "true" ]] 2>/dev/null; then
             local model_vram_gb=0
             # source wizard.sh helper if available
             if type -t _get_vllm_vram_req &>/dev/null; then

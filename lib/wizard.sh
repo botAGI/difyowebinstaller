@@ -1097,9 +1097,11 @@ _wizard_summary() {
             local gpu_vram_mb="${DETECTED_GPU_VRAM:-0}"
             if [[ "$gpu_vram_mb" -gt 0 ]] 2>/dev/null; then
                 local gpu_vram_gb=$(( gpu_vram_mb / 1024 ))
-                echo "  Итого:        ${total_vram} GB / ${gpu_vram_gb} GB доступно"
+                local mem_type="VRAM"
+                [[ "${DETECTED_GPU_UNIFIED_MEMORY:-false}" == "true" ]] && mem_type="unified memory"
+                echo "  Итого:        ${total_vram} GB / ${gpu_vram_gb} GB ${mem_type} доступно"
                 if [[ "$total_vram" -gt "$gpu_vram_gb" ]]; then
-                    echo -e "  ${YELLOW}⚠ VRAM бюджет превышен! Возможен OOM.${NC}"
+                    echo -e "  ${YELLOW}⚠ ${mem_type} бюджет превышен! Возможен OOM.${NC}"
                 fi
             else
                 echo "  Итого:        ${total_vram} GB"
