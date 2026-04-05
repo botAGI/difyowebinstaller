@@ -1,7 +1,6 @@
 .DS_Store
-# .claude/ — only settings.json tracked, rest ignored
-.claude/*
-!.claude/settings.json
+# .claude/ — fully local, not tracked
+.claude/
 
 # Python
 __pycache__/
