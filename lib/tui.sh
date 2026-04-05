@@ -45,8 +45,11 @@ _wt_width=""
 
 wt_get_size() {
     local term_h term_w
-    term_h="$(tput lines 2>/dev/null || echo 24)"
-    term_w="$(tput cols 2>/dev/null || echo 80)"
+    term_h="$(tput lines 2>/dev/null)" || true
+    term_w="$(tput cols 2>/dev/null)" || true
+    # Fallback if tput fails (no TTY, sudo, pipe)
+    [[ "$term_h" =~ ^[0-9]+$ ]] || term_h=24
+    [[ "$term_w" =~ ^[0-9]+$ ]] || term_w=80
     # Clamp: height 12-40, width 60-120
     _wt_height="$term_h"
     [[ "$_wt_height" -lt 12 ]] && _wt_height=12
