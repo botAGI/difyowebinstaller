@@ -240,21 +240,10 @@ _wizard_llm_provider() {
         *) LLM_PROVIDER="$default_provider";;
     esac
 
-    # Blackwell GPU warning: sm_120+ needs CUDA 13.0 build
+    # Blackwell GPU (sm_120+): auto-apply CUDA 13.0 build for vLLM
     if [[ "$LLM_PROVIDER" == "vllm" ]] && _is_blackwell_gpu; then
-        echo ""
-        log_warn "GPU Blackwell (compute ${DETECTED_GPU_COMPUTE}) — требуется vLLM с CUDA 13.0."
-        echo "  1) Переключиться на Ollama (рекомендуется)"
-        echo "  2) Использовать vLLM с CUDA 13.0 (stable -cu130)"
-        echo ""
-        _ask_choice "Выбор [1-2, Enter=2]: " 1 2 2
-        if [[ "$REPLY" == "1" ]]; then
-            LLM_PROVIDER="ollama"
-            log_info "Переключено на Ollama"
-        else
-            VLLM_CUDA_SUFFIX="-cu130"
-            log_info "vLLM будет использовать образ с CUDA 13.0"
-        fi
+        VLLM_CUDA_SUFFIX="-cu130"
+        log_info "Blackwell GPU (compute ${DETECTED_GPU_COMPUTE}) → vLLM с CUDA 13.0 (-cu130)"
     fi
     echo ""
 }
