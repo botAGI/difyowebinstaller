@@ -271,7 +271,7 @@ _wizard_llm_provider() {
     # NGC entrypoint is nvidia_entrypoint.sh (not vllm directly),
     # so command must start with "vllm serve" instead of bare "--model"
     if [[ "$LLM_PROVIDER" == "vllm" && "${DETECTED_DGX_SPARK:-false}" == "true" ]]; then
-        VLLM_IMAGE="nvcr.io/nvidia/vllm:${VLLM_NGC_VERSION:-26.02-py3}"
+        VLLM_IMAGE="nvcr.io/nvidia/vllm:${VLLM_NGC_VERSION:-26.03-py3}"
         VLLM_CUDA_SUFFIX=""
         VLLM_CMD_PREFIX="vllm serve"
         log_info "DGX Spark → NVIDIA NGC vLLM (${VLLM_IMAGE})"
@@ -290,7 +290,7 @@ _is_blackwell_gpu() {
 _apply_blackwell_cu130() {
     if [[ "$LLM_PROVIDER" == "vllm" ]] && _is_blackwell_gpu; then
         if [[ "${DETECTED_DGX_SPARK:-false}" == "true" ]]; then
-            VLLM_IMAGE="nvcr.io/nvidia/vllm:${VLLM_NGC_VERSION:-26.02-py3}"
+            VLLM_IMAGE="nvcr.io/nvidia/vllm:${VLLM_NGC_VERSION:-26.03-py3}"
             VLLM_CUDA_SUFFIX=""
             VLLM_CMD_PREFIX="vllm serve"
             log_info "DGX Spark (NI) → NVIDIA NGC vLLM (${VLLM_IMAGE})"
@@ -512,10 +512,14 @@ _wizard_vllm_model() {
 
     # Find largest fitting model for [*] tag.
     # Check dense models first (14->1), then MoE (16->18) — so dense bf16 > AWQ > MoE.
+    # On DGX Spark: skip qwen3.5_moe models (5, 18) — not supported in NGC container.
     local rec_idx=0
+    local _spark="${DETECTED_DGX_SPARK:-false}"
     if [[ "$effective_vram" -gt 0 ]]; then
         local i
         for i in 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1 16 18 17; do
+            # Skip unsupported models on Spark
+            if [[ "$_spark" == "true" && ( "$i" -eq 5 || "$i" -eq 18 ) ]]; then continue; fi
             if [[ "${vram_total[$i]}" -le "$effective_vram" ]]; then
                 rec_idx="$i"
                 break
@@ -541,30 +545,47 @@ _wizard_vllm_model() {
         vram_note="\n(GPU память не определена -- метка [*] недоступна)"
     fi
 
+    # DGX Spark: qwen3_5_moe architecture not supported in NGC container yet
+    local is_spark="${DETECTED_DGX_SPARK:-false}"
+    local spark_note=""
+    if [[ "$is_spark" == "true" ]]; then
+        spark_note="\n(DGX Spark: модели Qwen3.5 MoE пока не поддерживаются NGC)"
+    fi
+
+    # Build menu dynamically — skip unsupported models on Spark
+    local -a menu_args=()
+    menu_args+=("1"  "$(_vllm_label 1  "Qwen2.5-7B-Instruct-AWQ")")
+    menu_args+=("2"  "$(_vllm_label 2  "Qwen3-8B-AWQ")")
+    menu_args+=("3"  "$(_vllm_label 3  "Qwen2.5-14B-Instruct-AWQ")")
+    menu_args+=("4"  "$(_vllm_label 4  "Qwen3-14B-AWQ")")
+    if [[ "$is_spark" != "true" ]]; then
+        menu_args+=("5"  "$(_vllm_label 5  "Qwen3.5-27B-AWQ")")
+    fi
+    menu_args+=("6"  "$(_vllm_label 6  "Qwen2.5-32B-Instruct-AWQ")")
+    menu_args+=("7"  "$(_vllm_label 7  "Qwen2.5-7B-Instruct bf16")")
+    menu_args+=("8"  "$(_vllm_label 8  "Qwen3-8B bf16")")
+    menu_args+=("9"  "$(_vllm_label 9  "Mistral-7B-v0.3 bf16")")
+    menu_args+=("10" "$(_vllm_label 10 "Llama-3.1-8B bf16" "  (HF_TOKEN)")")
+    menu_args+=("11" "$(_vllm_label 11 "Qwen2.5-14B-Instruct bf16")")
+    menu_args+=("12" "$(_vllm_label 12 "Qwen3-14B bf16")")
+    menu_args+=("13" "$(_vllm_label 13 "microsoft/phi-4 bf16")")
+    menu_args+=("14" "$(_vllm_label 14 "Qwen2.5-32B-Instruct bf16")")
+    menu_args+=("15" "$(_vllm_label 15 "Llama-3.3-70B bf16" "  (HF_TOKEN)")")
+    menu_args+=("16" "$(_vllm_label 16 "Qwen3-Coder-Next AWQ" "  MoE 80B/14B")")
+    menu_args+=("17" "$(_vllm_label 17 "Nemotron-Nano-30B-A3B AWQ" "  MoE 30B/3B")")
+    if [[ "$is_spark" != "true" ]]; then
+        menu_args+=("18" "$(_vllm_label 18 "Qwen3.5-35B-A3B" "  MoE 35B/3B")")
+    fi
+    menu_args+=("19" "Ввести HuggingFace репозиторий (org/model-name)")
+
     local choice
     choice=$(wt_menu "Модель vLLM" \
-        "Выберите модель. Оценка: веса + KV-кэш при 32K контексте. [*]=рекомендуется.${vram_note}" \
-        "1"  "$(_vllm_label 1  "Qwen2.5-7B-Instruct-AWQ")" \
-        "2"  "$(_vllm_label 2  "Qwen3-8B-AWQ")" \
-        "3"  "$(_vllm_label 3  "Qwen2.5-14B-Instruct-AWQ")" \
-        "4"  "$(_vllm_label 4  "Qwen3-14B-AWQ")" \
-        "5"  "$(_vllm_label 5  "Qwen3.5-27B-AWQ")" \
-        "6"  "$(_vllm_label 6  "Qwen2.5-32B-Instruct-AWQ")" \
-        "7"  "$(_vllm_label 7  "Qwen2.5-7B-Instruct bf16")" \
-        "8"  "$(_vllm_label 8  "Qwen3-8B bf16")" \
-        "9"  "$(_vllm_label 9  "Mistral-7B-v0.3 bf16")" \
-        "10" "$(_vllm_label 10 "Llama-3.1-8B bf16" "  (HF_TOKEN)")" \
-        "11" "$(_vllm_label 11 "Qwen2.5-14B-Instruct bf16")" \
-        "12" "$(_vllm_label 12 "Qwen3-14B bf16")" \
-        "13" "$(_vllm_label 13 "microsoft/phi-4 bf16")" \
-        "14" "$(_vllm_label 14 "Qwen2.5-32B-Instruct bf16")" \
-        "15" "$(_vllm_label 15 "Llama-3.3-70B bf16" "  (HF_TOKEN)")" \
-        "16" "$(_vllm_label 16 "Qwen3-Coder-Next AWQ" "  MoE 80B/14B")" \
-        "17" "$(_vllm_label 17 "Nemotron-Nano-30B-A3B AWQ" "  MoE 30B/3B")" \
-        "18" "$(_vllm_label 18 "Qwen3.5-35B-A3B" "  MoE 35B/3B")" \
-        "19" "Ввести HuggingFace репозиторий (org/model-name)")
+        "Выберите модель. Оценка: веса + KV-кэш при 32K контексте. [*]=рекомендуется.${vram_note}${spark_note}" \
+        "${menu_args[@]}")
 
-    local model_choice="${choice:-5}"
+    local _default_model="5"
+    if [[ "${DETECTED_DGX_SPARK:-false}" == "true" ]]; then _default_model="6"; fi
+    local model_choice="${choice:-$_default_model}"
 
     local vllm_models=(
         ""  # 0 placeholder
@@ -696,7 +717,11 @@ _wizard_llm_model() {
         validate_model_name "$LLM_MODEL" || LLM_MODEL="qwen2.5:14b"
     fi
     if [[ "$LLM_PROVIDER" == "vllm" && -z "$VLLM_MODEL" ]]; then
-        VLLM_MODEL="QuantTrio/Qwen3.5-27B-AWQ"
+        if [[ "${DETECTED_DGX_SPARK:-false}" == "true" ]]; then
+            VLLM_MODEL="Qwen/Qwen2.5-32B-Instruct-AWQ"
+        else
+            VLLM_MODEL="QuantTrio/Qwen3.5-27B-AWQ"
+        fi
     fi
     if [[ "$LLM_PROVIDER" == "vllm" && -z "$VLLM_MAX_MODEL_LEN" ]]; then
         VLLM_MAX_MODEL_LEN="32768"
