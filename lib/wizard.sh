@@ -267,14 +267,19 @@ _wizard_llm_provider() {
         log_info "Blackwell GPU (compute ${DETECTED_GPU_COMPUTE}) -> vLLM с CUDA 13.0 (-cu130)"
     fi
 
-    # DGX Spark: use NVIDIA NGC vLLM image (SM121 support)
-    # NGC entrypoint is nvidia_entrypoint.sh (not vllm directly),
-    # so command must start with "vllm serve" instead of bare "--model"
+    # DGX Spark: hardcoded to Gemma 4 on gemma4-cu130 image
+    # - Best tested model on Spark (NVIDIA official playbook)
+    # - ~40 tok/s, 256K context, 3.8B active params (MoE)
+    # - NGC 26.03 lacks transformers 5.5+ needed for Gemma 4
+    # - Embed/rerank stay on NGC (different containers)
     if [[ "$LLM_PROVIDER" == "vllm" && "${DETECTED_DGX_SPARK:-false}" == "true" ]]; then
-        VLLM_IMAGE="nvcr.io/nvidia/vllm:${VLLM_NGC_VERSION:-26.03-py3}"
+        VLLM_IMAGE="vllm/vllm-openai:gemma4-cu130"
+        VLLM_MODEL="google/gemma-4-26B-A4B-it"
         VLLM_CUDA_SUFFIX=""
-        VLLM_CMD_PREFIX="vllm serve"
-        log_info "DGX Spark → NVIDIA NGC vLLM (${VLLM_IMAGE})"
+        VLLM_CMD_PREFIX=""  # gemma4 image has standard vllm entrypoint
+        VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-65536}"
+        VLLM_EXTRA_ARGS="--kv-cache-dtype fp8 --enable-prefix-caching"
+        log_info "DGX Spark → Gemma 4 26B-A4B (${VLLM_IMAGE})"
     fi
 }
 
@@ -290,10 +295,13 @@ _is_blackwell_gpu() {
 _apply_blackwell_cu130() {
     if [[ "$LLM_PROVIDER" == "vllm" ]] && _is_blackwell_gpu; then
         if [[ "${DETECTED_DGX_SPARK:-false}" == "true" ]]; then
-            VLLM_IMAGE="nvcr.io/nvidia/vllm:${VLLM_NGC_VERSION:-26.03-py3}"
+            VLLM_IMAGE="vllm/vllm-openai:gemma4-cu130"
+            VLLM_MODEL="google/gemma-4-26B-A4B-it"
             VLLM_CUDA_SUFFIX=""
-            VLLM_CMD_PREFIX="vllm serve"
-            log_info "DGX Spark (NI) → NVIDIA NGC vLLM (${VLLM_IMAGE})"
+            VLLM_CMD_PREFIX=""
+            VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-65536}"
+            VLLM_EXTRA_ARGS="--kv-cache-dtype fp8 --enable-prefix-caching"
+            log_info "DGX Spark (NI) → Gemma 4 26B-A4B (${VLLM_IMAGE})"
         else
             VLLM_CUDA_SUFFIX="-cu130"
             log_info "Blackwell GPU (compute ${DETECTED_GPU_COMPUTE}) — автоматически выбран vLLM с CUDA 13.0"
@@ -703,12 +711,17 @@ _wizard_llm_model() {
         # vllm + NON_INTERACTIVE: skip interactive menu, fall through to
         # default assignment and VRAM guard below (BFIX-41)
     else
-        # Interactive path
-        case "$LLM_PROVIDER" in
-            ollama)   _wizard_ollama_model;;
-            vllm)     _wizard_vllm_model;;
-            # external/skip: no model selection needed
-        esac
+        # DGX Spark: model is hardcoded to Gemma 4, skip selection
+        if [[ "$LLM_PROVIDER" == "vllm" && "${DETECTED_DGX_SPARK:-false}" == "true" ]]; then
+            wt_msg "DGX Spark — Gemma 4" "Модель: google/gemma-4-26B-A4B-it (MoE, 3.8B active)\nОбраз: vllm/vllm-openai:gemma4-cu130\nКонтекст: ${VLLM_MAX_MODEL_LEN:-65536} токенов\n\nЭто единственная официально поддерживаемая конфигурация\nдля DGX Spark (NVIDIA playbook)."
+        else
+            # Interactive path
+            case "$LLM_PROVIDER" in
+                ollama)   _wizard_ollama_model;;
+                vllm)     _wizard_vllm_model;;
+                # external/skip: no model selection needed
+            esac
+        fi
     fi
 
     # Apply non-interactive defaults if still empty
