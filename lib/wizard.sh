@@ -712,9 +712,23 @@ _wizard_llm_model() {
         # vllm + NON_INTERACTIVE: skip interactive menu, fall through to
         # default assignment and VRAM guard below (BFIX-41)
     else
-        # DGX Spark: model is hardcoded to Gemma 4, skip selection
+        # DGX Spark: model is hardcoded to Gemma 4, offer context choice
         if [[ "$LLM_PROVIDER" == "vllm" && "${DETECTED_DGX_SPARK:-false}" == "true" ]]; then
-            wt_msg "DGX Spark — Gemma 4" "Модель: google/gemma-4-26B-A4B-it (MoE, 3.8B active)\nОбраз: vllm/vllm-openai:gemma4-cu130\nКонтекст: ${VLLM_MAX_MODEL_LEN:-65536} токенов\n\nЭто единственная официально поддерживаемая конфигурация\nдля DGX Spark (NVIDIA playbook)."
+            local spark_ctx
+            spark_ctx=$(wt_menu "DGX Spark — Gemma 4 контекст" \
+                "Модель: google/gemma-4-26B-A4B-it (MoE, 3.8B active)\nОбраз: vllm/vllm-openai:gemma4-cu130\n\nВыберите максимальный контекст (fp8 KV-кэш):" \
+                "1" "32K   — минимум памяти, макс. concurrency" \
+                "2" "64K   — баланс (рекомендуется)" \
+                "3" "128K  — большие документы" \
+                "4" "256K  — максимум (вся доступная память)")
+            spark_ctx="${spark_ctx:-2}"
+            case "$spark_ctx" in
+                1) VLLM_MAX_MODEL_LEN=32768;;
+                2) VLLM_MAX_MODEL_LEN=65536;;
+                3) VLLM_MAX_MODEL_LEN=131072;;
+                4) VLLM_MAX_MODEL_LEN=262144;;
+                *) VLLM_MAX_MODEL_LEN=65536;;
+            esac
         else
             # Interactive path
             case "$LLM_PROVIDER" in
