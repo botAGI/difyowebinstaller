@@ -45,18 +45,18 @@ _wt_width=""
 
 wt_get_size() {
     local term_h term_w
-    term_h="$(tput lines 2>/dev/null)" || true
-    term_w="$(tput cols 2>/dev/null)" || true
-    # Fallback if tput fails (no TTY, sudo, pipe)
-    [[ "$term_h" =~ ^[0-9]+$ ]] || term_h=24
-    [[ "$term_w" =~ ^[0-9]+$ ]] || term_w=80
+    term_h="$(tput lines 2>/dev/null || true)"
+    term_w="$(tput cols 2>/dev/null || true)"
+    # Fallback if tput returns non-numeric (no TTY, sudo, pipe)
+    if ! [[ "$term_h" =~ ^[0-9]+$ ]]; then term_h=24; fi
+    if ! [[ "$term_w" =~ ^[0-9]+$ ]]; then term_w=80; fi
     # Clamp: height 12-40, width 60-120
-    _wt_height="$term_h"
-    [[ "$_wt_height" -lt 12 ]] && _wt_height=12
-    [[ "$_wt_height" -gt 40 ]] && _wt_height=40
-    _wt_width="$term_w"
-    [[ "$_wt_width" -lt 60 ]] && _wt_width=60
-    [[ "$_wt_width" -gt 120 ]] && _wt_width=120
+    if [[ "$term_h" -lt 12 ]]; then _wt_height=12;
+    elif [[ "$term_h" -gt 40 ]]; then _wt_height=40;
+    else _wt_height="$term_h"; fi
+    if [[ "$term_w" -lt 60 ]]; then _wt_width=60;
+    elif [[ "$term_w" -gt 120 ]]; then _wt_width=120;
+    else _wt_width="$term_w"; fi
 }
 
 # Ensure sizes are set
@@ -67,7 +67,8 @@ wt_get_size
 # ============================================================================
 
 _wt_available() {
-    [[ "${NON_INTERACTIVE:-false}" != "true" ]] && command -v whiptail &>/dev/null
+    if [[ "${NON_INTERACTIVE:-false}" == "true" ]]; then return 1; fi
+    command -v whiptail &>/dev/null
 }
 
 # ============================================================================
@@ -103,7 +104,7 @@ wt_menu() {
 
     wt_get_size
     local list_h=$(( _wt_height - 8 ))
-    [[ "$list_h" -lt 4 ]] && list_h=4
+    if [[ "$list_h" -lt 4 ]]; then list_h=4; fi
 
     local result
     result=$(whiptail --title "$title" --menu "$desc" \
@@ -131,7 +132,7 @@ wt_radio() {
             i=$((i + 1))
             tags+=("$1")
             local marker=" "
-            [[ "$3" == "ON" ]] && marker="*"
+            if [[ "$3" == "ON" ]]; then marker="*"; fi
             echo "  ${i}) [${marker}] $2" >&2
             shift 3
         done
@@ -148,7 +149,7 @@ wt_radio() {
 
     wt_get_size
     local list_h=$(( _wt_height - 8 ))
-    [[ "$list_h" -lt 4 ]] && list_h=4
+    if [[ "$list_h" -lt 4 ]]; then list_h=4; fi
 
     local result
     result=$(whiptail --title "$title" --radiolist "$desc" \
@@ -176,7 +177,7 @@ wt_checklist() {
             i=$((i + 1))
             tags+=("$1")
             local marker=" "
-            [[ "$3" == "ON" ]] && marker="x"
+            if [[ "$3" == "ON" ]]; then marker="x"; fi
             defaults+=("$3")
             echo "  ${i}) [${marker}] $2" >&2
             shift 3
@@ -187,7 +188,7 @@ wt_checklist() {
             # Return defaults
             local result=""
             for ((j=0; j<${#tags[@]}; j++)); do
-                [[ "${defaults[$j]}" == "ON" ]] && result+="${tags[$j]} "
+                if [[ "${defaults[$j]}" == "ON" ]]; then result+="${tags[$j]} "; fi
             done
             echo "$result"
         else
@@ -204,7 +205,7 @@ wt_checklist() {
 
     wt_get_size
     local list_h=$(( _wt_height - 8 ))
-    [[ "$list_h" -lt 4 ]] && list_h=4
+    if [[ "$list_h" -lt 4 ]]; then list_h=4; fi
 
     local result
     result=$(whiptail --title "$title" --checklist "$desc" \
@@ -273,14 +274,14 @@ wt_yesno() {
 
     if ! _wt_available; then
         local suffix="[Y/n]"
-        [[ "$default_flag" == "--defaultno" ]] && suffix="[y/N]"
+        if [[ "$default_flag" == "--defaultno" ]]; then suffix="[y/N]"; fi
         local ans
         read -rp "${question} ${suffix}: " ans </dev/tty
         case "${ans,,}" in
             y|yes) return 0 ;;
             n|no)  return 1 ;;
             *)
-                [[ "$default_flag" == "--defaultno" ]] && return 1
+                if [[ "$default_flag" == "--defaultno" ]]; then return 1; fi
                 return 0
                 ;;
         esac
