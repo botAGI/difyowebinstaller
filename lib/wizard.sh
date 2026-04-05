@@ -67,6 +67,11 @@ _init_wizard_defaults() {
     REMOTE_BACKUP_KEY="${REMOTE_BACKUP_KEY:-}"
     REMOTE_BACKUP_PATH="${REMOTE_BACKUP_PATH:-/var/backups/agmind-remote}"
     ADMIN_UI_OPEN="${ADMIN_UI_OPEN:-false}"
+    ENABLE_LITELLM="${ENABLE_LITELLM:-false}"
+    ENABLE_SEARXNG="${ENABLE_SEARXNG:-false}"
+    ENABLE_NOTEBOOK="${ENABLE_NOTEBOOK:-false}"
+    ENABLE_DBGPT="${ENABLE_DBGPT:-false}"
+    ENABLE_CRAWL4AI="${ENABLE_CRAWL4AI:-false}"
     ENABLE_DIFY_PREMIUM="${ENABLE_DIFY_PREMIUM:-true}"
     NON_INTERACTIVE="${NON_INTERACTIVE:-false}"
 }
@@ -589,8 +594,12 @@ _wizard_vllm_model() {
                 fit_tag="  [!OOM]"
             fi
         fi
-        local kv_show=$(( total_est - model_w ))
-        ctx_menu_args+=("${num}" "${ctx_labels[$ci]}  [~${total_est} GB: ${model_w}+KV${kv_show}]${fit_tag}")
+        if [[ "$total_est" != "?" ]]; then
+            local kv_show=$(( total_est - model_w ))
+            ctx_menu_args+=("${num}" "${ctx_labels[$ci]}  [~${total_est} GB: ${model_w}+KV${kv_show}]${fit_tag}")
+        else
+            ctx_menu_args+=("${num}" "${ctx_labels[$ci]}  [? GB]")
+        fi
     done
 
     local ctx_choice
@@ -877,7 +886,8 @@ _wizard_reranker_model() {
 }
 
 _wizard_hf_token() {
-    if [[ "$LLM_PROVIDER" != "vllm" && "$EMBED_PROVIDER" != "tei" ]]; then
+    # Prompt for HF token if any TEI/vLLM service needs HuggingFace models
+    if [[ "$LLM_PROVIDER" != "vllm" && "$EMBED_PROVIDER" != "tei" && "${ENABLE_RERANKER:-false}" != "true" ]]; then
         return 0
     fi
     if [[ -n "$HF_TOKEN" ]]; then
@@ -1392,7 +1402,7 @@ run_wizard() {
     # Export all choices
     export DEPLOY_PROFILE DOMAIN CERTBOT_EMAIL VECTOR_STORE ENABLE_DOCLING
     export DOCLING_IMAGE OCR_LANG NVIDIA_VISIBLE_DEVICES
-    export LLM_PROVIDER LLM_MODEL VLLM_MODEL VLLM_CUDA_SUFFIX EMBED_PROVIDER EMBEDDING_MODEL TEI_EMBED_VERSION
+    export LLM_PROVIDER LLM_MODEL VLLM_MODEL VLLM_CUDA_SUFFIX VLLM_MAX_MODEL_LEN EMBED_PROVIDER EMBEDDING_MODEL TEI_EMBED_VERSION
     export ENABLE_RERANKER RERANK_MODEL RERANKER_ON_GPU TEI_RERANK_VERSION
     export HF_TOKEN TLS_MODE TLS_CERT_PATH TLS_KEY_PATH
     export MONITORING_MODE MONITORING_ENDPOINT MONITORING_TOKEN
