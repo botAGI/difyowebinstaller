@@ -492,7 +492,9 @@ _wizard_vllm_model() {
         local idx="$1" name="$2" suffix="${3:-}"
         local rec_mark=""
         if [[ "$idx" -eq "$rec_idx" ]]; then rec_mark="  [*]"; fi
-        echo "${name}  [~${vram_total[$idx]} GB]${suffix}${rec_mark}"
+        local w="${weights_gb[$idx]}"
+        local kv=$(( vram_total[$idx] - w ))
+        echo "${name}  [~${vram_total[$idx]} GB: ${w}+KV${kv}]${suffix}${rec_mark}"
     }
 
     local vram_note=""
@@ -583,7 +585,8 @@ _wizard_vllm_model() {
                 fit_tag="  [!OOM]"
             fi
         fi
-        ctx_menu_args+=("${num}" "${ctx_labels[$ci]}  (~${total_est} GB)${fit_tag}")
+        local kv_show=$(( total_est - model_w ))
+        ctx_menu_args+=("${num}" "${ctx_labels[$ci]}  [~${total_est} GB: ${model_w}+KV${kv_show}]${fit_tag}")
     done
 
     local ctx_choice
