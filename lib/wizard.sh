@@ -1347,6 +1347,12 @@ _wizard_confirm() {
 # ============================================================================
 
 run_wizard() {
+    # Load version defaults (DOCLING_IMAGE_CPU, DOCLING_IMAGE_CUDA, etc.)
+    local _versions_file="${INSTALLER_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/templates/versions.env"
+    if [[ -f "$_versions_file" ]]; then
+        set +u; source "$_versions_file"; set -u
+    fi
+
     _init_wizard_defaults
 
     _wizard_profile
