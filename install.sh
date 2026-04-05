@@ -50,7 +50,7 @@ _acquire_lock() {
         trap 'rmdir "$LOCK_DIR" 2>/dev/null; _cleanup_on_failure' EXIT
     else
         local lock="/var/lock/agmind-install.lock"
-        [[ -L "$lock" ]] && { echo "Lock is a symlink, aborting" >&2; exit 1; }
+        if [[ -L "$lock" ]]; then echo "Lock is a symlink, aborting" >&2; exit 1; fi
         exec 9>"$lock"
         flock -n 9 || { log_error "Another install is running"; exit 1; }
         trap _cleanup_on_failure EXIT
@@ -59,7 +59,7 @@ _acquire_lock() {
 
 _cleanup_on_failure() {
     local rc=$?
-    [[ $rc -eq 0 ]] && return
+    if [[ $rc -eq 0 ]]; then return; fi
     echo ""
     log_error "Installation aborted (code: ${rc})."
     if [[ -f "${INSTALL_DIR}/.install_phase" ]]; then
@@ -141,7 +141,7 @@ _run_with_timeout() {
     local func="$1" secs="$2"
     "$func" & local pid=$! elapsed=0
     while kill -0 "$pid" 2>/dev/null; do
-        [[ $elapsed -ge $secs ]] && { kill -TERM "$pid" 2>/dev/null; wait "$pid" 2>/dev/null || true; return 124; }
+        if [[ $elapsed -ge $secs ]]; then kill -TERM "$pid" 2>/dev/null; wait "$pid" 2>/dev/null || true; return 124; fi
         sleep 1; elapsed=$((elapsed + 1))
     done
     wait "$pid"
@@ -151,7 +151,7 @@ _run_with_timeout() {
 phase_diagnostics() { run_diagnostics || _confirm_continue "System below minimum requirements"; preflight_checks || _confirm_continue "Pre-flight errors found"; }
 phase_wizard()      { run_wizard; }
 phase_docker()      { setup_docker; }
-phase_config()      { ensure_bind_mount_files; export INSTALL_DIR; generate_config "$DEPLOY_PROFILE" "$TEMPLATE_DIR"; enable_gpu_compose; setup_security; [[ "$ENABLE_AUTHELIA" == "true" ]] && configure_authelia "$TEMPLATE_DIR"; _copy_runtime_files; }
+phase_config()      { ensure_bind_mount_files; export INSTALL_DIR; generate_config "$DEPLOY_PROFILE" "$TEMPLATE_DIR"; enable_gpu_compose; setup_security; if [[ "$ENABLE_AUTHELIA" == "true" ]]; then configure_authelia "$TEMPLATE_DIR"; fi; _copy_runtime_files; }
 phase_pull()        { compose_pull; }
 phase_start()       { compose_start; create_openwebui_admin; }
 phase_health()      { wait_healthy "$TIMEOUT_HEALTH" "$TIMEOUT_GPU_HEALTH"; _obtain_letsencrypt_cert; }
@@ -241,7 +241,7 @@ _check_critical_services() {
 _copy_runtime_files() {
     local scripts=(backup.sh restore.sh uninstall.sh update.sh agmind.sh health-gen.sh rotate_secrets.sh dr-drill.sh generate-manifest.sh redis-lock-cleanup.sh patch_dify_features.sh)
     for s in "${scripts[@]}"; do
-        [[ -f "${INSTALLER_DIR}/scripts/${s}" ]] && cp "${INSTALLER_DIR}/scripts/${s}" "${INSTALL_DIR}/scripts/"
+        if [[ -f "${INSTALLER_DIR}/scripts/${s}" ]]; then cp "${INSTALLER_DIR}/scripts/${s}" "${INSTALL_DIR}/scripts/"; fi
     done
     cp "${INSTALLER_DIR}/lib/health.sh" "${INSTALL_DIR}/scripts/health.sh" 2>/dev/null || true
     cp "${INSTALLER_DIR}/lib/detect.sh" "${INSTALL_DIR}/scripts/detect.sh" 2>/dev/null || true
@@ -250,12 +250,12 @@ _copy_runtime_files() {
 
 _init_dify_admin() {
     # Skip if already initialized
-    [[ -f "${INSTALL_DIR}/.dify_initialized" ]] && { log_info "Dify already initialized"; return 0; }
+    if [[ -f "${INSTALL_DIR}/.dify_initialized" ]]; then log_info "Dify already initialized"; return 0; fi
 
     local env_file="${INSTALL_DIR}/docker/.env"
     local init_password
     init_password="$(grep '^INIT_PASSWORD=' "$env_file" 2>/dev/null | cut -d'=' -f2-)"
-    [[ -z "$init_password" ]] && return 0
+    if [[ -z "$init_password" ]]; then return 0; fi
 
     local admin_password
     admin_password="$(echo "$init_password" | base64 -d 2>/dev/null || echo "$init_password")"
@@ -344,8 +344,8 @@ _init_dify_admin() {
 
 _save_credentials() {
     local ip; ip="$(_get_ip)"
-    local url="http://${ip}"; [[ "${DEPLOY_PROFILE:-}" == "vps" && -n "${DOMAIN:-}" ]] && url="https://${DOMAIN}"
-    local owui_pass=""; [[ -f "${INSTALL_DIR}/.admin_password" ]] && owui_pass="$(cat "${INSTALL_DIR}/.admin_password")"
+    local url="http://${ip}"; if [[ "${DEPLOY_PROFILE:-}" == "vps" && -n "${DOMAIN:-}" ]]; then url="https://${DOMAIN}"; fi
+    local owui_pass=""; if [[ -f "${INSTALL_DIR}/.admin_password" ]]; then owui_pass="$(cat "${INSTALL_DIR}/.admin_password")"; fi
     {
         echo "# AGMind Credentials — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
         echo ""
@@ -473,9 +473,9 @@ _save_credentials() {
 _get_ip() { if [[ "$(uname)" == "Darwin" ]]; then ipconfig getifaddr en0 2>/dev/null || echo "127.0.0.1"; else hostname -I 2>/dev/null | awk '{print $1}' || echo "127.0.0.1"; fi; }
 
 _obtain_letsencrypt_cert() {
-    [[ "${TLS_MODE:-none}" != "letsencrypt" ]] && return 0
-    [[ -z "${DOMAIN:-}" ]] && { log_warn "TLS: letsencrypt requires DOMAIN — skipping cert obtain"; return 0; }
-    [[ -z "${CERTBOT_EMAIL:-}" ]] && { log_warn "TLS: letsencrypt requires CERTBOT_EMAIL — skipping cert obtain"; return 0; }
+    if [[ "${TLS_MODE:-none}" != "letsencrypt" ]]; then return 0; fi
+    if [[ -z "${DOMAIN:-}" ]]; then log_warn "TLS: letsencrypt requires DOMAIN — skipping cert obtain"; return 0; fi
+    if [[ -z "${CERTBOT_EMAIL:-}" ]]; then log_warn "TLS: letsencrypt requires CERTBOT_EMAIL — skipping cert obtain"; return 0; fi
 
     local compose_file="${INSTALL_DIR}/docker/docker-compose.yml"
 
@@ -511,7 +511,7 @@ _obtain_letsencrypt_cert() {
 }
 
 _install_cli() {
-    [[ -d /usr/local/bin ]] && ln -sf "${INSTALL_DIR}/scripts/agmind.sh" /usr/local/bin/agmind && log_success "'agmind' command available"
+    if [[ -d /usr/local/bin ]]; then ln -sf "${INSTALL_DIR}/scripts/agmind.sh" /usr/local/bin/agmind && log_success "'agmind' command available"; fi
     date -u +%Y-%m-%dT%H:%M:%SZ > "${INSTALL_DIR}/.agmind_installed"
     # Write RELEASE tag for update system (BUG-V3-044: fallback when RELEASE file missing)
     if [[ -f "${INSTALLER_DIR}/RELEASE" ]]; then
@@ -521,7 +521,7 @@ _install_cli() {
         # Try git describe (works if installed from tagged commit)
         release_tag="$(cd "${INSTALLER_DIR}" && git describe --tags --exact-match 2>/dev/null || true)"
         # Fallback: git describe --always (short hash with tag prefix if available)
-        [[ -z "$release_tag" ]] && release_tag="$(cd "${INSTALLER_DIR}" && git describe --tags --always 2>/dev/null || true)"
+        if [[ -z "$release_tag" ]]; then release_tag="$(cd "${INSTALLER_DIR}" && git describe --tags --always 2>/dev/null || true)"; fi
         # Last resort: hash of versions.env content
         if [[ -z "$release_tag" && -f "${INSTALL_DIR}/docker/versions.env" ]]; then
             release_tag="dev-$(md5sum "${INSTALL_DIR}/docker/versions.env" | cut -c1-8)"
@@ -542,7 +542,7 @@ _install_crons() {
     local health_dir="${INSTALL_DIR}/docker/nginx"
     mkdir -p "$health_dir"
     # Docker creates a directory if the file didn't exist at bind mount time
-    [[ -d "${health_dir}/health.json" ]] && rm -rf "${health_dir}/health.json"
+    if [[ -d "${health_dir}/health.json" ]]; then rm -rf "${health_dir}/health.json"; fi
     if [[ ! -f "${health_dir}/health.json" ]]; then
         echo '{"status": "starting", "timestamp": "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}' > "${health_dir}/health.json"
     fi
@@ -573,9 +573,9 @@ _install_systemd_service() {
 _show_final_summary() {
     local ip; ip="$(_get_ip)"
     local url="http://${ip}"
-    [[ "${DEPLOY_PROFILE:-}" == "vps" && -n "${DOMAIN:-}" ]] && url="https://${DOMAIN}"
+    if [[ "${DEPLOY_PROFILE:-}" == "vps" && -n "${DOMAIN:-}" ]]; then url="https://${DOMAIN}"; fi
     local owui_pass=""
-    [[ -f "${INSTALL_DIR}/.admin_password" ]] && owui_pass="$(cat "${INSTALL_DIR}/.admin_password")"
+    if [[ -f "${INSTALL_DIR}/.admin_password" ]]; then owui_pass="$(cat "${INSTALL_DIR}/.admin_password")"; fi
     local dify_url="http://${DOMAIN:-$ip}:3000"
 
     local container_count
@@ -666,7 +666,7 @@ main() {
     done
 
     # Root check
-    [[ "$(id -u)" -ne 0 && "$(uname)" != "Darwin" ]] && { log_error "Run as root: sudo bash install.sh"; exit 1; }
+    if [[ "$(id -u)" -ne 0 && "$(uname)" != "Darwin" ]]; then log_error "Run as root: sudo bash install.sh"; exit 1; fi
 
     _acquire_lock
     mkdir -p "$INSTALL_DIR"
@@ -694,7 +694,7 @@ main() {
 
     # Checkpoint resume
     local start=1
-    [[ "$FORCE_RESTART" == "true" ]] && rm -f "${INSTALL_DIR}/.install_phase"
+    if [[ "$FORCE_RESTART" == "true" ]]; then rm -f "${INSTALL_DIR}/.install_phase"; fi
     if [[ -f "${INSTALL_DIR}/.install_phase" ]]; then
         local saved; saved="$(cat "${INSTALL_DIR}/.install_phase" 2>/dev/null)"
         if [[ "$saved" =~ ^[1-9]$ ]]; then
@@ -720,22 +720,22 @@ main() {
 
     # Phase table
     local t=10
-    [[ $start -le 1  ]] && run_phase 1  $t "Diagnostics"   phase_diagnostics
+    if [[ $start -le 1  ]]; then run_phase 1  $t "Diagnostics"   phase_diagnostics; fi
     if [[ "${DRY_RUN:-false}" == "true" ]]; then
         preflight_checks || true
         preflight_rc=$?
         log_info "Dry-run complete — exiting without starting containers"
         exit "$preflight_rc"
     fi
-    [[ $start -le 2  ]] && run_phase 2  $t "Wizard"        phase_wizard
-    [[ $start -le 3  ]] && run_phase 3  $t "Docker"        phase_docker
-    [[ $start -le 4  ]] && run_phase 4  $t "Configuration" phase_config
-    [[ $start -le 5  ]] && run_phase 5  $t "Pull"   phase_pull   # inactivity timeout inside _pull_with_progress
-    [[ $start -le 6  ]] && run_phase_with_timeout 6  $t "Start"  phase_start  "$TIMEOUT_START"
-    [[ $start -le 7  ]] && run_phase 7  $t "Health" phase_health   # inactivity timeout inside wait_healthy
-    [[ $start -le 8  ]] && run_phase 8  $t "Models" phase_models_graceful  # graceful: non-fatal on timeout
-    [[ $start -le 9  ]] && run_phase 9  $t "Backups"       phase_backups
-    [[ $start -le 10 ]] && run_phase 10 $t "Complete"      phase_complete
+    if [[ $start -le 2  ]]; then run_phase 2  $t "Wizard"        phase_wizard; fi
+    if [[ $start -le 3  ]]; then run_phase 3  $t "Docker"        phase_docker; fi
+    if [[ $start -le 4  ]]; then run_phase 4  $t "Configuration" phase_config; fi
+    if [[ $start -le 5  ]]; then run_phase 5  $t "Pull"   phase_pull; fi   # inactivity timeout inside _pull_with_progress
+    if [[ $start -le 6  ]]; then run_phase_with_timeout 6  $t "Start"  phase_start  "$TIMEOUT_START"; fi
+    if [[ $start -le 7  ]]; then run_phase 7  $t "Health" phase_health; fi   # inactivity timeout inside wait_healthy
+    if [[ $start -le 8  ]]; then run_phase 8  $t "Models" phase_models_graceful; fi  # graceful: non-fatal on timeout
+    if [[ $start -le 9  ]]; then run_phase 9  $t "Backups"       phase_backups; fi
+    if [[ $start -le 10 ]]; then run_phase 10 $t "Complete"      phase_complete; fi
 
     rm -f "${INSTALL_DIR}/.install_phase"
 }

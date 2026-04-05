@@ -210,7 +210,7 @@ safe_write_file() {
         log_error "safe_write_file: path outside INSTALL_DIR: ${filepath}"
         return 1
     fi
-    [[ -d "$filepath" ]] && rm -rf "${filepath:?}"
+    if [[ -d "$filepath" ]]; then rm -rf "${filepath:?}"; fi
     mkdir -p "$(dirname "$filepath")"
 }
 
@@ -263,7 +263,7 @@ preflight_bind_mount_check() {
     if [[ -n "$bad_dirs" ]]; then
         log_error "Config paths are directories (should be files):"
         while IFS= read -r d; do
-            [[ -n "$d" ]] && echo -e "  ${RED}→ ${d}${NC}" >&2
+            if [[ -n "$d" ]]; then echo -e "  ${RED}→ ${d}${NC}" >&2; fi
         done <<< "$bad_dirs"
         errors=$((errors + 1))
     fi
@@ -282,7 +282,7 @@ preflight_bind_mount_check() {
     )
     local enable_litellm
     enable_litellm="$(grep '^ENABLE_LITELLM=' "${docker_dir}/.env" 2>/dev/null | cut -d'=' -f2- || echo "true")"
-    [[ "$enable_litellm" == "true" ]] && all_bind_files+=("litellm-config.yaml")
+    if [[ "$enable_litellm" == "true" ]]; then all_bind_files+=("litellm-config.yaml"); fi
     for f in "${all_bind_files[@]}"; do
         local full="${docker_dir}/${f}"
         if [[ ! -f "$full" ]]; then

@@ -307,7 +307,7 @@ run_diagnostics() {
     case "${DETECTED_GPU}" in
         nvidia)
             local gpu_mem_label="${DETECTED_GPU_VRAM} MB VRAM"
-            [[ "${DETECTED_GPU_UNIFIED_MEMORY:-false}" == "true" ]] && gpu_mem_label="${DETECTED_GPU_VRAM} MB unified memory"
+            if [[ "${DETECTED_GPU_UNIFIED_MEMORY:-false}" == "true" ]]; then gpu_mem_label="${DETECTED_GPU_VRAM} MB unified memory"; fi
             echo -e "  GPU:          ${GREEN}NVIDIA ${DETECTED_GPU_NAME} (${gpu_mem_label}${DETECTED_GPU_COMPUTE:+, sm ${DETECTED_GPU_COMPUTE}})${NC}" ;;
         amd)    echo -e "  GPU:          ${GREEN}AMD ${DETECTED_GPU_NAME} ${DETECTED_GPU_VRAM:+(${DETECTED_GPU_VRAM} MB VRAM)}${NC}" ;;
         intel)  echo -e "  GPU:          ${GREEN}Intel ${DETECTED_GPU_NAME}${NC}" ;;

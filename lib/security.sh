@@ -211,7 +211,7 @@ encrypt_secrets() {
     # Install sops if missing
     if ! command -v sops &>/dev/null; then
         local arch="amd64"
-        [[ "$(uname -m)" == "aarch64" || "$(uname -m)" == "arm64" ]] && arch="arm64"
+        if [[ "$(uname -m)" == "aarch64" || "$(uname -m)" == "arm64" ]]; then arch="arm64"; fi
         local sops_url="https://github.com/getsops/sops/releases/download/v3.9.4/sops-v3.9.4.linux.${arch}"
         if curl -sSL "$sops_url" -o /usr/local/bin/sops; then
             # Verify checksum if provided
@@ -278,7 +278,7 @@ harden_docker_compose() {
     log_info "Applying Docker security defaults..."
 
     local compose_file="${INSTALL_DIR}/docker/docker-compose.yml"
-    [[ ! -f "$compose_file" ]] && return 0
+    if [[ ! -f "$compose_file" ]]; then return 0; fi
 
     # no-new-privileges on all services EXCEPT cadvisor (needs privileged) and sandbox (needs cap_add)
     if grep -q 'no-new-privileges' "$compose_file" 2>/dev/null; then

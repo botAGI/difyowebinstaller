@@ -18,29 +18,29 @@ IMAGE_VALIDATION_TIMEOUT="${IMAGE_VALIDATION_TIMEOUT:-20}"
 build_compose_profiles() {
     local profiles=""
 
-    [[ "${DEPLOY_PROFILE:-}" == "vps" ]] && profiles="vps"
-    [[ "${VECTOR_STORE:-weaviate}" == "qdrant" ]] && profiles="${profiles:+$profiles,}qdrant"
-    [[ "${VECTOR_STORE:-weaviate}" == "weaviate" ]] && profiles="${profiles:+$profiles,}weaviate"
+    if [[ "${DEPLOY_PROFILE:-}" == "vps" ]]; then profiles="vps"; fi
+    if [[ "${VECTOR_STORE:-weaviate}" == "qdrant" ]]; then profiles="${profiles:+$profiles,}qdrant"; fi
+    if [[ "${VECTOR_STORE:-weaviate}" == "weaviate" ]]; then profiles="${profiles:+$profiles,}weaviate"; fi
     # Docling: check both wizard var (ENABLE_DOCLING) and .env var (ETL_TYPE) for resume support
     # Backward compat: ETL_ENHANCED=true without ENABLE_DOCLING → treat as ENABLE_DOCLING=true
     local docling_enabled="${ENABLE_DOCLING:-${ETL_ENHANCED:-false}}"
     if [[ "$docling_enabled" == "true" || "${ETL_TYPE:-dify}" == "unstructured_api" ]]; then
         profiles="${profiles:+$profiles,}docling"
     fi
-    [[ "${MONITORING_MODE:-none}" == "local" ]] && profiles="${profiles:+$profiles,}monitoring"
-    [[ "${ENABLE_AUTHELIA:-false}" == "true" ]] && profiles="${profiles:+$profiles,}authelia"
+    if [[ "${MONITORING_MODE:-none}" == "local" ]]; then profiles="${profiles:+$profiles,}monitoring"; fi
+    if [[ "${ENABLE_AUTHELIA:-false}" == "true" ]]; then profiles="${profiles:+$profiles,}authelia"; fi
 
     if [[ "${LLM_PROVIDER:-}" == "ollama" || "${EMBED_PROVIDER:-}" == "ollama" ]]; then
         profiles="${profiles:+$profiles,}ollama"
     fi
-    [[ "${LLM_PROVIDER:-}" == "vllm" ]] && profiles="${profiles:+$profiles,}vllm"
-    [[ "${EMBED_PROVIDER:-}" == "tei" ]] && profiles="${profiles:+$profiles,}tei"
-    [[ "${ENABLE_RERANKER:-false}" == "true" ]] && profiles="${profiles:+$profiles,}reranker"
-    [[ "${ENABLE_LITELLM:-true}" == "true" ]] && profiles="${profiles:+$profiles,}litellm"
-    [[ "${ENABLE_SEARXNG:-false}" == "true" ]] && profiles="${profiles:+$profiles,}searxng"
-    [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]] && profiles="${profiles:+$profiles,}notebook"
-    [[ "${ENABLE_DBGPT:-false}" == "true" ]] && profiles="${profiles:+$profiles,}dbgpt"
-    [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]] && profiles="${profiles:+$profiles,}crawl4ai"
+    if [[ "${LLM_PROVIDER:-}" == "vllm" ]]; then profiles="${profiles:+$profiles,}vllm"; fi
+    if [[ "${EMBED_PROVIDER:-}" == "tei" ]]; then profiles="${profiles:+$profiles,}tei"; fi
+    if [[ "${ENABLE_RERANKER:-false}" == "true" ]]; then profiles="${profiles:+$profiles,}reranker"; fi
+    if [[ "${ENABLE_LITELLM:-true}" == "true" ]]; then profiles="${profiles:+$profiles,}litellm"; fi
+    if [[ "${ENABLE_SEARXNG:-false}" == "true" ]]; then profiles="${profiles:+$profiles,}searxng"; fi
+    if [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]]; then profiles="${profiles:+$profiles,}notebook"; fi
+    if [[ "${ENABLE_DBGPT:-false}" == "true" ]]; then profiles="${profiles:+$profiles,}dbgpt"; fi
+    if [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]]; then profiles="${profiles:+$profiles,}crawl4ai"; fi
 
     COMPOSE_PROFILE_STRING="$profiles"
     export COMPOSE_PROFILE_STRING
@@ -121,7 +121,7 @@ _get_registry_token() {
             return
         fi
         attempt=$((attempt + 1))
-        [[ $attempt -lt $max_attempts ]] && sleep 5
+        if [[ $attempt -lt $max_attempts ]]; then sleep 5; fi
     done
     echo ""
 }
@@ -152,7 +152,7 @@ _check_image_exists() {
 
     local http_code
     local auth_header=""
-    [[ -n "$token" ]] && auth_header="Authorization: Bearer ${token}"
+    if [[ -n "$token" ]]; then auth_header="Authorization: Bearer ${token}"; fi
 
     http_code="$(curl -s -o /dev/null -w '%{http_code}' \
         --max-time "${IMAGE_VALIDATION_TIMEOUT:-20}" \
@@ -190,12 +190,12 @@ validate_images_exist() {
     else
         images_raw="$(docker compose config --images 2>/dev/null)" || return 0
     fi
-    [[ -z "$images_raw" ]] && return 0
+    if [[ -z "$images_raw" ]]; then return 0; fi
 
     local -a images
     mapfile -t images <<< "$images_raw"
     local total=${#images[@]}
-    [[ $total -eq 0 ]] && return 0
+    if [[ $total -eq 0 ]]; then return 0; fi
 
     log_info "Validating ${total} images exist in registries..."
 
@@ -299,12 +299,12 @@ _pull_with_progress() {
     else
         images_raw="$(docker compose config --images 2>/dev/null)" || { log_info "Pulling images..."; return 0; }
     fi
-    [[ -z "$images_raw" ]] && return 0
+    if [[ -z "$images_raw" ]]; then return 0; fi
 
     local -a images
     mapfile -t images <<< "$images_raw"
     local total=${#images[@]}
-    [[ $total -eq 0 ]] && return 0
+    if [[ $total -eq 0 ]]; then return 0; fi
 
     log_info "Pulling ${total} images..."
 
@@ -370,7 +370,7 @@ _monitor_pull_inactivity() {
             if [[ "$is_tty" == "false" ]]; then
                 local last_line
                 last_line=$(tail -1 "$logfile" 2>/dev/null || true)
-                [[ -n "$last_line" ]] && log_info "Pull: ${last_line:0:80}"
+                if [[ -n "$last_line" ]]; then log_info "Pull: ${last_line:0:80}"; fi
             fi
         else
             idle_secs=$((idle_secs + 5))
@@ -570,7 +570,7 @@ sync_db_password() {
     local db_pass db_user
 
     db_pass="$(grep '^DB_PASSWORD=' "$env_file" 2>/dev/null | cut -d'=' -f2-)"
-    [[ -z "$db_pass" ]] && return 0
+    if [[ -z "$db_pass" ]]; then return 0; fi
 
     db_user="$(grep '^DB_USERNAME=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "postgres")"
     db_user="${db_user:-postgres}"
@@ -633,7 +633,7 @@ create_plugin_db() {
     local -a required_dbs=("$plugin_db")
     local enable_litellm
     enable_litellm="$(grep '^ENABLE_LITELLM=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "true")"
-    [[ "$enable_litellm" == "true" ]] && required_dbs+=("litellm")
+    if [[ "$enable_litellm" == "true" ]]; then required_dbs+=("litellm"); fi
 
     local attempts=0
     while [[ $attempts -lt 15 ]]; do
@@ -671,12 +671,12 @@ post_launch_status() {
     while [[ $elapsed -lt 120 ]]; do
         local starting=0
         while IFS= read -r cname; do
-            [[ -z "$cname" ]] && continue
+            if [[ -z "$cname" ]]; then continue; fi
             # Skip GPU containers — they load models for minutes, not seconds
-            [[ "$gpu_containers" == *" $cname "* ]] && continue
+            if [[ "$gpu_containers" == *" $cname "* ]]; then continue; fi
             starting=$((starting + 1))
         done < <(docker ps --filter "name=agmind-" --filter "health=starting" --format "{{.Names}}" 2>/dev/null || true)
-        [[ "$starting" -eq 0 ]] && break
+        if [[ "$starting" -eq 0 ]]; then break; fi
         sleep 5
         elapsed=$((elapsed + 5))
         echo -n "."
@@ -705,8 +705,8 @@ post_launch_status() {
     # Report GPU containers still loading models (informational, not error)
     local gpu_loading=""
     while IFS= read -r cname; do
-        [[ -z "$cname" ]] && continue
-        [[ "$gpu_containers" == *" $cname "* ]] && gpu_loading="${gpu_loading:+${gpu_loading}, }${cname}"
+        if [[ -z "$cname" ]]; then continue; fi
+        if [[ "$gpu_containers" == *" $cname "* ]]; then gpu_loading="${gpu_loading:+${gpu_loading}, }${cname}"; fi
     done < <(docker ps --filter "name=agmind-" --filter "health=starting" --format "{{.Names}}" 2>/dev/null || true)
 
     if [[ -n "$gpu_loading" ]]; then

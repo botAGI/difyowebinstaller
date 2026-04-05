@@ -267,16 +267,16 @@ download_models() {
 
     # Ollama models
     local need_ollama=false
-    [[ "$llm_provider" == "ollama" ]] && need_ollama=true
-    [[ "$embed_provider" == "ollama" ]] && need_ollama=true
+    if [[ "$llm_provider" == "ollama" ]]; then need_ollama=true; fi
+    if [[ "$embed_provider" == "ollama" ]]; then need_ollama=true; fi
 
     if [[ "$need_ollama" == "true" ]]; then
         wait_for_ollama || return 1
         echo ""
         log_info "=== Downloading models ==="
         echo ""
-        [[ "$llm_provider" == "ollama" ]] && pull_model "$llm_model" "LLM (${llm_model})"
-        [[ "$embed_provider" == "ollama" ]] && pull_model "$embedding_model" "Embedding (${embedding_model})"
+        if [[ "$llm_provider" == "ollama" ]]; then pull_model "$llm_model" "LLM (${llm_model})"; fi
+        if [[ "$embed_provider" == "ollama" ]]; then pull_model "$embedding_model" "Embedding (${embedding_model})"; fi
     fi
 
     # vLLM/TEI: models download at container startup (Phase 6).
@@ -293,9 +293,9 @@ download_models() {
         else
             local vllm_size=""
             local _vllm_name="${VLLM_MODEL:-${LLM_MODEL:-unknown}}"
-            [[ -n "$_vllm_name" && "$_vllm_name" != "unknown" ]] && vllm_size="${MODEL_SIZES[$_vllm_name]:-}"
+            if [[ -n "$_vllm_name" && "$_vllm_name" != "unknown" ]]; then vllm_size="${MODEL_SIZES[$_vllm_name]:-}"; fi
             local vllm_label="vLLM model: ${_vllm_name}"
-            [[ -n "$vllm_size" ]] && vllm_label="${vllm_label} (~${vllm_size})"
+            if [[ -n "$vllm_size" ]]; then vllm_label="${vllm_label} (~${vllm_size})"; fi
             log_info "Waiting for ${vllm_label}..."
             if ! _stream_gpu_model_logs "agmind-vllm" "vLLM" "${TIMEOUT_GPU_HEALTH:-0}"; then
                 log_warn "vLLM model not fully loaded yet"
@@ -316,9 +316,9 @@ download_models() {
             log_success "TEI model already loaded"
         else
             local tei_size=""
-            [[ -n "${EMBEDDING_MODEL:-}" ]] && tei_size="${MODEL_SIZES[${EMBEDDING_MODEL}]:-}"
+            if [[ -n "${EMBEDDING_MODEL:-}" ]]; then tei_size="${MODEL_SIZES[${EMBEDDING_MODEL}]:-}"; fi
             local tei_label="TEI model: ${EMBEDDING_MODEL:-unknown}"
-            [[ -n "$tei_size" ]] && tei_label="${tei_label} (~${tei_size})"
+            if [[ -n "$tei_size" ]]; then tei_label="${tei_label} (~${tei_size})"; fi
             log_info "Waiting for ${tei_label}..."
             if ! _stream_gpu_model_logs "agmind-tei" "TEI" "${TIMEOUT_GPU_HEALTH:-0}"; then
                 log_warn "TEI model not fully loaded yet"
@@ -328,7 +328,7 @@ download_models() {
         fi
     fi
     if [[ "$llm_provider" == "external" || "$llm_provider" == "skip" ]]; then
-        [[ "$need_ollama" != "true" ]] && log_info "Provider ${llm_provider}: no model download needed"
+        if [[ "$need_ollama" != "true" ]]; then log_info "Provider ${llm_provider}: no model download needed"; fi
     fi
 
     echo ""

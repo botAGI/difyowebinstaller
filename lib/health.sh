@@ -48,8 +48,8 @@ get_service_list() {
         if [[ "$llm_provider" == "ollama" || "$embed_provider" == "ollama" ]]; then
             services+=(ollama)
         fi
-        [[ "$llm_provider" == "vllm" ]] && services+=(vllm)
-        [[ "$embed_provider" == "tei" ]] && services+=(tei)
+        if [[ "$llm_provider" == "vllm" ]]; then services+=(vllm); fi
+        if [[ "$embed_provider" == "tei" ]]; then services+=(tei); fi
 
         # Monitoring
         local monitoring_mode
@@ -68,7 +68,7 @@ get_service_list() {
         # LiteLLM
         local enable_litellm
         enable_litellm="$(grep '^ENABLE_LITELLM=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "true")"
-        [[ "$enable_litellm" == "true" ]] && services+=(litellm)
+        if [[ "$enable_litellm" == "true" ]]; then services+=(litellm); fi
 
         # Optional services
         local enable_searxng enable_notebook enable_dbgpt enable_crawl4ai
@@ -76,10 +76,10 @@ get_service_list() {
         enable_notebook="$(grep '^ENABLE_NOTEBOOK=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
         enable_dbgpt="$(grep '^ENABLE_DBGPT=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
         enable_crawl4ai="$(grep '^ENABLE_CRAWL4AI=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
-        [[ "$enable_searxng" == "true" ]] && services+=(searxng)
-        [[ "$enable_notebook" == "true" ]] && services+=(surrealdb open-notebook)
-        [[ "$enable_dbgpt" == "true" ]] && services+=(dbgpt)
-        [[ "$enable_crawl4ai" == "true" ]] && services+=(crawl4ai)
+        if [[ "$enable_searxng" == "true" ]]; then services+=(searxng); fi
+        if [[ "$enable_notebook" == "true" ]]; then services+=(surrealdb open-notebook); fi
+        if [[ "$enable_dbgpt" == "true" ]]; then services+=(dbgpt); fi
+        if [[ "$enable_crawl4ai" == "true" ]]; then services+=(crawl4ai); fi
     else
         services+=(weaviate)
     fi
@@ -96,14 +96,14 @@ check_container() {
     # Map service names to container name suffixes
     # ssrf_proxy → ssrf-proxy, plugin_daemon → plugin-daemon, open-webui → openwebui
     local cname="${name//_/-}"
-    [[ "$cname" == "open-webui" ]] && cname="openwebui"
-    [[ "$cname" == "open-notebook" ]] && cname="notebook"
+    if [[ "$cname" == "open-webui" ]]; then cname="openwebui"; fi
+    if [[ "$cname" == "open-notebook" ]]; then cname="notebook"; fi
 
     # Exact name match to avoid confusion with init-containers (BUG-V3-039)
     # e.g. "agmind-redis" must not match "agmind-redis-lock-cleaner"
     local status
     status="$(docker ps -a --filter "name=^agmind-${cname}$" --format '{{.Status}}' 2>/dev/null | head -1)"
-    [[ -z "$status" ]] && status="not found"
+    if [[ -z "$status" ]]; then status="not found"; fi
 
     if echo "$status" | grep -qi "up\|healthy"; then
         echo -e "  ${GREEN}[OK]${NC}  ${name}"
@@ -134,7 +134,7 @@ _gpu_svc_responds() {
     esac
     local container
     container="$(docker compose -f "$compose_file" ps --format '{{.Name}}' "$svc" 2>/dev/null | head -1)"
-    [[ -z "$container" ]] && return 1
+    if [[ -z "$container" ]]; then return 1; fi
     docker exec "$container" curl -sf "http://localhost:${port}/health" >/dev/null 2>&1 \
         || docker exec "$container" wget -qO- "http://localhost:${port}/health" >/dev/null 2>&1 \
         || docker exec "$container" python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:${port}/health')" >/dev/null 2>&1
@@ -152,7 +152,7 @@ _parse_gpu_progress() {
     local compose_file="$2"
     local last_line
     last_line="$(docker compose -f "$compose_file" logs --tail=1 --no-log-prefix "$svc" 2>/dev/null | tr -d '\r')"
-    [[ -z "$last_line" ]] && { echo "waiting..."; return; }
+    if [[ -z "$last_line" ]]; then echo "waiting..."; return; fi
 
     # vLLM / general downloading patterns
     if echo "$last_line" | grep -qiE 'downloading|fetching'; then
@@ -294,7 +294,7 @@ wait_healthy() {
         local gpu_ready=0
 
         for svc in "${gpu_svcs[@]}"; do
-            [[ "$gpu_done" == *" $svc "* ]] && { gpu_ready=$((gpu_ready + 1)); continue; }
+            if [[ "$gpu_done" == *" $svc "* ]]; then gpu_ready=$((gpu_ready + 1)); continue; fi
 
             local status
             status="$(docker compose -f "$compose_file" ps --format '{{.Status}}' "$svc" 2>/dev/null || echo "")"
@@ -319,7 +319,7 @@ wait_healthy() {
             fi
         done
 
-        [[ $gpu_ready -ge ${#gpu_svcs[@]} ]] && break
+        if [[ $gpu_ready -ge ${#gpu_svcs[@]} ]]; then break; fi
 
         sleep "$interval"
         gpu_elapsed=$((gpu_elapsed + interval))
@@ -327,7 +327,7 @@ wait_healthy() {
         # Compact progress line (works in both TTY and non-TTY)
         local progress_info=""
         for svc in "${gpu_svcs[@]}"; do
-            [[ "$gpu_done" == *" $svc "* ]] && continue
+            if [[ "$gpu_done" == *" $svc "* ]]; then continue; fi
             local svc_progress
             svc_progress="$(_parse_gpu_progress "$svc" "$compose_file")"
             progress_info="${progress_info:+${progress_info} | }${svc}: ${svc_progress}"
@@ -339,7 +339,7 @@ wait_healthy() {
     # Check which GPU services are still not ready
     local still_loading=""
     for svc in "${gpu_svcs[@]}"; do
-        [[ "$gpu_done" == *" $svc "* ]] && continue
+        if [[ "$gpu_done" == *" $svc "* ]]; then continue; fi
         # Container still alive — it's loading, not broken
         local status
         status="$(docker compose -f "$compose_file" ps --format '{{.Status}}' "$svc" 2>/dev/null || echo "")"
@@ -390,7 +390,7 @@ check_all() {
         else
             server_ip="$(hostname -I 2>/dev/null | awk '{print $1}' || echo "unknown")"
         fi
-        [[ -z "${server_ip:-}" ]] && server_ip="$(hostname 2>/dev/null || echo 'unknown')"
+        if [[ -z "${server_ip:-}" ]]; then server_ip="$(hostname 2>/dev/null || echo 'unknown')"; fi
         send_alert "AGMind: ${failed} service(s) not running. Check: ${server_ip}"
         echo "  Check logs: docker compose logs <service>"
     fi
@@ -427,11 +427,11 @@ verify_services() {
         embed_prov="$(grep '^EMBED_PROVIDER=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "")"
         vector_store="$(grep '^VECTOR_STORE=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "weaviate")"
 
-        [[ "$llm_prov" == "vllm" ]] && svc_checks+=("vLLM|http://localhost:8000/v1/models|agmind-vllm|vllm")
-        [[ "$llm_prov" == "ollama" || "$embed_prov" == "ollama" ]] && svc_checks+=("Ollama|http://localhost:11434/api/tags|agmind-ollama|ollama")
-        [[ "$embed_prov" == "tei" ]] && svc_checks+=("TEI|http://localhost:80/info|agmind-tei|tei")
-        [[ "$vector_store" == "weaviate" ]] && svc_checks+=("Weaviate|http://localhost:8080/v1/.well-known/ready|agmind-weaviate|weaviate")
-        [[ "$vector_store" == "qdrant" ]] && svc_checks+=("Qdrant|http://localhost:6333/readyz|agmind-qdrant|qdrant")
+        if [[ "$llm_prov" == "vllm" ]]; then svc_checks+=("vLLM|http://localhost:8000/v1/models|agmind-vllm|vllm"); fi
+        if [[ "$llm_prov" == "ollama" || "$embed_prov" == "ollama" ]]; then svc_checks+=("Ollama|http://localhost:11434/api/tags|agmind-ollama|ollama"); fi
+        if [[ "$embed_prov" == "tei" ]]; then svc_checks+=("TEI|http://localhost:80/info|agmind-tei|tei"); fi
+        if [[ "$vector_store" == "weaviate" ]]; then svc_checks+=("Weaviate|http://localhost:8080/v1/.well-known/ready|agmind-weaviate|weaviate"); fi
+        if [[ "$vector_store" == "qdrant" ]]; then svc_checks+=("Qdrant|http://localhost:6333/readyz|agmind-qdrant|qdrant"); fi
     fi
 
     # Global results array (accessible to caller)
@@ -460,7 +460,7 @@ verify_services() {
                     local port path
                     port="$(echo "$url" | sed -E 's|https?://[^:/]+:?([0-9]*)/.*|\1|')"
                     path="$(echo "$url" | sed -E 's|https?://[^/]+(/.*)|\1|')"
-                    [[ -z "$port" || "$port" == "$url" ]] && port=80
+                    if [[ -z "$port" || "$port" == "$url" ]]; then port=80; fi
                     local host_url="http://${cip}:${port}${path}"
                     _do_check() { curl -sf --max-time 5 -o /dev/null -w '%{http_code}' "$host_url" 2>/dev/null || echo "000"; }
                 else
@@ -485,7 +485,7 @@ verify_services() {
             local attempt=0
             while [[ $attempt -lt $max_retries ]]; do
                 attempt=$((attempt + 1))
-                [[ "$max_retries" -gt 1 ]] && echo -ne "\r  ⏳ ${name}: retry ${attempt}/${max_retries}...          "
+                if [[ "$max_retries" -gt 1 ]]; then echo -ne "\r  ⏳ ${name}: retry ${attempt}/${max_retries}...          "; fi
                 sleep "$retry_interval"
                 http_code="$(_do_check)"
                 if [[ "$http_code" =~ ^[23] ]]; then
@@ -493,7 +493,7 @@ verify_services() {
                     break
                 fi
             done
-            [[ "$max_retries" -gt 1 ]] && echo -ne "\r                                              \r"
+            if [[ "$max_retries" -gt 1 ]]; then echo -ne "\r                                              \r"; fi
         fi
 
         if [[ "$status" == "OK" ]]; then
@@ -617,7 +617,7 @@ check_ollama_models() {
         echo "  (no models loaded)"
     else
         echo "$response" | tail -n +2 | while IFS= read -r line; do
-            [[ -n "$line" ]] && echo "  $line"
+            if [[ -n "$line" ]]; then echo "  $line"; fi
         done
     fi
     echo ""
@@ -629,7 +629,7 @@ check_vector_health() {
     echo -e "${BOLD}Vector Store:${NC}"
 
     local vs="weaviate"
-    [[ -f "$env_file" ]] && vs="$(grep '^VECTOR_STORE=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "weaviate")"
+    if [[ -f "$env_file" ]]; then vs="$(grep '^VECTOR_STORE=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "weaviate")"; fi
 
     case "$vs" in
         weaviate)

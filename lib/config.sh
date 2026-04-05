@@ -353,8 +353,8 @@ _append_provider_vars() {
                 else
                     echo "OPENAI_API_BASE_URL=http://vllm:8000/v1"
                 fi
-                [[ -n "${VLLM_CUDA_SUFFIX:-}" ]] && echo "VLLM_CUDA_SUFFIX=${VLLM_CUDA_SUFFIX}"
-                [[ -n "${VLLM_MAX_MODEL_LEN:-}" ]] && echo "VLLM_MAX_MODEL_LEN=${VLLM_MAX_MODEL_LEN}"
+                if [[ -n "${VLLM_CUDA_SUFFIX:-}" ]]; then echo "VLLM_CUDA_SUFFIX=${VLLM_CUDA_SUFFIX}"; fi
+                if [[ -n "${VLLM_MAX_MODEL_LEN:-}" ]]; then echo "VLLM_MAX_MODEL_LEN=${VLLM_MAX_MODEL_LEN}"; fi
                 ;;
             external|skip)
                 echo "OLLAMA_BASE_URL="

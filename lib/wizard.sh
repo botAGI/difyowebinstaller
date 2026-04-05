@@ -259,7 +259,7 @@ _wizard_llm_provider() {
 # Check if GPU is Blackwell architecture (compute capability >= 12.0)
 _is_blackwell_gpu() {
     local cc="${DETECTED_GPU_COMPUTE:-}"
-    [[ -z "$cc" ]] && return 1
+    if [[ -z "$cc" ]]; then return 1; fi
     local major="${cc%%.*}"
     [[ "$major" -ge 12 ]] 2>/dev/null
 }
@@ -307,7 +307,7 @@ _wizard_ollama_model() {
     _ollama_label() {
         local idx="$1" name="$2" extra="${3:-}"
         local label="${name}${extra}"
-        [[ "$idx" -eq "$rec_idx" ]] && label="${name}${extra}  [*]"
+        if [[ "$idx" -eq "$rec_idx" ]]; then label="${name}${extra}  [*]"; fi
         echo "$label"
     }
 
@@ -468,7 +468,7 @@ _wizard_vllm_model() {
         local vram_offset
         vram_offset=$(_get_vram_offset)
         effective_vram=$(( vram_gb - vram_offset ))
-        [[ "$effective_vram" -lt 0 ]] && effective_vram=0
+        if [[ "$effective_vram" -lt 0 ]]; then effective_vram=0; fi
     fi
 
     # Find largest fitting model for [*] tag.
@@ -485,13 +485,13 @@ _wizard_vllm_model() {
     fi
 
     local mem_label="VRAM"
-    [[ "${DETECTED_GPU_UNIFIED_MEMORY:-false}" == "true" ]] && mem_label="GPU mem"
+    if [[ "${DETECTED_GPU_UNIFIED_MEMORY:-false}" == "true" ]]; then mem_label="GPU mem"; fi
 
     # Helper: build label for a vLLM model menu item
     _vllm_label() {
         local idx="$1" name="$2" suffix="${3:-}"
         local rec_mark=""
-        [[ "$idx" -eq "$rec_idx" ]] && rec_mark="  [*]"
+        if [[ "$idx" -eq "$rec_idx" ]]; then rec_mark="  [*]"; fi
         echo "${name}  [~${vram_total[$idx]} GB]${suffix}${rec_mark}"
     }
 
@@ -606,7 +606,7 @@ _wizard_vllm_model() {
         local vram_offset_guard
         vram_offset_guard=$(_get_vram_offset)
         local effective_vram_check=$(( vram_gb > 0 ? vram_gb - vram_offset_guard : 0 ))
-        [[ "$effective_vram_check" -lt 0 ]] && effective_vram_check=0
+        if [[ "$effective_vram_check" -lt 0 ]]; then effective_vram_check=0; fi
         if [[ "$vram_gb" -gt 0 && "$total_with_ctx" -gt "$effective_vram_check" ]]; then
             if [[ "${NON_INTERACTIVE}" != "true" ]]; then
                 if ! wt_yesno "VRAM предупреждение" \
@@ -670,7 +670,7 @@ _wizard_llm_model() {
             local ni_vram_offset
             ni_vram_offset=$(_get_vram_offset)
             local ni_effective_vram=$(( ni_vram_gb > 0 ? ni_vram_gb - ni_vram_offset : 0 ))
-            [[ "$ni_effective_vram" -lt 0 ]] && ni_effective_vram=0
+            if [[ "$ni_effective_vram" -lt 0 ]]; then ni_effective_vram=0; fi
             if [[ "$ni_vram_gb" -gt 0 && "$ni_vram_req" -gt "$ni_effective_vram" ]]; then
                 log_error "Model ${VLLM_MODEL} requires ~${ni_vram_req} GB (weights+KV), effective available: ${ni_effective_vram} GB (${ni_vram_gb} GB - ${ni_vram_offset} GB offset)"
                 log_error "Choose a smaller model, reduce VLLM_MAX_MODEL_LEN, or set VLLM_MODEL to a model that fits"
@@ -722,7 +722,7 @@ _wizard_embedding_model() {
         local m="${1:-}"
         local c
         for c in "${cpu_only_models[@]}"; do
-            [[ "$m" == "$c" ]] && return 0
+            if [[ "$m" == "$c" ]]; then return 0; fi
         done
         return 1
     }
@@ -1092,7 +1092,7 @@ _wizard_backups() {
 _wizard_litellm() {
     # LAN — локальные модели, прокси не нужен; VPS — multi-user, прокси полезен
     local default_litellm="false"
-    [[ "${DEPLOY_PROFILE:-lan}" == "vps" ]] && default_litellm="true"
+    if [[ "${DEPLOY_PROFILE:-lan}" == "vps" ]]; then default_litellm="true"; fi
 
     if [[ "${NON_INTERACTIVE:-false}" == "true" ]]; then
         ENABLE_LITELLM="${ENABLE_LITELLM:-$default_litellm}"
@@ -1146,7 +1146,7 @@ _wizard_optional_services() {
 
     # Determine LiteLLM default state
     local litellm_default="OFF"
-    [[ "${DEPLOY_PROFILE:-lan}" == "vps" ]] && litellm_default="ON"
+    if [[ "${DEPLOY_PROFILE:-lan}" == "vps" ]]; then litellm_default="ON"; fi
 
     local result
     result=$(wt_checklist "Дополнительные сервисы" \
@@ -1200,9 +1200,9 @@ _wizard_summary() {
 
     local summary=""
     summary+="Профиль:      ${DEPLOY_PROFILE}\n"
-    [[ -n "$DOMAIN" ]] && summary+="Домен:        ${DOMAIN}\n"
+    if [[ -n "$DOMAIN" ]]; then summary+="Домен:        ${DOMAIN}\n"; fi
     summary+="Вектор. БД:   ${VECTOR_STORE}\n"
-    [[ "$ENABLE_DOCLING" == "true" ]] && summary+="ETL:          Docling (${DOCLING_IMAGE##*/})\n"
+    if [[ "$ENABLE_DOCLING" == "true" ]]; then summary+="ETL:          Docling (${DOCLING_IMAGE##*/})\n"; fi
     if [[ "${LLM_PROVIDER:-}" == "vllm" && -n "${VLLM_MAX_MODEL_LEN:-}" ]]; then
         local ctx_k=$(( VLLM_MAX_MODEL_LEN / 1024 ))
         summary+="LLM:          ${LLM_PROVIDER} (${VLLM_MODEL}) ctx=${ctx_k}K\n"
@@ -1210,20 +1210,20 @@ _wizard_summary() {
         summary+="LLM:          ${LLM_PROVIDER} ${LLM_MODEL}${VLLM_MODEL:+ (${VLLM_MODEL})}\n"
     fi
     summary+="Эмбеддинги:   ${EMBED_PROVIDER} ${EMBEDDING_MODEL}\n"
-    [[ "${ENABLE_RERANKER:-}" == "true" ]] && summary+="Реранкер:     ${RERANK_MODEL} (~1 GB)\n"
-    [[ "$TLS_MODE" != "none" ]] && summary+="TLS:          ${TLS_MODE}\n"
-    [[ "$MONITORING_MODE" != "none" ]] && summary+="Мониторинг:   ${MONITORING_MODE}\n"
-    [[ "$ALERT_MODE" != "none" ]] && summary+="Уведомления:  ${ALERT_MODE}\n"
-    [[ "$ENABLE_UFW" == "true" ]] && summary+="UFW:          включён\n"
-    [[ "$ENABLE_FAIL2BAN" == "true" ]] && summary+="Fail2ban:     SSH jail\n"
-    [[ "$ENABLE_AUTHELIA" == "true" ]] && summary+="Authelia:     2FA включена\n"
-    [[ "${ENABLE_LITELLM:-true}" == "true" ]] && summary+="LiteLLM:      включён (AI Gateway)\n"
-    [[ "${ENABLE_SEARXNG:-false}" == "true" ]] && summary+="SearXNG:      включён (порт 8888)\n"
-    [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]] && summary+="Open Notebook: включён (порт 8502)\n"
-    [[ "${ENABLE_DBGPT:-false}" == "true" ]] && summary+="DB-GPT:       включён (порт 5670)\n"
-    [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]] && summary+="Crawl4AI:     включён (порт 11235)\n"
-    [[ "${ENABLE_DIFY_PREMIUM:-true}" == "true" ]] && summary+="Dify Premium: включён (патч после запуска)\n"
-    [[ "$ENABLE_TUNNEL" == "true" ]] && summary+="Туннель:      ${TUNNEL_VPS_HOST}:${TUNNEL_REMOTE_PORT}\n"
+    if [[ "${ENABLE_RERANKER:-}" == "true" ]]; then summary+="Реранкер:     ${RERANK_MODEL} (~1 GB)\n"; fi
+    if [[ "$TLS_MODE" != "none" ]]; then summary+="TLS:          ${TLS_MODE}\n"; fi
+    if [[ "$MONITORING_MODE" != "none" ]]; then summary+="Мониторинг:   ${MONITORING_MODE}\n"; fi
+    if [[ "$ALERT_MODE" != "none" ]]; then summary+="Уведомления:  ${ALERT_MODE}\n"; fi
+    if [[ "$ENABLE_UFW" == "true" ]]; then summary+="UFW:          включён\n"; fi
+    if [[ "$ENABLE_FAIL2BAN" == "true" ]]; then summary+="Fail2ban:     SSH jail\n"; fi
+    if [[ "$ENABLE_AUTHELIA" == "true" ]]; then summary+="Authelia:     2FA включена\n"; fi
+    if [[ "${ENABLE_LITELLM:-true}" == "true" ]]; then summary+="LiteLLM:      включён (AI Gateway)\n"; fi
+    if [[ "${ENABLE_SEARXNG:-false}" == "true" ]]; then summary+="SearXNG:      включён (порт 8888)\n"; fi
+    if [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]]; then summary+="Open Notebook: включён (порт 8502)\n"; fi
+    if [[ "${ENABLE_DBGPT:-false}" == "true" ]]; then summary+="DB-GPT:       включён (порт 5670)\n"; fi
+    if [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]]; then summary+="Crawl4AI:     включён (порт 11235)\n"; fi
+    if [[ "${ENABLE_DIFY_PREMIUM:-true}" == "true" ]]; then summary+="Dify Premium: включён (патч после запуска)\n"; fi
+    if [[ "$ENABLE_TUNNEL" == "true" ]]; then summary+="Туннель:      ${TUNNEL_VPS_HOST}:${TUNNEL_REMOTE_PORT}\n"; fi
     summary+="Бэкапы:       ${BACKUP_TARGET} (${BACKUP_SCHEDULE})\n"
 
     # VRAM plan (only for vLLM — Ollama manages VRAM internally)
@@ -1239,7 +1239,7 @@ _wizard_summary() {
         else
             vllm_ctx_label="${ctx_len}"
         fi
-        [[ "$vllm_total" == "0" ]] && vllm_total="?"
+        if [[ "$vllm_total" == "0" ]]; then vllm_total="?"; fi
         if [[ "$vllm_total" != "?" && "$vllm_weights" -gt 0 ]]; then
             local kv_est=$(( vllm_total - vllm_weights ))
             summary+="vLLM:         ~${vllm_total} GB   (веса ${vllm_weights} + KV ~${kv_est} @ ${vllm_ctx_label})   ${VLLM_MODEL:-unknown}\n"
@@ -1271,7 +1271,7 @@ _wizard_summary() {
             if [[ "$gpu_vram_mb" -gt 0 ]] 2>/dev/null; then
                 local gpu_vram_gb=$(( gpu_vram_mb / 1024 ))
                 local mem_type="VRAM"
-                [[ "${DETECTED_GPU_UNIFIED_MEMORY:-false}" == "true" ]] && mem_type="unified memory"
+                if [[ "${DETECTED_GPU_UNIFIED_MEMORY:-false}" == "true" ]]; then mem_type="unified memory"; fi
                 summary+="Итого:        ~${total_vram} GB / ${gpu_vram_gb} GB ${mem_type} доступно\n"
                 if [[ "$total_vram" -gt "$gpu_vram_gb" ]]; then
                     summary+="!! ${mem_type} бюджет превышен! Возможен OOM.\n"

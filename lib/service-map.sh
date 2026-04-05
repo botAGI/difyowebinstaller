@@ -7,7 +7,7 @@
 set -euo pipefail
 
 # Guard against double-sourcing
-[[ -n "${_SERVICE_MAP_LOADED:-}" ]] && return 0
+if [[ -n "${_SERVICE_MAP_LOADED:-}" ]]; then return 0; fi
 _SERVICE_MAP_LOADED=1
 
 # Short component name -> versions.env variable key
