@@ -327,6 +327,42 @@ download_models() {
             fi
         fi
     fi
+    if [[ "${EMBED_PROVIDER:-}" == "vllm-embed" ]]; then
+        local vllm_embed_health
+        vllm_embed_health="$(docker inspect --format='{{.State.Health.Status}}' agmind-vllm-embed 2>/dev/null || echo "none")"
+        if [[ "$vllm_embed_health" != "healthy" ]] \
+            && docker exec agmind-vllm-embed curl -sf --max-time 3 http://localhost:8000/health >/dev/null 2>&1; then
+            vllm_embed_health="healthy"
+        fi
+        if [[ "$vllm_embed_health" == "healthy" ]]; then
+            log_success "vLLM-embed model already loaded"
+        else
+            log_info "vLLM-embed model loading: ${VLLM_EMBED_MODEL:-deepvk/USER-bge-m3}"
+            if ! _stream_gpu_model_logs "agmind-vllm-embed" "vLLM-embed" "${TIMEOUT_GPU_HEALTH:-0}"; then
+                log_warn "vLLM-embed model not fully loaded yet"
+                log_warn "Container continues in background"
+                log_warn "Monitor: docker logs -f agmind-vllm-embed"
+            fi
+        fi
+    fi
+    if [[ "${RERANKER_PROVIDER:-tei}" == "vllm-rerank" ]]; then
+        local vllm_rerank_health
+        vllm_rerank_health="$(docker inspect --format='{{.State.Health.Status}}' agmind-vllm-rerank 2>/dev/null || echo "none")"
+        if [[ "$vllm_rerank_health" != "healthy" ]] \
+            && docker exec agmind-vllm-rerank curl -sf --max-time 3 http://localhost:8000/health >/dev/null 2>&1; then
+            vllm_rerank_health="healthy"
+        fi
+        if [[ "$vllm_rerank_health" == "healthy" ]]; then
+            log_success "vLLM-rerank model already loaded"
+        else
+            log_info "vLLM-rerank model loading: ${VLLM_RERANK_MODEL:-BAAI/bge-reranker-v2-m3}"
+            if ! _stream_gpu_model_logs "agmind-vllm-rerank" "vLLM-rerank" "${TIMEOUT_GPU_HEALTH:-0}"; then
+                log_warn "vLLM-rerank model not fully loaded yet"
+                log_warn "Container continues in background"
+                log_warn "Monitor: docker logs -f agmind-vllm-rerank"
+            fi
+        fi
+    fi
     if [[ "$llm_provider" == "external" || "$llm_provider" == "skip" ]]; then
         if [[ "$need_ollama" != "true" ]]; then log_info "Provider ${llm_provider}: no model download needed"; fi
     fi

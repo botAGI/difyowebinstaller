@@ -412,7 +412,6 @@ services:
   # ==================== vLLM Embedding (DGX Spark / arm64) ==================
   vllm-embed:
     <<: *logging-defaults
-    <<: *security-defaults
     image: ${VLLM_IMAGE:-nvcr.io/nvidia/vllm:26.02-py3}
     container_name: agmind-vllm-embed
     restart: unless-stopped
@@ -449,7 +448,6 @@ services:
   # ==================== vLLM Reranker (DGX Spark / arm64) ===================
   vllm-rerank:
     <<: *logging-defaults
-    <<: *security-defaults
     image: ${VLLM_IMAGE:-nvcr.io/nvidia/vllm:26.02-py3}
     container_name: agmind-vllm-rerank
     restart: unless-stopped

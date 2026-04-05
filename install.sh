@@ -417,8 +417,10 @@ _save_credentials() {
             echo "  Model Name:              ${VLLM_EMBED_MODEL:-deepvk/USER-bge-m3}"
             echo "  API endpoint URL:        http://agmind-vllm-embed:8000/v1"
             echo "  API Key:                 none"
+            echo "  Dify:                    Settings → Model Provider → OpenAI-API-compatible"
+            echo "  model name for endpoint: ${VLLM_EMBED_MODEL:-deepvk/USER-bge-m3}"
         fi
-        if [[ "${ENABLE_RERANKER:-false}" == "true" ]]; then
+        if [[ "${ENABLE_RERANKER:-false}" == "true" && "${RERANKER_PROVIDER:-tei}" != "vllm-rerank" ]]; then
             echo ""
             echo "=== TEI Reranker (Dify → Settings → Model Provider → OpenAI-API-compatible) ==="
             echo "  Model Type:              Rerank"
@@ -434,6 +436,8 @@ _save_credentials() {
             echo "  Model Name:              ${VLLM_RERANK_MODEL:-BAAI/bge-reranker-v2-m3}"
             echo "  API endpoint:            http://agmind-vllm-rerank:8000/score"
             echo "  API Key:                 none"
+            echo "  Dify:                    Settings → Model Provider → OpenAI-API-compatible"
+            echo "  model name for endpoint: ${VLLM_RERANK_MODEL:-BAAI/bge-reranker-v2-m3}"
         fi
         # LiteLLM AI Gateway
         if [[ "${ENABLE_LITELLM:-true}" == "true" ]]; then

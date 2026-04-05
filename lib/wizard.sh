@@ -285,8 +285,14 @@ _is_blackwell_gpu() {
 # Auto-apply -cu130 suffix for Blackwell in non-interactive mode
 _apply_blackwell_cu130() {
     if [[ "$LLM_PROVIDER" == "vllm" ]] && _is_blackwell_gpu; then
-        VLLM_CUDA_SUFFIX="-cu130"
-        log_info "Blackwell GPU (compute ${DETECTED_GPU_COMPUTE}) — автоматически выбран vLLM с CUDA 13.0"
+        if [[ "${DETECTED_DGX_SPARK:-false}" == "true" ]]; then
+            VLLM_IMAGE="nvcr.io/nvidia/vllm:${VLLM_NGC_VERSION:-26.02-py3}"
+            VLLM_CUDA_SUFFIX=""
+            log_info "DGX Spark (NI) → NVIDIA NGC vLLM (${VLLM_IMAGE})"
+        else
+            VLLM_CUDA_SUFFIX="-cu130"
+            log_info "Blackwell GPU (compute ${DETECTED_GPU_COMPUTE}) — автоматически выбран vLLM с CUDA 13.0"
+        fi
     fi
 }
 
@@ -874,7 +880,14 @@ _wizard_reranker_model() {
     if [[ "${NON_INTERACTIVE}" == "true" ]]; then
         if [[ "${ENABLE_RERANKER:-}" == "true" ]]; then
             RERANK_MODEL="${RERANK_MODEL:-BAAI/bge-reranker-base}"
-            TEI_RERANK_VERSION="${TEI_RERANK_VERSION:-cpu-1.9.3}"
+            if [[ "${DETECTED_DGX_SPARK:-false}" == "true" ]]; then
+                RERANKER_PROVIDER="vllm-rerank"
+                RERANKER_ON_GPU="true"
+                TEI_RERANK_VERSION=""
+                VLLM_RERANK_MODEL="${RERANK_MODEL}"
+            else
+                TEI_RERANK_VERSION="${TEI_RERANK_VERSION:-cpu-1.9.3}"
+            fi
         fi
         return 0
     fi
