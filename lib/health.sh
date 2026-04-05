@@ -50,6 +50,19 @@ get_service_list() {
         fi
         if [[ "$llm_provider" == "vllm" ]]; then services+=(vllm); fi
         if [[ "$embed_provider" == "tei" ]]; then services+=(tei); fi
+        if [[ "$embed_provider" == "vllm-embed" ]]; then services+=(vllm-embed); fi
+
+        # Reranker
+        local enable_reranker reranker_provider
+        enable_reranker="$(grep '^ENABLE_RERANKER=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+        reranker_provider="$(grep '^RERANKER_PROVIDER=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "tei")"
+        if [[ "$enable_reranker" == "true" ]]; then
+            if [[ "$reranker_provider" == "vllm-rerank" ]]; then
+                services+=(vllm-rerank)
+            else
+                services+=(tei-rerank)
+            fi
+        fi
 
         # Monitoring
         local monitoring_mode
@@ -127,7 +140,7 @@ _gpu_svc_responds() {
     local svc="$1" compose_file="$2"
     local port=""
     case "$svc" in
-        vllm)           port=8000 ;;
+        vllm|vllm-embed|vllm-rerank) port=8000 ;;
         tei|tei-rerank) port=80 ;;
         ollama)         port=11434 ;;
         *)              return 1 ;;
@@ -206,7 +219,7 @@ wait_healthy() {
     local critical_services="db redis sandbox ssrf_proxy api worker web plugin_daemon nginx"
 
     # GPU services: extended startup time for model loading / CUDA init
-    local gpu_services=" vllm tei tei-rerank ollama docling "
+    local gpu_services=" vllm vllm-embed vllm-rerank tei tei-rerank ollama docling "
 
     local services
     read -ra services <<< "$(get_service_list)"
