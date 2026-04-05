@@ -20,6 +20,7 @@ fi
 # --- Source library modules ---
 source "${INSTALLER_DIR}/lib/common.sh"
 source "${INSTALLER_DIR}/lib/detect.sh"
+source "${INSTALLER_DIR}/lib/tui.sh"
 source "${INSTALLER_DIR}/lib/wizard.sh"
 source "${INSTALLER_DIR}/lib/docker.sh"
 source "${INSTALLER_DIR}/lib/config.sh"
