@@ -894,6 +894,11 @@ _wizard_hf_token() {
 
 
 _wizard_tls() {
+    # LAN profile: TLS unnecessary (self-signed = browser warnings, LE needs public DNS)
+    if [[ "${DEPLOY_PROFILE:-lan}" == "lan" ]]; then
+        TLS_MODE="none"
+        return 0
+    fi
     # Already set via env
     if [[ "$TLS_MODE" != "none" ]]; then
         return 0
@@ -1009,6 +1014,12 @@ _wizard_alerts() {
 }
 
 _wizard_security() {
+    # LAN profile: UFW useless (Docker bypasses iptables), Fail2ban unnecessary (behind NAT)
+    if [[ "${DEPLOY_PROFILE:-lan}" == "lan" ]]; then
+        ENABLE_UFW="false"
+        ENABLE_FAIL2BAN="false"
+        return 0
+    fi
     if [[ "${NON_INTERACTIVE}" == "true" ]]; then
         return 0
     fi
