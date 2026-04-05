@@ -39,6 +39,8 @@ _init_wizard_defaults() {
     TEI_EMBED_VERSION="${TEI_EMBED_VERSION:-}"
     ENABLE_RERANKER="${ENABLE_RERANKER:-false}"
     RERANK_MODEL="${RERANK_MODEL:-}"
+    RERANKER_ON_GPU="${RERANKER_ON_GPU:-false}"
+    TEI_RERANK_VERSION="${TEI_RERANK_VERSION:-}"
     HF_TOKEN="${HF_TOKEN:-}"
     TLS_MODE="${TLS_MODE:-none}"
     TLS_CERT_PATH="${TLS_CERT_PATH:-}"
@@ -346,15 +348,17 @@ _wizard_ollama_model() {
     unset -f _ollama_label
 }
 
-# Dynamic VRAM offset: GPU reservation for TEI embedding service.
-# Returns offset in GB based on EMBED_PROVIDER and TEI_EMBED_VERSION.
-# CPU TEI (ONNX) and reranker consume no GPU VRAM.
+# Dynamic VRAM offset: GPU reservation for TEI embedding + reranker.
+# Returns offset in GB based on providers and their GPU/CPU mode.
 _get_vram_offset() {
     local offset=0
     # TEI embedding on CUDA reserves ~2 GB GPU VRAM
-    # CPU-only models (TEI_EMBED_VERSION=cpu-*) use no GPU VRAM
     if [[ "${EMBED_PROVIDER:-tei}" == "tei" && "${TEI_EMBED_VERSION:-cuda}" != cpu-* ]]; then
         offset=$(( offset + 2 ))
+    fi
+    # TEI reranker on CUDA reserves ~1 GB GPU VRAM
+    if [[ "${RERANKER_ON_GPU:-false}" == "true" ]]; then
+        offset=$(( offset + 1 ))
     fi
     echo "$offset"
 }
@@ -804,13 +808,14 @@ _wizard_reranker_model() {
     if [[ "${NON_INTERACTIVE}" == "true" ]]; then
         if [[ "${ENABLE_RERANKER:-}" == "true" ]]; then
             RERANK_MODEL="${RERANK_MODEL:-BAAI/bge-reranker-base}"
+            TEI_RERANK_VERSION="${TEI_RERANK_VERSION:-cpu-1.9.3}"
         fi
         return 0
     fi
 
     # --- Ask yes/no ---
     if wt_yesno "Реранкер" \
-        "Включить реранкер?\nУлучшает качество RAG поиска. Работает на CPU (ONNX), ~1-2 GB RAM.\nGPU не требуется." \
+        "Включить реранкер?\nУлучшает качество RAG-поиска (переранжирование top-K результатов)." \
         --defaultno; then
         ENABLE_RERANKER="true"
     else
@@ -818,13 +823,40 @@ _wizard_reranker_model() {
         return 0
     fi
 
+    # --- CPU vs GPU ---
+    local has_gpu="false"
+    if [[ "${DETECTED_GPU:-none}" == "nvidia" ]]; then has_gpu="true"; fi
+
+    if [[ "$has_gpu" == "true" ]]; then
+        local hw_choice
+        hw_choice=$(wt_menu "Реранкер — CPU или GPU" \
+            "Где запускать реранкер?" \
+            "gpu"  "GPU (CUDA) — быстрый, ~1 GB VRAM" \
+            "cpu"  "CPU (ONNX) — медленнее, ~1-2 GB RAM, GPU не тратится")
+        hw_choice="${hw_choice:-gpu}"
+
+        if [[ "$hw_choice" == "gpu" ]]; then
+            TEI_RERANK_VERSION="cuda-1.9.3"
+            RERANKER_ON_GPU="true"
+        else
+            TEI_RERANK_VERSION="cpu-1.9.3"
+            RERANKER_ON_GPU="false"
+        fi
+    else
+        TEI_RERANK_VERSION="cpu-1.9.3"
+        RERANKER_ON_GPU="false"
+    fi
+
     # --- Show model menu ---
+    local device_label="CPU"
+    if [[ "${RERANKER_ON_GPU:-false}" == "true" ]]; then device_label="GPU"; fi
+
     local choice
-    choice=$(wt_menu "Модель реранкера (TEI, CPU)" \
-        "Реранкер работает на CPU (ONNX). Выберите модель:" \
-        "1" "BAAI/bge-reranker-v2-m3              -- мультиязычный, ~2.2 GB RAM" \
-        "2" "BAAI/bge-reranker-base               -- компактный, ~1.2 GB RAM [*]" \
-        "3" "cross-encoder/ms-marco-MiniLM-L-6-v2 -- быстрый, ~0.5 GB RAM" \
+    choice=$(wt_menu "Модель реранкера (TEI, ${device_label})" \
+        "Реранкер на ${device_label}. Выберите модель:" \
+        "1" "BAAI/bge-reranker-v2-m3              -- мультиязычный, ~2.2 GB" \
+        "2" "BAAI/bge-reranker-base               -- компактный, ~1.2 GB [*]" \
+        "3" "cross-encoder/ms-marco-MiniLM-L-6-v2 -- быстрый, ~0.5 GB" \
         "4" "Ввод вручную (HuggingFace ID)")
 
     choice="${choice:-2}"
@@ -1213,7 +1245,11 @@ _wizard_summary() {
         summary+="LLM:          ${LLM_PROVIDER} ${LLM_MODEL}${VLLM_MODEL:+ (${VLLM_MODEL})}\n"
     fi
     summary+="Эмбеддинги:   ${EMBED_PROVIDER} ${EMBEDDING_MODEL}\n"
-    if [[ "${ENABLE_RERANKER:-}" == "true" ]]; then summary+="Реранкер:     ${RERANK_MODEL} (~1 GB)\n"; fi
+    if [[ "${ENABLE_RERANKER:-}" == "true" ]]; then
+        local _rr_dev="CPU"
+        if [[ "${RERANKER_ON_GPU:-false}" == "true" ]]; then _rr_dev="GPU"; fi
+        summary+="Реранкер:     ${RERANK_MODEL} (${_rr_dev})\n"
+    fi
     if [[ "$TLS_MODE" != "none" ]]; then summary+="TLS:          ${TLS_MODE}\n"; fi
     if [[ "$MONITORING_MODE" != "none" ]]; then summary+="Мониторинг:   ${MONITORING_MODE}\n"; fi
     if [[ "$ALERT_MODE" != "none" ]]; then summary+="Уведомления:  ${ALERT_MODE}\n"; fi
@@ -1260,8 +1296,14 @@ _wizard_summary() {
             fi
         fi
 
+        local rerank_vram=0
         if [[ "${ENABLE_RERANKER:-}" == "true" ]]; then
-            summary+="TEI-rerank:   CPU (4 GB RAM)   (${RERANK_MODEL:-unknown})\n"
+            if [[ "${RERANKER_ON_GPU:-false}" == "true" ]]; then
+                rerank_vram=1
+                summary+="TEI-rerank:   ${rerank_vram} GB GPU   (${RERANK_MODEL:-unknown})\n"
+            else
+                summary+="TEI-rerank:   CPU (~2 GB RAM)   (${RERANK_MODEL:-unknown})\n"
+            fi
         fi
 
         summary+="---------------------\n"
@@ -1269,7 +1311,7 @@ _wizard_summary() {
         if [[ "$vllm_total" == "?" ]]; then
             summary+="Итого:        ? GB (неизвестная модель)\n"
         else
-            local total_vram=$(( vllm_total + embed_vram ))
+            local total_vram=$(( vllm_total + embed_vram + rerank_vram ))
             local gpu_vram_mb="${DETECTED_GPU_VRAM:-0}"
             if [[ "$gpu_vram_mb" -gt 0 ]] 2>/dev/null; then
                 local gpu_vram_gb=$(( gpu_vram_mb / 1024 ))
@@ -1334,7 +1376,7 @@ run_wizard() {
     export DEPLOY_PROFILE DOMAIN CERTBOT_EMAIL VECTOR_STORE ENABLE_DOCLING
     export DOCLING_IMAGE OCR_LANG NVIDIA_VISIBLE_DEVICES
     export LLM_PROVIDER LLM_MODEL VLLM_MODEL VLLM_CUDA_SUFFIX EMBED_PROVIDER EMBEDDING_MODEL TEI_EMBED_VERSION
-    export ENABLE_RERANKER RERANK_MODEL
+    export ENABLE_RERANKER RERANK_MODEL RERANKER_ON_GPU TEI_RERANK_VERSION
     export HF_TOKEN TLS_MODE TLS_CERT_PATH TLS_KEY_PATH
     export MONITORING_MODE MONITORING_ENDPOINT MONITORING_TOKEN
     export ALERT_MODE ALERT_WEBHOOK_URL ALERT_TELEGRAM_TOKEN ALERT_TELEGRAM_CHAT_ID

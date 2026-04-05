@@ -302,6 +302,7 @@ _generate_env_file() {
         -e "s|__ENABLE_RERANKER__|${safe_enable_reranker}|g" \
         -e "s|__RERANK_MODEL__|${safe_rerank_model}|g" \
         -e "s|__TEI_EMBED_VERSION__|${safe_tei_embed_version}|g" \
+        -e "s|__TEI_RERANK_VERSION__|$(escape_sed "${TEI_RERANK_VERSION:-cpu-1.9.3}")|g" \
         -e "s|__AUTHELIA_JWT_SECRET__|${_AUTHELIA_JWT_SECRET}|g" \
         -e "s|__LITELLM_MASTER_KEY__|${_LITELLM_MASTER_KEY}|g" \
         -e "s|__FILES_URL__|${safe_files_url}|g" \
@@ -786,6 +787,14 @@ enable_gpu_compose() {
             ;;
     esac
 
+    # TEI reranker GPU: enable if user chose GPU reranker
+    if [[ "${RERANKER_ON_GPU:-false}" == "true" && "${DETECTED_GPU:-none}" == "nvidia" ]]; then
+        _atomic_sed "$compose_file" 's|#__GPU_RERANK__||g'
+        log_info "TEI reranker → GPU (CUDA)"
+    else
+        _atomic_sed "$compose_file" '/#__GPU_RERANK__/d'
+    fi
+
     # If vLLM and TEI share the same GPU, calculate VRAM split dynamically:
     # Reserve 4 GB for TEI (~1.3 GB) + CUDA driver/context (~0.5 GB) + system (~1.5 GB) + headroom.
     # Note: nvidia-smi reports ~500 MiB more than CUDA-visible total,
@@ -795,6 +804,10 @@ enable_gpu_compose() {
     if [[ "${LLM_PROVIDER:-}" == "vllm" && "${EMBED_PROVIDER:-}" == "tei" ]]; then
         local env_file="${INSTALL_DIR}/docker/.env"
         local tei_reserve_mb=4000
+        # Add reranker GPU overhead if enabled
+        if [[ "${RERANKER_ON_GPU:-false}" == "true" ]]; then
+            tei_reserve_mb=$(( tei_reserve_mb + 1024 ))
+        fi
         # Use DETECTED_GPU_VRAM (set by detect.sh, handles unified memory)
         # instead of re-querying nvidia-smi (which returns N/A on unified memory GPUs)
         local total_vram_mb="${DETECTED_GPU_VRAM:-0}"
