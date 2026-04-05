@@ -431,6 +431,9 @@ _get_vllm_weights_gb() {
         "bullpoint/Qwen3-Coder-Next-AWQ-4bit")             echo "12"  ;;
         "stelterlab/NVIDIA-Nemotron-3-Nano-30B-A3B-AWQ")   echo "4"   ;;
         "Qwen/Qwen3.5-35B-A3B")                            echo "72"  ;;
+        "google/gemma-4-26B-A4B-it")                       echo "50"  ;;
+        "google/gemma-4-31B-it")                           echo "62"  ;;
+        "nvidia/Gemma-4-31B-IT-NVFP4")                    echo "20"  ;;
         *)                                                  echo "0"   ;;
     esac
 }
@@ -455,6 +458,8 @@ _get_vllm_kv_per_1k() {
         *32B*)           echo "250" ;;   # 0.250
         *70B*)           echo "313" ;;   # 0.313
         *35B-A3B*)       echo "20"  ;;   # hybrid: only 10/40 layers have KV (2 heads, dim 256)
+        *gemma-4-26B*)   echo "30"  ;;   # 36L, 8KV, 64d, fp8: ~0.03 GB/1K
+        *gemma-4-31B*|*Gemma-4-31B*)  echo "30"  ;;   # same KV architecture
         *30B-A3B*)       echo "60"  ;;   # small active params
         *Coder-Next*)    echo "156" ;;   # 14B active ~ 14B KV
         *)               echo "0"   ;;
