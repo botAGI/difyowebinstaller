@@ -33,6 +33,7 @@ _init_wizard_defaults() {
     LLM_MODEL="${LLM_MODEL:-}"
     VLLM_MODEL="${VLLM_MODEL:-}"
     VLLM_CUDA_SUFFIX="${VLLM_CUDA_SUFFIX:-}"
+    VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-}"
     EMBED_PROVIDER="${EMBED_PROVIDER:-}"
     EMBEDDING_MODEL="${EMBEDDING_MODEL:-}"
     TEI_EMBED_VERSION="${TEI_EMBED_VERSION:-}"
@@ -360,26 +361,26 @@ _get_vram_offset() {
     echo "$offset"
 }
 
-# Returns VRAM requirement in GB for a known vLLM model name.
-# Usage: req=$(_get_vllm_vram_req "Qwen/Qwen2.5-14B-Instruct")
-# Outputs "0" for unknown models (caller skips the VRAM check).
-_get_vllm_vram_req() {
+# Returns model weights VRAM in GB (without KV cache).
+# Usage: req=$(_get_vllm_weights_gb "Qwen/Qwen2.5-14B-Instruct")
+# Outputs "0" for unknown models.
+_get_vllm_weights_gb() {
     local model="${1:-}"
     case "$model" in
-        "Qwen/Qwen2.5-7B-Instruct-AWQ")                    echo "5"   ;;
-        "Qwen/Qwen3-8B-AWQ")                               echo "6"   ;;
-        "Qwen/Qwen2.5-14B-Instruct-AWQ")                   echo "10"  ;;
-        "Qwen/Qwen3-14B-AWQ")                              echo "10"  ;;
-        "QuantTrio/Qwen3.5-27B-AWQ")                       echo "16"  ;;
-        "Qwen/Qwen2.5-32B-Instruct-AWQ")                   echo "20"  ;;
-        "Qwen/Qwen2.5-7B-Instruct")                        echo "16"  ;;
+        "Qwen/Qwen2.5-7B-Instruct-AWQ")                    echo "4"   ;;
+        "Qwen/Qwen3-8B-AWQ")                               echo "5"   ;;
+        "Qwen/Qwen2.5-14B-Instruct-AWQ")                   echo "8"   ;;
+        "Qwen/Qwen3-14B-AWQ")                              echo "8"   ;;
+        "QuantTrio/Qwen3.5-27B-AWQ")                       echo "15"  ;;
+        "Qwen/Qwen2.5-32B-Instruct-AWQ")                   echo "18"  ;;
+        "Qwen/Qwen2.5-7B-Instruct")                        echo "14"  ;;
         "Qwen/Qwen3-8B")                                   echo "16"  ;;
-        "mistralai/Mistral-7B-Instruct-v0.3")              echo "16"  ;;
+        "mistralai/Mistral-7B-Instruct-v0.3")              echo "14"  ;;
         "meta-llama/Llama-3.1-8B-Instruct")                echo "16"  ;;
         "Qwen/Qwen2.5-14B-Instruct")                       echo "28"  ;;
         "Qwen/Qwen3-14B")                                  echo "28"  ;;
         "microsoft/phi-4")                                  echo "28"  ;;
-        "Qwen/Qwen2.5-32B-Instruct")                       echo "48"  ;;
+        "Qwen/Qwen2.5-32B-Instruct")                       echo "64"  ;;
         "meta-llama/Llama-3.3-70B-Instruct")               echo "140" ;;
         "bullpoint/Qwen3-Coder-Next-AWQ-4bit")             echo "12"  ;;
         "stelterlab/NVIDIA-Nemotron-3-Nano-30B-A3B-AWQ")   echo "4"   ;;
@@ -388,16 +389,81 @@ _get_vllm_vram_req() {
     esac
 }
 
+# Returns KV cache size in GB per 1K tokens for a model.
+# Formula: 2 × layers × kv_heads × head_dim × dtype_bytes / 1024^3 × 1024 tokens
+# Outputs "0" for unknown models.
+_get_vllm_kv_per_1k() {
+    local model="${1:-}"
+    # KV cache GB per 1K tokens (fp16=2B, rounded up)
+    # 7B  (32L, 8KV, 128d):  2×32×8×128×2 × 1024 / 1073741824 ≈ 0.125
+    # 8B  (32L, 8KV, 128d):  same ≈ 0.125
+    # 14B (40L, 8KV, 128d):  2×40×8×128×2 × 1024 / 1073741824 ≈ 0.156
+    # 27B (28L, 4KV, 128d):  2×28×4×128×2 × 1024 / 1073741824 ≈ 0.028 (GQA, few KV heads)
+    # 32B (64L, 8KV, 128d):  2×64×8×128×2 × 1024 / 1073741824 ≈ 0.250
+    # 70B (80L, 8KV, 128d):  2×80×8×128×2 × 1024 / 1073741824 ≈ 0.313
+    # MoE models share KV across experts — same as base layer count
+    case "$model" in
+        *7B*|*8B*)       echo "125" ;;   # 0.125 GB/1K tokens (×1000 for int math)
+        *14B*|*phi-4*)   echo "156" ;;   # 0.156
+        *27B*|*Qwen3.5-27B*)  echo "80"  ;;   # 0.08 (GQA, 4 KV heads)
+        *32B*)           echo "250" ;;   # 0.250
+        *70B*)           echo "313" ;;   # 0.313
+        *35B-A3B*)       echo "80"  ;;   # MoE, similar to 27B active
+        *30B-A3B*)       echo "60"  ;;   # small active params
+        *Coder-Next*)    echo "156" ;;   # 14B active ≈ 14B KV
+        *)               echo "0"   ;;
+    esac
+}
+
+# Calculate total VRAM: weights + KV cache for given context.
+# Usage: total=$(_calc_vllm_total_gb "Qwen/Qwen2.5-14B-Instruct" 32768)
+_calc_vllm_total_gb() {
+    local model="$1" ctx="${2:-32768}"
+    local weights kv_per_1k
+    weights=$(_get_vllm_weights_gb "$model")
+    kv_per_1k=$(_get_vllm_kv_per_1k "$model")
+    if [[ "$weights" -eq 0 || "$kv_per_1k" -eq 0 ]]; then
+        echo "$weights"
+        return
+    fi
+    # KV cache GB = kv_per_1k/1000 × (ctx/1024) + ~1 GB CUDA overhead
+    local kv_gb=$(( (kv_per_1k * ctx / 1024 + 500) / 1000 + 1 ))
+    echo $(( weights + kv_gb ))
+}
+
+# Backward-compatible wrapper: returns total VRAM (weights + KV at default 32K).
+# Used by config.sh for enforce-eager decision and VRAM summary.
+_get_vllm_vram_req() {
+    local model="${1:-}"
+    _calc_vllm_total_gb "$model" "${VLLM_MAX_MODEL_LEN:-32768}"
+}
+
 _wizard_vllm_model() {
-    # VRAM requirements in GB per model (indices 1-16 match menu numbers)
-    local -a vram_req=(0 5 6 10 10 16 20 16 16 16 16 28 28 28 48 140 12 4 6)
+    # Model weights in GB (indices 1-18 match menu numbers)
+    local -a weights_gb=(0 4 5 8 8 15 18 14 16 14 16 28 28 28 64 140 12 4 6)
+    # KV cache GB per 1K tokens ×1000 (for int math)
+    local -a kv_per_1k=(0 125 125 156 156 80 250 125 125 125 125 156 156 156 250 313 156 60 80)
+    # Default context for display (32K)
+    local default_ctx=32768
+
+    # Pre-calc total VRAM (weights + KV@32K + 1GB overhead) for each model
+    local -a vram_total=()
+    local idx
+    for idx in $(seq 0 18); do
+        if [[ "$idx" -eq 0 ]]; then
+            vram_total+=(0)
+        else
+            local kv_gb=$(( (kv_per_1k[$idx] * default_ctx / 1024 + 500) / 1000 + 1 ))
+            vram_total+=( $(( weights_gb[$idx] + kv_gb )) )
+        fi
+    done
 
     local vram_gb=0
     if [[ "${DETECTED_GPU_VRAM:-0}" -gt 0 ]]; then
         vram_gb=$(( DETECTED_GPU_VRAM / 1024 ))
     fi
 
-    # TEI offset for [recommended]: vLLM default embed is TEI (~2 GB shared GPU)
+    # TEI offset for [recommended]
     local effective_vram="$vram_gb"
     if [[ "$vram_gb" -gt 0 ]]; then
         local vram_offset
@@ -406,33 +472,38 @@ _wizard_vllm_model() {
         [[ "$effective_vram" -lt 0 ]] && effective_vram=0
     fi
 
-    # Find largest fitting model for [recommended] tag
+    # Find largest fitting model for [recommended] tag.
+    # Check dense models first (14→1), then MoE (16→18) — so dense bf16 > AWQ > MoE.
     local rec_idx=0
     if [[ "$effective_vram" -gt 0 ]]; then
         local i
-        for i in 18 17 16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1; do
-            if [[ "${vram_req[$i]}" -le "$effective_vram" ]]; then
+        for i in 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1 16 18 17; do
+            if [[ "${vram_total[$i]}" -le "$effective_vram" ]]; then
                 rec_idx="$i"
                 break
             fi
         done
     fi
 
-    # Helper: print model line with VRAM label + optional [рекомендуется]
+    local mem_label="VRAM"
+    [[ "${DETECTED_GPU_UNIFIED_MEMORY:-false}" == "true" ]] && mem_label="GPU mem"
+
+    # Helper: print model line
     _vllm_line() {
         local idx="$1" num="$2" label="$3" suffix="${4:-}"
         local tag=""
         [[ "$idx" -eq "$rec_idx" ]] && tag="  ${GREEN}[рекомендуется]${NC}"
-        echo -e "  ${num}) ${label}  [${vram_req[$idx]} GB VRAM]${tag}${suffix}"
+        echo -e "  ${num}) ${label}  [~${vram_total[$idx]} GB: веса ${weights_gb[$idx]}+KV ~$((vram_total[$idx]-weights_gb[$idx]))]${tag}${suffix}"
     }
 
     echo "Выберите модель vLLM:"
+    echo -e "  ${CYAN}(оценка памяти: веса + KV-кэш при 32K контексте)${NC}"
     echo ""
     if [[ "$vram_gb" -eq 0 ]]; then
-        echo -e "  ${YELLOW}GPU VRAM не определён — метка [рекомендуется] недоступна${NC}"
+        echo -e "  ${YELLOW}GPU память не определена — метка [рекомендуется] недоступна${NC}"
         echo ""
     fi
-    echo " -- AWQ квантизация (компактный VRAM) --"
+    echo " -- AWQ квантизация (компактный размер) --"
     _vllm_line 1  " 1" "Qwen/Qwen2.5-7B-Instruct-AWQ"
     _vllm_line 2  " 2" "Qwen/Qwen3-8B-AWQ"
     _vllm_line 3  " 3" "Qwen/Qwen2.5-14B-Instruct-AWQ"
@@ -465,6 +536,7 @@ _wizard_vllm_model() {
     echo ""
 
     _ask_choice "Модель [1-19, Enter=5]: " 1 19 5
+    local model_choice="$REPLY"
 
     local vllm_models=(
         ""  # 0 placeholder
@@ -488,31 +560,80 @@ _wizard_vllm_model() {
         "Qwen/Qwen3.5-35B-A3B"
     )
 
-    if [[ "$REPLY" -ge 1 && "$REPLY" -le 18 ]]; then
-        VLLM_MODEL="${vllm_models[$REPLY]}"
+    if [[ "$model_choice" -ge 1 && "$model_choice" -le 18 ]]; then
+        VLLM_MODEL="${vllm_models[$model_choice]}"
+    elif [[ "$model_choice" -eq 19 ]]; then
+        _ask "HuggingFace репозиторий (org/model):" "QuantTrio/Qwen3.5-27B-AWQ"
+        VLLM_MODEL="${REPLY:-QuantTrio/Qwen3.5-27B-AWQ}"
+    fi
 
-        # VRAM guard: warn if selected model exceeds effective GPU (raw - TEI embed offset)
+    # --- Context length selection ---
+    echo ""
+    echo "Максимальный контекст (max-model-len):"
+    echo ""
+
+    # Calculate VRAM for each context option
+    local -a ctx_options=(4096 8192 16384 32768 65536 131072)
+    local -a ctx_labels=("4K" "8K" "16K" "32K" "64K" "128K")
+    local model_w=0 model_kv=0
+    if [[ "$model_choice" -ge 1 && "$model_choice" -le 18 ]]; then
+        model_w=${weights_gb[$model_choice]}
+        model_kv=${kv_per_1k[$model_choice]}
+    fi
+
+    local ci default_ctx_idx=4  # default = 32K (index 4, 1-based)
+    for ci in $(seq 0 5); do
+        local ctx_val=${ctx_options[$ci]}
+        local total_est="?"
+        if [[ "$model_w" -gt 0 && "$model_kv" -gt 0 ]]; then
+            local kv_est=$(( (model_kv * ctx_val / 1024 + 500) / 1000 + 1 ))
+            total_est=$(( model_w + kv_est ))
+        fi
+        local num=$(( ci + 1 ))
+        local fit_tag=""
+        if [[ "$effective_vram" -gt 0 && "$total_est" != "?" ]]; then
+            if [[ "$total_est" -le "$effective_vram" ]]; then
+                fit_tag="  ${GREEN}[OK]${NC}"
+            else
+                fit_tag="  ${RED}[не влезет]${NC}"
+            fi
+        fi
+        echo -e "  ${num}) ${ctx_labels[$ci]}  (~${total_est} GB: веса ${model_w}+KV ~$((total_est-model_w)))${fit_tag}"
+    done
+    echo ""
+
+    _ask_choice "Контекст [1-6, Enter=4 (32K)]: " 1 6 4
+    local ctx_choice="$REPLY"
+    VLLM_MAX_MODEL_LEN="${ctx_options[$((ctx_choice - 1))]}"
+
+    # Recalculate total VRAM with chosen context
+    local total_with_ctx=0
+    if [[ "$model_choice" -ge 1 && "$model_choice" -le 18 && "$model_kv" -gt 0 ]]; then
+        local kv_chosen=$(( (model_kv * VLLM_MAX_MODEL_LEN / 1024 + 500) / 1000 + 1 ))
+        total_with_ctx=$(( model_w + kv_chosen ))
+    fi
+
+    # VRAM guard
+    if [[ "$model_choice" -ge 1 && "$model_choice" -le 18 && "$total_with_ctx" -gt 0 ]]; then
         local vram_offset_guard
         vram_offset_guard=$(_get_vram_offset)
         local effective_vram_check=$(( vram_gb > 0 ? vram_gb - vram_offset_guard : 0 ))
         [[ "$effective_vram_check" -lt 0 ]] && effective_vram_check=0
-        if [[ "$vram_gb" -gt 0 && "${vram_req[$REPLY]}" -gt "$effective_vram_check" ]]; then
+        if [[ "$vram_gb" -gt 0 && "$total_with_ctx" -gt "$effective_vram_check" ]]; then
             echo ""
-            echo -e "  ${YELLOW}Модель требует ${vram_req[$REPLY]} GB VRAM, доступно ${effective_vram_check} GB effective (${vram_gb} GB - ${vram_offset_guard} GB offset). Возможен OOM.${NC}"
+            echo -e "  ${YELLOW}Модель + KV-кэш (${ctx_labels[$((ctx_choice-1))]}) ≈ ${total_with_ctx} GB, доступно ${effective_vram_check} GB ${mem_label}. Возможен OOM.${NC}"
             if [[ "${NON_INTERACTIVE}" != "true" ]]; then
                 read -rp "  Продолжить? (y/N): " confirm
                 if [[ ! "${confirm}" =~ ^[Yy]$ ]]; then
-                    # Re-show menu
                     unset -f _vllm_line
                     _wizard_vllm_model
                     return
                 fi
             fi
         fi
-    elif [[ "$REPLY" -eq 19 ]]; then
-        _ask "HuggingFace репозиторий (org/model):" "QuantTrio/Qwen3.5-27B-AWQ"
-        VLLM_MODEL="${REPLY:-QuantTrio/Qwen3.5-27B-AWQ}"
-        # No VRAM check for custom models (per decision)
+
+        echo ""
+        echo -e "  ${CYAN}Итого: ${VLLM_MODEL} @ ${ctx_labels[$((ctx_choice-1))]} ≈ ${total_with_ctx} GB (веса ${model_w} + KV ~$((total_with_ctx - model_w)))${NC}"
     fi
     echo ""
 
@@ -545,9 +666,13 @@ _wizard_llm_model() {
     if [[ "$LLM_PROVIDER" == "vllm" && -z "$VLLM_MODEL" ]]; then
         VLLM_MODEL="QuantTrio/Qwen3.5-27B-AWQ"
     fi
+    if [[ "$LLM_PROVIDER" == "vllm" && -z "$VLLM_MAX_MODEL_LEN" ]]; then
+        VLLM_MAX_MODEL_LEN="32768"
+    fi
 
     # VRAM guard for vllm in NON_INTERACTIVE mode (BFIX-41)
     # Runs for both user-supplied VLLM_MODEL and the default assigned above.
+    # Uses total VRAM (weights + KV cache at chosen context).
     if [[ "${NON_INTERACTIVE}" == "true" && "$LLM_PROVIDER" == "vllm" && -n "${VLLM_MODEL:-}" ]]; then
         local ni_vram_req
         ni_vram_req="$(_get_vllm_vram_req "$VLLM_MODEL")"
@@ -561,12 +686,12 @@ _wizard_llm_model() {
             local ni_effective_vram=$(( ni_vram_gb > 0 ? ni_vram_gb - ni_vram_offset : 0 ))
             [[ "$ni_effective_vram" -lt 0 ]] && ni_effective_vram=0
             if [[ "$ni_vram_gb" -gt 0 && "$ni_vram_req" -gt "$ni_effective_vram" ]]; then
-                log_error "Model ${VLLM_MODEL} requires ${ni_vram_req} GB VRAM, effective available: ${ni_effective_vram} GB (${ni_vram_gb} GB - ${ni_vram_offset} GB offset)"
-                log_error "Choose a smaller model or set VLLM_MODEL to a model that fits your GPU"
+                log_error "Model ${VLLM_MODEL} requires ~${ni_vram_req} GB (weights+KV), effective available: ${ni_effective_vram} GB (${ni_vram_gb} GB - ${ni_vram_offset} GB offset)"
+                log_error "Choose a smaller model, reduce VLLM_MAX_MODEL_LEN, or set VLLM_MODEL to a model that fits"
                 exit 1
             fi
             if [[ "$ni_vram_gb" -eq 0 ]]; then
-                log_warn "GPU VRAM not detected -- cannot verify model ${VLLM_MODEL} fits (requires ${ni_vram_req} GB)"
+                log_warn "GPU memory not detected -- cannot verify model ${VLLM_MODEL} fits (requires ~${ni_vram_req} GB)"
             fi
         fi
     fi
@@ -1047,7 +1172,12 @@ _wizard_summary() {
     [[ -n "$DOMAIN" ]] && echo "  Домен:        ${DOMAIN}"
     echo "  Вектор. БД:   ${VECTOR_STORE}"
     [[ "$ENABLE_DOCLING" == "true" ]] && echo "  ETL:          Docling (${DOCLING_IMAGE##*/})"
-    echo "  LLM:          ${LLM_PROVIDER} ${LLM_MODEL}${VLLM_MODEL:+ (${VLLM_MODEL})}"
+    if [[ "${LLM_PROVIDER:-}" == "vllm" && -n "${VLLM_MAX_MODEL_LEN:-}" ]]; then
+        local ctx_k=$(( VLLM_MAX_MODEL_LEN / 1024 ))
+        echo "  LLM:          ${LLM_PROVIDER} (${VLLM_MODEL}) ctx=${ctx_k}K"
+    else
+        echo "  LLM:          ${LLM_PROVIDER} ${LLM_MODEL}${VLLM_MODEL:+ (${VLLM_MODEL})}"
+    fi
     echo "  Эмбеддинги:   ${EMBED_PROVIDER} ${EMBEDDING_MODEL}"
     [[ "${ENABLE_RERANKER:-}" == "true" ]] && echo "  Реранкер:     ${RERANK_MODEL} (~1 GB)"
     [[ "$TLS_MODE" != "none" ]] && echo "  TLS:          ${TLS_MODE}"
@@ -1068,11 +1198,24 @@ _wizard_summary() {
     # VRAM plan (only for vLLM — Ollama manages VRAM internally)
     if [[ "${LLM_PROVIDER:-}" == "vllm" ]]; then
         echo ""
-        echo -e "${CYAN}--- VRAM план ---${NC}"
-        local vllm_vram
-        vllm_vram=$(_get_vllm_vram_req "${VLLM_MODEL:-}")
-        [[ "$vllm_vram" == "0" ]] && vllm_vram="?"
-        echo "  vLLM:         ${vllm_vram} GB   (${VLLM_MODEL:-unknown})"
+        echo -e "${CYAN}--- GPU память ---${NC}"
+        local vllm_weights vllm_total vllm_ctx_label
+        vllm_weights=$(_get_vllm_weights_gb "${VLLM_MODEL:-}")
+        vllm_total=$(_get_vllm_vram_req "${VLLM_MODEL:-}")
+        local ctx_len="${VLLM_MAX_MODEL_LEN:-32768}"
+        # Human-readable context label
+        if [[ "$ctx_len" -ge 1024 ]]; then
+            vllm_ctx_label="$((ctx_len / 1024))K"
+        else
+            vllm_ctx_label="${ctx_len}"
+        fi
+        [[ "$vllm_total" == "0" ]] && vllm_total="?"
+        if [[ "$vllm_total" != "?" && "$vllm_weights" -gt 0 ]]; then
+            local kv_est=$(( vllm_total - vllm_weights ))
+            echo "  vLLM:         ~${vllm_total} GB   (веса ${vllm_weights} + KV ~${kv_est} @ ${vllm_ctx_label})   ${VLLM_MODEL:-unknown}"
+        else
+            echo "  vLLM:         ${vllm_total} GB   (${VLLM_MODEL:-unknown})"
+        fi
 
         local embed_vram=0
         if [[ "${EMBED_PROVIDER:-}" == "tei" ]]; then
@@ -1090,22 +1233,22 @@ _wizard_summary() {
 
         echo "  ─────────────────"
 
-        if [[ "$vllm_vram" == "?" ]]; then
+        if [[ "$vllm_total" == "?" ]]; then
             echo "  Итого:        ? GB (неизвестная модель)"
         else
-            local total_vram=$(( vllm_vram + embed_vram ))
+            local total_vram=$(( vllm_total + embed_vram ))
             local gpu_vram_mb="${DETECTED_GPU_VRAM:-0}"
             if [[ "$gpu_vram_mb" -gt 0 ]] 2>/dev/null; then
                 local gpu_vram_gb=$(( gpu_vram_mb / 1024 ))
                 local mem_type="VRAM"
                 [[ "${DETECTED_GPU_UNIFIED_MEMORY:-false}" == "true" ]] && mem_type="unified memory"
-                echo "  Итого:        ${total_vram} GB / ${gpu_vram_gb} GB ${mem_type} доступно"
+                echo "  Итого:        ~${total_vram} GB / ${gpu_vram_gb} GB ${mem_type} доступно"
                 if [[ "$total_vram" -gt "$gpu_vram_gb" ]]; then
                     echo -e "  ${YELLOW}⚠ ${mem_type} бюджет превышен! Возможен OOM.${NC}"
                 fi
             else
-                echo "  Итого:        ${total_vram} GB"
-                echo -e "  ${YELLOW}GPU VRAM не определён — проверьте вручную${NC}"
+                echo "  Итого:        ~${total_vram} GB"
+                echo -e "  ${YELLOW}GPU память не определена — проверьте вручную${NC}"
             fi
         fi
     fi
