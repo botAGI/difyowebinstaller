@@ -829,10 +829,9 @@ enable_gpu_compose() {
 
             if [[ "${DETECTED_GPU_UNIFIED_MEMORY:-false}" == "true" ]]; then
                 # Unified memory (GB10, Grace Hopper): GPU shares system RAM.
-                # vLLM gpu-memory-utilization controls fraction of total visible memory.
-                # With 128 GB unified, TEI's 2 GB is negligible — use high utilization
-                # but cap to avoid starving the OS and other services.
-                vllm_util="0.90"
+                # Must leave room for embed (~3 GB), rerank (~2 GB), docling (~3 GB),
+                # OS (~15 GB), Docker (~5 GB). Use conservative utilization.
+                vllm_util="0.70"
                 log_info "Unified memory GPU (${total_vram_mb} MB) — VLLM_GPU_MEM_UTIL=${vllm_util}"
             else
                 vllm_util=$(LC_NUMERIC=C awk "BEGIN { printf \"%.2f\", ($total_vram_mb - $tei_reserve_mb) / $total_vram_mb }")
