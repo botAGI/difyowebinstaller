@@ -809,7 +809,7 @@ enable_gpu_compose() {
     # so we over-reserve to compensate for this gap.
     # Formula: (total_vram_mb - 4000) / total_vram_mb
     #   12 GB → 0.67   16 GB → 0.75   24 GB → 0.83   32 GB → 0.88
-    if [[ "${LLM_PROVIDER:-}" == "vllm" && "${EMBED_PROVIDER:-}" == "tei" ]]; then
+    if [[ "${LLM_PROVIDER:-}" == "vllm" && ( "${EMBED_PROVIDER:-}" == "tei" || "${EMBED_PROVIDER:-}" == "vllm-embed" ) ]]; then
         local env_file="${INSTALL_DIR}/docker/.env"
         local tei_reserve_mb=4000
         # Add reranker GPU overhead if enabled
