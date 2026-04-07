@@ -291,6 +291,8 @@ _generate_env_file() {
         -e "s|__MONITORING_ENDPOINT__|${safe_monitoring_endpoint}|g" \
         -e "s|__MONITORING_TOKEN__|${safe_monitoring_token}|g" \
         -e "s|__GRAFANA_ADMIN_PASSWORD__|${_GRAFANA_ADMIN_PASSWORD}|g" \
+        -e "s|__GRAFANA_BIND_ADDR__|${GRAFANA_BIND_ADDR:-127.0.0.1}|g" \
+        -e "s|__PORTAINER_BIND_ADDR__|${PORTAINER_BIND_ADDR:-127.0.0.1}|g" \
         -e "s|__ALERT_MODE__|${ALERT_MODE:-none}|g" \
         -e "s|__ALERT_WEBHOOK_URL__|${safe_webhook_url}|g" \
         -e "s|__ALERT_TELEGRAM_TOKEN__|${safe_telegram_token}|g" \
@@ -829,10 +831,17 @@ enable_gpu_compose() {
 
             if [[ "${DETECTED_GPU_UNIFIED_MEMORY:-false}" == "true" ]]; then
                 # Unified memory (GB10, Grace Hopper): GPU shares system RAM.
-                # Must leave room for embed (~3 GB), rerank (~2 GB), docling (~3 GB),
-                # OS (~15 GB), Docker (~5 GB). Use conservative utilization.
-                vllm_util="0.70"
+                # cudaMemGetInfo reports only ~56 GB of 128 GB as "free" because
+                # it cannot account for reclaimable page cache. vLLM checks:
+                #   free_gpu >= gpu_memory_utilization * total_gpu
+                # With total≈121 GB and free≈102 GB, 0.90 requests 109 GB → fails.
+                # 0.80 requests ~97 GB which fits within the ~102 GB free window
+                # while still leaving room for embed, rerank, OS and Docker.
+                vllm_util="0.80"
                 log_info "Unified memory GPU (${total_vram_mb} MB) — VLLM_GPU_MEM_UTIL=${vllm_util}"
+                # Raise container mem_limit: default 16 GB kills vLLM on unified
+                # memory because model weights (~50 GB) load into shared RAM.
+                echo "VLLM_MEM_LIMIT=96g" >> "$env_file"
             else
                 vllm_util=$(LC_NUMERIC=C awk "BEGIN { printf \"%.2f\", ($total_vram_mb - $tei_reserve_mb) / $total_vram_mb }")
                 # Clamp to [0.40, 0.92] — never starve vLLM or oversubscribe

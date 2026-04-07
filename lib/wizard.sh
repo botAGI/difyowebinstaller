@@ -54,6 +54,8 @@ _init_wizard_defaults() {
     MONITORING_MODE="${MONITORING_MODE:-none}"
     MONITORING_ENDPOINT="${MONITORING_ENDPOINT:-}"
     MONITORING_TOKEN="${MONITORING_TOKEN:-}"
+    GRAFANA_BIND_ADDR="${GRAFANA_BIND_ADDR:-127.0.0.1}"
+    PORTAINER_BIND_ADDR="${PORTAINER_BIND_ADDR:-127.0.0.1}"
     ALERT_MODE="${ALERT_MODE:-none}"
     ALERT_WEBHOOK_URL="${ALERT_WEBHOOK_URL:-}"
     ALERT_TELEGRAM_TOKEN="${ALERT_TELEGRAM_TOKEN:-}"
@@ -721,17 +723,15 @@ _wizard_llm_model() {
         if [[ "$LLM_PROVIDER" == "vllm" && "${DETECTED_DGX_SPARK:-false}" == "true" ]]; then
             local spark_ctx
             spark_ctx=$(wt_menu "DGX Spark — Gemma 4 контекст" \
-                "Модель: google/gemma-4-26B-A4B-it (MoE, 3.8B active)\nОбраз: vllm/vllm-openai:gemma4-cu130\n\nВыберите максимальный контекст (fp8 KV-кэш):" \
+                "Модель: google/gemma-4-26B-A4B-it (MoE, 3.8B active)\nОбраз: vllm/vllm-openai:gemma4-cu130\n\nВыберите максимальный контекст (fp8 KV-кэш):\n(128 GB unified memory, ~53 GB доступно для KV-кэша)" \
                 "1" "32K   — минимум памяти, макс. concurrency" \
                 "2" "64K   — баланс (рекомендуется)" \
-                "3" "128K  — большие документы" \
-                "4" "256K  — максимум (вся доступная память)")
+                "3" "128K  — большие документы, меньше concurrency")
             spark_ctx="${spark_ctx:-2}"
             case "$spark_ctx" in
                 1) VLLM_MAX_MODEL_LEN=32768;;
                 2) VLLM_MAX_MODEL_LEN=65536;;
                 3) VLLM_MAX_MODEL_LEN=131072;;
-                4) VLLM_MAX_MODEL_LEN=262144;;
                 *) VLLM_MAX_MODEL_LEN=65536;;
             esac
         else
@@ -1126,6 +1126,23 @@ _wizard_monitoring() {
             ;;
         *) MONITORING_MODE="none";;
     esac
+
+    # Ask whether to expose Grafana/Portainer to LAN
+    if [[ "$MONITORING_MODE" == "local" ]]; then
+        local expose
+        expose=$(wt_menu "Доступ к мониторингу" \
+            "Сделать Grafana и Portainer доступными по сети?" \
+            "1" "Да — доступ по IP (LAN)" \
+            "2" "Нет — только localhost (безопаснее)")
+        expose="${expose:-2}"
+        if [[ "$expose" == "1" ]]; then
+            GRAFANA_BIND_ADDR="0.0.0.0"
+            PORTAINER_BIND_ADDR="0.0.0.0"
+        else
+            GRAFANA_BIND_ADDR="127.0.0.1"
+            PORTAINER_BIND_ADDR="127.0.0.1"
+        fi
+    fi
 }
 
 _wizard_alerts() {
@@ -1564,7 +1581,7 @@ run_wizard() {
     export VLLM_IMAGE VLLM_CMD_PREFIX VLLM_EXTRA_ARGS VLLM_EMBED_MODEL VLLM_RERANK_MODEL RERANKER_PROVIDER
     export ENABLE_RERANKER RERANK_MODEL RERANKER_ON_GPU TEI_RERANK_VERSION
     export HF_TOKEN TLS_MODE TLS_CERT_PATH TLS_KEY_PATH
-    export MONITORING_MODE MONITORING_ENDPOINT MONITORING_TOKEN
+    export MONITORING_MODE MONITORING_ENDPOINT MONITORING_TOKEN GRAFANA_BIND_ADDR PORTAINER_BIND_ADDR
     export ALERT_MODE ALERT_WEBHOOK_URL ALERT_TELEGRAM_TOKEN ALERT_TELEGRAM_CHAT_ID
     export ENABLE_UFW ENABLE_FAIL2BAN ENABLE_AUTHELIA
     export ENABLE_TUNNEL TUNNEL_VPS_HOST TUNNEL_VPS_PORT TUNNEL_REMOTE_PORT
