@@ -959,11 +959,13 @@ services:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /:/rootfs:ro
+      - ./monitoring/textfile:/textfile:ro
     command:
       - '--path.procfs=/host/proc'
       - '--path.sysfs=/host/sys'
       - '--path.rootfs=/rootfs'
       - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+      - '--collector.textfile.directory=/textfile'
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:9100/metrics || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
