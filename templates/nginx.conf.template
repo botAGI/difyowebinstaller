@@ -162,7 +162,7 @@ http {
             proxy_send_timeout 3600s;
         }
 
-        # Dify Console API
+        # Dify Console API (SSE streaming for chat)
         location /console/api {
             limit_req zone=api burst=20 nodelay;
             proxy_pass http://dify_api;
@@ -173,9 +173,11 @@ http {
             proxy_set_header X-Forwarded-Proto $scheme;
             proxy_read_timeout 3600s;
             proxy_send_timeout 3600s;
+            proxy_buffering off;
+            chunked_transfer_encoding on;
         }
 
-        # Dify API
+        # Dify API (SSE streaming for chat)
         location /api {
             limit_req zone=api burst=20 nodelay;
             proxy_pass http://dify_api;
@@ -186,9 +188,11 @@ http {
             proxy_set_header X-Forwarded-Proto $scheme;
             proxy_read_timeout 3600s;
             proxy_send_timeout 3600s;
+            proxy_buffering off;
+            chunked_transfer_encoding on;
         }
 
-        # Dify Service API (/v1)
+        # Dify Service API (/v1) — SSE streaming
         location /v1 {
             limit_req zone=api burst=20 nodelay;
             proxy_pass http://dify_api;
@@ -199,6 +203,8 @@ http {
             proxy_set_header X-Forwarded-Proto $scheme;
             proxy_read_timeout 3600s;
             proxy_send_timeout 3600s;
+            proxy_buffering off;
+            chunked_transfer_encoding on;
         }
 
         # Dify Files
@@ -224,6 +230,8 @@ http {
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
         }
 
         #__OPENWEBUI__# =============================================
@@ -420,7 +428,7 @@ http {
             proxy_send_timeout 3600s;
         }
 
-        # Dify Console API
+        # Dify Console API (SSE streaming for chat)
         location /console/api {
             limit_req zone=api burst=20 nodelay;
             proxy_pass http://dify_api;
@@ -431,9 +439,11 @@ http {
             proxy_set_header X-Forwarded-Proto $scheme;
             proxy_read_timeout 3600s;
             proxy_send_timeout 3600s;
+            proxy_buffering off;
+            chunked_transfer_encoding on;
         }
 
-        # Dify API
+        # Dify API (SSE streaming for chat)
         location /api {
             limit_req zone=api burst=20 nodelay;
             proxy_pass http://dify_api;
@@ -444,9 +454,11 @@ http {
             proxy_set_header X-Forwarded-Proto $scheme;
             proxy_read_timeout 3600s;
             proxy_send_timeout 3600s;
+            proxy_buffering off;
+            chunked_transfer_encoding on;
         }
 
-        # Dify Service API (/v1)
+        # Dify Service API (/v1) — SSE streaming
         location /v1 {
             limit_req zone=api burst=20 nodelay;
             proxy_pass http://dify_api;
@@ -457,6 +469,8 @@ http {
             proxy_set_header X-Forwarded-Proto $scheme;
             proxy_read_timeout 3600s;
             proxy_send_timeout 3600s;
+            proxy_buffering off;
+            chunked_transfer_encoding on;
         }
 
         # Dify Files
@@ -482,6 +496,8 @@ http {
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
         }
     }
 
@@ -556,7 +572,7 @@ http {
     #__TLS__        proxy_send_timeout 3600s;
     #__TLS__    }
     #__TLS__
-    #__TLS__    # Dify Console API
+    #__TLS__    # Dify Console API (SSE streaming)
     #__TLS__    location /console/api {
     #__TLS__        limit_req zone=api burst=20 nodelay;
     #__TLS__        proxy_pass http://dify_api;
@@ -567,9 +583,11 @@ http {
     #__TLS__        proxy_set_header X-Forwarded-Proto $scheme;
     #__TLS__        proxy_read_timeout 3600s;
     #__TLS__        proxy_send_timeout 3600s;
+    #__TLS__        proxy_buffering off;
+    #__TLS__        chunked_transfer_encoding on;
     #__TLS__    }
     #__TLS__
-    #__TLS__    # Dify API
+    #__TLS__    # Dify API (SSE streaming)
     #__TLS__    location /api {
     #__TLS__        limit_req zone=api burst=20 nodelay;
     #__TLS__        proxy_pass http://dify_api;
@@ -580,9 +598,11 @@ http {
     #__TLS__        proxy_set_header X-Forwarded-Proto $scheme;
     #__TLS__        proxy_read_timeout 3600s;
     #__TLS__        proxy_send_timeout 3600s;
+    #__TLS__        proxy_buffering off;
+    #__TLS__        chunked_transfer_encoding on;
     #__TLS__    }
     #__TLS__
-    #__TLS__    # Dify Service API (/v1)
+    #__TLS__    # Dify Service API (/v1) — SSE streaming
     #__TLS__    location /v1 {
     #__TLS__        limit_req zone=api burst=20 nodelay;
     #__TLS__        proxy_pass http://dify_api;
@@ -593,6 +613,8 @@ http {
     #__TLS__        proxy_set_header X-Forwarded-Proto $scheme;
     #__TLS__        proxy_read_timeout 3600s;
     #__TLS__        proxy_send_timeout 3600s;
+    #__TLS__        proxy_buffering off;
+    #__TLS__        chunked_transfer_encoding on;
     #__TLS__    }
     #__TLS__
     #__TLS__    # Dify Files
@@ -618,6 +640,8 @@ http {
     #__TLS__        proxy_set_header X-Real-IP $remote_addr;
     #__TLS__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     #__TLS__        proxy_set_header X-Forwarded-Proto $scheme;
+    #__TLS__        proxy_set_header Upgrade $http_upgrade;
+    #__TLS__        proxy_set_header Connection "upgrade";
     #__TLS__    }
     #__TLS__
     #__TLS__    #__OPENWEBUI__# Open WebUI — optional chat frontend (/chat)

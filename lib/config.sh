@@ -511,6 +511,11 @@ generate_nginx_config() {
     else
         _atomic_sed "$nginx_conf" '/#__OPENWEBUI__/d'
     fi
+
+    # Authelia markers (strip when disabled — _enable_authelia_nginx handles enabled case)
+    if [[ "${ENABLE_AUTHELIA:-false}" != "true" ]]; then
+        _atomic_sed "$nginx_conf" '/#__AUTHELIA__/d'
+    fi
 }
 
 # ============================================================================
