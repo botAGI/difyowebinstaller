@@ -16,7 +16,7 @@
       "datasource": { "type": "loki", "uid": "Loki" },
       "targets": [
         {
-          "expr": "sum by(service)(count_over_time({container=~\"agmind-.*\", container!~\"agmind-loki|agmind-promtail|agmind-grafana|agmind-prometheus\"} |~ \"(?i)error\" != \"query=\" != \"caller=metrics\" [5m]))",
+          "expr": "sum by(service)(count_over_time({container=~\"agmind-.*\", container!~\"agmind-loki|agmind-promtail|agmind-grafana|agmind-prometheus|agmind-node-exporter|agmind-cadvisor|agmind-alertmanager\"} |~ \"(?i)error\" != \"query=\" != \"caller=metrics\" [5m]))",
           "refId": "A"
         }
       ],
@@ -44,7 +44,7 @@
       "datasource": { "type": "loki", "uid": "Loki" },
       "targets": [
         {
-          "expr": "{container=~\"agmind-.*\", container!~\"agmind-loki|agmind-promtail|agmind-grafana|agmind-prometheus\"} |~ \"(?i)error\" != \"query=\" != \"caller=metrics\"",
+          "expr": "{container=~\"agmind-.*\", container!~\"agmind-loki|agmind-promtail|agmind-grafana|agmind-prometheus|agmind-node-exporter|agmind-cadvisor|agmind-alertmanager\"} |~ \"(?i)error\" != \"query=\" != \"caller=metrics\"",
           "refId": "A"
         }
       ],
