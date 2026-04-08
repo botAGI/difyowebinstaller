@@ -119,12 +119,16 @@ echo "  Dify storage..."
 tar czf "${TARGET_DIR}/dify-storage.tar.gz" \
     -C "${INSTALL_DIR}/docker/volumes/app/storage" . 2>/dev/null || true
 
-# 4. Open WebUI data
-echo "  Open WebUI..."
-docker run --rm \
-    -v "$(docker volume ls -q | grep openwebui | head -1 || echo agmind_openwebui_data):/data:ro" \
-    -v "${TARGET_DIR}:/backup" \
-    alpine tar czf /backup/openwebui.tar.gz -C /data . 2>/dev/null || true
+# 4. Open WebUI data (skip if volume not found)
+if docker volume ls -q 2>/dev/null | grep -q openwebui; then
+    echo "  Open WebUI..."
+    docker run --rm \
+        -v "$(docker volume ls -q | grep openwebui | head -1):/data:ro" \
+        -v "${TARGET_DIR}:/backup" \
+        alpine tar czf /backup/openwebui.tar.gz -C /data . 2>/dev/null || true
+else
+    echo "  Open WebUI: skipped (volume not found)"
+fi
 
 # 5. Ollama models
 echo "  Ollama models..."

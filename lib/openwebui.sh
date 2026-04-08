@@ -17,6 +17,12 @@ INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
 # ============================================================================
 
 create_openwebui_admin() {
+    # Skip if Open WebUI is not enabled
+    if [[ "${ENABLE_OPENWEBUI:-false}" != "true" ]]; then
+        log_info "Open WebUI disabled, skipping admin creation"
+        return 0
+    fi
+
     local docker_dir="${INSTALL_DIR}/docker"
     local env_file="${docker_dir}/.env"
 

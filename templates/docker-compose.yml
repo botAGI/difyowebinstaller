@@ -221,6 +221,8 @@ services:
     container_name: agmind-openwebui
     restart: on-failure:5
     mem_limit: ${OPENWEBUI_MEM_LIMIT:-2g}
+    profiles:
+      - openwebui
     environment:
       - WEBUI_NAME=AGMind
       - ENABLE_SIGNUP=${ENABLE_SIGNUP:-false}
@@ -263,6 +265,8 @@ services:
     container_name: agmind-pipelines
     restart: on-failure:5
     mem_limit: ${PIPELINES_MEM_LIMIT:-1g}
+    profiles:
+      - openwebui
     volumes:
       - agmind_pipelines_data:/app/pipelines
     healthcheck:
@@ -845,8 +849,6 @@ services:
         condition: service_healthy
       plugin_daemon:
         condition: service_healthy
-      open-webui:
-        condition: service_started
     networks:
       - agmind-frontend
       - agmind-backend

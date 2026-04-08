@@ -316,6 +316,7 @@ _generate_env_file() {
         -e "s|__ENABLE_NOTEBOOK__|$(escape_sed "${ENABLE_NOTEBOOK:-false}")|g" \
         -e "s|__ENABLE_DBGPT__|$(escape_sed "${ENABLE_DBGPT:-false}")|g" \
         -e "s|__ENABLE_CRAWL4AI__|$(escape_sed "${ENABLE_CRAWL4AI:-false}")|g" \
+        -e "s|__ENABLE_OPENWEBUI__|$(escape_sed "${ENABLE_OPENWEBUI:-false}")|g" \
         -e "s|__ENABLE_DIFY_PREMIUM__|$(escape_sed "${ENABLE_DIFY_PREMIUM:-true}")|g" \
         -e "s|__SEARXNG_SECRET_KEY__|$(escape_sed "${_SEARXNG_SECRET_KEY}")|g" \
         -e "s|__SURREALDB_PASSWORD__|$(escape_sed "${_SURREALDB_PASSWORD}")|g" \
@@ -502,6 +503,13 @@ generate_nginx_config() {
         _atomic_sed "$nginx_conf" 's|#__CRAWL4AI__||g'
     else
         _atomic_sed "$nginx_conf" '/#__CRAWL4AI__/d'
+    fi
+
+    # Open WebUI markers
+    if [[ "${ENABLE_OPENWEBUI:-false}" == "true" ]]; then
+        _atomic_sed "$nginx_conf" 's|#__OPENWEBUI__||g'
+    else
+        _atomic_sed "$nginx_conf" '/#__OPENWEBUI__/d'
     fi
 }
 
