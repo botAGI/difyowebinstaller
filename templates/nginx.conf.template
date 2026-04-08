@@ -57,10 +57,10 @@ http {
         server web:3000;
     }
 
-    # Upstream: Open WebUI
-    upstream openwebui {
-        server open-webui:8080;
-    }
+    #__OPENWEBUI__# Upstream: Open WebUI
+    #__OPENWEBUI__upstream openwebui {
+    #__OPENWEBUI__    server open-webui:8080;
+    #__OPENWEBUI__}
 
     #__LITELLM__# Upstream: LiteLLM AI Gateway
     #__LITELLM__upstream litellm {
@@ -137,22 +137,111 @@ http {
         }
 
         # =============================================
-        # Open WebUI — default frontend (/)
+        # Dify App — default frontend (/)
         # =============================================
         location / {
             #__TLS_REDIRECT__return 301 https://$host$request_uri;
-            proxy_pass http://openwebui;
+            proxy_pass http://dify_web;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection "upgrade";
+        }
+
+        # Dify Console Login — tighter rate limit
+        location /console/api/login {
+            limit_req zone=login burst=3 nodelay;
+            proxy_pass http://dify_api;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 3600s;
+            proxy_send_timeout 3600s;
+        }
+
+        # Dify Console API
+        location /console/api {
+            limit_req zone=api burst=20 nodelay;
+            proxy_pass http://dify_api;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 3600s;
+            proxy_send_timeout 3600s;
+        }
+
+        # Dify API
+        location /api {
+            limit_req zone=api burst=20 nodelay;
+            proxy_pass http://dify_api;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 3600s;
+            proxy_send_timeout 3600s;
+        }
+
+        # Dify Service API (/v1)
+        location /v1 {
+            limit_req zone=api burst=20 nodelay;
+            proxy_pass http://dify_api;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 3600s;
+            proxy_send_timeout 3600s;
+        }
+
+        # Dify Files
+        location /files {
+            limit_req zone=api burst=20 nodelay;
+            proxy_pass http://dify_api;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # Plugin Daemon (dynamic resolve — nginx starts even if daemon is down)
+        location /e/ {
+            set $plugin_upstream http://plugin_daemon:5002;
+            proxy_pass $plugin_upstream;
+            proxy_http_version 1.1;
             proxy_read_timeout 600s;
             proxy_send_timeout 600s;
-            proxy_buffering off;
+            proxy_connect_timeout 600s;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
         }
+
+        #__OPENWEBUI__# =============================================
+        #__OPENWEBUI__# Open WebUI — optional chat frontend (/chat)
+        #__OPENWEBUI__# =============================================
+        #__OPENWEBUI__location /chat {
+        #__OPENWEBUI__    proxy_pass http://openwebui;
+        #__OPENWEBUI__    proxy_http_version 1.1;
+        #__OPENWEBUI__    proxy_set_header Host $host;
+        #__OPENWEBUI__    proxy_set_header X-Real-IP $remote_addr;
+        #__OPENWEBUI__    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        #__OPENWEBUI__    proxy_set_header X-Forwarded-Proto $scheme;
+        #__OPENWEBUI__    proxy_set_header Upgrade $http_upgrade;
+        #__OPENWEBUI__    proxy_set_header Connection "upgrade";
+        #__OPENWEBUI__    proxy_read_timeout 600s;
+        #__OPENWEBUI__    proxy_send_timeout 600s;
+        #__OPENWEBUI__    proxy_buffering off;
+        #__OPENWEBUI__}
 
         # =============================================
         # Block old-style hex token URLs (security)
@@ -444,20 +533,107 @@ http {
     #__TLS__        alias /etc/nginx/health/health.json;
     #__TLS__    }
     #__TLS__
-    #__TLS__    # Open WebUI — default frontend
+    #__TLS__    # Dify App — default frontend
     #__TLS__    location / {
-    #__TLS__        proxy_pass http://openwebui;
+    #__TLS__        proxy_pass http://dify_web;
     #__TLS__        proxy_http_version 1.1;
     #__TLS__        proxy_set_header Host $host;
     #__TLS__        proxy_set_header X-Real-IP $remote_addr;
     #__TLS__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     #__TLS__        proxy_set_header X-Forwarded-Proto $scheme;
-    #__TLS__        proxy_set_header Upgrade $http_upgrade;
-    #__TLS__        proxy_set_header Connection "upgrade";
+    #__TLS__    }
+    #__TLS__
+    #__TLS__    # Dify Console Login — tighter rate limit
+    #__TLS__    location /console/api/login {
+    #__TLS__        limit_req zone=login burst=3 nodelay;
+    #__TLS__        proxy_pass http://dify_api;
+    #__TLS__        proxy_http_version 1.1;
+    #__TLS__        proxy_set_header Host $host;
+    #__TLS__        proxy_set_header X-Real-IP $remote_addr;
+    #__TLS__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #__TLS__        proxy_set_header X-Forwarded-Proto $scheme;
+    #__TLS__        proxy_read_timeout 3600s;
+    #__TLS__        proxy_send_timeout 3600s;
+    #__TLS__    }
+    #__TLS__
+    #__TLS__    # Dify Console API
+    #__TLS__    location /console/api {
+    #__TLS__        limit_req zone=api burst=20 nodelay;
+    #__TLS__        proxy_pass http://dify_api;
+    #__TLS__        proxy_http_version 1.1;
+    #__TLS__        proxy_set_header Host $host;
+    #__TLS__        proxy_set_header X-Real-IP $remote_addr;
+    #__TLS__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #__TLS__        proxy_set_header X-Forwarded-Proto $scheme;
+    #__TLS__        proxy_read_timeout 3600s;
+    #__TLS__        proxy_send_timeout 3600s;
+    #__TLS__    }
+    #__TLS__
+    #__TLS__    # Dify API
+    #__TLS__    location /api {
+    #__TLS__        limit_req zone=api burst=20 nodelay;
+    #__TLS__        proxy_pass http://dify_api;
+    #__TLS__        proxy_http_version 1.1;
+    #__TLS__        proxy_set_header Host $host;
+    #__TLS__        proxy_set_header X-Real-IP $remote_addr;
+    #__TLS__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #__TLS__        proxy_set_header X-Forwarded-Proto $scheme;
+    #__TLS__        proxy_read_timeout 3600s;
+    #__TLS__        proxy_send_timeout 3600s;
+    #__TLS__    }
+    #__TLS__
+    #__TLS__    # Dify Service API (/v1)
+    #__TLS__    location /v1 {
+    #__TLS__        limit_req zone=api burst=20 nodelay;
+    #__TLS__        proxy_pass http://dify_api;
+    #__TLS__        proxy_http_version 1.1;
+    #__TLS__        proxy_set_header Host $host;
+    #__TLS__        proxy_set_header X-Real-IP $remote_addr;
+    #__TLS__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #__TLS__        proxy_set_header X-Forwarded-Proto $scheme;
+    #__TLS__        proxy_read_timeout 3600s;
+    #__TLS__        proxy_send_timeout 3600s;
+    #__TLS__    }
+    #__TLS__
+    #__TLS__    # Dify Files
+    #__TLS__    location /files {
+    #__TLS__        limit_req zone=api burst=20 nodelay;
+    #__TLS__        proxy_pass http://dify_api;
+    #__TLS__        proxy_http_version 1.1;
+    #__TLS__        proxy_set_header Host $host;
+    #__TLS__        proxy_set_header X-Real-IP $remote_addr;
+    #__TLS__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #__TLS__        proxy_set_header X-Forwarded-Proto $scheme;
+    #__TLS__    }
+    #__TLS__
+    #__TLS__    # Plugin Daemon
+    #__TLS__    location /e/ {
+    #__TLS__        set $plugin_upstream http://plugin_daemon:5002;
+    #__TLS__        proxy_pass $plugin_upstream;
+    #__TLS__        proxy_http_version 1.1;
     #__TLS__        proxy_read_timeout 600s;
     #__TLS__        proxy_send_timeout 600s;
-    #__TLS__        proxy_buffering off;
+    #__TLS__        proxy_connect_timeout 600s;
+    #__TLS__        proxy_set_header Host $host;
+    #__TLS__        proxy_set_header X-Real-IP $remote_addr;
+    #__TLS__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #__TLS__        proxy_set_header X-Forwarded-Proto $scheme;
     #__TLS__    }
+    #__TLS__
+    #__TLS__    #__OPENWEBUI__# Open WebUI — optional chat frontend (/chat)
+    #__TLS__    #__OPENWEBUI__location /chat {
+    #__TLS__    #__OPENWEBUI__    proxy_pass http://openwebui;
+    #__TLS__    #__OPENWEBUI__    proxy_http_version 1.1;
+    #__TLS__    #__OPENWEBUI__    proxy_set_header Host $host;
+    #__TLS__    #__OPENWEBUI__    proxy_set_header X-Real-IP $remote_addr;
+    #__TLS__    #__OPENWEBUI__    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #__TLS__    #__OPENWEBUI__    proxy_set_header X-Forwarded-Proto $scheme;
+    #__TLS__    #__OPENWEBUI__    proxy_set_header Upgrade $http_upgrade;
+    #__TLS__    #__OPENWEBUI__    proxy_set_header Connection "upgrade";
+    #__TLS__    #__OPENWEBUI__    proxy_read_timeout 600s;
+    #__TLS__    #__OPENWEBUI__    proxy_send_timeout 600s;
+    #__TLS__    #__OPENWEBUI__    proxy_buffering off;
+    #__TLS__    #__OPENWEBUI__}
     #__TLS__
     #__TLS__    # Block old-style hex token URLs
     #__TLS__    location ~ "^/[a-f0-9]{24,}/" { return 404; }

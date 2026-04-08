@@ -80,6 +80,7 @@ _init_wizard_defaults() {
     ENABLE_NOTEBOOK="${ENABLE_NOTEBOOK:-false}"
     ENABLE_DBGPT="${ENABLE_DBGPT:-false}"
     ENABLE_CRAWL4AI="${ENABLE_CRAWL4AI:-false}"
+    ENABLE_OPENWEBUI="${ENABLE_OPENWEBUI:-false}"
     ENABLE_DIFY_PREMIUM="${ENABLE_DIFY_PREMIUM:-true}"
     NON_INTERACTIVE="${NON_INTERACTIVE:-false}"
 }
@@ -227,6 +228,23 @@ _wizard_etl() {
             ;;
     esac
     OCR_LANG="rus,eng"
+}
+
+_wizard_openwebui() {
+    if [[ "${NON_INTERACTIVE}" == "true" ]]; then
+        return 0
+    fi
+
+    local choice
+    choice=$(wt_menu "Open WebUI" \
+        "Включить Open WebUI (дополнительный чат-интерфейс)?" \
+        "1" "Нет -- только Dify (рекомендуется)" \
+        "2" "Да  -- Dify + Open WebUI")
+
+    case "$choice" in
+        2) ENABLE_OPENWEBUI="true" ;;
+        *) ENABLE_OPENWEBUI="false" ;;
+    esac
 }
 
 _wizard_llm_provider() {
@@ -1445,6 +1463,7 @@ _wizard_summary() {
     if [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]]; then summary+="Open Notebook: включён (порт 8502)\n"; fi
     if [[ "${ENABLE_DBGPT:-false}" == "true" ]]; then summary+="DB-GPT:       включён (порт 5670)\n"; fi
     if [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]]; then summary+="Crawl4AI:     включён (порт 11235)\n"; fi
+    if [[ "${ENABLE_OPENWEBUI:-false}" == "true" ]]; then summary+="Open WebUI:   включён (/chat)\n"; fi
     if [[ "${ENABLE_DIFY_PREMIUM:-true}" == "true" ]]; then summary+="Dify Premium: включён (патч после запуска)\n"; fi
     if [[ "$ENABLE_TUNNEL" == "true" ]]; then summary+="Туннель:      ${TUNNEL_VPS_HOST}:${TUNNEL_REMOTE_PORT}\n"; fi
     summary+="Бэкапы:       ${BACKUP_TARGET} (${BACKUP_SCHEDULE})\n"
@@ -1562,6 +1581,7 @@ run_wizard() {
     _wizard_reranker_model
     _wizard_vector_store
     _wizard_etl
+    _wizard_openwebui
     _wizard_hf_token
     _wizard_tls
     _wizard_monitoring
@@ -1589,6 +1609,7 @@ run_wizard() {
     export REMOTE_BACKUP_HOST REMOTE_BACKUP_PORT REMOTE_BACKUP_USER REMOTE_BACKUP_KEY REMOTE_BACKUP_PATH
     export ADMIN_UI_OPEN
     export ENABLE_LITELLM ENABLE_SEARXNG ENABLE_NOTEBOOK ENABLE_DBGPT ENABLE_CRAWL4AI
+    export ENABLE_OPENWEBUI
     export ENABLE_DIFY_PREMIUM
 }
 

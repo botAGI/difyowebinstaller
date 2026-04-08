@@ -29,7 +29,7 @@ source "${_HEALTH_SCRIPT_DIR}/service-map.sh"
 get_service_list() {
     local compose_dir="${INSTALL_DIR}/docker"
     local env_file="${compose_dir}/.env"
-    local services=(db redis sandbox ssrf_proxy api worker web plugin_daemon pipelines nginx open-webui)
+    local services=(db redis sandbox ssrf_proxy api worker web plugin_daemon nginx)
 
     if [[ -f "$env_file" ]]; then
         # Vector store
@@ -93,6 +93,11 @@ get_service_list() {
         if [[ "$enable_notebook" == "true" ]]; then services+=(surrealdb open-notebook); fi
         if [[ "$enable_dbgpt" == "true" ]]; then services+=(dbgpt); fi
         if [[ "$enable_crawl4ai" == "true" ]]; then services+=(crawl4ai); fi
+
+        # Open WebUI
+        local enable_openwebui
+        enable_openwebui="$(grep '^ENABLE_OPENWEBUI=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+        if [[ "$enable_openwebui" == "true" ]]; then services+=(open-webui pipelines); fi
     else
         services+=(weaviate)
     fi
@@ -430,8 +435,17 @@ verify_services() {
     local -a svc_checks=()
 
     # Always check core services (nginx proxied — accessible from host)
-    svc_checks+=("Open WebUI|http://${domain}/||always")
+    svc_checks+=("Dify App|http://${domain}/||always")
     svc_checks+=("Dify Console|http://${domain}:3000/console/api/setup||always")
+
+    # Open WebUI (optional)
+    if [[ -f "${compose_dir}/.env" ]]; then
+        local _owui
+        _owui="$(grep '^ENABLE_OPENWEBUI=' "${compose_dir}/.env" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+        if [[ "$_owui" == "true" ]]; then
+            svc_checks+=("Open WebUI|http://${domain}/chat||openwebui")
+        fi
+    fi
 
     # Profile-conditional services — internal ports, use docker exec
     if [[ -f "$env_file" ]]; then

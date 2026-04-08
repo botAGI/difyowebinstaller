@@ -82,8 +82,9 @@ _status_dashboard() {
     echo -e "${BOLD}Endpoints:${NC}"
     local domain; domain="$(_read_env DOMAIN "")"
     [[ -z "$domain" ]] && domain="$(_get_ip)"
-    echo "  Open WebUI:   http://${domain}"
+    echo "  Dify App:     http://${domain}"
     echo "  Dify Console: http://${domain}:3000"
+    [[ "$(_read_env ENABLE_OPENWEBUI "false")" == "true" ]] && echo "  Open WebUI:   http://${domain}/chat"
     [[ "$(_read_env ENABLE_LITELLM "true")" == "true" ]] && echo "  LiteLLM UI:   http://${domain}:4001/ui/"
     if [[ "$(_read_env ADMIN_UI_OPEN "false")" == "true" ]]; then
         local ip; ip="$(_get_ip)"

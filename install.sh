@@ -349,13 +349,16 @@ _save_credentials() {
     {
         echo "# AGMind Credentials — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
         echo ""
-        echo "Open WebUI:  ${url}"
-        echo "  Login: admin@agmind.ai"
-        echo "  Pass:  ${owui_pass:-N/A}"
-        echo ""
+        echo "Dify App:    ${url}"
         echo "Dify Console: http://${DOMAIN:-$ip}:3000"
         echo "  Login: admin@agmind.ai"
         echo "  Pass:  ${owui_pass:-N/A}"
+        if [[ "${ENABLE_OPENWEBUI:-false}" == "true" ]]; then
+            echo ""
+            echo "Open WebUI:  ${url}/chat"
+            echo "  Login: admin@agmind.ai"
+            echo "  Pass:  ${owui_pass:-N/A}"
+        fi
         if [[ "${MONITORING_MODE:-}" == "local" ]]; then
             echo ""
             echo "Grafana: http://${ip}:${GRAFANA_PORT:-3001}"
@@ -636,13 +639,16 @@ _show_final_summary() {
     echo "  |            AGMind — Установка завершена           |"
     echo "  +--------------------------------------------------+"
     echo -e "${NC}"
-    echo -e "  ${BOLD}Open WebUI:${NC}      ${GREEN}${url}${NC}"
-    echo -e "    Login:         admin@agmind.ai"
-    echo -e "    Pass:          ${owui_pass:-см. credentials.txt}"
-    echo ""
+    echo -e "  ${BOLD}Dify App:${NC}        ${GREEN}${url}${NC}"
     echo -e "  ${BOLD}Dify Console:${NC}    ${GREEN}${dify_url}${NC}"
     echo -e "    Login:         admin@agmind.ai"
     echo -e "    Pass:          ${owui_pass:-см. credentials.txt}"
+    if [[ "${ENABLE_OPENWEBUI:-false}" == "true" ]]; then
+        echo ""
+        echo -e "  ${BOLD}Open WebUI:${NC}      ${GREEN}${url}/chat${NC}"
+        echo -e "    Login:         admin@agmind.ai"
+        echo -e "    Pass:          ${owui_pass:-см. credentials.txt}"
+    fi
     echo ""
     if [[ "${ENABLE_LITELLM:-true}" == "true" ]]; then
         echo -e "  ${BOLD}LiteLLM UI:${NC}      ${GREEN}http://${ip}:4001/ui/${NC}"
