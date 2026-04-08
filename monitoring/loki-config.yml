@@ -22,7 +22,7 @@ schema_config:
         prefix: index_
         period: 24h
 limits_config:
-  retention_period: 30d
+  retention_period: 7d
   max_query_series: 5000
   ingestion_rate_mb: 10
   ingestion_burst_size_mb: 20
