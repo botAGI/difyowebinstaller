@@ -16,7 +16,7 @@
       "datasource": { "type": "loki", "uid": "Loki" },
       "targets": [
         {
-          "expr": "sum by(service)(count_over_time({project=\"agmind\"} |= \"error\" [5m]))",
+          "expr": "sum by(service)(count_over_time({container=~\"agmind-.*\"} |= \"error\" [5m]))",
           "refId": "A"
         }
       ],
@@ -44,7 +44,7 @@
       "datasource": { "type": "loki", "uid": "Loki" },
       "targets": [
         {
-          "expr": "{project=\"agmind\"} |= \"error\" | service != \"\"",
+          "expr": "{container=~\"agmind-.*\"} |= \"error\" | service != \"\"",
           "refId": "A"
         }
       ],
@@ -59,13 +59,13 @@
     },
     {
       "id": 3,
-      "title": "Ollama Inference Logs",
+      "title": "LLM Inference Logs",
       "type": "logs",
       "gridPos": { "h": 10, "w": 24, "x": 0, "y": 18 },
       "datasource": { "type": "loki", "uid": "Loki" },
       "targets": [
         {
-          "expr": "{service=\"ollama\"}",
+          "expr": "{container=~\"agmind-vllm|agmind-ollama\"}",
           "refId": "A"
         }
       ],
