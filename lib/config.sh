@@ -835,9 +835,9 @@ enable_gpu_compose() {
                 # it cannot account for reclaimable page cache. vLLM checks:
                 #   free_gpu >= gpu_memory_utilization * total_gpu
                 # With total≈121 GB and free≈102 GB, 0.90 requests 109 GB → fails.
-                # 0.80 requests ~97 GB which fits within the ~102 GB free window
-                # while still leaving room for embed, rerank, OS and Docker.
-                vllm_util="0.80"
+                # 0.70 keeps ~19 GiB free for OS/Docker/swap relief while still
+                # giving 35 GiB KV cache (312K tokens, ~38x concurrency @65K).
+                vllm_util="0.70"
                 log_info "Unified memory GPU (${total_vram_mb} MB) — VLLM_GPU_MEM_UTIL=${vllm_util}"
                 # Raise container mem_limit: default 16 GB kills vLLM on unified
                 # memory because model weights (~50 GB) load into shared RAM.
