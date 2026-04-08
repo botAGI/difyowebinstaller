@@ -415,7 +415,7 @@ services:
     image: ${VLLM_EMBED_IMAGE:-nvcr.io/nvidia/vllm:${VLLM_NGC_VERSION:-26.03-py3}}
     container_name: agmind-vllm-embed
     restart: unless-stopped
-    mem_limit: ${VLLM_EMBED_MEM_LIMIT:-4g}
+    mem_limit: ${VLLM_EMBED_MEM_LIMIT:-6g}
     profiles:
       - vllm-embed
     ipc: host
@@ -451,7 +451,7 @@ services:
     image: ${VLLM_RERANK_IMAGE:-nvcr.io/nvidia/vllm:${VLLM_NGC_VERSION:-26.03-py3}}
     container_name: agmind-vllm-rerank
     restart: unless-stopped
-    mem_limit: ${VLLM_RERANK_MEM_LIMIT:-4g}
+    mem_limit: ${VLLM_RERANK_MEM_LIMIT:-6g}
     profiles:
       - vllm-rerank
     ipc: host
