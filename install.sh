@@ -567,6 +567,25 @@ _install_crons() {
     if [[ -d /etc/cron.d ]]; then
         echo "* * * * * root ${INSTALL_DIR}/scripts/health-gen.sh >> ${INSTALL_DIR}/health-gen.log 2>&1" > /etc/cron.d/agmind-health
         chmod 644 /etc/cron.d/agmind-health
+
+        # GPU metrics for Prometheus (via node-exporter textfile collector)
+        if [[ "${MONITORING_MODE:-none}" == "local" ]] && command -v nvidia-smi &>/dev/null; then
+            local gpu_script="${INSTALL_DIR}/scripts/gpu-metrics.sh"
+            local textfile_dir="${INSTALL_DIR}/docker/monitoring/textfile"
+            mkdir -p "$textfile_dir"
+            if [[ -x "$gpu_script" ]]; then
+                cat > /etc/cron.d/agmind-gpu-metrics <<GPUCRON
+* * * * * root ${gpu_script} ${textfile_dir} >/dev/null 2>&1
+* * * * * root sleep 15 && ${gpu_script} ${textfile_dir} >/dev/null 2>&1
+* * * * * root sleep 30 && ${gpu_script} ${textfile_dir} >/dev/null 2>&1
+* * * * * root sleep 45 && ${gpu_script} ${textfile_dir} >/dev/null 2>&1
+GPUCRON
+                chmod 644 /etc/cron.d/agmind-gpu-metrics
+                # Generate initial metrics so Prometheus has data on first scrape
+                "$gpu_script" "$textfile_dir" 2>/dev/null || true
+                log_info "GPU metrics cron installed (15s interval)"
+            fi
+        fi
     fi
     # Create initial health.json placeholder so nginx /health works before first cron tick
     local health_dir="${INSTALL_DIR}/docker/nginx"
