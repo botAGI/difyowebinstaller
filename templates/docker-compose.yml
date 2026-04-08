@@ -128,7 +128,7 @@ x-shared-env: &shared-env
 services:
   # ==================== Dify API ====================
   api:
-    <<: *logging-defaults
+    <<: *security-defaults
     image: langgenius/dify-api:${DIFY_VERSION:-main}
     container_name: agmind-api
     restart: always
@@ -157,7 +157,7 @@ services:
 
   # ==================== Dify Worker ====================
   worker:
-    <<: *logging-defaults
+    <<: *security-defaults
     image: langgenius/dify-api:${DIFY_VERSION:-main}
     container_name: agmind-worker
     restart: always
