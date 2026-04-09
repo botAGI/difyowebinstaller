@@ -217,7 +217,7 @@ services:
   open-webui:
     <<: *security-defaults
     # WARNING: open-webui version pinned for white-label compatibility
-    image: ghcr.io/open-webui/open-webui:${OPENWEBUI_VERSION:-v0.5.20}
+    image: ghcr.io/open-webui/open-webui:${OPENWEBUI_VERSION:-v0.8.12}
     container_name: agmind-openwebui
     restart: on-failure:5
     mem_limit: ${OPENWEBUI_MEM_LIMIT:-2g}
@@ -315,7 +315,7 @@ services:
   # ==================== vLLM (vllm profile) ====================
   vllm:
     <<: *logging-defaults
-    image: ${VLLM_IMAGE:-vllm/vllm-openai:${VLLM_VERSION:-v0.18.1}${VLLM_CUDA_SUFFIX:-}}
+    image: ${VLLM_IMAGE:-vllm/vllm-openai:${VLLM_VERSION:-v0.19.0}${VLLM_CUDA_SUFFIX:-}}
     container_name: agmind-vllm
     restart: unless-stopped
     mem_limit: ${VLLM_MEM_LIMIT:-16g}
@@ -416,7 +416,7 @@ services:
   # ==================== vLLM Embedding (DGX Spark / arm64) ==================
   vllm-embed:
     <<: *logging-defaults
-    image: ${VLLM_EMBED_IMAGE:-nvcr.io/nvidia/vllm:${VLLM_NGC_VERSION:-26.03-py3}}
+    image: ${VLLM_EMBED_IMAGE:-nvcr.io/nvidia/vllm:${VLLM_NGC_VERSION:-26.02-py3}}
     container_name: agmind-vllm-embed
     restart: unless-stopped
     mem_limit: ${VLLM_EMBED_MEM_LIMIT:-6g}
@@ -452,7 +452,7 @@ services:
   # ==================== vLLM Reranker (DGX Spark / arm64) ===================
   vllm-rerank:
     <<: *logging-defaults
-    image: ${VLLM_RERANK_IMAGE:-nvcr.io/nvidia/vllm:${VLLM_NGC_VERSION:-26.03-py3}}
+    image: ${VLLM_RERANK_IMAGE:-nvcr.io/nvidia/vllm:${VLLM_NGC_VERSION:-26.02-py3}}
     container_name: agmind-vllm-rerank
     restart: unless-stopped
     mem_limit: ${VLLM_RERANK_MEM_LIMIT:-6g}
@@ -558,7 +558,7 @@ services:
   # ==================== Weaviate ====================
   weaviate:
     <<: *security-defaults
-    image: semitechnologies/weaviate:${WEAVIATE_VERSION:-1.27.6}
+    image: semitechnologies/weaviate:${WEAVIATE_VERSION:-1.27.0}
     container_name: agmind-weaviate
     restart: always
     mem_limit: ${WEAVIATE_MEM_LIMIT:-4g}
@@ -589,7 +589,7 @@ services:
   # ==================== Qdrant (alternative vector store) ====================
   qdrant:
     <<: *security-defaults
-    image: qdrant/qdrant:${QDRANT_VERSION:-v1.12.1}
+    image: qdrant/qdrant:${QDRANT_VERSION:-v1.8.3}
     container_name: agmind-qdrant
     restart: always
     mem_limit: ${QDRANT_MEM_LIMIT:-2g}
@@ -750,7 +750,7 @@ services:
   # Dify manages plugin isolation internally — no cap_drop needed.
   plugin_daemon:
     <<: *logging-defaults
-    image: langgenius/dify-plugin-daemon:${PLUGIN_DAEMON_VERSION:-0.5.3-local}
+    image: langgenius/dify-plugin-daemon:${PLUGIN_DAEMON_VERSION:-0.5.6-local}
     container_name: agmind-plugin-daemon
     restart: always
     mem_limit: ${PLUGIN_DAEMON_MEM_LIMIT:-1g}
@@ -801,7 +801,7 @@ services:
   # ==================== Nginx ====================
   nginx:
     <<: *security-defaults
-    image: nginx:${NGINX_VERSION:-1.27.3-alpine}
+    image: nginx:${NGINX_VERSION:-1.29.8-alpine}
     container_name: agmind-nginx
     restart: always
     mem_limit: ${NGINX_MEM_LIMIT:-256m}
@@ -885,7 +885,7 @@ services:
   # ==================== Alertmanager (monitoring profile) ====================
   alertmanager:
     <<: *security-defaults
-    image: prom/alertmanager:${ALERTMANAGER_VERSION:-v0.27.0}
+    image: prom/alertmanager:${ALERTMANAGER_VERSION:-v0.32.0}
     container_name: agmind-alertmanager
     restart: on-failure:5
     mem_limit: ${ALERTMANAGER_MEM_LIMIT:-256m}
@@ -905,7 +905,7 @@ services:
   # ==================== Loki (monitoring profile) ====================
   loki:
     <<: *security-defaults
-    image: grafana/loki:${LOKI_VERSION:-3.3.2}
+    image: grafana/loki:${LOKI_VERSION:-3.6.10}
     cap_add:
       - CHOWN
       - SETUID
@@ -931,7 +931,7 @@ services:
   # ==================== Promtail (monitoring profile) ====================
   promtail:
     <<: *security-defaults
-    image: grafana/promtail:${PROMTAIL_VERSION:-3.3.2}
+    image: grafana/promtail:${PROMTAIL_VERSION:-3.6.10}
     container_name: agmind-promtail
     restart: on-failure:5
     mem_limit: ${PROMTAIL_MEM_LIMIT:-256m}
@@ -958,7 +958,7 @@ services:
   # ==================== Node Exporter (monitoring profile) ====================
   node-exporter:
     <<: *security-defaults
-    image: prom/node-exporter:${NODE_EXPORTER_VERSION:-v1.8.2}
+    image: prom/node-exporter:${NODE_EXPORTER_VERSION:-v1.11.1}
     container_name: agmind-node-exporter
     restart: on-failure:5
     mem_limit: ${NODE_EXPORTER_MEM_LIMIT:-128m}
@@ -992,7 +992,7 @@ services:
   # See: https://github.com/google/cadvisor/issues/3749
   cadvisor:
     <<: *logging-defaults
-    image: gcr.io/cadvisor/cadvisor:${CADVISOR_VERSION:-v0.55.1}
+    image: gcr.io/cadvisor/cadvisor:${CADVISOR_VERSION:-v0.56.2}
     container_name: agmind-cadvisor
     restart: on-failure:5
     mem_limit: ${CADVISOR_MEM_LIMIT:-512m}
@@ -1028,7 +1028,7 @@ services:
   # ==================== Grafana (monitoring profile) ====================
   grafana:
     <<: *security-defaults
-    image: grafana/grafana:${GRAFANA_VERSION:-11.4.0}
+    image: grafana/grafana:${GRAFANA_VERSION:-12.4.2}
     container_name: agmind-grafana
     restart: on-failure:5
     mem_limit: ${GRAFANA_MEM_LIMIT:-512m}
@@ -1111,7 +1111,7 @@ services:
   # ==================== SearXNG (Search Engine) ====================
   searxng:
     <<: *security-defaults
-    image: docker.io/searxng/searxng:${SEARXNG_VERSION:-2026.3.29-7ac4ff39f}
+    image: docker.io/searxng/searxng:${SEARXNG_VERSION:-2026.4.7-08ef7a63d}
     container_name: agmind-searxng
     restart: on-failure:5
     mem_limit: ${SEARXNG_MEM_LIMIT:-256m}
