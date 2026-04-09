@@ -1,0 +1,231 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 720" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0d1117"/>
+      <stop offset="100%" style="stop-color:#161b22"/>
+    </linearGradient>
+    <linearGradient id="nginxGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#e94560"/>
+      <stop offset="100%" style="stop-color:#c23152"/>
+    </linearGradient>
+    <linearGradient id="gpuGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#76b900"/>
+      <stop offset="100%" style="stop-color:#5a8f00"/>
+    </linearGradient>
+    <linearGradient id="dataGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#0078d4"/>
+      <stop offset="100%" style="stop-color:#005a9e"/>
+    </linearGradient>
+    <linearGradient id="optGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#8b5cf6"/>
+      <stop offset="100%" style="stop-color:#6d28d9"/>
+    </linearGradient>
+    <linearGradient id="monGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f59e0b"/>
+      <stop offset="100%" style="stop-color:#d97706"/>
+    </linearGradient>
+    <filter id="shadow">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="960" height="720" fill="url(#bgGrad)" rx="12"/>
+
+  <!-- Title -->
+  <text x="480" y="36" text-anchor="middle" fill="#e6edf3" font-size="18" font-weight="700">AGMind Architecture</text>
+
+  <!-- ===== NGINX LAYER ===== -->
+  <rect x="40" y="52" width="880" height="90" rx="8" fill="none" stroke="#e94560" stroke-width="2" opacity="0.9" filter="url(#shadow)"/>
+  <rect x="40" y="52" width="880" height="24" rx="8" fill="url(#nginxGrad)" opacity="0.9"/>
+  <rect x="40" y="68" width="880" height="8" fill="url(#nginxGrad)" opacity="0.9"/>
+  <text x="480" y="68" text-anchor="middle" fill="#fff" font-size="12" font-weight="600">NGINX REVERSE PROXY  :80 / :443 / :3000</text>
+
+  <!-- Nginx items -->
+  <rect x="60" y="86" width="170" height="44" rx="6" fill="#1c2333" stroke="#e94560" stroke-width="1"/>
+  <text x="145" y="104" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600">Dify App</text>
+  <text x="145" y="120" text-anchor="middle" fill="#8b949e" font-size="10">/ (default)</text>
+
+  <rect x="250" y="86" width="170" height="44" rx="6" fill="#1c2333" stroke="#e94560" stroke-width="1"/>
+  <text x="335" y="104" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600">Dify API</text>
+  <text x="335" y="120" text-anchor="middle" fill="#8b949e" font-size="10">/api /v1 /console /files</text>
+
+  <rect x="440" y="86" width="170" height="44" rx="6" fill="#1c2333" stroke="#e94560" stroke-width="1"/>
+  <text x="525" y="104" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600">Dify Console</text>
+  <text x="525" y="120" text-anchor="middle" fill="#8b949e" font-size="10">:3000</text>
+
+  <rect x="630" y="86" width="170" height="44" rx="6" fill="#1c2333" stroke="#e94560" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="715" y="104" text-anchor="middle" fill="#8b949e" font-size="11" font-weight="600">Open WebUI</text>
+  <text x="715" y="120" text-anchor="middle" fill="#6e7681" font-size="10">/chat (optional)</text>
+
+  <!-- Arrows from nginx down -->
+  <line x1="145" y1="130" x2="145" y2="170" stroke="#e94560" stroke-width="1.5" opacity="0.5"/>
+  <line x1="335" y1="130" x2="335" y2="170" stroke="#e94560" stroke-width="1.5" opacity="0.5"/>
+  <line x1="525" y1="130" x2="480" y2="170" stroke="#e94560" stroke-width="1.5" opacity="0.5"/>
+
+  <!-- ===== GPU SERVICES ===== -->
+  <rect x="40" y="170" width="440" height="110" rx="8" fill="none" stroke="#76b900" stroke-width="2" opacity="0.9" filter="url(#shadow)"/>
+  <rect x="40" y="170" width="440" height="24" rx="8" fill="url(#gpuGrad)" opacity="0.9"/>
+  <rect x="40" y="186" width="440" height="8" fill="url(#gpuGrad)" opacity="0.9"/>
+  <text x="260" y="186" text-anchor="middle" fill="#fff" font-size="12" font-weight="600">GPU SERVICES</text>
+
+  <rect x="55" y="204" width="95" height="64" rx="6" fill="#1c2333" stroke="#76b900" stroke-width="1"/>
+  <text x="102" y="226" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600">Ollama</text>
+  <text x="102" y="242" text-anchor="middle" fill="#8b949e" font-size="9">:11434</text>
+  <text x="102" y="256" text-anchor="middle" fill="#76b900" font-size="9">LLM (GPU)</text>
+
+  <rect x="162" y="204" width="95" height="64" rx="6" fill="#1c2333" stroke="#76b900" stroke-width="1"/>
+  <text x="209" y="226" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600">vLLM</text>
+  <text x="209" y="242" text-anchor="middle" fill="#8b949e" font-size="9">:8000</text>
+  <text x="209" y="256" text-anchor="middle" fill="#76b900" font-size="9">LLM (GPU)</text>
+
+  <rect x="269" y="204" width="95" height="64" rx="6" fill="#1c2333" stroke="#76b900" stroke-width="1"/>
+  <text x="316" y="222" text-anchor="middle" fill="#e6edf3" font-size="10" font-weight="600">TEI / vLLM</text>
+  <text x="316" y="236" text-anchor="middle" fill="#e6edf3" font-size="10" font-weight="600">Embed</text>
+  <text x="316" y="256" text-anchor="middle" fill="#76b900" font-size="9">Embeddings</text>
+
+  <rect x="376" y="204" width="95" height="64" rx="6" fill="#1c2333" stroke="#76b900" stroke-width="1"/>
+  <text x="423" y="222" text-anchor="middle" fill="#e6edf3" font-size="10" font-weight="600">TEI / vLLM</text>
+  <text x="423" y="236" text-anchor="middle" fill="#e6edf3" font-size="10" font-weight="600">Rerank</text>
+  <text x="423" y="256" text-anchor="middle" fill="#76b900" font-size="9">Reranking</text>
+
+  <!-- ===== DATA LAYER ===== -->
+  <rect x="500" y="170" width="420" height="110" rx="8" fill="none" stroke="#0078d4" stroke-width="2" opacity="0.9" filter="url(#shadow)"/>
+  <rect x="500" y="170" width="420" height="24" rx="8" fill="url(#dataGrad)" opacity="0.9"/>
+  <rect x="500" y="186" width="420" height="8" fill="url(#dataGrad)" opacity="0.9"/>
+  <text x="710" y="186" text-anchor="middle" fill="#fff" font-size="12" font-weight="600">DATA LAYER</text>
+
+  <rect x="515" y="204" width="120" height="64" rx="6" fill="#1c2333" stroke="#0078d4" stroke-width="1"/>
+  <text x="575" y="226" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600">PostgreSQL</text>
+  <text x="575" y="242" text-anchor="middle" fill="#8b949e" font-size="9">:5432</text>
+  <text x="575" y="256" text-anchor="middle" fill="#58a6ff" font-size="9">Metadata</text>
+
+  <rect x="648" y="204" width="120" height="64" rx="6" fill="#1c2333" stroke="#0078d4" stroke-width="1"/>
+  <text x="708" y="226" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600">Redis</text>
+  <text x="708" y="242" text-anchor="middle" fill="#8b949e" font-size="9">:6379</text>
+  <text x="708" y="256" text-anchor="middle" fill="#58a6ff" font-size="9">Cache + Queues</text>
+
+  <rect x="781" y="204" width="125" height="64" rx="6" fill="#1c2333" stroke="#0078d4" stroke-width="1"/>
+  <text x="843" y="222" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600">Weaviate</text>
+  <text x="843" y="236" text-anchor="middle" fill="#e6edf3" font-size="10">/ Qdrant</text>
+  <text x="843" y="256" text-anchor="middle" fill="#58a6ff" font-size="9">Vectors</text>
+
+  <!-- ===== CORE SERVICES (middle row) ===== -->
+  <rect x="40" y="305" width="540" height="90" rx="8" fill="none" stroke="#30363d" stroke-width="2" opacity="0.9" filter="url(#shadow)"/>
+  <rect x="40" y="305" width="540" height="24" rx="8" fill="#21262d" opacity="0.9"/>
+  <rect x="40" y="321" width="540" height="8" fill="#21262d" opacity="0.9"/>
+  <text x="310" y="321" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="600">DIFY CORE</text>
+
+  <rect x="55" y="339" width="95" height="44" rx="6" fill="#1c2333" stroke="#30363d" stroke-width="1"/>
+  <text x="102" y="357" text-anchor="middle" fill="#e6edf3" font-size="10" font-weight="600">API Server</text>
+  <text x="102" y="372" text-anchor="middle" fill="#8b949e" font-size="9">:5001</text>
+
+  <rect x="160" y="339" width="95" height="44" rx="6" fill="#1c2333" stroke="#30363d" stroke-width="1"/>
+  <text x="207" y="357" text-anchor="middle" fill="#e6edf3" font-size="10" font-weight="600">Worker</text>
+  <text x="207" y="372" text-anchor="middle" fill="#8b949e" font-size="9">Celery</text>
+
+  <rect x="265" y="339" width="95" height="44" rx="6" fill="#1c2333" stroke="#30363d" stroke-width="1"/>
+  <text x="312" y="357" text-anchor="middle" fill="#e6edf3" font-size="10" font-weight="600">Web UI</text>
+  <text x="312" y="372" text-anchor="middle" fill="#8b949e" font-size="9">Next.js :3000</text>
+
+  <rect x="370" y="339" width="95" height="44" rx="6" fill="#1c2333" stroke="#30363d" stroke-width="1"/>
+  <text x="417" y="357" text-anchor="middle" fill="#e6edf3" font-size="10" font-weight="600">Plugin</text>
+  <text x="417" y="372" text-anchor="middle" fill="#8b949e" font-size="9">Daemon :5002</text>
+
+  <rect x="475" y="339" width="95" height="44" rx="6" fill="#1c2333" stroke="#30363d" stroke-width="1"/>
+  <text x="522" y="357" text-anchor="middle" fill="#e6edf3" font-size="10" font-weight="600">Sandbox</text>
+  <text x="522" y="372" text-anchor="middle" fill="#8b949e" font-size="9">Code exec</text>
+
+  <!-- ===== SECURITY ===== -->
+  <rect x="600" y="305" width="160" height="90" rx="8" fill="none" stroke="#f85149" stroke-width="2" opacity="0.7" filter="url(#shadow)"/>
+  <rect x="600" y="305" width="160" height="24" rx="8" fill="#3d1116" opacity="0.9"/>
+  <rect x="600" y="321" width="160" height="8" fill="#3d1116" opacity="0.9"/>
+  <text x="680" y="321" text-anchor="middle" fill="#f85149" font-size="11" font-weight="600">SECURITY</text>
+
+  <rect x="612" y="339" width="63" height="44" rx="6" fill="#1c2333" stroke="#f85149" stroke-width="1"/>
+  <text x="643" y="357" text-anchor="middle" fill="#e6edf3" font-size="9" font-weight="600">SSRF</text>
+  <text x="643" y="372" text-anchor="middle" fill="#8b949e" font-size="8">Squid</text>
+
+  <rect x="685" y="339" width="63" height="44" rx="6" fill="#1c2333" stroke="#f85149" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="716" y="357" text-anchor="middle" fill="#8b949e" font-size="9" font-weight="600">Authelia</text>
+  <text x="716" y="372" text-anchor="middle" fill="#6e7681" font-size="8">2FA (opt)</text>
+
+  <!-- ===== OPTIONAL SERVICES ===== -->
+  <rect x="40" y="420" width="540" height="110" rx="8" fill="none" stroke="#8b5cf6" stroke-width="2" opacity="0.9" filter="url(#shadow)"/>
+  <rect x="40" y="420" width="540" height="24" rx="8" fill="url(#optGrad)" opacity="0.9"/>
+  <rect x="40" y="436" width="540" height="8" fill="url(#optGrad)" opacity="0.9"/>
+  <text x="310" y="436" text-anchor="middle" fill="#fff" font-size="12" font-weight="600">OPTIONAL SERVICES</text>
+
+  <rect x="55" y="454" width="82" height="64" rx="6" fill="#1c2333" stroke="#8b5cf6" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="96" y="476" text-anchor="middle" fill="#e6edf3" font-size="10" font-weight="600">LiteLLM</text>
+  <text x="96" y="492" text-anchor="middle" fill="#8b949e" font-size="8">AI Gateway</text>
+  <text x="96" y="506" text-anchor="middle" fill="#8b949e" font-size="8">:4001</text>
+
+  <rect x="147" y="454" width="82" height="64" rx="6" fill="#1c2333" stroke="#8b5cf6" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="188" y="476" text-anchor="middle" fill="#e6edf3" font-size="10" font-weight="600">SearXNG</text>
+  <text x="188" y="492" text-anchor="middle" fill="#8b949e" font-size="8">Search</text>
+  <text x="188" y="506" text-anchor="middle" fill="#8b949e" font-size="8">:8888</text>
+
+  <rect x="239" y="454" width="82" height="64" rx="6" fill="#1c2333" stroke="#8b5cf6" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="280" y="472" text-anchor="middle" fill="#e6edf3" font-size="9" font-weight="600">Open</text>
+  <text x="280" y="486" text-anchor="middle" fill="#e6edf3" font-size="9" font-weight="600">Notebook</text>
+  <text x="280" y="506" text-anchor="middle" fill="#8b949e" font-size="8">:8502</text>
+
+  <rect x="331" y="454" width="82" height="64" rx="6" fill="#1c2333" stroke="#8b5cf6" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="372" y="476" text-anchor="middle" fill="#e6edf3" font-size="10" font-weight="600">DB-GPT</text>
+  <text x="372" y="492" text-anchor="middle" fill="#8b949e" font-size="8">Analytics</text>
+  <text x="372" y="506" text-anchor="middle" fill="#8b949e" font-size="8">:5670</text>
+
+  <rect x="423" y="454" width="82" height="64" rx="6" fill="#1c2333" stroke="#8b5cf6" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="464" y="476" text-anchor="middle" fill="#e6edf3" font-size="10" font-weight="600">Crawl4AI</text>
+  <text x="464" y="492" text-anchor="middle" fill="#8b949e" font-size="8">Web Crawler</text>
+  <text x="464" y="506" text-anchor="middle" fill="#8b949e" font-size="8">:11235</text>
+
+  <!-- ===== MONITORING ===== -->
+  <rect x="40" y="555" width="880" height="110" rx="8" fill="none" stroke="#f59e0b" stroke-width="2" opacity="0.9" filter="url(#shadow)"/>
+  <rect x="40" y="555" width="880" height="24" rx="8" fill="url(#monGrad)" opacity="0.9"/>
+  <rect x="40" y="571" width="880" height="8" fill="url(#monGrad)" opacity="0.9"/>
+  <text x="480" y="571" text-anchor="middle" fill="#fff" font-size="12" font-weight="600">MONITORING &amp; OBSERVABILITY</text>
+
+  <rect x="55" y="589" width="120" height="64" rx="6" fill="#1c2333" stroke="#f59e0b" stroke-width="1"/>
+  <text x="115" y="611" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600">Prometheus</text>
+  <text x="115" y="627" text-anchor="middle" fill="#8b949e" font-size="9">Metrics :9090</text>
+  <text x="115" y="641" text-anchor="middle" fill="#f59e0b" font-size="9">Scraping</text>
+
+  <rect x="190" y="589" width="120" height="64" rx="6" fill="#1c2333" stroke="#f59e0b" stroke-width="1"/>
+  <text x="250" y="611" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600">Grafana</text>
+  <text x="250" y="627" text-anchor="middle" fill="#8b949e" font-size="9">Dashboards :3001</text>
+  <text x="250" y="641" text-anchor="middle" fill="#f59e0b" font-size="9">5 dashboards</text>
+
+  <rect x="325" y="589" width="120" height="64" rx="6" fill="#1c2333" stroke="#f59e0b" stroke-width="1"/>
+  <text x="385" y="607" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600">Loki</text>
+  <text x="385" y="621" text-anchor="middle" fill="#e6edf3" font-size="10">+ Promtail</text>
+  <text x="385" y="641" text-anchor="middle" fill="#f59e0b" font-size="9">Log aggregation</text>
+
+  <rect x="460" y="589" width="120" height="64" rx="6" fill="#1c2333" stroke="#f59e0b" stroke-width="1"/>
+  <text x="520" y="611" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600">Alertmanager</text>
+  <text x="520" y="627" text-anchor="middle" fill="#8b949e" font-size="9">Telegram / Webhook</text>
+  <text x="520" y="641" text-anchor="middle" fill="#f59e0b" font-size="9">Notifications</text>
+
+  <rect x="595" y="589" width="120" height="64" rx="6" fill="#1c2333" stroke="#f59e0b" stroke-width="1"/>
+  <text x="655" y="607" text-anchor="middle" fill="#e6edf3" font-size="10" font-weight="600">Node Exporter</text>
+  <text x="655" y="621" text-anchor="middle" fill="#e6edf3" font-size="10">+ cAdvisor</text>
+  <text x="655" y="641" text-anchor="middle" fill="#f59e0b" font-size="9">Host + containers</text>
+
+  <rect x="730" y="589" width="120" height="64" rx="6" fill="#1c2333" stroke="#f59e0b" stroke-width="1"/>
+  <text x="790" y="611" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600">Portainer</text>
+  <text x="790" y="627" text-anchor="middle" fill="#8b949e" font-size="9">Management :9443</text>
+  <text x="790" y="641" text-anchor="middle" fill="#f59e0b" font-size="9">Docker UI</text>
+
+  <!-- ===== NETWORK LABELS ===== -->
+  <rect x="780" y="305" width="140" height="90" rx="8" fill="none" stroke="#238636" stroke-width="1.5" opacity="0.7"/>
+  <text x="850" y="321" text-anchor="middle" fill="#238636" font-size="10" font-weight="600">Docker Networks</text>
+  <text x="850" y="342" text-anchor="middle" fill="#7ee787" font-size="9">agmind-frontend</text>
+  <text x="850" y="358" text-anchor="middle" fill="#7ee787" font-size="9">agmind-backend</text>
+  <text x="850" y="374" text-anchor="middle" fill="#7ee787" font-size="9">ssrf-network</text>
+  <text x="850" y="388" text-anchor="middle" fill="#6e7681" font-size="8">(isolated)</text>
+
+  <!-- ===== FOOTER ===== -->
+  <text x="480" y="695" text-anchor="middle" fill="#484f58" font-size="10">Dashed borders = optional services (enabled via wizard)</text>
+  <text x="480" y="710" text-anchor="middle" fill="#484f58" font-size="10">20-37 containers | LAN / VPS profiles | GPU auto-detection</text>
+</svg>
