@@ -88,30 +88,41 @@ fi
 
 echo ""
 
-# 1. Stop and remove containers
+# 1. Stop and remove containers (ALL profiles must be active for compose down to catch everything)
 CLEANUP_STAGE="docker-compose-down"
 if [[ -f "$COMPOSE_FILE" ]]; then
     echo -e "${YELLOW}Stopping containers...${NC}"
-    docker compose -f "$COMPOSE_FILE" down -v --remove-orphans 2>/dev/null || true
+    # Source ALL_COMPOSE_PROFILES if service-map.sh exists, otherwise use hardcoded superset
+    ALL_PROFILES="vps,monitoring,qdrant,weaviate,etl,authelia,ollama,vllm,tei,reranker,vllm-embed,vllm-rerank,docling,litellm,searxng,notebook,dbgpt,crawl4ai,openwebui"
+    if [[ -f "${INSTALL_DIR}/lib/service-map.sh" ]]; then
+        ALL_PROFILES="$(grep '^ALL_COMPOSE_PROFILES=' "${INSTALL_DIR}/lib/service-map.sh" 2>/dev/null | cut -d'"' -f2 || echo "$ALL_PROFILES")"
+    fi
+    COMPOSE_PROFILES="$ALL_PROFILES" docker compose -f "$COMPOSE_FILE" down -v --remove-orphans 2>/dev/null || true
 fi
 
-# 2. Remove Docker volumes (including Loki; removed promtail_data — not a named volume)
+# Also stop any orphan agmind containers not managed by compose
+docker ps -aq --filter "name=agmind-" 2>/dev/null | xargs -r docker rm -f 2>/dev/null || true
+
+# 2. Remove Docker volumes (match both agmind_ and docker_agmind_ prefixes)
 CLEANUP_STAGE="docker-volumes"
 echo -e "${YELLOW}Removing Docker volumes...${NC}"
-docker volume ls -q | grep -E "^agmind_|_openwebui_data$|_ollama_data$|_grafana_data$|_portainer_data$|_prometheus_data$|_loki_data$|_authelia_data$" | while read -r vol; do
+docker volume ls -q 2>/dev/null | grep -E "^agmind_|^docker_agmind_" | while read -r vol; do
     docker volume rm "$vol" 2>/dev/null || true
     echo "  Removed volume: $vol"
 done
 
 # 3. Remove systemd services
 CLEANUP_STAGE="systemd-services"
-if [[ -f /etc/systemd/system/agmind-tunnel.service ]]; then
-    echo -e "${YELLOW}Removing systemd services...${NC}"
-    systemctl stop agmind-tunnel 2>/dev/null || true
-    systemctl disable agmind-tunnel 2>/dev/null || true
-    rm -f /etc/systemd/system/agmind-tunnel.service
-    systemctl daemon-reload
-fi
+echo -e "${YELLOW}Removing systemd services...${NC}"
+for svc in agmind-stack agmind-tunnel; do
+    if [[ -f "/etc/systemd/system/${svc}.service" ]]; then
+        systemctl stop "$svc" 2>/dev/null || true
+        systemctl disable "$svc" 2>/dev/null || true
+        rm -f "/etc/systemd/system/${svc}.service"
+        echo "  Removed ${svc}.service"
+    fi
+done
+systemctl daemon-reload 2>/dev/null || true
 
 # 4. Remove cron entries (backup + secret rotation)
 CLEANUP_STAGE="cron-entries"
@@ -168,7 +179,14 @@ if [[ -d "/opt/agmind-instances" ]]; then
     fi
 fi
 
-# 10. Remove installation directory
+# 10. Remove CLI symlink
+CLEANUP_STAGE="cli-symlink"
+if [[ -L /usr/local/bin/agmind ]]; then
+    echo -e "${YELLOW}Removing CLI symlink...${NC}"
+    rm -f /usr/local/bin/agmind
+fi
+
+# 11. Remove installation directory
 CLEANUP_STAGE="install-dir"
 echo -e "${YELLOW}Removing ${INSTALL_DIR}...${NC}"
 rm -rf "${INSTALL_DIR}"
