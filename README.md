@@ -92,66 +92,9 @@ Node Exporter + cAdvisor для метрик хоста и контейнеро�
 
 ### Высокоуровневая схема
 
-```mermaid
-graph TB
-    subgraph NGINX["🌐 nginx :80 / :443 / :3000"]
-        direction LR
-        DIFY_APP["Dify App<br/><b>/ (default)</b>"]
-        DIFY_API["Dify API<br/>/api /v1 /console"]
-        DIFY_CONSOLE["Dify Console<br/>:3000"]
-        OWUI["Open WebUI<br/>/chat (optional)"]
-    end
-
-    subgraph GPU["⚡ GPU Services"]
-        direction LR
-        OLLAMA["Ollama<br/>:11434"]
-        VLLM["vLLM<br/>:8000"]
-        TEI["TEI / vLLM-embed<br/>Embeddings"]
-        RERANK["TEI / vLLM-rerank<br/>Reranking"]
-    end
-
-    subgraph DATA["💾 Data Layer"]
-        direction LR
-        PG["PostgreSQL<br/>:5432"]
-        REDIS["Redis<br/>:6379"]
-        WEAVIATE["Weaviate / Qdrant<br/>Vectors"]
-    end
-
-    subgraph OPTIONAL["📦 Optional Services"]
-        direction LR
-        LITELLM["LiteLLM<br/>AI Gateway"]
-        SEARXNG["SearXNG<br/>Search"]
-        NOTEBOOK["Open Notebook"]
-        CRAWL4AI["Crawl4AI"]
-        DBGPT["DB-GPT"]
-        DOCLING["Docling<br/>ETL/OCR"]
-    end
-
-    subgraph MONITORING["📊 Monitoring"]
-        direction LR
-        PROM["Prometheus"]
-        GRAFANA["Grafana<br/>:3001"]
-        LOKI["Loki + Promtail"]
-        ALERT["Alertmanager"]
-        PORTAINER["Portainer<br/>:9443"]
-    end
-
-    NGINX --> GPU
-    NGINX --> DATA
-    DIFY_API --> PG
-    DIFY_API --> REDIS
-    DIFY_API --> WEAVIATE
-    DIFY_API --> GPU
-    PROM --> GRAFANA
-    LOKI --> GRAFANA
-    ALERT --> PROM
-
-    style NGINX fill:#1a1a2e,stroke:#e94560,color:#fff
-    style GPU fill:#1a1a2e,stroke:#0f3460,color:#fff
-    style DATA fill:#1a1a2e,stroke:#16213e,color:#fff
-    style OPTIONAL fill:#1a1a2e,stroke:#533483,color:#fff
-    style MONITORING fill:#1a1a2e,stroke:#0f3460,color:#fff
-```
+<p align="center">
+  <img src="branding/architecture.svg" alt="AGMind Architecture" width="900">
+</p>
 
 ### Структура репозитория
 
@@ -451,66 +394,9 @@ Each toggled with a single `y` in the wizard:
 
 ### High-Level Diagram
 
-```mermaid
-graph TB
-    subgraph NGINX["🌐 nginx :80 / :443 / :3000"]
-        direction LR
-        DIFY_APP["Dify App<br/><b>/ (default)</b>"]
-        DIFY_API["Dify API<br/>/api /v1 /console"]
-        DIFY_CONSOLE["Dify Console<br/>:3000"]
-        OWUI["Open WebUI<br/>/chat (optional)"]
-    end
-
-    subgraph GPU["⚡ GPU Services"]
-        direction LR
-        OLLAMA["Ollama<br/>:11434"]
-        VLLM["vLLM<br/>:8000"]
-        TEI["TEI / vLLM-embed<br/>Embeddings"]
-        RERANK["TEI / vLLM-rerank<br/>Reranking"]
-    end
-
-    subgraph DATA["💾 Data Layer"]
-        direction LR
-        PG["PostgreSQL<br/>:5432"]
-        REDIS["Redis<br/>:6379"]
-        WEAVIATE["Weaviate / Qdrant<br/>Vectors"]
-    end
-
-    subgraph OPTIONAL["📦 Optional Services"]
-        direction LR
-        LITELLM["LiteLLM<br/>AI Gateway"]
-        SEARXNG["SearXNG<br/>Search"]
-        NOTEBOOK["Open Notebook"]
-        CRAWL4AI["Crawl4AI"]
-        DBGPT["DB-GPT"]
-        DOCLING["Docling<br/>ETL/OCR"]
-    end
-
-    subgraph MONITORING["📊 Monitoring"]
-        direction LR
-        PROM["Prometheus"]
-        GRAFANA["Grafana<br/>:3001"]
-        LOKI["Loki + Promtail"]
-        ALERT["Alertmanager"]
-        PORTAINER["Portainer<br/>:9443"]
-    end
-
-    NGINX --> GPU
-    NGINX --> DATA
-    DIFY_API --> PG
-    DIFY_API --> REDIS
-    DIFY_API --> WEAVIATE
-    DIFY_API --> GPU
-    PROM --> GRAFANA
-    LOKI --> GRAFANA
-    ALERT --> PROM
-
-    style NGINX fill:#1a1a2e,stroke:#e94560,color:#fff
-    style GPU fill:#1a1a2e,stroke:#0f3460,color:#fff
-    style DATA fill:#1a1a2e,stroke:#16213e,color:#fff
-    style OPTIONAL fill:#1a1a2e,stroke:#533483,color:#fff
-    style MONITORING fill:#1a1a2e,stroke:#0f3460,color:#fff
-```
+<p align="center">
+  <img src="branding/architecture.svg" alt="AGMind Architecture" width="900">
+</p>
 
 ### Repository Structure
 
