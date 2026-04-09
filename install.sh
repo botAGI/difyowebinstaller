@@ -239,7 +239,7 @@ _check_critical_services() {
 }
 
 _copy_runtime_files() {
-    local scripts=(backup.sh restore.sh uninstall.sh update.sh agmind.sh health-gen.sh rotate_secrets.sh dr-drill.sh generate-manifest.sh redis-lock-cleanup.sh patch_dify_features.sh)
+    local scripts=(backup.sh restore.sh uninstall.sh update.sh agmind.sh health-gen.sh rotate_secrets.sh dr-drill.sh generate-manifest.sh redis-lock-cleanup.sh patch_dify_features.sh gpu-metrics.sh)
     for s in "${scripts[@]}"; do
         if [[ -f "${INSTALLER_DIR}/scripts/${s}" ]]; then cp "${INSTALLER_DIR}/scripts/${s}" "${INSTALL_DIR}/scripts/"; fi
     done
