@@ -2,10 +2,9 @@ name: Check Upstream Versions
 
 on:
   schedule:
-    - cron: '0 9 * * *'    # daily (core AI + vector + UI)
-    - cron: '0 9 1 * *'    # monthly 1st (utilities)
-    - cron: '0 9 1 1,7 *'  # semi-annual Jan 1 + Jul 1 (infra)
-  workflow_dispatch: {}     # manual: run all tiers
+    - cron: '0 9 * * *'    # daily — all 32 components
+  workflow_dispatch: {}     # manual trigger
+
 
 permissions:
   contents: read
