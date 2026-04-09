@@ -1,190 +1,264 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "version": "1.0.0-alpha.1",
-  "release_date": "2026-03-14",
+  "version": "v2.4.0",
+  "release_date": "2026-04-09",
   "min_installer_version": "1.0.0",
   "images": {
     "dify-api": {
       "registry": "docker.io",
       "image": "langgenius/dify-api",
-      "tag": "main",
+      "tag": "1.13.3",
       "digest": "",
-      "platforms": ["linux/amd64", "linux/arm64"]
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
     },
     "dify-web": {
       "registry": "docker.io",
       "image": "langgenius/dify-web",
-      "tag": "main",
+      "tag": "1.13.3",
       "digest": "",
-      "platforms": ["linux/amd64", "linux/arm64"]
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
     },
     "open-webui": {
       "registry": "ghcr.io",
       "image": "open-webui/open-webui",
-      "tag": "v0.8.10",
+      "tag": "v0.8.12",
       "digest": "",
-      "platforms": ["linux/amd64", "linux/arm64"]
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
     },
     "ollama": {
       "registry": "docker.io",
       "image": "ollama/ollama",
       "tag": "0.6.2",
       "digest": "",
-      "platforms": ["linux/amd64", "linux/arm64"]
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
     },
     "postgres": {
       "registry": "docker.io",
       "image": "postgres",
-      "tag": "16-alpine",
+      "tag": "15-alpine",
       "digest": "",
-      "platforms": ["linux/amd64", "linux/arm64"]
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
     },
     "redis": {
       "registry": "docker.io",
       "image": "redis",
-      "tag": "7.4.1-alpine",
+      "tag": "6-alpine",
       "digest": "",
-      "platforms": ["linux/amd64", "linux/arm64"]
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
     },
     "weaviate": {
       "registry": "docker.io",
       "image": "semitechnologies/weaviate",
-      "tag": "1.36.6",
+      "tag": "1.27.0",
       "digest": "",
-      "platforms": ["linux/amd64", "linux/arm64"]
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
     },
     "qdrant": {
       "registry": "docker.io",
       "image": "qdrant/qdrant",
-      "tag": "v1.12.1",
+      "tag": "v1.8.3",
       "digest": "",
-      "platforms": ["linux/amd64", "linux/arm64"]
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
     },
     "dify-sandbox": {
       "registry": "docker.io",
       "image": "langgenius/dify-sandbox",
       "tag": "0.2.14",
       "digest": "",
-      "platforms": ["linux/amd64"]
+      "platforms": [
+        "linux/amd64"
+      ]
     },
     "squid": {
       "registry": "docker.io",
       "image": "ubuntu/squid",
       "tag": "6.6-24.04_edge",
       "digest": "",
-      "platforms": ["linux/amd64", "linux/arm64"]
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
     },
     "nginx": {
       "registry": "docker.io",
       "image": "nginx",
       "tag": "1.27.3-alpine",
       "digest": "",
-      "platforms": ["linux/amd64", "linux/arm64"]
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
     },
     "certbot": {
       "registry": "docker.io",
       "image": "certbot/certbot",
       "tag": "v3.1.0",
       "digest": "",
-      "platforms": ["linux/amd64", "linux/arm64"]
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
     },
     "dify-plugin-daemon": {
       "registry": "docker.io",
       "image": "langgenius/dify-plugin-daemon",
-      "tag": "main-local",
+      "tag": "0.5.3-local",
       "digest": "",
-      "platforms": ["linux/amd64", "linux/arm64"]
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
     },
     "docling-serve": {
       "registry": "ghcr.io",
       "image": "docling-project/docling-serve",
       "tag": "v1.14.3",
       "digest": "",
-      "platforms": ["linux/amd64"]
+      "platforms": [
+        "linux/amd64"
+      ]
     },
     "authelia": {
       "registry": "docker.io",
       "image": "authelia/authelia",
       "tag": "4.38",
       "digest": "",
-      "platforms": ["linux/amd64", "linux/arm64"]
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
     },
     "grafana": {
       "registry": "docker.io",
       "image": "grafana/grafana",
       "tag": "12.4.1",
       "digest": "",
-      "platforms": ["linux/amd64", "linux/arm64"]
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
     },
     "portainer": {
       "registry": "docker.io",
       "image": "portainer/portainer-ce",
       "tag": "2.21.4",
       "digest": "",
-      "platforms": ["linux/amd64", "linux/arm64"]
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
     },
     "node-exporter": {
       "registry": "docker.io",
       "image": "prom/node-exporter",
       "tag": "v1.8.2",
       "digest": "",
-      "platforms": ["linux/amd64", "linux/arm64"]
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
     },
     "cadvisor": {
       "registry": "gcr.io",
       "image": "cadvisor/cadvisor",
       "tag": "v0.55.1",
       "digest": "",
-      "platforms": ["linux/amd64", "linux/arm64"]
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
     },
     "prometheus": {
       "registry": "docker.io",
       "image": "prom/prometheus",
       "tag": "v2.54.1",
       "digest": "",
-      "platforms": ["linux/amd64", "linux/arm64"]
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
     },
     "loki": {
       "registry": "docker.io",
       "image": "grafana/loki",
       "tag": "3.3.2",
       "digest": "",
-      "platforms": ["linux/amd64", "linux/arm64"]
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
     },
     "promtail": {
       "registry": "docker.io",
       "image": "grafana/promtail",
       "tag": "3.3.2",
       "digest": "",
-      "platforms": ["linux/amd64", "linux/arm64"]
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
     },
     "alertmanager": {
       "registry": "docker.io",
       "image": "prom/alertmanager",
       "tag": "v0.27.0",
       "digest": "",
-      "platforms": ["linux/amd64", "linux/arm64"]
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
     },
     "vllm": {
       "registry": "docker.io",
       "image": "vllm/vllm-openai",
-      "tag": "v0.18.0",
+      "tag": "v0.18.1",
       "digest": "",
-      "platforms": ["linux/amd64"]
+      "platforms": [
+        "linux/amd64"
+      ]
     },
     "tei": {
       "registry": "ghcr.io",
       "image": "huggingface/text-embeddings-inference",
-      "tag": "cuda-1.9.2",
+      "tag": "cuda-1.9.3",
       "digest": "",
-      "platforms": ["linux/amd64"]
+      "platforms": [
+        "linux/amd64"
+      ]
     },
     "pipelines": {
       "registry": "ghcr.io",
       "image": "open-webui/pipelines",
       "tag": "main",
       "digest": "",
-      "platforms": ["linux/amd64", "linux/arm64"]
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
     }
   },
   "compatibility": {
