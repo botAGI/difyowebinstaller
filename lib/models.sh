@@ -83,12 +83,24 @@ _stream_gpu_model_logs() {
             || docker exec "$container" wget -qO- --timeout=3 "http://localhost:${_port}/health" >/dev/null 2>&1
     }
 
+    # Helper: kill log streaming pipeline (docker logs -f | grep | sed)
+    _kill_log_stream() {
+        local pid="$1"
+        # Kill the entire process group spawned by the background pipeline
+        kill -- -"$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
+        # Also kill any orphan docker logs -f for this container
+        pkill -f "docker logs -f.*${container}" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+    }
+
     if [[ -n "${ORIGINAL_TTY_FD:-}" ]] && { true >&"${ORIGINAL_TTY_FD}"; } 2>/dev/null; then
         # TTY path: stream logs to real terminal (fd 3), filter healthcheck noise
+        set -m  # enable job control for process group kill
         docker logs -f --since=0s "$container" 2>&1 \
             | grep -v --line-buffered -E '/health|healthcheck' \
             | sed --unbuffered "s/^/  [${label}] /" >&"${ORIGINAL_TTY_FD}" &
         local logs_pid=$!
+        set +m
         local last_log_hash=""
         local inactivity=0
 
@@ -102,7 +114,7 @@ _stream_gpu_model_logs() {
             local health
             health="$(docker inspect --format='{{.State.Health.Status}}' "$container" 2>/dev/null || echo "none")"
             if [[ "$health" == "healthy" ]] || _container_http_ready; then
-                kill "$logs_pid" 2>/dev/null; wait "$logs_pid" 2>/dev/null || true
+                _kill_log_stream "$logs_pid"
                 return 0
             fi
 
@@ -123,7 +135,7 @@ _stream_gpu_model_logs() {
             fi
         done
 
-        kill "$logs_pid" 2>/dev/null; wait "$logs_pid" 2>/dev/null || true
+        _kill_log_stream "$logs_pid"
         return 1
     else
         # Non-TTY path: poll last log line every 10s
