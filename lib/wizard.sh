@@ -1473,22 +1473,36 @@ _wizard_summary() {
     # VRAM plan (only for vLLM — Ollama manages VRAM internally)
     if [[ "${LLM_PROVIDER:-}" == "vllm" ]]; then
         summary+="\n--- GPU память ---\n"
-        local vllm_weights vllm_total vllm_ctx_label
+        local vllm_weights vllm_ctx_label
         vllm_weights=$(_get_vllm_weights_gb "${VLLM_MODEL:-}")
-        vllm_total=$(_get_vllm_vram_req "${VLLM_MODEL:-}")
         local ctx_len="${VLLM_MAX_MODEL_LEN:-32768}"
-        # Human-readable context label
         if [[ "$ctx_len" -ge 1024 ]]; then
             vllm_ctx_label="$((ctx_len / 1024))K"
         else
             vllm_ctx_label="${ctx_len}"
         fi
-        if [[ "$vllm_total" == "0" ]]; then vllm_total="?"; fi
-        if [[ "$vllm_total" != "?" && "$vllm_weights" -gt 0 ]]; then
+
+        # vLLM actual allocation = gpu_memory_utilization * available_memory
+        # weights go first, rest becomes KV cache (pre-allocated, not per-request)
+        local gpu_util=70  # --gpu-memory-utilization 0.70 default
+        local gpu_vram_mb="${DETECTED_GPU_VRAM:-0}"
+        local vllm_total="?"
+        if [[ "$gpu_vram_mb" -gt 0 && "$vllm_weights" -gt 0 ]] 2>/dev/null; then
+            local gpu_vram_gb=$(( gpu_vram_mb / 1024 ))
+            # Unified memory: use detected RAM for budget
+            if [[ "${DETECTED_GPU_UNIFIED_MEMORY:-false}" == "true" ]]; then
+                gpu_vram_gb="${DETECTED_RAM_TOTAL_GB:-$gpu_vram_gb}"
+            fi
+            vllm_total=$(( gpu_vram_gb * gpu_util / 100 ))
             local kv_est=$(( vllm_total - vllm_weights ))
+            if [[ "$kv_est" -lt 0 ]]; then kv_est=0; fi
             summary+="vLLM:         ~${vllm_total} GB   (веса ${vllm_weights} + KV ~${kv_est} @ ${vllm_ctx_label})   ${VLLM_MODEL:-unknown}\n"
+        elif [[ "$vllm_weights" -gt 0 ]]; then
+            # No GPU info — show weights-only estimate
+            vllm_total=$(( vllm_weights + 5 ))  # weights + ~5 GB overhead
+            summary+="vLLM:         ~${vllm_total} GB+   (веса ${vllm_weights} + KV кэш)   ${VLLM_MODEL:-unknown}\n"
         else
-            summary+="vLLM:         ${vllm_total} GB   (${VLLM_MODEL:-unknown})\n"
+            summary+="vLLM:         ? GB   (${VLLM_MODEL:-unknown})\n"
         fi
 
         local embed_vram=0
@@ -1529,13 +1543,17 @@ _wizard_summary() {
             summary+="Итого:        ? GB (неизвестная модель)\n"
         else
             local total_vram=$(( vllm_total + embed_vram + rerank_vram + docling_vram ))
-            local gpu_vram_mb="${DETECTED_GPU_VRAM:-0}"
-            if [[ "$gpu_vram_mb" -gt 0 ]] 2>/dev/null; then
-                local gpu_vram_gb=$(( gpu_vram_mb / 1024 ))
-                local mem_type="VRAM"
-                if [[ "${DETECTED_GPU_UNIFIED_MEMORY:-false}" == "true" ]]; then mem_type="unified memory"; fi
-                summary+="Итого:        ~${total_vram} GB / ${gpu_vram_gb} GB ${mem_type} доступно\n"
-                if [[ "$total_vram" -gt "$gpu_vram_gb" ]]; then
+            local mem_type="VRAM"
+            local avail_gb=0
+            if [[ "${DETECTED_GPU_UNIFIED_MEMORY:-false}" == "true" ]]; then
+                mem_type="unified memory"
+                avail_gb="${DETECTED_RAM_TOTAL_GB:-0}"
+            elif [[ "${DETECTED_GPU_VRAM:-0}" -gt 0 ]] 2>/dev/null; then
+                avail_gb=$(( DETECTED_GPU_VRAM / 1024 ))
+            fi
+            if [[ "$avail_gb" -gt 0 ]]; then
+                summary+="Итого:        ~${total_vram} GB / ${avail_gb} GB ${mem_type} доступно\n"
+                if [[ "$total_vram" -gt "$avail_gb" ]]; then
                     summary+="!! ${mem_type} бюджет превышен! Возможен OOM.\n"
                 fi
             else
