@@ -252,10 +252,10 @@ _generate_env_file() {
     safe_telegram_token="$(escape_sed "${ALERT_TELEGRAM_TOKEN:-}")"
     safe_telegram_chat_id="$(escape_sed "${ALERT_TELEGRAM_CHAT_ID:-}")"
 
-    # ETL type mapping (v3: true/false → unstructured_api/dify)
+    # ETL type: Dify 1.13+ expects exact string "Unstructured" (case-sensitive)
     local etl_type="dify"
     if [[ "${ENABLE_DOCLING:-${ETL_ENHANCED:-false}}" == "true" ]]; then
-        etl_type="unstructured_api"
+        etl_type="Unstructured"
     fi
 
     # FILES_URL: VPS uses domain (already in template), others use server IP
