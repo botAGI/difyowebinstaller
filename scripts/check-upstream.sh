@@ -17,38 +17,41 @@ MONTH=$(date +%m)
 # --- Component definitions: "Name|VERSION_VAR|repo|source" ---
 # source: gh = GitHub Releases (default), hub = Docker Hub tags
 
-DAILY_CHECKS=(
+# All components checked daily — API calls are lightweight (~30 requests)
+ALL_CHECKS=(
+    # --- Core Platform ---
     "Dify|DIFY_VERSION|langgenius/dify|gh"
     "Open WebUI|OPENWEBUI_VERSION|open-webui/open-webui|gh"
+    "Plugin Daemon|PLUGIN_DAEMON_VERSION|langgenius/dify-plugin-daemon|gh"
+    "Sandbox|SANDBOX_VERSION|langgenius/dify-sandbox|gh"
+    # --- LLM / Embedding / Reranking ---
     "Ollama|OLLAMA_VERSION|ollama/ollama|gh"
     "vLLM|VLLM_VERSION|vllm-project/vllm|gh"
     "TEI|TEI_VERSION|huggingface/text-embeddings-inference|gh"
     "TEI-Embed|TEI_EMBED_VERSION|huggingface/text-embeddings-inference|gh"
     "TEI-Rerank|TEI_RERANK_VERSION|huggingface/text-embeddings-inference|gh"
+    # --- Vector Stores ---
     "Weaviate|WEAVIATE_VERSION|weaviate/weaviate|gh"
     "Qdrant|QDRANT_VERSION|qdrant/qdrant|gh"
-    "Plugin Daemon|PLUGIN_DAEMON_VERSION|langgenius/dify-plugin-daemon|gh"
-    "Sandbox|SANDBOX_VERSION|langgenius/dify-sandbox|gh"
+    # --- ETL / AI Gateway ---
     "Docling|DOCLING_SERVE_VERSION|docling-project/docling-serve|gh"
     "LiteLLM|LITELLM_VERSION|BerriAI/litellm|gh"
-)
-
-MONTHLY_CHECKS=(
-    "Authelia|AUTHELIA_VERSION|authelia/authelia|gh"
-    "Certbot|CERTBOT_VERSION|certbot/certbot|gh"
-    "Portainer|PORTAINER_VERSION|portainer/portainer-ce|hub"
-    "Squid|SQUID_VERSION|ubuntu/squid|hub"
+    # --- Optional Services ---
     "SearXNG|SEARXNG_VERSION|searxng/searxng|hub"
-    "SurrealDB|SURREALDB_VERSION|surrealdb/surrealdb|gh"
     "Open Notebook|OPEN_NOTEBOOK_VERSION|lfnovo/open-notebook|gh"
     "DB-GPT|DBGPT_VERSION|eosphoros-ai/DB-GPT|gh"
     "Crawl4AI|CRAWL4AI_VERSION|unclecode/crawl4ai|gh"
-)
-
-SEMIANNUAL_CHECKS=(
+    "SurrealDB|SURREALDB_VERSION|surrealdb/surrealdb|gh"
+    # --- Security ---
+    "Authelia|AUTHELIA_VERSION|authelia/authelia|gh"
+    "Certbot|CERTBOT_VERSION|certbot/certbot|gh"
+    # --- Infrastructure ---
+    "Nginx|NGINX_VERSION|nginx|hub"
+    "Squid|SQUID_VERSION|ubuntu/squid|hub"
     "PostgreSQL|POSTGRES_VERSION|postgres|hub"
     "Redis|REDIS_VERSION|redis|hub"
-    "Nginx|NGINX_VERSION|nginx|hub"
+    "Portainer|PORTAINER_VERSION|portainer/portainer-ce|hub"
+    # --- Monitoring ---
     "Prometheus|PROMETHEUS_VERSION|prometheus/prometheus|gh"
     "Alertmanager|ALERTMANAGER_VERSION|prometheus/alertmanager|gh"
     "Grafana|GRAFANA_VERSION|grafana/grafana|gh"
@@ -338,35 +341,11 @@ set_output() {
 main() {
     load_current_versions
 
-    local run_monthly=false
-    local run_semiannual=false
-
-    # Determine tiers based on date
-    if [[ "$DAY" == "01" ]]; then
-        run_monthly=true
-    fi
-    if [[ "$DAY" == "01" && ("$MONTH" == "01" || "$MONTH" == "07") ]]; then
-        run_semiannual=true
-    fi
-    # workflow_dispatch: run all tiers
-    if [[ "${GITHUB_EVENT_NAME:-}" == "workflow_dispatch" ]]; then
-        run_monthly=true
-        run_semiannual=true
-    fi
-
     echo "=== Upstream Version Check (${TODAY}) ===" >&2
-    echo "  Tiers: daily=true monthly=${run_monthly} semiannual=${run_semiannual}" >&2
+    echo "  Components: ${#ALL_CHECKS[@]}" >&2
     echo "" >&2
 
-    run_checks "DAILY" "${DAILY_CHECKS[@]}"
-
-    if [[ "$run_monthly" == "true" ]]; then
-        run_checks "MONTHLY" "${MONTHLY_CHECKS[@]}"
-    fi
-
-    if [[ "$run_semiannual" == "true" ]]; then
-        run_checks "SEMI-ANNUAL" "${SEMIANNUAL_CHECKS[@]}"
-    fi
+    run_checks "ALL" "${ALL_CHECKS[@]}"
 
     echo "" >&2
 
