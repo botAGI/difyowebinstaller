@@ -1156,9 +1156,11 @@ _wizard_monitoring() {
         if [[ "$expose" == "1" ]]; then
             GRAFANA_BIND_ADDR="0.0.0.0"
             PORTAINER_BIND_ADDR="0.0.0.0"
+            ADMIN_UI_OPEN=true
         else
             GRAFANA_BIND_ADDR="127.0.0.1"
             PORTAINER_BIND_ADDR="127.0.0.1"
+            ADMIN_UI_OPEN=false
         fi
     fi
 }
@@ -1572,7 +1574,6 @@ run_wizard() {
 
     _wizard_profile
     _wizard_security_defaults
-    _wizard_admin_ui
     _wizard_domain
     _wizard_llm_provider
     _wizard_llm_model
