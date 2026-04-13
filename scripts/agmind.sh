@@ -83,8 +83,8 @@ _status_dashboard() {
     local domain; domain="$(_read_env DOMAIN "")"
     [[ -z "$domain" ]] && domain="$(_get_ip)"
     echo "  Dify App:     http://${domain}"
-    echo "  Dify Console: http://${domain}:3000"
-    [[ "$(_read_env ENABLE_OPENWEBUI "false")" == "true" ]] && echo "  Open WebUI:   http://${domain}/chat"
+    echo "  Dify Console: http://agmind-dify.local"
+    [[ "$(_read_env ENABLE_OPENWEBUI "false")" == "true" ]] && echo "  Open WebUI:   http://agmind-chat.local"
     [[ "$(_read_env ENABLE_LITELLM "true")" == "true" ]] && echo "  LiteLLM UI:   http://${domain}:4001/ui/"
     if [[ "$(_read_env ADMIN_UI_OPEN "false")" == "true" ]]; then
         local ip; ip="$(_get_ip)"

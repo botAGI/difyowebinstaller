@@ -1461,11 +1461,11 @@ _wizard_summary() {
     if [[ "$ENABLE_FAIL2BAN" == "true" ]]; then summary+="Fail2ban:     SSH jail\n"; fi
     if [[ "$ENABLE_AUTHELIA" == "true" ]]; then summary+="Authelia:     2FA включена\n"; fi
     if [[ "${ENABLE_LITELLM:-true}" == "true" ]]; then summary+="LiteLLM:      включён (AI Gateway)\n"; fi
-    if [[ "${ENABLE_SEARXNG:-false}" == "true" ]]; then summary+="SearXNG:      включён (порт 8888)\n"; fi
-    if [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]]; then summary+="Open Notebook: включён (порт 8502)\n"; fi
-    if [[ "${ENABLE_DBGPT:-false}" == "true" ]]; then summary+="DB-GPT:       включён (порт 5670)\n"; fi
-    if [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]]; then summary+="Crawl4AI:     включён (порт 11235)\n"; fi
-    if [[ "${ENABLE_OPENWEBUI:-false}" == "true" ]]; then summary+="Open WebUI:   включён (/chat)\n"; fi
+    if [[ "${ENABLE_SEARXNG:-false}" == "true" ]]; then summary+="SearXNG:      agmind-search.local\n"; fi
+    if [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]]; then summary+="Open Notebook: agmind-notebook.local\n"; fi
+    if [[ "${ENABLE_DBGPT:-false}" == "true" ]]; then summary+="DB-GPT:       agmind-dbgpt.local\n"; fi
+    if [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]]; then summary+="Crawl4AI:     agmind-crawl.local\n"; fi
+    if [[ "${ENABLE_OPENWEBUI:-false}" == "true" ]]; then summary+="Open WebUI:   agmind-chat.local\n"; fi
     if [[ "${ENABLE_DIFY_PREMIUM:-true}" == "true" ]]; then summary+="Dify Premium: включён (патч после запуска)\n"; fi
     if [[ "$ENABLE_TUNNEL" == "true" ]]; then summary+="Туннель:      ${TUNNEL_VPS_HOST}:${TUNNEL_REMOTE_PORT}\n"; fi
     summary+="Бэкапы:       ${BACKUP_TARGET} (${BACKUP_SCHEDULE})\n"

@@ -640,12 +640,12 @@ _show_final_summary() {
     echo "  +--------------------------------------------------+"
     echo -e "${NC}"
     echo -e "  ${BOLD}Dify App:${NC}        ${GREEN}${url}${NC}"
-    echo -e "  ${BOLD}Dify Console:${NC}    ${GREEN}${dify_url}${NC}"
+    echo -e "  ${BOLD}Dify Console:${NC}    ${GREEN}http://agmind-dify.local${NC}"
     echo -e "    Login:         admin@agmind.ai"
     echo -e "    Pass:          ${owui_pass:-см. credentials.txt}"
     if [[ "${ENABLE_OPENWEBUI:-false}" == "true" ]]; then
         echo ""
-        echo -e "  ${BOLD}Open WebUI:${NC}      ${GREEN}${url}/chat${NC}"
+        echo -e "  ${BOLD}Open WebUI:${NC}      ${GREEN}http://agmind-chat.local${NC}"
         echo -e "    Login:         admin@agmind.ai"
         echo -e "    Pass:          ${owui_pass:-см. credentials.txt}"
     fi
@@ -654,16 +654,16 @@ _show_final_summary() {
         echo -e "  ${BOLD}LiteLLM UI:${NC}      ${GREEN}http://${ip}:4001/ui/${NC}"
     fi
     if [[ "${ENABLE_DBGPT:-false}" == "true" ]]; then
-        echo -e "  ${BOLD}DB-GPT:${NC}          ${GREEN}http://${ip}:${EXPOSE_DBGPT_PORT:-5670}${NC}"
+        echo -e "  ${BOLD}DB-GPT:${NC}          ${GREEN}http://agmind-dbgpt.local${NC}"
     fi
     if [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]]; then
-        echo -e "  ${BOLD}Open Notebook:${NC}   ${GREEN}http://${ip}:${EXPOSE_NOTEBOOK_PORT:-8502}${NC}"
+        echo -e "  ${BOLD}Open Notebook:${NC}   ${GREEN}http://agmind-notebook.local${NC}"
     fi
     if [[ "${ENABLE_SEARXNG:-false}" == "true" ]]; then
-        echo -e "  ${BOLD}SearXNG:${NC}         ${GREEN}http://${ip}:${EXPOSE_SEARXNG_PORT:-8888}${NC}"
+        echo -e "  ${BOLD}SearXNG:${NC}         ${GREEN}http://agmind-search.local${NC}"
     fi
     if [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]]; then
-        echo -e "  ${BOLD}Crawl4AI:${NC}        ${GREEN}http://${ip}:${EXPOSE_CRAWL4AI_PORT:-11235}/docs${NC}"
+        echo -e "  ${BOLD}Crawl4AI:${NC}        ${GREEN}http://agmind-crawl.local/docs${NC}"
     fi
     if [[ "${MONITORING_MODE:-}" == "local" ]]; then
         echo ""

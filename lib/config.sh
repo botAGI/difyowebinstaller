@@ -516,6 +516,112 @@ generate_nginx_config() {
     if [[ "${ENABLE_AUTHELIA:-false}" != "true" ]]; then
         _atomic_sed "$nginx_conf" '/#__AUTHELIA__/d'
     fi
+
+    # Register local DNS names in /etc/hosts for vhost routing
+    _register_local_dns
+}
+
+# ============================================================================
+# LOCAL DNS — publish agmind-*.local via mDNS (Avahi/Bonjour)
+# Works natively on macOS, Linux, Windows 10+ without client config
+# ============================================================================
+
+_register_local_dns() {
+    # Ensure avahi-daemon is installed and running
+    if ! command -v avahi-publish-address >/dev/null 2>&1; then
+        log_info "Installing avahi-daemon for mDNS..."
+        DEBIAN_FRONTEND=noninteractive apt-get install -y avahi-daemon avahi-utils >/dev/null 2>&1 || {
+            log_warn "Failed to install avahi-daemon — mDNS disabled, use IP directly"
+            return 0
+        }
+    fi
+
+    # Start avahi-daemon if not running
+    if ! systemctl is-active --quiet avahi-daemon 2>/dev/null; then
+        systemctl enable --now avahi-daemon >/dev/null 2>&1 || true
+    fi
+
+    # Build list of names to publish
+    local names=("agmind-dify")
+    [[ "${ENABLE_OPENWEBUI:-false}" == "true" ]] && names+=("agmind-chat")
+    [[ "${ENABLE_DBGPT:-false}" == "true" ]] && names+=("agmind-dbgpt")
+    [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]] && names+=("agmind-notebook")
+    [[ "${ENABLE_SEARXNG:-false}" == "true" ]] && names+=("agmind-search")
+    [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]] && names+=("agmind-crawl")
+
+    # Generate systemd unit that publishes all aliases as mDNS CNAMEs
+    # Uses avahi-publish-address to advertise each name → server IP
+    local server_ip
+    server_ip="$(hostname -I 2>/dev/null | awk '{print $1}' || echo "")"
+    if [[ -z "$server_ip" ]]; then
+        log_warn "Cannot determine server IP, skipping mDNS publish"
+        return 0
+    fi
+
+    local unit_file="/etc/systemd/system/agmind-mdns.service"
+    local exec_cmds=""
+    for name in "${names[@]}"; do
+        # avahi-publish-address -a <hostname> <ip> runs in foreground
+        # We use multiple ExecStart with & for parallel publishing
+        exec_cmds+="ExecStart=/usr/bin/avahi-publish-address -R ${name}.local ${server_ip}"$'\n'
+    done
+
+    cat > "$unit_file" << MDNSEOF
+[Unit]
+Description=AGMind mDNS publisher (*.local aliases)
+After=avahi-daemon.service network-online.target
+Wants=avahi-daemon.service network-online.target
+
+[Service]
+Type=simple
+Restart=on-failure
+RestartSec=5
+${exec_cmds}
+
+[Install]
+WantedBy=multi-user.target
+MDNSEOF
+
+    # systemd doesn't support multiple ExecStart for Type=simple
+    # Use a wrapper script instead
+    local wrapper="/usr/local/bin/agmind-mdns-publish"
+    cat > "$wrapper" << 'WRAPEOF'
+#!/bin/bash
+# Publishes all AGMind mDNS aliases in parallel
+set -e
+trap 'kill $(jobs -p) 2>/dev/null' EXIT TERM INT
+
+WRAPEOF
+    for name in "${names[@]}"; do
+        echo "/usr/bin/avahi-publish-address -R ${name}.local ${server_ip} &" >> "$wrapper"
+    done
+    echo "wait" >> "$wrapper"
+    chmod +x "$wrapper"
+
+    # Rewrite unit to use wrapper
+    cat > "$unit_file" << MDNSEOF
+[Unit]
+Description=AGMind mDNS publisher (*.local aliases)
+After=avahi-daemon.service network-online.target
+Wants=avahi-daemon.service network-online.target
+
+[Service]
+Type=simple
+Restart=on-failure
+RestartSec=5
+ExecStart=${wrapper}
+
+[Install]
+WantedBy=multi-user.target
+MDNSEOF
+
+    systemctl daemon-reload
+    systemctl enable --now agmind-mdns.service >/dev/null 2>&1 || {
+        log_warn "agmind-mdns.service failed to start — check: systemctl status agmind-mdns"
+    }
+
+    log_success "mDNS published: ${names[*]/#/agmind-}"
+    log_info "Accessible from any LAN device: http://agmind-dify.local"
 }
 
 # ============================================================================
