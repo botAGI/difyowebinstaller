@@ -750,7 +750,7 @@ services:
   # Dify manages plugin isolation internally — no cap_drop needed.
   plugin_daemon:
     <<: *logging-defaults
-    image: langgenius/dify-plugin-daemon:${PLUGIN_DAEMON_VERSION:-0.5.6-local}
+    image: langgenius/dify-plugin-daemon:${PLUGIN_DAEMON_VERSION:-0.5.3-local}
     container_name: agmind-plugin-daemon
     restart: always
     mem_limit: ${PLUGIN_DAEMON_MEM_LIMIT:-1g}
@@ -919,12 +919,7 @@ services:
       - agmind_loki_data:/loki
       - ./monitoring/loki-config.yml:/etc/loki/local-config.yaml:ro
     command: -config.file=/etc/loki/local-config.yaml
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready || exit 1"]
-      interval: ${HEALTHCHECK_INTERVAL:-30s}
-      timeout: 10s
-      retries: ${HEALTHCHECK_RETRIES:-5}
-      start_period: 15s
+    # Loki 3.x uses distroless image (no shell/wget), so no healthcheck
     networks:
       - agmind-backend
 
@@ -951,7 +946,7 @@ services:
       start_period: 15s
     depends_on:
       loki:
-        condition: service_healthy
+        condition: service_started
     networks:
       - agmind-backend
 
@@ -992,7 +987,7 @@ services:
   # See: https://github.com/google/cadvisor/issues/3749
   cadvisor:
     <<: *logging-defaults
-    image: gcr.io/cadvisor/cadvisor:${CADVISOR_VERSION:-v0.56.2}
+    image: gcr.io/cadvisor/cadvisor:${CADVISOR_VERSION:-v0.52.1}
     container_name: agmind-cadvisor
     restart: on-failure:5
     mem_limit: ${CADVISOR_MEM_LIMIT:-512m}

@@ -14,13 +14,13 @@
 | Nginx | 1.27.3-alpine | 1.25.0 | HTTP/2, sub_filter required |
 | Sandbox | 0.2.12 | 0.2.0 | Dify code execution |
 | Squid (SSRF Proxy) | 6.6-24.04_edge | 6.0 | SSRF protection proxy |
-| Plugin Daemon | 0.5.3 | 0.5.0 | ⚠️ <0.5.0 is ancient/broken |
+| Plugin Daemon | 0.5.3-local | 0.5.0 | ⚠️ 0.5.4/0.5.5 break agent tool calling (#640); 0.5.6 broken auto-migrate (#521). Pinned by Dify 1.13.3 upstream |
 | Certbot | v3.1.0 | v2.0.0 | Let's Encrypt certificates |
 | Docling Serve | v1.14.3 | v1.10.0 | ETL document processing |
 | Authelia | 4.38 | 4.37 | Optional 2FA |
 | Grafana | 11.4.0 | 10.0.0 | Monitoring dashboards |
 | Portainer | 2.21.4 | 2.19.0 | Container management UI |
-| cAdvisor | v0.49.1 | v0.47.0 | Container metrics |
+| cAdvisor | v0.52.1 | v0.47.0 | Container metrics |
 | Prometheus | v2.54.1 | v2.45.0 | Metrics storage |
 | Loki | 3.3.2 | 3.0.0 | Log aggregation |
 | Promtail | 3.3.2 | 3.0.0 | Log collector |
@@ -53,5 +53,8 @@
 
 - **Weaviate <1.27.0 + Dify ≥1.9.2**: Data loss risk. Dify uses weaviate-client v4 which requires server ≥1.27.0.
 - **Plugin Daemon <0.5.0**: Ancient version, incompatible with current Dify plugin system.
+- **Plugin Daemon 0.5.4 / 0.5.5**: PR #585 added strict validation of `PromptMessage.content`, breaking agent nodes with tool calling on OpenAI/Anthropic/Google (content: null → "content field is required"). Upstream issue: https://github.com/langgenius/dify-plugin-daemon/issues/640 (OPEN).
+- **Plugin Daemon 0.5.6**: PR #672 removed auto-migrate from server startup, `migrate` CLI subcommand is not compiled into the Docker image. Fresh deploys fail with `relation "install_tasks" does not exist`. Upstream issue: https://github.com/langgenius/dify-plugin-daemon/issues/521 (OPEN).
+- **Plugin Daemon recommended**: **0.5.3-local** (golden stable, pinned by Dify 1.13.3 upstream compose). Unblock to newer versions only when upstream ships a fix for both #640 and #521.
 - **Docker <24.0**: Missing healthcheck features and compose v2 compatibility.
 - **ARM64**: Most images support arm64 except sandbox, plugin-daemon, docling.
