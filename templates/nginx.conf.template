@@ -382,8 +382,217 @@ http {
     #__CRAWL4AI__}
 
     # =============================================
-    # Dify Console — separate server on port 3000
-    # No sub_filter needed — Next.js serves at root /
+    # Virtual hosts — local DNS names on port 80
+    # Each service gets a clean root / via hostname
+    # =============================================
+
+    #__OPENWEBUI__# Open WebUI — agmind-chat.local
+    #__OPENWEBUI__server {
+    #__OPENWEBUI__    listen 80;
+    #__OPENWEBUI__    server_name agmind-chat.local;
+    #__OPENWEBUI__
+    #__OPENWEBUI__    client_max_body_size 50M;
+    #__OPENWEBUI__
+    #__OPENWEBUI__    location / {
+    #__OPENWEBUI__        proxy_pass http://openwebui;
+    #__OPENWEBUI__        proxy_http_version 1.1;
+    #__OPENWEBUI__        proxy_set_header Host $host;
+    #__OPENWEBUI__        proxy_set_header X-Real-IP $remote_addr;
+    #__OPENWEBUI__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #__OPENWEBUI__        proxy_set_header X-Forwarded-Proto $scheme;
+    #__OPENWEBUI__        proxy_set_header Upgrade $http_upgrade;
+    #__OPENWEBUI__        proxy_set_header Connection "upgrade";
+    #__OPENWEBUI__        proxy_read_timeout 600s;
+    #__OPENWEBUI__        proxy_send_timeout 600s;
+    #__OPENWEBUI__        proxy_buffering off;
+    #__OPENWEBUI__    }
+    #__OPENWEBUI__}
+
+    #__DBGPT__# DB-GPT — agmind-dbgpt.local
+    #__DBGPT__server {
+    #__DBGPT__    listen 80;
+    #__DBGPT__    server_name agmind-dbgpt.local;
+    #__DBGPT__
+    #__DBGPT__    client_max_body_size 50M;
+    #__DBGPT__
+    #__DBGPT__    location / {
+    #__DBGPT__        proxy_pass http://dbgpt;
+    #__DBGPT__        proxy_http_version 1.1;
+    #__DBGPT__        proxy_set_header Host $host;
+    #__DBGPT__        proxy_set_header X-Real-IP $remote_addr;
+    #__DBGPT__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #__DBGPT__        proxy_set_header X-Forwarded-Proto $scheme;
+    #__DBGPT__        proxy_read_timeout 300s;
+    #__DBGPT__        proxy_send_timeout 300s;
+    #__DBGPT__    }
+    #__DBGPT__}
+
+    #__NOTEBOOK__# Open Notebook — agmind-notebook.local
+    #__NOTEBOOK__server {
+    #__NOTEBOOK__    listen 80;
+    #__NOTEBOOK__    server_name agmind-notebook.local;
+    #__NOTEBOOK__
+    #__NOTEBOOK__    client_max_body_size 50M;
+    #__NOTEBOOK__
+    #__NOTEBOOK__    location / {
+    #__NOTEBOOK__        proxy_pass http://open_notebook;
+    #__NOTEBOOK__        proxy_http_version 1.1;
+    #__NOTEBOOK__        proxy_set_header Host $host;
+    #__NOTEBOOK__        proxy_set_header X-Real-IP $remote_addr;
+    #__NOTEBOOK__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #__NOTEBOOK__        proxy_set_header X-Forwarded-Proto $scheme;
+    #__NOTEBOOK__        proxy_set_header Upgrade $http_upgrade;
+    #__NOTEBOOK__        proxy_set_header Connection "upgrade";
+    #__NOTEBOOK__        proxy_read_timeout 600s;
+    #__NOTEBOOK__        proxy_send_timeout 600s;
+    #__NOTEBOOK__    }
+    #__NOTEBOOK__
+    #__NOTEBOOK__    location /api {
+    #__NOTEBOOK__        proxy_pass http://open_notebook_api;
+    #__NOTEBOOK__        proxy_http_version 1.1;
+    #__NOTEBOOK__        proxy_set_header Host $host;
+    #__NOTEBOOK__        proxy_set_header X-Real-IP $remote_addr;
+    #__NOTEBOOK__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #__NOTEBOOK__        proxy_set_header X-Forwarded-Proto $scheme;
+    #__NOTEBOOK__        proxy_read_timeout 300s;
+    #__NOTEBOOK__        proxy_send_timeout 300s;
+    #__NOTEBOOK__    }
+    #__NOTEBOOK__}
+
+    #__SEARXNG__# SearXNG — agmind-search.local
+    #__SEARXNG__server {
+    #__SEARXNG__    listen 80;
+    #__SEARXNG__    server_name agmind-search.local;
+    #__SEARXNG__
+    #__SEARXNG__    location / {
+    #__SEARXNG__        proxy_pass http://searxng;
+    #__SEARXNG__        proxy_http_version 1.1;
+    #__SEARXNG__        proxy_set_header Host $host;
+    #__SEARXNG__        proxy_set_header X-Real-IP $remote_addr;
+    #__SEARXNG__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #__SEARXNG__        proxy_set_header X-Forwarded-Proto $scheme;
+    #__SEARXNG__    }
+    #__SEARXNG__}
+
+    #__CRAWL4AI__# Crawl4AI — agmind-crawl.local
+    #__CRAWL4AI__server {
+    #__CRAWL4AI__    listen 80;
+    #__CRAWL4AI__    server_name agmind-crawl.local;
+    #__CRAWL4AI__
+    #__CRAWL4AI__    client_max_body_size 10M;
+    #__CRAWL4AI__
+    #__CRAWL4AI__    location / {
+    #__CRAWL4AI__        proxy_pass http://crawl4ai;
+    #__CRAWL4AI__        proxy_http_version 1.1;
+    #__CRAWL4AI__        proxy_set_header Host $host;
+    #__CRAWL4AI__        proxy_set_header X-Real-IP $remote_addr;
+    #__CRAWL4AI__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #__CRAWL4AI__        proxy_set_header X-Forwarded-Proto $scheme;
+    #__CRAWL4AI__        proxy_read_timeout 300s;
+    #__CRAWL4AI__        proxy_send_timeout 300s;
+    #__CRAWL4AI__    }
+    #__CRAWL4AI__}
+
+    # =============================================
+    # Dify Console — agmind-dify.local (port 80)
+    # =============================================
+    server {
+        listen 80;
+        server_name agmind-dify.local;
+
+        client_max_body_size 50M;
+
+        location / {
+            proxy_pass http://dify_web;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        location /console/api/login {
+            limit_req zone=login burst=3 nodelay;
+            proxy_pass http://dify_api;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 3600s;
+            proxy_send_timeout 3600s;
+        }
+
+        location /console/api {
+            limit_req zone=api burst=20 nodelay;
+            proxy_pass http://dify_api;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 3600s;
+            proxy_send_timeout 3600s;
+            proxy_buffering off;
+            chunked_transfer_encoding on;
+        }
+
+        location /api {
+            limit_req zone=api burst=20 nodelay;
+            proxy_pass http://dify_api;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 3600s;
+            proxy_send_timeout 3600s;
+            proxy_buffering off;
+            chunked_transfer_encoding on;
+        }
+
+        location /v1 {
+            limit_req zone=api burst=20 nodelay;
+            proxy_pass http://dify_api;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 3600s;
+            proxy_send_timeout 3600s;
+            proxy_buffering off;
+            chunked_transfer_encoding on;
+        }
+
+        location /files {
+            limit_req zone=api burst=20 nodelay;
+            proxy_pass http://dify_api;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        location /e/ {
+            set $plugin_upstream http://plugin_daemon:5002;
+            proxy_pass $plugin_upstream;
+            proxy_http_version 1.1;
+            proxy_read_timeout 600s;
+            proxy_send_timeout 600s;
+            proxy_connect_timeout 600s;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+        }
+    }
+
+    # =============================================
+    # Dify Console — legacy port 3000 (backward compat)
     # =============================================
     server {
         listen 3000;
