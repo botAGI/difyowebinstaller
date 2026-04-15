@@ -753,7 +753,11 @@ services:
     image: langgenius/dify-plugin-daemon:${PLUGIN_DAEMON_VERSION:-0.5.3-local}
     container_name: agmind-plugin-daemon
     restart: always
-    mem_limit: ${PLUGIN_DAEMON_MEM_LIMIT:-1g}
+    mem_limit: ${PLUGIN_DAEMON_MEM_LIMIT:-8g}
+    extra_hosts:
+      - "cdn-lfs-cn-1.modelscope.cn:163.181.225.49"
+      - "huggingface.co:3.174.113.115"
+      - "cas-bridge.xethub.hf.co:3.164.68.28"
     environment:
       <<: *shared-env
       DB_DATABASE: ${PLUGIN_DB_DATABASE:-dify_plugin}
@@ -780,6 +784,13 @@ services:
       PLUGIN_MEDIA_CACHE_PATH: ${PLUGIN_MEDIA_CACHE_PATH:-assets}
       SENTRY_ENABLED: ${PLUGIN_SENTRY_ENABLED:-false}
       SENTRY_DSN: ${PLUGIN_SENTRY_DSN:-}
+      # Docling s20ss plugin — local VLM picture description (patched tools/utils.py)
+      DOCLING_VLM_URL: ${DOCLING_VLM_URL:-http://vllm:8000/v1/chat/completions}
+      DOCLING_VLM_MODEL: ${DOCLING_VLM_MODEL:-google/gemma-4-26B-A4B-it}
+      DOCLING_VLM_PROMPT: ${DOCLING_VLM_PROMPT:-Опиши кратко что изображено на картинке. 1-2 предложения на русском.}
+      DOCLING_VLM_TIMEOUT: ${DOCLING_VLM_TIMEOUT:-120}
+      DOCLING_VLM_MAX_TOKENS: ${DOCLING_VLM_MAX_TOKENS:-200}
+      DOCLING_VLM_AREA_THRESHOLD: ${DOCLING_VLM_AREA_THRESHOLD:-0.05}
     volumes:
       - ./volumes/plugin_daemon:/app/storage
     healthcheck:
