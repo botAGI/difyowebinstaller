@@ -82,6 +82,7 @@ _init_wizard_defaults() {
     ENABLE_CRAWL4AI="${ENABLE_CRAWL4AI:-false}"
     ENABLE_OPENWEBUI="${ENABLE_OPENWEBUI:-false}"
     ENABLE_DIFY_PREMIUM="${ENABLE_DIFY_PREMIUM:-true}"
+    ENABLE_MINIO="${ENABLE_MINIO:-true}"
     NON_INTERACTIVE="${NON_INTERACTIVE:-false}"
 }
 
@@ -228,6 +229,22 @@ _wizard_etl() {
             ;;
     esac
     OCR_LANG="rus,eng"
+}
+
+_wizard_storage() {
+    if [[ "$NON_INTERACTIVE" == "true" ]]; then
+        ENABLE_MINIO="${ENABLE_MINIO:-true}"
+        return
+    fi
+    local choice
+    choice="$(wt_radio "Хранилище файлов" \
+        "minio" "MinIO (S3-совместимое, рекомендуется)" ON \
+        "local" "Локальное хранилище (./volumes/)" OFF)"
+    if [[ "$choice" == "minio" ]]; then
+        ENABLE_MINIO="true"
+    else
+        ENABLE_MINIO="false"
+    fi
 }
 
 _wizard_openwebui() {
@@ -1605,6 +1622,7 @@ run_wizard() {
     _wizard_reranker_model
     _wizard_vector_store
     _wizard_etl
+    _wizard_storage
     _wizard_openwebui
     _wizard_hf_token
     _wizard_tls
@@ -1635,6 +1653,7 @@ run_wizard() {
     export ENABLE_LITELLM ENABLE_SEARXNG ENABLE_NOTEBOOK ENABLE_DBGPT ENABLE_CRAWL4AI
     export ENABLE_OPENWEBUI
     export ENABLE_DIFY_PREMIUM
+    export ENABLE_MINIO
 }
 
 # Run if executed directly

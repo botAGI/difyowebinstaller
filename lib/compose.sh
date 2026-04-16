@@ -49,6 +49,7 @@ build_compose_profiles() {
     if [[ "${ENABLE_DBGPT:-false}" == "true" ]]; then profiles="${profiles:+$profiles,}dbgpt"; fi
     if [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]]; then profiles="${profiles:+$profiles,}crawl4ai"; fi
     if [[ "${ENABLE_OPENWEBUI:-false}" == "true" ]]; then profiles="${profiles:+$profiles,}openwebui"; fi
+    if [[ "${ENABLE_MINIO:-false}" == "true" ]]; then profiles="${profiles:+$profiles,}minio"; fi
 
     COMPOSE_PROFILE_STRING="$profiles"
     export COMPOSE_PROFILE_STRING

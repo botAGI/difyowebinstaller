@@ -49,6 +49,7 @@ declare -A NAME_TO_VERSION_KEY=(
     [open-notebook]=OPEN_NOTEBOOK_VERSION
     [dbgpt]=DBGPT_VERSION
     [crawl4ai]=CRAWL4AI_VERSION
+    [minio]=MINIO_VERSION
 )
 
 # Short component name -> compose service name(s) to restart on update
@@ -90,6 +91,7 @@ declare -A NAME_TO_SERVICES=(
     [open-notebook]="open-notebook"
     [dbgpt]="dbgpt"
     [crawl4ai]="crawl4ai"
+    [minio]="minio"
 )
 
 # Components sharing the same Docker image (restart all when one updates)
@@ -98,4 +100,4 @@ declare -A SERVICE_GROUPS=(
 )
 
 # All known compose profiles (for compose down --remove-orphans)
-ALL_COMPOSE_PROFILES="vps,monitoring,qdrant,weaviate,etl,authelia,ollama,vllm,tei,reranker,vllm-embed,vllm-rerank,docling,litellm,searxng,notebook,dbgpt,crawl4ai,openwebui"
+ALL_COMPOSE_PROFILES="vps,monitoring,qdrant,weaviate,etl,authelia,ollama,vllm,tei,reranker,vllm-embed,vllm-rerank,docling,litellm,searxng,notebook,dbgpt,crawl4ai,openwebui,minio"

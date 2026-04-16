@@ -120,6 +120,10 @@ _LITELLM_MASTER_KEY=""
 _SEARXNG_SECRET_KEY=""
 _SURREALDB_PASSWORD=""
 _NOTEBOOK_ENCRYPTION_KEY=""
+_MINIO_ROOT_USER=""
+_MINIO_ROOT_PASSWORD=""
+_S3_ACCESS_KEY=""
+_S3_SECRET_KEY=""
 
 # _restore_secrets_from_backup — restore volume-bound secrets when PG data exists (IREL-03)
 # Returns 0 if any secrets were restored, 1 if nothing restored.
@@ -185,6 +189,11 @@ _generate_secrets() {
     _SEARXNG_SECRET_KEY="$(generate_random 32)"
     _SURREALDB_PASSWORD="$(generate_random 24)"
     _NOTEBOOK_ENCRYPTION_KEY="$(generate_random 32)"
+
+    _MINIO_ROOT_USER="agmind-admin"
+    _MINIO_ROOT_PASSWORD="$(generate_random 32)"
+    _S3_ACCESS_KEY="$(generate_random 20)"
+    _S3_SECRET_KEY="$(generate_random 40)"
 
     _ADMIN_PASSWORD_PLAIN="$(generate_random 16)"
     _ADMIN_PASSWORD_B64="$(echo -n "$_ADMIN_PASSWORD_PLAIN" | base64)"
@@ -268,6 +277,14 @@ _generate_env_file() {
     local safe_files_url
     safe_files_url="$(escape_sed "${files_url}")"
 
+    # Storage type: MinIO → s3, otherwise local
+    local storage_type="local"
+    local s3_endpoint=""
+    if [[ "${ENABLE_MINIO:-true}" == "true" ]]; then
+        storage_type="s3"
+        s3_endpoint="http://minio:9000"
+    fi
+
     # Replace all placeholders (atomic: temp + mv)
     local env_tmp="${env_file}.tmp.$$"
     sed \
@@ -321,6 +338,14 @@ _generate_env_file() {
         -e "s|__SEARXNG_SECRET_KEY__|$(escape_sed "${_SEARXNG_SECRET_KEY}")|g" \
         -e "s|__SURREALDB_PASSWORD__|$(escape_sed "${_SURREALDB_PASSWORD}")|g" \
         -e "s|__NOTEBOOK_ENCRYPTION_KEY__|$(escape_sed "${_NOTEBOOK_ENCRYPTION_KEY}")|g" \
+        -e "s|__ENABLE_MINIO__|$(escape_sed "${ENABLE_MINIO:-true}")|g" \
+        -e "s|__MINIO_ROOT_USER__|${_MINIO_ROOT_USER}|g" \
+        -e "s|__MINIO_ROOT_PASSWORD__|${_MINIO_ROOT_PASSWORD}|g" \
+        -e "s|__S3_ACCESS_KEY__|${_S3_ACCESS_KEY}|g" \
+        -e "s|__S3_SECRET_KEY__|${_S3_SECRET_KEY}|g" \
+        -e "s|__S3_BUCKET_NAME__|dify-storage|g" \
+        -e "s|__STORAGE_TYPE__|${storage_type}|g" \
+        -e "s|__S3_ENDPOINT__|${s3_endpoint}|g" \
         "$env_file" > "$env_tmp" || { rm -f "$env_tmp"; return 1; }
     mv "$env_tmp" "$env_file"
     chmod 600 "$env_file"
