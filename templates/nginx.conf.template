@@ -147,6 +147,11 @@ http {
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            # Prevent stale page cache (mDNS reconnect shows fresh content)
+            add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+            add_header Pragma "no-cache" always;
         }
 
         # Dify Console Login — tighter rate limit
@@ -405,6 +410,8 @@ http {
     #__OPENWEBUI__        proxy_read_timeout 600s;
     #__OPENWEBUI__        proxy_send_timeout 600s;
     #__OPENWEBUI__        proxy_buffering off;
+    #__OPENWEBUI__        add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+    #__OPENWEBUI__        add_header Pragma "no-cache" always;
     #__OPENWEBUI__    }
     #__OPENWEBUI__}
 
@@ -424,6 +431,8 @@ http {
     #__DBGPT__        proxy_set_header X-Forwarded-Proto $scheme;
     #__DBGPT__        proxy_read_timeout 300s;
     #__DBGPT__        proxy_send_timeout 300s;
+    #__DBGPT__        add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+    #__DBGPT__        add_header Pragma "no-cache" always;
     #__DBGPT__    }
     #__DBGPT__}
 
@@ -445,6 +454,8 @@ http {
     #__NOTEBOOK__        proxy_set_header Connection "upgrade";
     #__NOTEBOOK__        proxy_read_timeout 600s;
     #__NOTEBOOK__        proxy_send_timeout 600s;
+    #__NOTEBOOK__        add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+    #__NOTEBOOK__        add_header Pragma "no-cache" always;
     #__NOTEBOOK__    }
     #__NOTEBOOK__
     #__NOTEBOOK__    location /api {
@@ -509,6 +520,11 @@ http {
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            # Prevent stale page cache (mDNS reconnect shows fresh content)
+            add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+            add_header Pragma "no-cache" always;
         }
 
         location /console/api/login {
@@ -622,6 +638,10 @@ http {
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+            add_header Pragma "no-cache" always;
         }
 
         # Dify Console Login — tighter rate limit (1r/10s, burst=3)
@@ -766,6 +786,10 @@ http {
     #__TLS__        proxy_set_header X-Real-IP $remote_addr;
     #__TLS__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     #__TLS__        proxy_set_header X-Forwarded-Proto $scheme;
+    #__TLS__        proxy_set_header Upgrade $http_upgrade;
+    #__TLS__        proxy_set_header Connection "upgrade";
+    #__TLS__        add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+    #__TLS__        add_header Pragma "no-cache" always;
     #__TLS__    }
     #__TLS__
     #__TLS__    # Dify Console Login — tighter rate limit
