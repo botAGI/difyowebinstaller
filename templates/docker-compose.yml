@@ -322,6 +322,7 @@ services:
     container_name: agmind-vllm
     restart: unless-stopped
     mem_limit: ${VLLM_MEM_LIMIT:-16g}
+    mem_swappiness: 0
     profiles:
       - vllm
     environment:
@@ -340,7 +341,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 900s
+      start_period: 1800s
     #__GPU__deploy:
     #__GPU__  resources:
     #__GPU__    reservations:
@@ -422,9 +423,13 @@ services:
     image: ${VLLM_EMBED_IMAGE:-nvcr.io/nvidia/vllm:${VLLM_NGC_VERSION:-26.02-py3}}
     container_name: agmind-vllm-embed
     restart: unless-stopped
-    mem_limit: ${VLLM_EMBED_MEM_LIMIT:-6g}
+    mem_limit: ${VLLM_EMBED_MEM_LIMIT:-3g}
+    mem_swappiness: 0
     profiles:
       - vllm-embed
+    depends_on:
+      vllm:
+        condition: service_healthy
     ipc: host
     ulimits:
       memlock:
@@ -444,7 +449,7 @@ services:
     #__GPU__          count: all
     #__GPU__          capabilities: [gpu]
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -458,9 +463,13 @@ services:
     image: ${VLLM_RERANK_IMAGE:-nvcr.io/nvidia/vllm:${VLLM_NGC_VERSION:-26.02-py3}}
     container_name: agmind-vllm-rerank
     restart: unless-stopped
-    mem_limit: ${VLLM_RERANK_MEM_LIMIT:-6g}
+    mem_limit: ${VLLM_RERANK_MEM_LIMIT:-2g}
+    mem_swappiness: 0
     profiles:
       - vllm-rerank
+    depends_on:
+      vllm-embed:
+        condition: service_healthy
     ipc: host
     ulimits:
       memlock:
@@ -480,7 +489,7 @@ services:
     #__GPU__          count: all
     #__GPU__          capabilities: [gpu]
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -617,7 +626,8 @@ services:
     image: ${DOCLING_IMAGE:-quay.io/docling-project/docling-serve-cu130:v1.16.1}
     container_name: agmind-docling
     restart: on-failure:5
-    mem_limit: ${DOCLING_MEM_LIMIT:-12g}
+    mem_limit: ${DOCLING_MEM_LIMIT:-8g}
+    mem_swappiness: 0
     profiles:
       - docling
     expose:
@@ -775,7 +785,7 @@ services:
     image: langgenius/dify-plugin-daemon:${PLUGIN_DAEMON_VERSION:-0.5.3-local}
     container_name: agmind-plugin-daemon
     restart: always
-    mem_limit: ${PLUGIN_DAEMON_MEM_LIMIT:-10g}
+    mem_limit: ${PLUGIN_DAEMON_MEM_LIMIT:-6g}
     extra_hosts:
       - "cdn-lfs-cn-1.modelscope.cn:163.181.225.49"
       - "huggingface.co:3.174.113.115"
