@@ -646,6 +646,7 @@ services:
               capabilities: [gpu]
     volumes:
       - agmind_docling_cache:/home/docling/.cache
+      - agmind_docling_cache:/opt/app-root/src/.cache/docling/models
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8765/health')\" 2>/dev/null || curl -sf http://localhost:8765/health 2>/dev/null || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
@@ -848,6 +849,7 @@ services:
       - /tmp:size=64m
       - /var/cache/nginx:size=128m
       - /var/run:size=16m
+      - /var/log/nginx:size=32m
     ports:
       - "${EXPOSE_NGINX_PORT:-80}:80"
       - "${EXPOSE_NGINX_SSL_PORT:-443}:443"
