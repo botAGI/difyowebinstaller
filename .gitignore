@@ -19,6 +19,7 @@ __pycache__/
 CLAUDE.md
 SPEC.md
 references/
+plugins/
 
 # Claude Code local settings (machine-specific)
 .claude/settings.local.json

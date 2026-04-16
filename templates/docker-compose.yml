@@ -114,13 +114,16 @@ x-shared-env: &shared-env
   # --- ETL ---
   ETL_TYPE: ${ETL_TYPE:-dify}
   UNSTRUCTURED_API_URL: ${UNSTRUCTURED_API_URL:-}
+  # --- HTTP Request node limits (docling-serve returns large responses) ---
+  HTTP_REQUEST_NODE_MAX_TEXT_SIZE: ${HTTP_REQUEST_NODE_MAX_TEXT_SIZE:-104857600}
+  HTTP_REQUEST_NODE_MAX_BINARY_SIZE: ${HTTP_REQUEST_NODE_MAX_BINARY_SIZE:-104857600}
   # --- Marketplace ---
   MARKETPLACE_ENABLED: ${MARKETPLACE_ENABLED:-true}
   CHECK_UPDATE_URL: ${CHECK_UPDATE_URL:-https://updates.dify.ai}
   # --- Plugin Daemon ---
   PLUGIN_DAEMON_URL: ${PLUGIN_DAEMON_URL:-http://plugin_daemon:5002}
   PLUGIN_DAEMON_KEY: ${PLUGIN_DAEMON_KEY:-}
-  PLUGIN_DAEMON_TIMEOUT: ${PLUGIN_DAEMON_TIMEOUT:-600}
+  PLUGIN_DAEMON_TIMEOUT: ${PLUGIN_DAEMON_TIMEOUT:-1800}
   INNER_API_KEY_FOR_PLUGIN: ${PLUGIN_INNER_API_KEY:-}
   # --- Ollama ---
   OLLAMA_API_BASE: ${OLLAMA_API_BASE:-http://ollama:11434}
@@ -608,21 +611,39 @@ services:
     networks:
       - agmind-backend
 
-  # ==================== Docling (ETL service) ====================
+  # ==================== Docling (ETL service, GPU batch inference) ====================
   docling:
     <<: *logging-defaults
-    image: ${DOCLING_IMAGE:-ghcr.io/docling-project/docling-serve:v1.14.3}
+    image: ${DOCLING_IMAGE:-quay.io/docling-project/docling-serve-cu130:v1.16.1}
     container_name: agmind-docling
     restart: on-failure:5
-    mem_limit: ${DOCLING_MEM_LIMIT:-4g}
+    mem_limit: ${DOCLING_MEM_LIMIT:-12g}
     profiles:
       - docling
     expose:
       - "8765"
     command: ["docling-serve", "run", "--port", "8765", "--host", "0.0.0.0"]
     environment:
-      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-}
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
       - OCR_LANG=${OCR_LANG:-rus,eng}
+      # GPU batch inference — process multiple pages in parallel
+      - DOCLING_SERVE_LAYOUT_BATCH_SIZE=${DOCLING_SERVE_LAYOUT_BATCH_SIZE:-64}
+      - DOCLING_SERVE_OCR_BATCH_SIZE=${DOCLING_SERVE_OCR_BATCH_SIZE:-64}
+      - DOCLING_SERVE_TABLE_BATCH_SIZE=${DOCLING_SERVE_TABLE_BATCH_SIZE:-4}
+      - DOCLING_SERVE_ENABLE_REMOTE_SERVICES=true
+      - DOCLING_SERVE_ENABLE_UI=true
+      - DOCLING_SERVE_ENG_LOC_NUM_WORKERS=${DOCLING_SERVE_WORKERS:-2}
+      - DOCLING_SERVE_MAX_SYNC_WAIT=${DOCLING_SERVE_MAX_SYNC_WAIT:-600}
+      - DOCLING_DEVICE=${DOCLING_DEVICE:-cuda}
+      - DOCLING_NUM_THREADS=${DOCLING_NUM_THREADS:-8}
+      - UVICORN_WORKERS=1
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     volumes:
       - agmind_docling_cache:/home/docling/.cache
     healthcheck:
@@ -630,7 +651,7 @@ services:
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
-      start_period: 30s
+      start_period: 120s
     networks:
       - agmind-backend
 
@@ -753,7 +774,7 @@ services:
     image: langgenius/dify-plugin-daemon:${PLUGIN_DAEMON_VERSION:-0.5.3-local}
     container_name: agmind-plugin-daemon
     restart: always
-    mem_limit: ${PLUGIN_DAEMON_MEM_LIMIT:-8g}
+    mem_limit: ${PLUGIN_DAEMON_MEM_LIMIT:-10g}
     extra_hosts:
       - "cdn-lfs-cn-1.modelscope.cn:163.181.225.49"
       - "huggingface.co:3.174.113.115"
@@ -791,6 +812,7 @@ services:
       DOCLING_VLM_TIMEOUT: ${DOCLING_VLM_TIMEOUT:-120}
       DOCLING_VLM_MAX_TOKENS: ${DOCLING_VLM_MAX_TOKENS:-200}
       DOCLING_VLM_AREA_THRESHOLD: ${DOCLING_VLM_AREA_THRESHOLD:-0.05}
+      DOCLING_NUM_THREADS: ${DOCLING_NUM_THREADS:-8}
     volumes:
       - ./volumes/plugin_daemon:/app/storage
     healthcheck:
