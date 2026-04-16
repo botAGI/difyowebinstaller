@@ -83,6 +83,12 @@ x-shared-env: &shared-env
   # --- Storage ---
   STORAGE_TYPE: ${STORAGE_TYPE:-local}
   STORAGE_LOCAL_PATH: /app/api/storage
+  S3_ENDPOINT: ${S3_ENDPOINT:-}
+  S3_BUCKET_NAME: ${S3_BUCKET_NAME:-dify-storage}
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+  S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+  S3_REGION: ${S3_REGION:-us-east-1}
+  S3_USE_AWS_MANAGED_IAM: ${S3_USE_AWS_MANAGED_IAM:-false}
   # --- Vector Store ---
   VECTOR_STORE: ${VECTOR_STORE:-weaviate}
   WEAVIATE_ENDPOINT: ${WEAVIATE_ENDPOINT:-http://weaviate:8080}
@@ -899,6 +905,30 @@ services:
       - agmind-frontend
       - agmind-backend
 
+  # ==================== MinIO (Object Storage) ====================
+  minio:
+    <<: *security-defaults
+    image: minio/minio:${MINIO_VERSION:-RELEASE.2024-11-07T00-52-20Z}
+    container_name: agmind-minio
+    restart: always
+    mem_limit: ${MINIO_MEM_LIMIT:-2g}
+    profiles:
+      - minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-}
+    volumes:
+      - agmind_minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/minio/health/live || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 15s
+    networks:
+      - agmind-backend
+
   # ==================== Prometheus (monitoring profile) ====================
   prometheus:
     <<: *security-defaults
@@ -1311,3 +1341,4 @@ volumes:
   agmind_vllm_rerank_cache:
   agmind_surrealdb_data:
   agmind_dbgpt_data:
+  agmind_minio_data:
