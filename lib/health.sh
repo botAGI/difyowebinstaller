@@ -74,7 +74,7 @@ get_service_list() {
         # ETL
         local etl_type
         etl_type="$(grep '^ETL_TYPE=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "dify")"
-        if [[ "$etl_type" == "unstructured_api" ]]; then
+        if [[ "${etl_type,,}" == "unstructured" || "$etl_type" == "unstructured_api" ]]; then
             services+=(docling)
         fi
 
@@ -567,6 +567,21 @@ verify_services() {
 
 send_alert() {
     local message="$1"
+
+    # Rate-limit: skip if same message was sent within cooldown period
+    local cooldown_file
+    cooldown_file="/tmp/agmind_alert_cooldown_$(echo "$message" | md5sum | cut -c1-8)"
+    local cooldown_seconds=900  # 15 minutes
+    if [[ -f "$cooldown_file" ]]; then
+        local last_alert
+        last_alert=$(stat -c %Y "$cooldown_file" 2>/dev/null || echo 0)
+        local now
+        now=$(date +%s)
+        if (( now - last_alert < cooldown_seconds )); then
+            return 0  # already alerted recently
+        fi
+    fi
+
     local env_file="${INSTALL_DIR}/docker/.env"
     [[ -f "$env_file" ]] || return 0
 
@@ -607,6 +622,9 @@ CURL_CFG
             fi
             ;;
     esac
+
+    # Mark alert as sent for cooldown tracking
+    touch "$cooldown_file" 2>/dev/null || true
 }
 
 # ============================================================================
