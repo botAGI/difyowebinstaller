@@ -115,9 +115,19 @@ else
 fi
 
 # 3. Dify storage (uploads)
-echo "  Dify storage..."
-tar czf "${TARGET_DIR}/dify-storage.tar.gz" \
-    -C "${INSTALL_DIR}/docker/volumes/app/storage" . 2>/dev/null || true
+if grep -q '^STORAGE_TYPE=s3' "${INSTALL_DIR}/docker/.env" 2>/dev/null; then
+    echo "  Dify storage (MinIO volume)..."
+    _minio_vol="$(docker volume ls -q 2>/dev/null | grep 'minio_data' | head -1)"
+    if [[ -n "$_minio_vol" ]]; then
+        docker run --rm -v "${_minio_vol}:/data:ro" alpine tar czf - -C /data . > "${TARGET_DIR}/minio-data.tar.gz" 2>/dev/null || true
+    else
+        echo "  WARNING: MinIO volume not found, skipping S3 backup"
+    fi
+else
+    echo "  Dify storage (local)..."
+    tar czf "${TARGET_DIR}/dify-storage.tar.gz" \
+        -C "${INSTALL_DIR}/docker/volumes/app/storage" . 2>/dev/null || true
+fi
 
 # 4. Open WebUI data (skip if volume not found)
 if docker volume ls -q 2>/dev/null | grep -q openwebui; then

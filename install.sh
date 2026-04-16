@@ -184,7 +184,7 @@ phase_models_graceful() {
     fi
 }
 phase_backups()     { setup_backups; setup_tunnel; }
-phase_complete()    { create_openwebui_admin; _init_dify_admin; _save_credentials; _install_cli; _install_crons; _install_systemd_service; verify_services || true; _show_final_summary; _apply_dify_patches; }
+phase_complete()    { create_openwebui_admin; _init_minio_bucket; _init_dify_admin; _save_credentials; _install_cli; _install_crons; _install_systemd_service; verify_services || true; _show_final_summary; _apply_dify_patches; }
 
 _apply_dify_patches() {
     [[ "${ENABLE_DIFY_PREMIUM:-false}" == "true" ]] || return 0
@@ -342,6 +342,29 @@ _init_dify_admin() {
     log_warn "[dify-init] Dify init failed after 3 attempts — run 'agmind init-dify' manually"
 }
 
+_init_minio_bucket() {
+    [[ "${ENABLE_MINIO:-false}" == "true" ]] || return 0
+    log_info "Creating MinIO bucket..."
+    local user pass bucket
+    user="$(grep '^MINIO_ROOT_USER=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
+    pass="$(grep '^MINIO_ROOT_PASSWORD=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
+    bucket="$(grep '^S3_BUCKET_NAME=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
+    bucket="${bucket:-dify-storage}"
+    # Wait for MinIO to be healthy (up to 30s)
+    local i=0
+    while [[ $i -lt 6 ]]; do
+        if docker exec agmind-minio curl -sf http://localhost:9000/minio/health/live >/dev/null 2>&1; then
+            break
+        fi
+        sleep 5
+        (( i++ )) || true
+    done
+    docker exec agmind-minio sh -c "
+        mc alias set local http://localhost:9000 '${user}' '${pass}' 2>/dev/null &&
+        mc mb local/${bucket} --ignore-existing 2>/dev/null
+    " || log_warn "MinIO bucket creation failed — create manually via http://<IP>:9001"
+}
+
 _save_credentials() {
     local ip; ip="$(_get_ip)"
     local url="http://${ip}"; if [[ "${DEPLOY_PROFILE:-}" == "vps" && -n "${DOMAIN:-}" ]]; then url="https://${DOMAIN}"; fi
@@ -491,6 +514,18 @@ _save_credentials() {
             echo "  API Docs:      http://${ip}:${EXPOSE_DOCLING_PORT:-8765}/docs"
             echo "  Dify ETL:      настроен автоматически (Dify → Settings → Data Source → Docling)"
             echo "  Dify Tool:     HTTP Request → POST http://agmind-docling:8765/v1/convert"
+        fi
+        if [[ "${ENABLE_MINIO:-false}" == "true" ]]; then
+            local _minio_user _minio_pass
+            _minio_user="$(grep '^MINIO_ROOT_USER=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
+            _minio_pass="$(grep '^MINIO_ROOT_PASSWORD=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
+            echo ""
+            echo "=== MinIO (S3 Object Storage) ==="
+            echo "  Console: http://${ip}:9001"
+            echo "  User:    ${_minio_user:-agmind-admin}"
+            echo "  Pass:    ${_minio_pass:-see .env}"
+            echo "  Bucket:  dify-storage"
+            echo "  API:     http://minio:9000 (internal)"
         fi
         echo ""
         echo "# ---"
