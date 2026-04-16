@@ -509,7 +509,7 @@ services:
     image: postgres:${POSTGRES_VERSION:-16-alpine}
     container_name: agmind-db
     restart: always
-    mem_limit: ${DB_MEM_LIMIT:-8g}
+    mem_limit: ${DB_MEM_LIMIT:-4g}
     cap_add:
       - CHOWN
       - SETUID
@@ -918,6 +918,8 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-}
+    ports:
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - agmind_minio_data:/data
     healthcheck:
