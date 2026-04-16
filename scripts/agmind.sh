@@ -638,6 +638,53 @@ cmd_gpu() {
 }
 
 # ============================================================================
+# MODEL — list loaded models across inference containers
+# ============================================================================
+
+cmd_model() {
+    local subcmd="${1:-list}"
+    case "$subcmd" in
+        list) _model_list ;;
+        *)    echo "Usage: agmind model list" >&2; exit 1 ;;
+    esac
+}
+
+_model_list() {
+    echo -e "${BOLD}Loaded Models:${NC}"
+    echo ""
+
+    # LLM models (vLLM)
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'agmind-vllm$'; then
+        echo -e "  ${CYAN}vLLM (LLM):${NC}"
+        docker exec agmind-vllm curl -sf http://localhost:8000/v1/models 2>/dev/null \
+            | python3 -c "import sys,json; [print(f'    {m[\"id\"]}') for m in json.load(sys.stdin).get('data',[])]" 2>/dev/null \
+            || echo "    (loading or unavailable)"
+    fi
+
+    # Ollama models
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'agmind-ollama'; then
+        echo -e "  ${CYAN}Ollama:${NC}"
+        docker exec agmind-ollama ollama list 2>/dev/null | sed 's/^/    /' || echo "    (unavailable)"
+    fi
+
+    # Embedding models (vLLM)
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'agmind-vllm-embed'; then
+        echo -e "  ${CYAN}vLLM (Embed):${NC}"
+        docker exec agmind-vllm-embed curl -sf http://localhost:8000/v1/models 2>/dev/null \
+            | python3 -c "import sys,json; [print(f'    {m[\"id\"]}') for m in json.load(sys.stdin).get('data',[])]" 2>/dev/null \
+            || echo "    (loading or unavailable)"
+    fi
+
+    # Reranker models (vLLM)
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'agmind-vllm-rerank'; then
+        echo -e "  ${CYAN}vLLM (Rerank):${NC}"
+        docker exec agmind-vllm-rerank curl -sf http://localhost:8000/v1/models 2>/dev/null \
+            | python3 -c "import sys,json; [print(f'    {m[\"id\"]}') for m in json.load(sys.stdin).get('data',[])]" 2>/dev/null \
+            || echo "    (loading or unavailable)"
+    fi
+}
+
+# ============================================================================
 # INIT-DIFY — manual Dify admin initialization
 # ============================================================================
 
@@ -735,6 +782,7 @@ Commands:
     status             Show GPUs, VRAM, utilization, assignments
     assign <svc> <id>  Assign GPU to service (vllm, tei)
     assign --auto      Auto-distribute across GPUs
+  model list         Show loaded models (vLLM, Ollama, embed, rerank)
   init-dify          Initialize Dify admin (if auto-init failed)
   backup             Create backup (root)
   restore <path>     Restore from backup (root)
@@ -774,6 +822,7 @@ case "${1:-help}" in
     rotate-secrets) shift; _require_root rotate-secrets; exec "${SCRIPTS_DIR}/rotate_secrets.sh" "$@" ;;
     logs)           shift; exec docker compose -f "$COMPOSE_FILE" logs "$@" ;;
     gpu)            shift; cmd_gpu "$@" ;;
+    model)          shift; cmd_model "$@" ;;
     help|--help|-h) cmd_help ;;
     *)              echo -e "${RED}Unknown command: ${1}${NC}" >&2; cmd_help; exit 1 ;;
 esac
