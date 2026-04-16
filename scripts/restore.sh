@@ -338,20 +338,12 @@ fi
 # Clean up restore tmpdir after successful restore
 rm -rf "$RESTORE_TMP" 2>/dev/null || true
 
-# Start all services (rebuild COMPOSE_PROFILES from .env settings)
+# Start all services (read COMPOSE_PROFILES from restored .env — install.sh already writes full profile list)
 echo -e "${YELLOW}Starting containers...${NC}"
 RESTORE_PROFILES=""
 ENV_FILE="${INSTALL_DIR}/docker/.env"
 if [[ -f "$ENV_FILE" ]]; then
-    vs=$(grep '^VECTOR_STORE=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- || echo "weaviate")
-    [[ "$vs" == "qdrant" ]] && RESTORE_PROFILES="qdrant"
-    [[ "$vs" == "weaviate" ]] && RESTORE_PROFILES="weaviate"
-    etl=$(grep '^ETL_TYPE=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- || echo "dify")
-    [[ "$etl" == "unstructured_api" ]] && RESTORE_PROFILES="${RESTORE_PROFILES:+$RESTORE_PROFILES,}etl"
-    mon=$(grep '^MONITORING_MODE=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- || echo "none")
-    [[ "$mon" == "local" ]] && RESTORE_PROFILES="${RESTORE_PROFILES:+$RESTORE_PROFILES,}monitoring"
-    authelia=$(grep '^ENABLE_AUTHELIA=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- || echo "false")
-    [[ "$authelia" == "true" ]] && RESTORE_PROFILES="${RESTORE_PROFILES:+$RESTORE_PROFILES,}authelia"
+    RESTORE_PROFILES=$(grep '^COMPOSE_PROFILES=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- || echo "")
 fi
 if [[ -n "$RESTORE_PROFILES" ]]; then
     COMPOSE_PROFILES="$RESTORE_PROFILES" docker compose -f "$COMPOSE_FILE" up -d
