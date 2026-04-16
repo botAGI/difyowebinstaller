@@ -769,7 +769,12 @@ _wizard_llm_model() {
     fi
     if [[ "$LLM_PROVIDER" == "vllm" && -z "$VLLM_MODEL" ]]; then
         if [[ "${DETECTED_DGX_SPARK:-false}" == "true" ]]; then
-            VLLM_MODEL="Qwen/Qwen2.5-32B-Instruct-AWQ"
+            VLLM_IMAGE="vllm/vllm-openai:gemma4-cu130"
+            VLLM_MODEL="google/gemma-4-26B-A4B-it"
+            VLLM_CUDA_SUFFIX=""
+            VLLM_CMD_PREFIX=""
+            VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-65536}"
+            VLLM_EXTRA_ARGS="--kv-cache-dtype fp8 --enable-prefix-caching"
         else
             VLLM_MODEL="QuantTrio/Qwen3.5-27B-AWQ"
         fi
