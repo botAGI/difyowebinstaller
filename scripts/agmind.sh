@@ -116,10 +116,13 @@ _status_json() {
     [[ $running -gt 0 ]] && overall="degraded"
     [[ $running -eq $total ]] && overall="healthy"
 
-    local gpu_type="none" gpu_util="N/A"
+    local gpu_type="none" gpu_util="0"
     if command -v nvidia-smi &>/dev/null; then
         gpu_type="nvidia"
-        gpu_util="$(nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader 2>/dev/null | head -1 | xargs || echo "N/A")"
+        gpu_util="$(nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader 2>/dev/null | head -1 | xargs || echo "0")"
+        gpu_util="${gpu_util//\[N\/A\]/0}"
+        gpu_util="${gpu_util//[^0-9.]/}"
+        gpu_util="${gpu_util:-0}"
     elif command -v rocm-smi &>/dev/null; then
         gpu_type="amd"
     fi
@@ -438,8 +441,19 @@ _gpu_status() {
         mem_used="$(echo "$mem_used" | xargs)"
         mem_free="$(echo "$mem_free" | xargs)"
         util_gpu="$(echo "$util_gpu" | xargs)"
-        printf "  GPU %d: %-30s | VRAM: %s / %s MiB (free: %s MiB) | Util: %s\n" \
-            "$gpu_idx" "$name" "$mem_used" "$mem_total" "$mem_free" "$util_gpu"
+        # Unified memory fallback: nvidia-smi returns [N/A] on DGX Spark
+        local unified_label=""
+        if [[ "$mem_total" == *"N/A"* || -z "$mem_total" ]]; then
+            local meminfo_total meminfo_avail
+            meminfo_total=$(awk '/^MemTotal:/{print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
+            meminfo_avail=$(awk '/^MemAvailable:/{print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
+            mem_total="$meminfo_total"
+            mem_used="$((meminfo_total - meminfo_avail))"
+            mem_free="$meminfo_avail"
+            unified_label=" (unified)"
+        fi
+        printf "  GPU %d: %-30s | VRAM: %s / %s MiB%s (free: %s MiB) | Util: %s\n" \
+            "$gpu_idx" "$name" "$mem_used" "$mem_total" "$unified_label" "$mem_free" "$util_gpu"
         gpu_idx=$((gpu_idx + 1))
     done < <(nvidia-smi --query-gpu=name,memory.total,memory.used,memory.free,utilization.gpu \
         --format=csv,noheader,nounits 2>/dev/null)

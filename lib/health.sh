@@ -634,11 +634,27 @@ CURL_CFG
 check_gpu_status() {
     echo -e "${BOLD}GPU Status:${NC}"
     if command -v nvidia-smi &>/dev/null; then
-        nvidia-smi --query-gpu=name,memory.used,memory.free,temperature.gpu,utilization.gpu \
-            --format=csv,noheader 2>/dev/null | while IFS=',' read -r name mem_used mem_free temp util; do
-            printf "  %-20s | Mem: %s / %s | Temp: %s | Load: %s\n" \
-                "$(echo "$name" | xargs)" "$(echo "$mem_used" | xargs)" \
-                "$(echo "$mem_free" | xargs)" "$(echo "$temp" | xargs)" "$(echo "$util" | xargs)"
+        nvidia-smi --query-gpu=name,memory.total,memory.used,memory.free,temperature.gpu,utilization.gpu \
+            --format=csv,noheader 2>/dev/null | while IFS=',' read -r name mem_total mem_used mem_free temp util; do
+            name="$(echo "$name" | xargs)"
+            mem_total="$(echo "$mem_total" | xargs)"
+            mem_used="$(echo "$mem_used" | xargs)"
+            mem_free="$(echo "$mem_free" | xargs)"
+            temp="$(echo "$temp" | xargs)"
+            util="$(echo "$util" | xargs)"
+            # Unified memory fallback: nvidia-smi returns [N/A] on DGX Spark
+            local unified_label=""
+            if [[ "$mem_total" == *"N/A"* || -z "$mem_total" ]]; then
+                local meminfo_total meminfo_avail
+                meminfo_total=$(awk '/^MemTotal:/{print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
+                meminfo_avail=$(awk '/^MemAvailable:/{print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
+                mem_total="${meminfo_total} MiB"
+                mem_used="$((meminfo_total - meminfo_avail)) MiB"
+                mem_free="${meminfo_avail} MiB"
+                unified_label=" (unified)"
+            fi
+            printf "  %-20s | Mem: %s / %s%s | Temp: %s | Load: %s\n" \
+                "$name" "$mem_used" "$mem_total" "$unified_label" "$temp" "$util"
         done
     elif command -v rocm-smi &>/dev/null; then
         rocm-smi --showuse --showmemuse --showtemp 2>/dev/null | head -20
