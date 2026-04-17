@@ -239,10 +239,15 @@ _check_critical_services() {
 }
 
 _copy_runtime_files() {
+    # When installer runs from INSTALL_DIR (git clone /opt/agmind), skip script
+    # self-copy but still populate scripts/{health,detect}.sh from lib/ subdir.
     local scripts=(backup.sh restore.sh uninstall.sh update.sh agmind.sh health-gen.sh rotate_secrets.sh dr-drill.sh generate-manifest.sh redis-lock-cleanup.sh patch_dify_features.sh gpu-metrics.sh)
-    for s in "${scripts[@]}"; do
-        if [[ -f "${INSTALLER_DIR}/scripts/${s}" ]]; then cp "${INSTALLER_DIR}/scripts/${s}" "${INSTALL_DIR}/scripts/"; fi
-    done
+    if [[ "$INSTALLER_DIR" != "$INSTALL_DIR" ]]; then
+        for s in "${scripts[@]}"; do
+            if [[ -f "${INSTALLER_DIR}/scripts/${s}" ]]; then cp "${INSTALLER_DIR}/scripts/${s}" "${INSTALL_DIR}/scripts/"; fi
+        done
+    fi
+    # lib/ → scripts/ copy: different subdirs, always safe even in self-install
     cp "${INSTALLER_DIR}/lib/health.sh" "${INSTALL_DIR}/scripts/health.sh" 2>/dev/null || true
     cp "${INSTALLER_DIR}/lib/detect.sh" "${INSTALL_DIR}/scripts/detect.sh" 2>/dev/null || true
     chmod +x "${INSTALL_DIR}/scripts/"*.sh 2>/dev/null || true
@@ -582,9 +587,9 @@ _install_cli() {
     if [[ -d /usr/local/bin ]]; then ln -sf "${INSTALL_DIR}/scripts/agmind.sh" /usr/local/bin/agmind && log_success "'agmind' command available"; fi
     date -u +%Y-%m-%dT%H:%M:%SZ > "${INSTALL_DIR}/.agmind_installed"
     # Write RELEASE tag for update system (BUG-V3-044: fallback when RELEASE file missing)
-    if [[ -f "${INSTALLER_DIR}/RELEASE" ]]; then
+    if [[ -f "${INSTALLER_DIR}/RELEASE" && "$INSTALLER_DIR" != "$INSTALL_DIR" ]]; then
         cp "${INSTALLER_DIR}/RELEASE" "${INSTALL_DIR}/RELEASE"
-    else
+    elif [[ ! -f "${INSTALL_DIR}/RELEASE" ]]; then
         local release_tag=""
         # Try git describe (works if installed from tagged commit)
         release_tag="$(cd "${INSTALLER_DIR}" && git describe --tags --exact-match 2>/dev/null || true)"
