@@ -649,6 +649,7 @@ services:
       - DOCLING_SERVE_TABLE_BATCH_SIZE=${DOCLING_SERVE_TABLE_BATCH_SIZE:-4}
       - DOCLING_SERVE_ENABLE_REMOTE_SERVICES=true
       - DOCLING_SERVE_ENABLE_UI=true
+      - DOCLING_SERVE_ALLOW_CUSTOM_OCR_CONFIG=true
       - DOCLING_SERVE_ENG_LOC_NUM_WORKERS=${DOCLING_SERVE_WORKERS:-2}
       - DOCLING_SERVE_MAX_SYNC_WAIT=${DOCLING_SERVE_MAX_SYNC_WAIT:-600}
       - DOCLING_DEVICE=${DOCLING_DEVICE:-cuda}
@@ -662,8 +663,7 @@ services:
               count: all
               capabilities: [gpu]
     volumes:
-      - agmind_docling_cache:/home/docling/.cache
-      - agmind_docling_cache:/opt/app-root/src/.cache/docling/models
+      - agmind_docling_cache:/opt/app-root/src/.cache
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8765/health')\" 2>/dev/null || curl -sf http://localhost:8765/health 2>/dev/null || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
@@ -923,11 +923,13 @@ services:
     volumes:
       - agmind_minio_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:9000/minio/health/live || exit 1"]
+      # MinIO image has mc built-in; "mc ready local" is the official probe.
+      # No curl/wget in the minimal image, so don't use HTTP-based checks.
+      test: ["CMD", "mc", "ready", "local"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
-      start_period: 15s
+      start_period: 30s
     networks:
       - agmind-backend
 

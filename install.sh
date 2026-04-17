@@ -355,19 +355,23 @@ _init_minio_bucket() {
     pass="$(grep '^MINIO_ROOT_PASSWORD=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
     bucket="$(grep '^S3_BUCKET_NAME=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
     bucket="${bucket:-dify-storage}"
-    # Wait for MinIO to be healthy (up to 30s)
+
+    # Wait for MinIO container to be running (healthcheck may take longer)
     local i=0
-    while [[ $i -lt 6 ]]; do
-        if docker exec agmind-minio curl -sf http://localhost:9000/minio/health/live >/dev/null 2>&1; then
+    while [[ $i -lt 12 ]]; do
+        if docker ps --filter "name=agmind-minio" --filter "status=running" --format '{{.Names}}' | grep -q agmind-minio; then
             break
         fi
         sleep 5
         (( i++ )) || true
     done
-    docker exec agmind-minio sh -c "
-        mc alias set local http://localhost:9000 '${user}' '${pass}' 2>/dev/null &&
-        mc mb local/${bucket} --ignore-existing 2>/dev/null
-    " || log_warn "MinIO bucket creation failed — create manually via http://<IP>:9001"
+
+    # Use minio/mc sidecar container — robust across all minio image versions.
+    # Joins the same Docker network to reach minio:9000 by service name.
+    docker run --rm --network "$(docker network ls --format '{{.Name}}' | grep -m1 agmind-backend)" \
+        -e "MC_HOST_local=http://${user}:${pass}@agmind-minio:9000" \
+        minio/mc:latest mb --ignore-existing "local/${bucket}" 2>/dev/null \
+        || log_warn "MinIO bucket creation failed — create manually via http://<IP>:9001"
 }
 
 _save_credentials() {
