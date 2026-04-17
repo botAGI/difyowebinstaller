@@ -41,7 +41,7 @@ setup_backups() {
 
     log_success "Backups configured"
     echo "  Schedule:  ${backup_schedule}"
-    echo "  Local dir: /var/backups/agmind/"
+    echo "  Local dir: ${BACKUP_DIR:-/var/backups/agmind}/"
     if [[ "$backup_target" != "local" && -n "$remote_host" ]]; then
         echo "  Remote:    ${remote_user}@${remote_host}:${remote_path}"
     fi
@@ -61,7 +61,7 @@ _generate_backup_conf() {
     cat > "$conf" << BKCONF
 # AGMind Backup Configuration
 INSTALL_DIR=${INSTALL_DIR}
-BACKUP_DIR=/var/backups/agmind
+BACKUP_DIR=${BACKUP_DIR:-/var/backups/agmind}
 BACKUP_RETENTION_DAYS=7
 REMOTE_BACKUP_ENABLED=$([ "$target" != "local" ] && echo "true" || echo "false")
 REMOTE_BACKUP_HOST=${host}
