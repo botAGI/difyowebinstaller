@@ -433,9 +433,10 @@ services:
     mem_swappiness: 0
     profiles:
       - vllm-embed
-    depends_on:
-      vllm:
-        condition: service_healthy
+    # No depends_on chain: docker compose up -d would block waiting for vllm
+    # to be healthy (vllm takes 30+ min to download 50 GB Gemma 4 on first run).
+    # Reduced gpu_memory_utilization (embed=0.05, rerank=0.03) makes CUDA race
+    # harmless — total parallel allocation ~10 GB stays in free memory.
     ipc: host
     ulimits:
       memlock:
@@ -473,9 +474,8 @@ services:
     mem_swappiness: 0
     profiles:
       - vllm-rerank
-    depends_on:
-      vllm-embed:
-        condition: service_healthy
+    # No depends_on: starts in parallel with vllm/vllm-embed. Safe after
+    # gpu_memory_utilization reduction (see vllm-embed comment above).
     ipc: host
     ulimits:
       memlock:
