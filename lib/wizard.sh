@@ -1291,6 +1291,10 @@ _wizard_backups() {
         return 0
     fi
 
+    local backup_path
+    backup_path=$(wt_input "Путь для бэкапов" "Директория для бэкапов:" "/var/backups/agmind")
+    BACKUP_DIR="${backup_path:-/var/backups/agmind}"
+
     local choice
     choice=$(wt_menu "Настройка бэкапов" \
         "Настройка бэкапов:" \
@@ -1647,7 +1651,7 @@ run_wizard() {
     export ALERT_MODE ALERT_WEBHOOK_URL ALERT_TELEGRAM_TOKEN ALERT_TELEGRAM_CHAT_ID
     export ENABLE_UFW ENABLE_FAIL2BAN ENABLE_AUTHELIA
     export ENABLE_TUNNEL TUNNEL_VPS_HOST TUNNEL_VPS_PORT TUNNEL_REMOTE_PORT
-    export BACKUP_TARGET BACKUP_SCHEDULE
+    export BACKUP_TARGET BACKUP_SCHEDULE BACKUP_DIR
     export REMOTE_BACKUP_HOST REMOTE_BACKUP_PORT REMOTE_BACKUP_USER REMOTE_BACKUP_KEY REMOTE_BACKUP_PATH
     export ADMIN_UI_OPEN
     export ENABLE_LITELLM ENABLE_SEARXNG ENABLE_NOTEBOOK ENABLE_DBGPT ENABLE_CRAWL4AI

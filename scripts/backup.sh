@@ -6,6 +6,11 @@ umask 077  # B-04: Restrict file permissions for all created files
 # B-13: Root check
 if [[ $EUID -ne 0 ]]; then echo "This script must be run as root"; exit 1; fi
 
+INCLUDE_MODELS=false
+for arg in "$@"; do
+    [[ "$arg" == "--include-models" ]] && INCLUDE_MODELS=true
+done
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -147,6 +152,15 @@ docker run --rm \
     -v "${TARGET_DIR}:/backup" \
     alpine tar czf /backup/ollama.tar.gz -C /data . 2>/dev/null || true
 
+# 5b. vLLM model cache (optional -- large, 50+ GB)
+if [[ "$INCLUDE_MODELS" == "true" ]]; then
+    echo "  vLLM model cache (large)..."
+    for vol in $(docker volume ls -q 2>/dev/null | grep 'vllm.*cache'); do
+        echo "    ${vol}..."
+        docker run --rm -v "${vol}:/data:ro" alpine tar czf - -C /data . > "${TARGET_DIR}/${vol}.tar.gz" 2>/dev/null || true
+    done
+fi
+
 # 6. Configuration files
 echo "  Config..."
 cp "${INSTALL_DIR}/docker/.env" "${TARGET_DIR}/env.backup" 2>/dev/null || true
@@ -161,6 +175,27 @@ cp "${INSTALL_DIR}/docker/nginx/nginx.conf" "${TARGET_DIR}/nginx.conf.backup" 2>
 if [[ -d "${INSTALL_DIR}/docker/authelia" ]]; then
     echo "  Authelia config..."
     tar czf "${TARGET_DIR}/authelia.tar.gz" -C "${INSTALL_DIR}/docker/authelia" . 2>/dev/null || true
+fi
+
+# 6d. LiteLLM config
+if [[ -f "${INSTALL_DIR}/docker/litellm-config.yaml" ]]; then
+    echo "  LiteLLM config..."
+    cp "${INSTALL_DIR}/docker/litellm-config.yaml" "${TARGET_DIR}/" 2>/dev/null || true
+fi
+
+# 6e. SearXNG settings
+if [[ -f "${INSTALL_DIR}/docker/searxng-settings.yml" ]]; then
+    echo "  SearXNG settings..."
+    cp "${INSTALL_DIR}/docker/searxng-settings.yml" "${TARGET_DIR}/" 2>/dev/null || true
+fi
+
+# 6f. SurrealDB data (Open Notebook)
+if docker volume ls -q 2>/dev/null | grep -q surrealdb; then
+    echo "  SurrealDB..."
+    docker run --rm \
+        -v "$(docker volume ls -q | grep surrealdb | head -1):/data:ro" \
+        -v "${TARGET_DIR}:/backup" \
+        alpine tar czf /backup/surrealdb.tar.gz -C /data . 2>/dev/null || true
 fi
 
 # 7. Checksums
