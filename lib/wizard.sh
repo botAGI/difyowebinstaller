@@ -1483,6 +1483,11 @@ _wizard_summary() {
     if [[ "$TLS_MODE" != "none" ]]; then summary+="TLS:          ${TLS_MODE}\n"; fi
     if [[ "$MONITORING_MODE" != "none" ]]; then summary+="Мониторинг:   ${MONITORING_MODE}\n"; fi
     if [[ "$ALERT_MODE" != "none" ]]; then summary+="Уведомления:  ${ALERT_MODE}\n"; fi
+    if [[ "${ENABLE_MINIO:-false}" == "true" ]]; then
+        summary+="Хранилище:    MinIO (S3) agmind-storage.local:9001\n"
+    else
+        summary+="Хранилище:    Локальное (./volumes/app/storage)\n"
+    fi
     if [[ "$ENABLE_UFW" == "true" ]]; then summary+="UFW:          включён\n"; fi
     if [[ "$ENABLE_FAIL2BAN" == "true" ]]; then summary+="Fail2ban:     SSH jail\n"; fi
     if [[ "$ENABLE_AUTHELIA" == "true" ]]; then summary+="Authelia:     2FA включена\n"; fi
