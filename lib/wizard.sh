@@ -237,14 +237,14 @@ _wizard_storage() {
         return
     fi
     local choice
-    choice="$(wt_radio "Хранилище файлов" \
-        "minio" "MinIO (S3-совместимое, рекомендуется)" ON \
-        "local" "Локальное хранилище (./volumes/)" OFF)"
-    if [[ "$choice" == "minio" ]]; then
-        ENABLE_MINIO="true"
-    else
-        ENABLE_MINIO="false"
-    fi
+    choice=$(wt_menu "Хранилище файлов" \
+        "Выберите хранилище для документов Dify:" \
+        "1" "MinIO (S3-совместимое, рекомендуется)" \
+        "2" "Локальное хранилище (./volumes/)")
+    case "$choice" in
+        2) ENABLE_MINIO="false";;
+        *) ENABLE_MINIO="true";;
+    esac
 }
 
 _wizard_openwebui() {
