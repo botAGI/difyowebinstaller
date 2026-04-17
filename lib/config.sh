@@ -1025,11 +1025,18 @@ enable_gpu_compose() {
                 # With total≈121 GB and free≈102 GB, 0.90 requests 109 GB → fails.
                 # 0.70 keeps ~19 GiB free for OS/Docker/swap relief while still
                 # giving 35 GiB KV cache (312K tokens, ~38x concurrency @65K).
-                vllm_util="0.70"
+                vllm_util="0.60"
                 log_info "Unified memory GPU (${total_vram_mb} MB) — VLLM_GPU_MEM_UTIL=${vllm_util}"
-                # Raise container mem_limit: default 16 GB kills vLLM on unified
-                # memory because model weights (~50 GB) load into shared RAM.
-                echo "VLLM_MEM_LIMIT=96g" >> "$env_file"
+                # Unified memory: CUDA allocations ARE system RAM and count toward
+                # Docker cgroup mem_limit. Budget for 128g total:
+                #   main: 0.60*121=73g + embed: 0.05*121=6g + rerank: 0.03*121=4g
+                #   + docling ~4g + non-GPU ~28g = ~115g (13g headroom for OS)
+                echo "VLLM_MEM_LIMIT=80g" >> "$env_file"
+                echo "VLLM_EMBED_GPU_MEM_UTIL=0.05" >> "$env_file"
+                echo "VLLM_EMBED_MEM_LIMIT=10g" >> "$env_file"
+                echo "VLLM_RERANK_GPU_MEM_UTIL=0.03" >> "$env_file"
+                echo "VLLM_RERANK_MEM_LIMIT=8g" >> "$env_file"
+                echo "DOCLING_MEM_LIMIT=16g" >> "$env_file"
             else
                 vllm_util=$(LC_NUMERIC=C awk "BEGIN { printf \"%.2f\", ($total_vram_mb - $tei_reserve_mb) / $total_vram_mb }")
                 # Clamp to [0.40, 0.92] — never starve vLLM or oversubscribe
