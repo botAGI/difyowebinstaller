@@ -22,7 +22,25 @@ route:
 
 receivers:
   - name: 'default'
-    # Webhook receiver (configured if ALERT_WEBHOOK_URL is set)
+    # Phase 37: native Telegram receiver (Alertmanager >= 0.24.0).
+    # Activated when ALERT_TELEGRAM_TOKEN + ALERT_TELEGRAM_CHAT_ID are set —
+    # install.sh strips #__ALERT_TELEGRAM__ marker and substitutes values.
+    #__ALERT_TELEGRAM__telegram_configs:
+    #__ALERT_TELEGRAM__  - bot_token: '__ALERT_TELEGRAM_TOKEN__'
+    #__ALERT_TELEGRAM__    chat_id: __ALERT_TELEGRAM_CHAT_ID__
+    #__ALERT_TELEGRAM__    parse_mode: 'HTML'
+    #__ALERT_TELEGRAM__    send_resolved: true
+    #__ALERT_TELEGRAM__    message: |
+    #__ALERT_TELEGRAM__      <b>{{ .Status | toUpper }}</b> — {{ .CommonLabels.alertname }}
+    #__ALERT_TELEGRAM__      <b>Severity:</b> {{ .CommonLabels.severity }}
+    #__ALERT_TELEGRAM__      <b>Container:</b> {{ .CommonLabels.name }}
+    #__ALERT_TELEGRAM__      {{ range .Alerts }}
+    #__ALERT_TELEGRAM__      <i>{{ .Annotations.summary }}</i>
+    #__ALERT_TELEGRAM__      {{ .Annotations.description }}
+    #__ALERT_TELEGRAM__      {{ end }}
+    #
+    # Legacy webhook receiver (kept for custom integrations). Activated when
+    # ALERT_WEBHOOK_URL is set. Mutually compatible with telegram_configs.
     #__WEBHOOK__webhook_configs:
     #__WEBHOOK__  - url: '__ALERT_WEBHOOK_URL__'
     #__WEBHOOK__    send_resolved: true

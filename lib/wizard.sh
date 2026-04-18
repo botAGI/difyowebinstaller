@@ -1219,10 +1219,25 @@ _wizard_alerts() {
         3)
             ALERT_MODE="telegram"
             local tg_token tg_chat
-            tg_token=$(wt_input "Telegram-бот" "Токен Telegram-бота:" "")
+            wt_msg "Telegram-бот" \
+"Создай бота через @BotFather (команда /newbot) — получишь токен.
+
+Chat ID:
+  • Личный чат: напиши боту любое сообщение, затем открой
+    https://api.telegram.org/bot<TOKEN>/getUpdates
+    найди поле 'chat':{'id':...}
+  • Группа: добавь бота, напиши сообщение, та же проверка
+  • Канал: укажи @имя_канала (бот должен быть админом)"
+            tg_token=$(wt_input "Telegram-бот" "Токен Telegram-бота (123456789:AA...):" "")
             ALERT_TELEGRAM_TOKEN="$tg_token"
-            tg_chat=$(wt_input "Telegram-бот" "Telegram Chat ID:" "")
+            tg_chat=$(wt_input "Telegram-бот" "Telegram Chat ID (например 123456789 или -1001234567890):" "")
             ALERT_TELEGRAM_CHAT_ID="$tg_chat"
+            if [[ -z "$ALERT_TELEGRAM_TOKEN" || -z "$ALERT_TELEGRAM_CHAT_ID" ]]; then
+                log_warn "Token/Chat ID пусты — уведомления отключены"
+                ALERT_MODE="none"
+                ALERT_TELEGRAM_TOKEN=""
+                ALERT_TELEGRAM_CHAT_ID=""
+            fi
             ;;
         *) ALERT_MODE="none";;
     esac
