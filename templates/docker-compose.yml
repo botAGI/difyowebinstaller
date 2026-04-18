@@ -1391,6 +1391,26 @@ services:
     networks:
       - agmind-backend
 
+  # ==================== k6 Load Tester (loadtest profile) ====================
+  # Phase 40: manual-run only. `agmind loadtest <scenario>` wraps this.
+  # Scenarios live in /scripts, results dumped to /results (host-mounted).
+  k6:
+    image: grafana/k6:${K6_VERSION:-0.55.2}
+    container_name: agmind-k6
+    restart: "no"
+    mem_limit: ${K6_MEM_LIMIT:-256m}
+    profiles:
+      - loadtest
+    environment:
+      K6_OUT: "json=/results/summary.json"
+    volumes:
+      - ../scripts/loadtest:/scripts:ro
+      - ./volumes/loadtest:/results
+    # Default entrypoint 'k6' — real command is supplied by `agmind loadtest`:
+    #   docker compose run --rm k6 run /scripts/chat-baseline.js
+    networks:
+      - agmind-backend
+
 networks:
   agmind-frontend:
     driver: bridge

@@ -778,6 +778,89 @@ cmd_init_dify() {
 }
 
 # ============================================================================
+# LOADTEST — k6 scenarios runner (Phase 40)
+# ============================================================================
+
+cmd_loadtest() {
+    local sub="${1:-help}"
+    shift || true
+
+    local results_dir="${AGMIND_DIR}/docker/volumes/loadtest"
+    mkdir -p "$results_dir" 2>/dev/null || true
+
+    case "$sub" in
+        list|ls)
+            echo -e "${BOLD}Available scenarios:${NC}"
+            for f in "${SCRIPTS_DIR}/loadtest"/*.js; do
+                [[ -e "$f" ]] || continue
+                local name
+                name="$(basename "$f" .js)"
+                local desc
+                desc="$(head -2 "$f" | tail -1 | sed 's|^// ||')"
+                printf "  %-20s %s\n" "$name" "$desc"
+            done
+            ;;
+        last)
+            echo -e "${BOLD}Recent results:${NC}"
+            ls -lt "$results_dir"/*.json 2>/dev/null | head -5 | awk '{print "  "$9" ("$5" bytes, "$6" "$7" "$8")"}'
+            ;;
+        chat|embed|kb)
+            local scenario="chat-baseline"
+            case "$sub" in
+                chat)  scenario="chat-baseline" ;;
+                embed) scenario="embed-burst" ;;
+                kb)    scenario="kb-indexing" ;;
+            esac
+            local scenario_file="${SCRIPTS_DIR}/loadtest/${scenario}.js"
+            if [[ ! -f "$scenario_file" ]]; then
+                echo -e "${RED}Scenario not found: ${scenario_file}${NC}" >&2
+                exit 1
+            fi
+            local ts; ts="$(date +%Y%m%d-%H%M%S)"
+            local result_file="${results_dir}/${scenario}-${ts}.json"
+            echo -e "${BOLD}Running: ${scenario}${NC}"
+            echo -e "Result will be saved to: ${result_file}"
+            # Pass through remaining args (e.g. --duration 30s --vus 2).
+            # k6 returns non-zero on threshold breach — don't let `set -e` kill us
+            # before we move the summary file.
+            local rc=0
+            docker compose -f "$COMPOSE_FILE" --profile loadtest run --rm \
+                k6 run "$@" "/scripts/${scenario}.js" || rc=$?
+            if [[ -f "${results_dir}/summary.json" ]]; then
+                mv "${results_dir}/summary.json" "$result_file"
+                echo -e "${GREEN}Result saved: ${result_file}${NC}"
+            else
+                echo -e "${YELLOW}No summary.json produced (rc=${rc})${NC}"
+            fi
+            return "$rc"
+            ;;
+        help|--help|-h|*)
+            cat <<'LTHELP'
+Usage: agmind loadtest <subcommand> [k6 options]
+
+Subcommands:
+  list             List available scenarios
+  chat             Run chat-baseline.js (direct vLLM chat completions)
+  embed            Run embed-burst.js (sustained embed load)
+  kb               Run kb-indexing.js (Dify KB upload; requires DIFY_TOKEN env)
+  last             Show 5 most recent result files
+
+Common k6 options (after subcommand):
+  --duration 30s   Override stage duration (smoke test)
+  --vus 2          Override peak virtual users
+  --iterations 10  Run N total iterations instead of stages
+
+Examples:
+  agmind loadtest list
+  agmind loadtest chat --duration 30s --vus 2     # 30s smoke test
+  agmind loadtest embed                            # full ramp
+  DIFY_TOKEN=<jwt> DATASET_ID=<uuid> agmind loadtest kb
+LTHELP
+            ;;
+    esac
+}
+
+# ============================================================================
 # HELP
 # ============================================================================
 
@@ -797,6 +880,10 @@ Commands:
     assign <svc> <id>  Assign GPU to service (vllm, tei)
     assign --auto      Auto-distribute across GPUs
   model list         Show loaded models (vLLM, Ollama, embed, rerank)
+  loadtest [sub]     Run k6 performance scenarios (Phase 40)
+    list               List available scenarios
+    chat|embed|kb      Run scenario; pass --duration/--vus after name
+    last               Show 5 most recent result JSON files
   init-dify          Initialize Dify admin (if auto-init failed)
   backup             Create backup (root)
   restore <path>     Restore from backup (root)
@@ -837,6 +924,7 @@ case "${1:-help}" in
     logs)           shift; exec docker compose -f "$COMPOSE_FILE" logs "$@" ;;
     gpu)            shift; cmd_gpu "$@" ;;
     model)          shift; cmd_model "$@" ;;
+    loadtest)       shift; cmd_loadtest "$@" ;;
     help|--help|-h) cmd_help ;;
     *)              echo -e "${RED}Unknown command: ${1}${NC}" >&2; cmd_help; exit 1 ;;
 esac
