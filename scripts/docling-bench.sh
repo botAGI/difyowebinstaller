@@ -12,15 +12,42 @@ export LC_ALL=C LC_NUMERIC=C
 PDF="${1:-}"
 ITER=3
 FORMAT="md"
+PRESET="balanced"
 
 shift || true
 while (( $# > 0 )); do
     case "$1" in
         --iter)    ITER="$2"; shift 2 ;;
         --format)  FORMAT="$2"; shift 2 ;;
+        --preset)  PRESET="$2"; shift 2 ;;
         *)         echo "Unknown arg: $1" >&2; exit 1 ;;
     esac
 done
+
+# Build extra curl args per preset (Phase 43 presets; see docs/docling-presets.md)
+declare -a PRESET_ARGS
+case "$PRESET" in
+    fast)
+        PRESET_ARGS=(-F 'do_ocr=false' -F 'do_table_structure=false' -F 'table_mode=fast')
+        ;;
+    balanced)
+        PRESET_ARGS=()
+        ;;
+    scan)
+        # OCR-heavy preset without VLM picture description.
+        # VLM requires a full picture_description_api JSON; set that up in
+        # Dify workflow where the vLLM URL is known — see docs/docling-presets.md.
+        PRESET_ARGS=(
+            -F 'do_ocr=true'
+            -F 'ocr_custom_config={"kind":"easyocr","lang":["ru","en"],"use_gpu":true}'
+            -F 'do_table_structure=true'
+            -F 'table_mode=accurate'
+        )
+        ;;
+    *)
+        echo "Unknown preset: $PRESET (use fast|balanced|scan)" >&2; exit 1
+        ;;
+esac
 
 if [[ -z "$PDF" || ! -f "$PDF" ]]; then
     cat >&2 <<USAGE
@@ -49,6 +76,7 @@ printf 'Size:    %s bytes\n' "$(stat -c%s "$PDF" 2>/dev/null || wc -c < "$PDF")"
 printf 'Pages:   %s\n' "$pages"
 printf 'URL:     %s\n' "$URL"
 printf 'Iter:    %s\n' "$ITER"
+printf 'Preset:  %s\n' "$PRESET"
 echo
 
 # Show current docling env so results are reproducible
@@ -66,6 +94,7 @@ for i in $(seq 1 "$ITER"); do
         -F "files=@${PDF}" \
         -F "to_formats=${FORMAT}" \
         -F 'image_export_mode=placeholder' \
+        "${PRESET_ARGS[@]}" \
         --max-time 600 \
         "$URL")
     end=$(date +%s.%N)
