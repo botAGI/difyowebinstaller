@@ -33,7 +33,9 @@ groups:
 
       # High memory usage (>85%)
       - alert: HighMemoryUsage
-        expr: (container_memory_usage_bytes{name=~"agmind-.*"} / container_spec_memory_limit_bytes{name=~"agmind-.*"}) * 100 > 90 and container_spec_memory_limit_bytes{name=~"agmind-.*"} > 0
+        # Use working_set_bytes (excludes page cache) — usage_bytes caused false positives
+        # at 99% when actual RSS was 25% of limit (page cache inflated the figure).
+        expr: (container_memory_working_set_bytes{name=~"agmind-.*"} / container_spec_memory_limit_bytes{name=~"agmind-.*"}) * 100 > 90 and container_spec_memory_limit_bytes{name=~"agmind-.*"} > 0
         for: 5m
         labels:
           severity: warning
