@@ -104,12 +104,14 @@ http {
             root /var/www/certbot;
         }
 
-    #__AUTHELIA__# Authelia verify endpoint
-    #__AUTHELIA__location /api/verify {
+    #__AUTHELIA__# Authelia auth_request internal endpoint (Phase 47; API 4.38+)
+    #__AUTHELIA__# Uses /api/authz/auth-request (replaces legacy /api/verify).
+    #__AUTHELIA__location = /authelia-auth {
     #__AUTHELIA__    internal;
-    #__AUTHELIA__    proxy_pass http://authelia:9091/api/verify;
+    #__AUTHELIA__    proxy_pass http://authelia:9091/api/authz/auth-request;
     #__AUTHELIA__    proxy_pass_request_body off;
     #__AUTHELIA__    proxy_set_header Content-Length "";
+    #__AUTHELIA__    proxy_set_header X-Original-Method $request_method;
     #__AUTHELIA__    proxy_set_header X-Original-URL $scheme://$http_host$request_uri;
     #__AUTHELIA__    proxy_set_header X-Forwarded-For $remote_addr;
     #__AUTHELIA__    proxy_set_header X-Forwarded-Proto $scheme;
@@ -684,12 +686,14 @@ http {
 
         client_max_body_size 50M;
 
-    #__AUTHELIA__# Authelia verify endpoint
-    #__AUTHELIA__location /api/verify {
+    #__AUTHELIA__# Authelia auth_request internal endpoint (Phase 47; API 4.38+)
+    #__AUTHELIA__# Uses /api/authz/auth-request (replaces legacy /api/verify).
+    #__AUTHELIA__location = /authelia-auth {
     #__AUTHELIA__    internal;
-    #__AUTHELIA__    proxy_pass http://authelia:9091/api/verify;
+    #__AUTHELIA__    proxy_pass http://authelia:9091/api/authz/auth-request;
     #__AUTHELIA__    proxy_pass_request_body off;
     #__AUTHELIA__    proxy_set_header Content-Length "";
+    #__AUTHELIA__    proxy_set_header X-Original-Method $request_method;
     #__AUTHELIA__    proxy_set_header X-Original-URL $scheme://$http_host$request_uri;
     #__AUTHELIA__    proxy_set_header X-Forwarded-For $remote_addr;
     #__AUTHELIA__    proxy_set_header X-Forwarded-Proto $scheme;
@@ -697,7 +701,7 @@ http {
 
         # Dify Console Web UI (root — Next.js works natively)
         location / {
-    #__AUTHELIA__    auth_request /api/verify;
+    #__AUTHELIA__    auth_request /authelia-auth;
     #__AUTHELIA__    auth_request_set $user $upstream_http_remote_user;
     #__AUTHELIA__    auth_request_set $groups $upstream_http_remote_groups;
             proxy_pass http://dify_web;
