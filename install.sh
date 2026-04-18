@@ -536,6 +536,21 @@ _save_credentials() {
             echo "  Bucket:  dify-storage"
             echo "  API:     http://minio:9000 (internal)"
         fi
+        if [[ "${ALERT_MODE:-none}" == "telegram" ]]; then
+            echo ""
+            echo "=== Alerts → Telegram ==="
+            echo "  Bot token:  в .env (ALERT_TELEGRAM_TOKEN, chmod 600)"
+            echo "  Chat ID:    ${ALERT_TELEGRAM_CHAT_ID:-не задан}"
+            echo "  Config:     ${INSTALL_DIR}/docker/monitoring/alertmanager.yml"
+            echo "  Ротация:    создай нового бота через @BotFather → revoke старого →"
+            echo "              обнови ALERT_TELEGRAM_TOKEN в .env →"
+            echo "              sudo docker compose restart alertmanager"
+        elif [[ "${ALERT_MODE:-none}" == "webhook" ]]; then
+            echo ""
+            echo "=== Alerts → Webhook ==="
+            echo "  URL:     ${ALERT_WEBHOOK_URL:-see .env}"
+            echo "  Config:  ${INSTALL_DIR}/docker/monitoring/alertmanager.yml"
+        fi
         echo ""
         echo "# ---"
         echo "# ВНИМАНИЕ: Эти пароли актуальны на момент установки."

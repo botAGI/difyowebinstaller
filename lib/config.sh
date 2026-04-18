@@ -1269,43 +1269,20 @@ inhibit_rules:
 DEFAULTAMEOF
     fi
 
+    # Phase 37: source of truth is monitoring/alertmanager.yml template (copied earlier).
+    # We only uncomment the matching receiver block via sed — no inline heredoc duplication.
+    # Template holds both #__ALERT_TELEGRAM__ and #__WEBHOOK__ blocks; unused ones stay commented.
     case "${ALERT_MODE:-none}" in
         telegram)
             local token="${ALERT_TELEGRAM_TOKEN:-}"
             local chat_id="${ALERT_TELEGRAM_CHAT_ID:-}"
             if [[ -n "$token" && -n "$chat_id" ]]; then
-                cat > "$alertmanager_conf" << AMEOF
-global:
-  resolve_timeout: 5m
-  telegram_api_url: 'https://api.telegram.org'
-
-route:
-  group_by: ['alertname', 'severity']
-  group_wait: 10s
-  group_interval: 10s
-  repeat_interval: 1h
-  receiver: 'telegram'
-  routes:
-    - match:
-        severity: critical
-      receiver: 'telegram'
-      repeat_interval: 15m
-
-receivers:
-  - name: 'telegram'
-    telegram_configs:
-      - bot_token: '${token}'
-        chat_id: ${chat_id}
-        parse_mode: 'HTML'
-        send_resolved: true
-
-inhibit_rules:
-  - source_match:
-      severity: 'critical'
-    target_match:
-      severity: 'warning'
-    equal: ['alertname']
-AMEOF
+                _atomic_sed "$alertmanager_conf" 's|#__ALERT_TELEGRAM__||g'
+                local safe_token safe_chat_id
+                safe_token="$(escape_sed "$token")"
+                safe_chat_id="$(escape_sed "$chat_id")"
+                _atomic_sed "$alertmanager_conf" "s|__ALERT_TELEGRAM_TOKEN__|${safe_token}|g"
+                _atomic_sed "$alertmanager_conf" "s|__ALERT_TELEGRAM_CHAT_ID__|${safe_chat_id}|g"
             fi
             ;;
         webhook)
