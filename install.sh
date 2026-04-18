@@ -766,6 +766,12 @@ _show_final_summary() {
     echo -e "  ${BOLD}Логи:${NC}            ${INSTALL_DIR}/install.log"
     echo -e "  ${BOLD}CLI:${NC}             agmind status | agmind health"
     echo ""
+    echo -e "  ${BOLD}Next steps:${NC}"
+    echo -e "    1. Включи Citations в Dify app: Answer node → Show Citation ON"
+    echo -e "       Гайд: ${INSTALL_DIR}/docs/citations-guide.md (если скопирован)"
+    echo -e "    2. Настрой Telegram alerts: agmind loadtest → wizard → пункт 3"
+    echo -e "    3. Замеряй производительность: agmind docling bench <pdf>"
+    echo ""
     echo -e "  +--------------------------------------------------+"
     echo ""
 }
