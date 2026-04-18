@@ -1102,6 +1102,77 @@ services:
     networks:
       - agmind-backend
 
+  # ==================== Redis Exporter (monitoring profile) ====================
+  # Phase 38: exposes redis_* metrics for RedisConnectionError alert.
+  redis-exporter:
+    <<: *security-defaults
+    image: oliver006/redis_exporter:${REDIS_EXPORTER_VERSION:-v1.69.0}
+    container_name: agmind-redis-exporter
+    restart: on-failure:5
+    mem_limit: ${REDIS_EXPORTER_MEM_LIMIT:-64m}
+    profiles:
+      - monitoring
+    environment:
+      REDIS_ADDR: "redis://redis:6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    expose:
+      - "9121"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:9121/metrics || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - agmind-backend
+
+  # ==================== Postgres Exporter (monitoring profile) ====================
+  # Phase 38: exposes pg_* metrics for PostgresConnectionSaturation alert.
+  postgres-exporter:
+    <<: *security-defaults
+    image: prometheuscommunity/postgres-exporter:${POSTGRES_EXPORTER_VERSION:-v0.17.1}
+    container_name: agmind-postgres-exporter
+    restart: on-failure:5
+    mem_limit: ${POSTGRES_EXPORTER_MEM_LIMIT:-128m}
+    profiles:
+      - monitoring
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${DB_USERNAME:-postgres}:${DB_PASSWORD:-}@db:5432/${DB_DATABASE:-dify}?sslmode=disable"
+    expose:
+      - "9187"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:9187/metrics || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - agmind-backend
+
+  # ==================== Nginx Exporter (monitoring profile) ====================
+  # Phase 38: exposes nginx_* metrics (connections, requests). Requires
+  # stub_status location in nginx.conf restricted to 172.18.0.0/16 (backend net).
+  nginx-exporter:
+    <<: *security-defaults
+    image: nginx/nginx-prometheus-exporter:${NGINX_EXPORTER_VERSION:-1.4.2}
+    container_name: agmind-nginx-exporter
+    restart: on-failure:5
+    mem_limit: ${NGINX_EXPORTER_MEM_LIMIT:-64m}
+    profiles:
+      - monitoring
+    command:
+      - '--nginx.scrape-uri=http://nginx:80/stub_status'
+    expose:
+      - "9113"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:9113/metrics || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - agmind-backend
+
   # ==================== Grafana (monitoring profile) ====================
   grafana:
     <<: *security-defaults

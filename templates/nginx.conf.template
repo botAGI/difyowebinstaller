@@ -138,6 +138,19 @@ http {
         }
 
         # =============================================
+        # Nginx stub_status — scraped by nginx-prometheus-exporter (Phase 38)
+        # Restricted to docker backend subnet; blocked from everywhere else.
+        # =============================================
+        location = /stub_status {
+    #__AUTHELIA__    auth_request off;
+            stub_status;
+            access_log off;
+            allow 127.0.0.1;
+            allow 172.16.0.0/12;
+            deny all;
+        }
+
+        # =============================================
         # Dify App — default frontend (/)
         # =============================================
         location / {

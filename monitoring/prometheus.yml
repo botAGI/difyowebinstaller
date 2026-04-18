@@ -26,3 +26,34 @@ scrape_configs:
   - job_name: 'alertmanager'
     static_configs:
       - targets: ['alertmanager:9093']
+
+  # Phase 38: per-service exporters (redis/pg/nginx)
+  - job_name: 'redis-exporter'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+
+  - job_name: 'postgres-exporter'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+  - job_name: 'nginx-exporter'
+    static_configs:
+      - targets: ['nginx-exporter:9113']
+
+  # Phase 37/P2: vLLM + Weaviate + Docling (runtime-only, already applied)
+  - job_name: 'vllm'
+    static_configs:
+      - targets: ['agmind-vllm:8000']
+        labels: {service: 'llm'}
+      - targets: ['agmind-vllm-embed:8000']
+        labels: {service: 'embed'}
+      - targets: ['agmind-vllm-rerank:8000']
+        labels: {service: 'rerank'}
+
+  - job_name: 'weaviate'
+    static_configs:
+      - targets: ['agmind-weaviate:2112']
+
+  - job_name: 'docling'
+    static_configs:
+      - targets: ['agmind-docling:8765']
