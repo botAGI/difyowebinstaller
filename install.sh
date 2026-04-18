@@ -711,7 +711,6 @@ _show_final_summary() {
     if [[ "${DEPLOY_PROFILE:-}" == "vps" && -n "${DOMAIN:-}" ]]; then url="https://${DOMAIN}"; fi
     local owui_pass=""
     if [[ -f "${INSTALL_DIR}/.admin_password" ]]; then owui_pass="$(cat "${INSTALL_DIR}/.admin_password")"; fi
-    local dify_url="http://${DOMAIN:-$ip}:3000"
 
     local container_count
     container_count="$(docker ps --filter "name=agmind-" -q 2>/dev/null | wc -l | tr -d ' ')"

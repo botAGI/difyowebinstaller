@@ -212,16 +212,15 @@ cmd_doctor() {
 
     # Resources
     [[ "$output_json" != "true" ]] && echo -e "\n${BOLD}Resources:${NC}"
-    local free_gb disk_total disk_used disk_pct
+    local free_gb disk_total disk_pct
     free_gb="$(df -BG / 2>/dev/null | tail -1 | awk '{print $4}' | tr -d 'G' || echo "0")"
     disk_total="$(df -BG / 2>/dev/null | tail -1 | awk '{print $2}' | tr -d 'G' || echo "0")"
-    disk_used="$(df -BG / 2>/dev/null | tail -1 | awk '{print $3}' | tr -d 'G' || echo "0")"
     disk_pct="$(df / 2>/dev/null | tail -1 | awk '{print $5}' | tr -d '%' || echo "0")"
     if [[ "${free_gb:-0}" -ge 20 ]] 2>/dev/null; then _check OK "Disk: ${free_gb}GB free (${disk_pct}% used of ${disk_total}GB)"
     elif [[ "${free_gb:-0}" -ge 10 ]] 2>/dev/null; then _check WARN "Disk: ${free_gb}GB free (${disk_pct}% used)" "20GB+ recommended" "docker system prune"
     else _check FAIL "Disk: ${free_gb}GB free (${disk_pct}% used)" "Мало места" "docker system prune -af"; fi
 
-    local ram_gb ram_total ram_used ram_pct
+    local ram_gb ram_used ram_pct
     ram_gb="$(LANG=C free -g 2>/dev/null | awk '/^Mem:/{print $2}' || echo "0")"
     ram_used="$(LANG=C free -g 2>/dev/null | awk '/^Mem:/{print $3}' || echo "0")"
     if [[ "${ram_gb:-0}" -gt 0 ]] 2>/dev/null; then
@@ -280,7 +279,7 @@ cmd_doctor() {
         local restarts
         restarts="$(docker ps --filter "name=agmind-" --format '{{.Names}}\t{{.Status}}' 2>/dev/null || true)"
         if [[ -n "$restarts" ]]; then
-            while IFS=$'\t' read -r cname cstatus; do
+            while IFS=$'\t' read -r cname _cstatus; do
                 local rcount
                 rcount="$(docker inspect --format '{{.RestartCount}}' "$cname" 2>/dev/null || echo "0")"
                 if [[ "${rcount:-0}" -gt 3 ]] 2>/dev/null; then
@@ -510,7 +509,7 @@ _gpu_status() {
     if [[ -z "$proc_output" ]]; then
         echo "  No GPU compute processes running"
     else
-        while IFS=',' read -r uuid pid pname pmem; do
+        while IFS=',' read -r _uuid pid pname pmem; do
             pid="$(echo "$pid" | xargs)"
             pname="$(echo "$pname" | xargs)"
             pmem="$(echo "$pmem" | xargs)"

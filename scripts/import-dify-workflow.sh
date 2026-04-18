@@ -86,7 +86,6 @@ RESP="$(curl -s -X POST "${DIFY_URL}/console/api/apps/imports" \
     -H 'Content-Type: application/json' \
     -d "$(python3 -c "import json,sys; print(json.dumps({'mode':'yaml-content','yaml_content':sys.stdin.read(),'name':'$REQ_NAME'}))" <<<"$YAML_CONTENT")")"
 
-STATUS="$(echo "$RESP" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get("status",""))' 2>/dev/null || echo "parse-error")"
 APP_ID="$(echo "$RESP" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get("app_id",""))' 2>/dev/null || echo "")"
 
 if [[ -n "$APP_ID" ]]; then

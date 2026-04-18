@@ -3,8 +3,7 @@
 set -euo pipefail
 umask 077
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
-CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
+export RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[1;33m' CYAN='\033[0;36m' BOLD='\033[1m' NC='\033[0m'
 
 # R-13: Root check
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -167,7 +166,7 @@ if [[ -f "${RESTORE_DIR}/dify_db.sql.gz" ]]; then
 
     # R-05: Wait for PostgreSQL with pg_isready loop
     echo -e "${YELLOW}Waiting for PostgreSQL...${NC}"
-    for i in $(seq 1 30); do
+    for _ in $(seq 1 30); do
         if docker compose -f "$COMPOSE_FILE" exec -T db pg_isready -U postgres >/dev/null 2>&1; then
             break
         fi

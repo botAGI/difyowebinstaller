@@ -494,9 +494,10 @@ _get_vllm_kv_per_1k() {
     # 70B (80L, 8KV, 128d):  2x80x8x128x2 x 1024 / 1073741824 ~ 0.313
     # MoE models share KV across experts — same as base layer count
     case "$model" in
-        *7B*|*8B*)       echo "125" ;;   # 0.125 GB/1K tokens (x1000 for int math)
-        *14B*|*phi-4*)   echo "156" ;;   # 0.156
-        *27B*|*Qwen3.5-27B*)  echo "80"  ;;   # 0.08 (GQA, 4 KV heads)
+        # Anchored with -/_ to avoid *27B* accidentally matching "7B"
+        *-7B*|*_7B*|*-8B*|*_8B*)  echo "125" ;;  # 0.125 GB/1K tokens (x1000 for int math)
+        *14B*|*phi-4*)            echo "156" ;;  # 0.156
+        *27B*)                    echo "80"  ;;  # 0.08 (GQA, 4 KV heads; covers Qwen3.5-27B)
         *32B*)           echo "250" ;;   # 0.250
         *70B*)           echo "313" ;;   # 0.313
         *35B-A3B*)       echo "20"  ;;   # hybrid: only 10/40 layers have KV (2 heads, dim 256)
@@ -1657,7 +1658,10 @@ run_wizard() {
     # Load version defaults (DOCLING_IMAGE_CPU, DOCLING_IMAGE_CUDA, etc.)
     local _versions_file="${INSTALLER_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/templates/versions.env"
     if [[ -f "$_versions_file" ]]; then
-        set +u; source "$_versions_file"; set -u
+        set +u
+        # shellcheck source=/dev/null
+        source "$_versions_file"
+        set -u
     fi
 
     _init_wizard_defaults
