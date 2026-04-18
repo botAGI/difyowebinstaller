@@ -60,6 +60,11 @@ _init_wizard_defaults() {
     ALERT_WEBHOOK_URL="${ALERT_WEBHOOK_URL:-}"
     ALERT_TELEGRAM_TOKEN="${ALERT_TELEGRAM_TOKEN:-}"
     ALERT_TELEGRAM_CHAT_ID="${ALERT_TELEGRAM_CHAT_ID:-}"
+    ALERT_EMAIL_TO="${ALERT_EMAIL_TO:-}"
+    ALERT_EMAIL_FROM="${ALERT_EMAIL_FROM:-}"
+    ALERT_EMAIL_SMARTHOST="${ALERT_EMAIL_SMARTHOST:-}"
+    ALERT_EMAIL_AUTH_USER="${ALERT_EMAIL_AUTH_USER:-}"
+    ALERT_EMAIL_AUTH_PASS="${ALERT_EMAIL_AUTH_PASS:-}"
     ENABLE_UFW="${ENABLE_UFW:-false}"
     ENABLE_FAIL2BAN="${ENABLE_FAIL2BAN:-false}"
     ENABLE_AUTHELIA="${ENABLE_AUTHELIA:-false}"
@@ -1198,10 +1203,11 @@ _wizard_alerts() {
 
     local choice
     choice=$(wt_menu "Уведомления о сбоях" \
-        "Уведомления о сбоях:" \
-        "1" "Отключены (по умолчанию)" \
-        "2" "Webhook (URL)" \
-        "3" "Telegram-бот")
+        "Куда слать алерты? (алерты также всегда видны в Grafana UI)" \
+        "1" "Отключены (default — только Grafana UI)" \
+        "2" "Webhook URL (Slack/Teams/Mattermost/Zabbix/свой)" \
+        "3" "Telegram-бот (клиент создаёт свой через @BotFather)" \
+        "4" "Email через SMTP (корпоративный relay)")
 
     choice="${choice:-1}"
 
@@ -1237,6 +1243,26 @@ Chat ID:
                 ALERT_MODE="none"
                 ALERT_TELEGRAM_TOKEN=""
                 ALERT_TELEGRAM_CHAT_ID=""
+            fi
+            ;;
+        4)
+            ALERT_MODE="email"
+            wt_msg "Email через SMTP" \
+"Понадобится: адрес получателя, SMTP relay (хост:порт), опционально auth.
+Примеры SMTP relay:
+  • smtp.yandex.ru:587 + логин/пароль почты
+  • smtp.gmail.com:587 + App Password
+  • свой postfix: smtp.company.local:25 (без auth)"
+            ALERT_EMAIL_TO=$(wt_input "Email" "Кому слать (ops@company.ru):" "")
+            ALERT_EMAIL_SMARTHOST=$(wt_input "Email" "SMTP relay (host:port):" "")
+            ALERT_EMAIL_FROM=$(wt_input "Email" "От кого (alerts@agmind.local):" "alerts@agmind.local")
+            ALERT_EMAIL_AUTH_USER=$(wt_input "Email" "SMTP auth user (оставь пустым если relay открыт):" "")
+            if [[ -n "$ALERT_EMAIL_AUTH_USER" ]]; then
+                ALERT_EMAIL_AUTH_PASS=$(wt_input "Email" "SMTP auth password:" "")
+            fi
+            if [[ -z "$ALERT_EMAIL_TO" || -z "$ALERT_EMAIL_SMARTHOST" ]]; then
+                log_warn "Email назначение/SMTP host пусты — уведомления отключены"
+                ALERT_MODE="none"
             fi
             ;;
         *) ALERT_MODE="none";;
@@ -1669,6 +1695,7 @@ run_wizard() {
     export HF_TOKEN TLS_MODE TLS_CERT_PATH TLS_KEY_PATH
     export MONITORING_MODE MONITORING_ENDPOINT MONITORING_TOKEN GRAFANA_BIND_ADDR PORTAINER_BIND_ADDR
     export ALERT_MODE ALERT_WEBHOOK_URL ALERT_TELEGRAM_TOKEN ALERT_TELEGRAM_CHAT_ID
+    export ALERT_EMAIL_TO ALERT_EMAIL_FROM ALERT_EMAIL_SMARTHOST ALERT_EMAIL_AUTH_USER ALERT_EMAIL_AUTH_PASS
     export ENABLE_UFW ENABLE_FAIL2BAN ENABLE_AUTHELIA
     export ENABLE_TUNNEL TUNNEL_VPS_HOST TUNNEL_VPS_PORT TUNNEL_REMOTE_PORT
     export BACKUP_TARGET BACKUP_SCHEDULE BACKUP_DIR

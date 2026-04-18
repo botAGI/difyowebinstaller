@@ -318,6 +318,11 @@ _generate_env_file() {
         -e "s|__ALERT_WEBHOOK_URL__|${safe_webhook_url}|g" \
         -e "s|__ALERT_TELEGRAM_TOKEN__|${safe_telegram_token}|g" \
         -e "s|__ALERT_TELEGRAM_CHAT_ID__|${safe_telegram_chat_id}|g" \
+        -e "s|__ALERT_EMAIL_TO__|$(escape_sed "${ALERT_EMAIL_TO:-}")|g" \
+        -e "s|__ALERT_EMAIL_FROM__|$(escape_sed "${ALERT_EMAIL_FROM:-}")|g" \
+        -e "s|__ALERT_EMAIL_SMARTHOST__|$(escape_sed "${ALERT_EMAIL_SMARTHOST:-}")|g" \
+        -e "s|__ALERT_EMAIL_AUTH_USER__|$(escape_sed "${ALERT_EMAIL_AUTH_USER:-}")|g" \
+        -e "s|__ALERT_EMAIL_AUTH_PASS__|$(escape_sed "${ALERT_EMAIL_AUTH_PASS:-}")|g" \
         -e "s|__LLM_PROVIDER__|${safe_llm_provider}|g" \
         -e "s|__EMBED_PROVIDER__|${safe_embed_provider}|g" \
         -e "s|__VLLM_MODEL__|${safe_vllm_model}|g" \
@@ -1289,6 +1294,20 @@ DEFAULTAMEOF
                 safe_chat_id="$(escape_sed "$chat_id")"
                 _atomic_sed "$alertmanager_conf" "s|__ALERT_TELEGRAM_TOKEN__|${safe_token}|g"
                 _atomic_sed "$alertmanager_conf" "s|__ALERT_TELEGRAM_CHAT_ID__|${safe_chat_id}|g"
+            fi
+            ;;
+        email)
+            # Phase 37 extension: SMTP via Alertmanager native email_configs.
+            # Customer supplies their SMTP (corporate relay or provider).
+            local email_to="${ALERT_EMAIL_TO:-}"
+            local smarthost="${ALERT_EMAIL_SMARTHOST:-}"
+            if [[ -n "$email_to" && -n "$smarthost" ]]; then
+                _atomic_sed "$alertmanager_conf" 's|#__ALERT_EMAIL__||g'
+                _atomic_sed "$alertmanager_conf" "s|__ALERT_EMAIL_TO__|$(escape_sed "$email_to")|g"
+                _atomic_sed "$alertmanager_conf" "s|__ALERT_EMAIL_FROM__|$(escape_sed "${ALERT_EMAIL_FROM:-alerts@agmind.local}")|g"
+                _atomic_sed "$alertmanager_conf" "s|__ALERT_EMAIL_SMARTHOST__|$(escape_sed "$smarthost")|g"
+                _atomic_sed "$alertmanager_conf" "s|__ALERT_EMAIL_AUTH_USER__|$(escape_sed "${ALERT_EMAIL_AUTH_USER:-}")|g"
+                _atomic_sed "$alertmanager_conf" "s|__ALERT_EMAIL_AUTH_PASS__|$(escape_sed "${ALERT_EMAIL_AUTH_PASS:-}")|g"
             fi
             ;;
         webhook)

@@ -536,21 +536,41 @@ _save_credentials() {
             echo "  Bucket:  dify-storage"
             echo "  API:     http://minio:9000 (internal)"
         fi
-        if [[ "${ALERT_MODE:-none}" == "telegram" ]]; then
-            echo ""
-            echo "=== Alerts → Telegram ==="
-            echo "  Bot token:  в .env (ALERT_TELEGRAM_TOKEN, chmod 600)"
-            echo "  Chat ID:    ${ALERT_TELEGRAM_CHAT_ID:-не задан}"
-            echo "  Config:     ${INSTALL_DIR}/docker/monitoring/alertmanager.yml"
-            echo "  Ротация:    создай нового бота через @BotFather → revoke старого →"
-            echo "              обнови ALERT_TELEGRAM_TOKEN в .env →"
-            echo "              sudo docker compose restart alertmanager"
-        elif [[ "${ALERT_MODE:-none}" == "webhook" ]]; then
-            echo ""
-            echo "=== Alerts → Webhook ==="
-            echo "  URL:     ${ALERT_WEBHOOK_URL:-see .env}"
-            echo "  Config:  ${INSTALL_DIR}/docker/monitoring/alertmanager.yml"
-        fi
+        case "${ALERT_MODE:-none}" in
+            telegram)
+                echo ""
+                echo "=== Alerts → Telegram ==="
+                echo "  Bot token:  в .env (ALERT_TELEGRAM_TOKEN, chmod 600)"
+                echo "  Chat ID:    ${ALERT_TELEGRAM_CHAT_ID:-не задан}"
+                echo "  Config:     ${INSTALL_DIR}/docker/monitoring/alertmanager.yml"
+                echo "  Ротация:    создайте нового бота через @BotFather → revoke старого →"
+                echo "              обновите ALERT_TELEGRAM_TOKEN в .env →"
+                echo "              sudo docker compose restart alertmanager"
+                ;;
+            email)
+                echo ""
+                echo "=== Alerts → Email (SMTP) ==="
+                echo "  SMTP:    ${ALERT_EMAIL_SMARTHOST:-see .env}"
+                echo "  To:      ${ALERT_EMAIL_TO:-see .env}"
+                echo "  From:    ${ALERT_EMAIL_FROM:-alerts@agmind.local}"
+                echo "  Config:  ${INSTALL_DIR}/docker/monitoring/alertmanager.yml"
+                ;;
+            webhook)
+                echo ""
+                echo "=== Alerts → Webhook ==="
+                echo "  URL:     ${ALERT_WEBHOOK_URL:-see .env}"
+                echo "  Config:  ${INSTALL_DIR}/docker/monitoring/alertmanager.yml"
+                ;;
+            none|*)
+                echo ""
+                echo "=== Alerts ==="
+                echo "  Channel: OFF (alerts только в Grafana UI)"
+                echo "  Включить канал: запустите sudo bash install.sh повторно и выберите"
+                echo "  пункт 2/3/4 на шаге 'Уведомления о сбоях', либо вручную:"
+                echo "    1. Отредактируйте ALERT_MODE + ALERT_* в ${INSTALL_DIR}/docker/.env"
+                echo "    2. sudo docker compose restart alertmanager"
+                ;;
+        esac
         echo ""
         echo "# ---"
         echo "# ВНИМАНИЕ: Эти пароли актуальны на момент установки."
@@ -768,8 +788,9 @@ _show_final_summary() {
     echo ""
     echo -e "  ${BOLD}Next steps:${NC}"
     echo -e "    1. Включи Citations в Dify app: Answer node → Show Citation ON"
-    echo -e "       Гайд: ${INSTALL_DIR}/docs/citations-guide.md (если скопирован)"
-    echo -e "    2. Настрой Telegram alerts: agmind loadtest → wizard → пункт 3"
+    echo -e "       Гайд: ${INSTALL_DIR}/docs/citations-guide.md"
+    echo -e "    2. Alerts по умолчанию OFF — включи канал (tg/email/webhook) при желании:"
+    echo -e "       see ${INSTALL_DIR}/docs/alerts-channels.md"
     echo -e "    3. Замеряй производительность: agmind docling bench <pdf>"
     echo ""
     echo -e "  +--------------------------------------------------+"

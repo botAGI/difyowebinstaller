@@ -1,8 +1,16 @@
 # AGMind Alertmanager Configuration
-# Receivers configured via environment variables at install time
+#
+# Default state: receiver 'default' is EMPTY — no alerts leave the stack.
+# This is deliberate: the vendor must not know about customer incidents.
+# Activate one (or more) channel via wizard / install.sh:
+#   ALERT_MODE=telegram  — customer creates their own bot via @BotFather
+#   ALERT_MODE=email     — customer's own SMTP server
+#   ALERT_MODE=webhook   — generic HTTPS webhook (Slack, Teams, Mattermost, Zabbix...)
+# Alerts still visible in Grafana (AGmind Alerts dashboard) and AM UI regardless.
 
 global:
   resolve_timeout: 5m
+  smtp_hello: agmind.local
 
 route:
   group_by: ['alertname', 'severity']
@@ -39,8 +47,20 @@ receivers:
     #__ALERT_TELEGRAM__      {{ .Annotations.description }}
     #__ALERT_TELEGRAM__      {{ end }}
     #
-    # Legacy webhook receiver (kept for custom integrations). Activated when
-    # ALERT_WEBHOOK_URL is set. Mutually compatible with telegram_configs.
+    # Email receiver — activated when ALERT_MODE=email and ALERT_EMAIL_* set.
+    # Customer supplies their SMTP host + credentials + from/to addresses.
+    #__ALERT_EMAIL__email_configs:
+    #__ALERT_EMAIL__  - to: '__ALERT_EMAIL_TO__'
+    #__ALERT_EMAIL__    from: '__ALERT_EMAIL_FROM__'
+    #__ALERT_EMAIL__    smarthost: '__ALERT_EMAIL_SMARTHOST__'
+    #__ALERT_EMAIL__    auth_username: '__ALERT_EMAIL_AUTH_USER__'
+    #__ALERT_EMAIL__    auth_password: '__ALERT_EMAIL_AUTH_PASS__'
+    #__ALERT_EMAIL__    require_tls: true
+    #__ALERT_EMAIL__    send_resolved: true
+    #
+    # Generic webhook — Slack / Teams / Mattermost / Zabbix / custom.
+    # Activated when ALERT_MODE=webhook and ALERT_WEBHOOK_URL set.
+    # Mutually compatible with telegram and email (all three can be enabled).
     #__WEBHOOK__webhook_configs:
     #__WEBHOOK__  - url: '__ALERT_WEBHOOK_URL__'
     #__WEBHOOK__    send_resolved: true
