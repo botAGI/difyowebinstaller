@@ -1197,6 +1197,10 @@ services:
       - "${GRAFANA_BIND_ADDR:-127.0.0.1}:${GRAFANA_PORT:-3001}:3000"
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      # Phase 44: expose Dify DB creds so provisioned postgres datasource can envsubst
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-}
+      DB_DATABASE: ${DB_DATABASE:-dify}
     volumes:
       - agmind_grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro

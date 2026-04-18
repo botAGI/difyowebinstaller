@@ -1,0 +1,145 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "title": "AGMind Audit Trail",
+  "uid": "agmind-audit",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "tags": ["agmind", "audit"],
+  "panels": [
+    {
+      "title": "Total messages (selected period)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "dify-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS total FROM messages WHERE created_at BETWEEN $__timeFrom() AND $__timeTo()"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "options": { "graphMode": "area", "colorMode": "background" }
+    },
+    {
+      "title": "Unique users (selected period)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "dify-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT COUNT(DISTINCT COALESCE(from_end_user_id::text, from_account_id::text)) AS users FROM messages WHERE created_at BETWEEN $__timeFrom() AND $__timeTo()"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "title": "Total tokens (in + out)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "dify-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT COALESCE(SUM(message_tokens + answer_tokens), 0) AS tokens FROM messages WHERE created_at BETWEEN $__timeFrom() AND $__timeTo()"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "title": "Avg response latency",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "dify-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT ROUND(COALESCE(AVG(provider_response_latency), 0)::numeric, 2) AS avg_latency FROM messages WHERE created_at BETWEEN $__timeFrom() AND $__timeTo()"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "title": "Messages per hour",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "type": "postgres", "uid": "dify-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('hour', created_at) AS time, status, COUNT(*) AS msgs FROM messages WHERE created_at BETWEEN $__timeFrom() AND $__timeTo() GROUP BY 1, 2 ORDER BY 1"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "title": "Top apps by message count",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "datasource": { "type": "postgres", "uid": "dify-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT a.name AS app_name, COUNT(*) AS msgs FROM messages m JOIN apps a ON a.id = m.app_id WHERE m.created_at BETWEEN $__timeFrom() AND $__timeTo() GROUP BY a.name ORDER BY msgs DESC LIMIT 10"
+        }
+      ],
+      "options": { "orientation": "horizontal", "displayMode": "gradient" }
+    },
+    {
+      "title": "Recent messages (last 20)",
+      "type": "table",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 12 },
+      "datasource": { "type": "postgres", "uid": "dify-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT m.created_at, a.name AS app, COALESCE(acc.email, 'end_user:' || m.from_end_user_id::text, 'unknown') AS \"user\", LEFT(m.query, 120) AS query, LEFT(m.answer, 200) AS answer, m.message_tokens + m.answer_tokens AS tokens, ROUND(m.provider_response_latency::numeric, 2) AS latency_s, m.status FROM messages m LEFT JOIN apps a ON a.id = m.app_id LEFT JOIN accounts acc ON acc.id = m.from_account_id WHERE m.created_at BETWEEN $__timeFrom() AND $__timeTo() ORDER BY m.created_at DESC LIMIT 20"
+        }
+      ]
+    },
+    {
+      "title": "KB retrieval hit count by document",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "datasource": { "type": "postgres", "uid": "dify-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT dataset_name || ' / ' || document_name AS doc, COUNT(*) AS hits FROM dataset_retriever_resources r JOIN messages m ON m.id = r.message_id WHERE m.created_at BETWEEN $__timeFrom() AND $__timeTo() GROUP BY doc ORDER BY hits DESC LIMIT 10"
+        }
+      ],
+      "options": { "orientation": "horizontal", "displayMode": "gradient" }
+    },
+    {
+      "title": "Errors over time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "datasource": { "type": "postgres", "uid": "dify-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('hour', created_at) AS time, COUNT(*) AS errors FROM messages WHERE created_at BETWEEN $__timeFrom() AND $__timeTo() AND status != 'normal' GROUP BY 1 ORDER BY 1"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    }
+  ]
+}

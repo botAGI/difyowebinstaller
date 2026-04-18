@@ -1,0 +1,19 @@
+apiVersion: 1
+# Phase 44: Dify audit dashboard queries public.messages + dataset_retriever_resources
+# directly. Read-only connection; Grafana runs as viewer by default.
+# NOTE: Grafana provisioning substitutes only $VAR (no braces). ${VAR} is literal.
+datasources:
+  - name: Dify-Postgres
+    type: postgres
+    uid: dify-postgres
+    access: proxy
+    url: db:5432
+    user: $DB_USERNAME
+    secureJsonData:
+      password: $DB_PASSWORD
+    jsonData:
+      database: $DB_DATABASE
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: false
+    editable: false
