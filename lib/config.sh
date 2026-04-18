@@ -116,6 +116,8 @@ _GRAFANA_ADMIN_PASSWORD=""
 _ADMIN_PASSWORD_PLAIN=""
 _ADMIN_PASSWORD_B64=""
 _AUTHELIA_JWT_SECRET=""
+_AUTHELIA_SESSION_SECRET=""
+_AUTHELIA_STORAGE_KEY=""
 _LITELLM_MASTER_KEY=""
 _SEARXNG_SECRET_KEY=""
 _SURREALDB_PASSWORD=""
@@ -185,6 +187,8 @@ _generate_secrets() {
     _QDRANT_API_KEY="$(generate_random 32)"
     _GRAFANA_ADMIN_PASSWORD="$(generate_random 16)"
     _AUTHELIA_JWT_SECRET="$(generate_random 64)"
+    _AUTHELIA_SESSION_SECRET="$(generate_random 64)"
+    _AUTHELIA_STORAGE_KEY="$(generate_random 64)"
     _LITELLM_MASTER_KEY="sk-$(generate_random 32)"
     _SEARXNG_SECRET_KEY="$(generate_random 32)"
     _SURREALDB_PASSWORD="$(generate_random 24)"
@@ -323,6 +327,8 @@ _generate_env_file() {
         -e "s|__TEI_EMBED_VERSION__|${safe_tei_embed_version}|g" \
         -e "s|__TEI_RERANK_VERSION__|$(escape_sed "${TEI_RERANK_VERSION:-cpu-1.9.3}")|g" \
         -e "s|__AUTHELIA_JWT_SECRET__|${_AUTHELIA_JWT_SECRET}|g" \
+        -e "s|__AUTHELIA_SESSION_SECRET__|${_AUTHELIA_SESSION_SECRET}|g" \
+        -e "s|__AUTHELIA_STORAGE_KEY__|${_AUTHELIA_STORAGE_KEY}|g" \
         -e "s|__LITELLM_MASTER_KEY__|${_LITELLM_MASTER_KEY}|g" \
         -e "s|__FILES_URL__|${safe_files_url}|g" \
         -e "s|__DOCLING_IMAGE__|${DOCLING_IMAGE:-}|g" \
