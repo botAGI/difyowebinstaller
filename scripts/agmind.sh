@@ -939,6 +939,11 @@ case "${1:-help}" in
                         bench) shift; exec "${SCRIPTS_DIR}/docling-bench.sh" "$@" ;;
                         *)     echo "Usage: agmind docling bench <pdf>" >&2; exit 1 ;;
                     esac ;;
+    dify)           shift
+                    case "${1:-}" in
+                        import-workflow) shift; exec "${SCRIPTS_DIR}/import-dify-workflow.sh" "$@" ;;
+                        *)               echo "Usage: agmind dify import-workflow <dsl.yaml>" >&2; exit 1 ;;
+                    esac ;;
     help|--help|-h) cmd_help ;;
     *)              echo -e "${RED}Unknown command: ${1}${NC}" >&2; cmd_help; exit 1 ;;
 esac
