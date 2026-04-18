@@ -399,6 +399,15 @@ http {
     #__OPENWEBUI__
     #__OPENWEBUI__    client_max_body_size 50M;
     #__OPENWEBUI__
+    #__OPENWEBUI__    # --- Health endpoint (shared JSON, see phase 36) ---
+    #__OPENWEBUI__    location = /health {
+    #__OPENWEBUI__        default_type application/json;
+    #__OPENWEBUI__        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+    #__OPENWEBUI__        add_header X-Content-Type-Options "nosniff" always;
+    #__OPENWEBUI__        limit_req zone=health burst=5 nodelay;
+    #__OPENWEBUI__        alias /etc/nginx/health/health.json;
+    #__OPENWEBUI__    }
+    #__OPENWEBUI__
     #__OPENWEBUI__    location / {
     #__OPENWEBUI__        proxy_pass http://openwebui;
     #__OPENWEBUI__        proxy_http_version 1.1;
@@ -423,6 +432,15 @@ http {
     #__DBGPT__
     #__DBGPT__    client_max_body_size 50M;
     #__DBGPT__
+    #__DBGPT__    # --- Health endpoint (shared JSON, see phase 36) ---
+    #__DBGPT__    location = /health {
+    #__DBGPT__        default_type application/json;
+    #__DBGPT__        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+    #__DBGPT__        add_header X-Content-Type-Options "nosniff" always;
+    #__DBGPT__        limit_req zone=health burst=5 nodelay;
+    #__DBGPT__        alias /etc/nginx/health/health.json;
+    #__DBGPT__    }
+    #__DBGPT__
     #__DBGPT__    location / {
     #__DBGPT__        proxy_pass http://dbgpt;
     #__DBGPT__        proxy_http_version 1.1;
@@ -443,6 +461,15 @@ http {
     #__NOTEBOOK__    server_name agmind-notebook.local;
     #__NOTEBOOK__
     #__NOTEBOOK__    client_max_body_size 50M;
+    #__NOTEBOOK__
+    #__NOTEBOOK__    # --- Health endpoint (shared JSON, see phase 36) ---
+    #__NOTEBOOK__    location = /health {
+    #__NOTEBOOK__        default_type application/json;
+    #__NOTEBOOK__        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+    #__NOTEBOOK__        add_header X-Content-Type-Options "nosniff" always;
+    #__NOTEBOOK__        limit_req zone=health burst=5 nodelay;
+    #__NOTEBOOK__        alias /etc/nginx/health/health.json;
+    #__NOTEBOOK__    }
     #__NOTEBOOK__
     #__NOTEBOOK__    location / {
     #__NOTEBOOK__        proxy_pass http://open_notebook;
@@ -476,6 +503,15 @@ http {
     #__SEARXNG__    listen 80;
     #__SEARXNG__    server_name agmind-search.local;
     #__SEARXNG__
+    #__SEARXNG__    # --- Health endpoint (shared JSON, see phase 36) ---
+    #__SEARXNG__    location = /health {
+    #__SEARXNG__        default_type application/json;
+    #__SEARXNG__        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+    #__SEARXNG__        add_header X-Content-Type-Options "nosniff" always;
+    #__SEARXNG__        limit_req zone=health burst=5 nodelay;
+    #__SEARXNG__        alias /etc/nginx/health/health.json;
+    #__SEARXNG__    }
+    #__SEARXNG__
     #__SEARXNG__    location / {
     #__SEARXNG__        proxy_pass http://searxng;
     #__SEARXNG__        proxy_http_version 1.1;
@@ -492,6 +528,15 @@ http {
     #__CRAWL4AI__    server_name agmind-crawl.local;
     #__CRAWL4AI__
     #__CRAWL4AI__    client_max_body_size 10M;
+    #__CRAWL4AI__
+    #__CRAWL4AI__    # --- Health endpoint (shared JSON, see phase 36) ---
+    #__CRAWL4AI__    location = /health {
+    #__CRAWL4AI__        default_type application/json;
+    #__CRAWL4AI__        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+    #__CRAWL4AI__        add_header X-Content-Type-Options "nosniff" always;
+    #__CRAWL4AI__        limit_req zone=health burst=5 nodelay;
+    #__CRAWL4AI__        alias /etc/nginx/health/health.json;
+    #__CRAWL4AI__    }
     #__CRAWL4AI__
     #__CRAWL4AI__    location / {
     #__CRAWL4AI__        proxy_pass http://crawl4ai;
@@ -513,6 +558,15 @@ http {
         server_name agmind-dify.local;
 
         client_max_body_size 50M;
+
+        # --- Health endpoint (shared JSON, see phase 36) ---
+        location = /health {
+            default_type application/json;
+            add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+            add_header X-Content-Type-Options "nosniff" always;
+            limit_req zone=health burst=5 nodelay;
+            alias /etc/nginx/health/health.json;
+        }
 
         location / {
             proxy_pass http://dify_web;

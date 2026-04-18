@@ -884,7 +884,9 @@ services:
       NGINX_PORT: ${NGINX_PORT:-80}
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/health.json:/etc/nginx/health/health.json:ro
+      # Mount directory (not single file): health-gen.sh's atomic rename
+      # creates new inode; file-mount pins old inode and nginx sees stale data.
+      - ./nginx/health/:/etc/nginx/health/:ro
       - ./volumes/certbot/conf:/etc/letsencrypt:ro
       - ./volumes/certbot/www:/var/www/certbot:ro
       - ./volumes/certbot/ssl:/etc/nginx/ssl:ro

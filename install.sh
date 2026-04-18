@@ -634,11 +634,15 @@ GPUCRON
             fi
         fi
     fi
-    # Create initial health.json placeholder so nginx /health works before first cron tick
-    local health_dir="${INSTALL_DIR}/docker/nginx"
+    # Create initial health.json placeholder so nginx /health works before first cron tick.
+    # Phase 36: mount is now directory-based (./nginx/health/ -> /etc/nginx/health/).
+    # Directory mount keeps bind stable across health-gen.sh atomic rename.
+    local health_dir="${INSTALL_DIR}/docker/nginx/health"
     mkdir -p "$health_dir"
-    # Docker creates a directory if the file didn't exist at bind mount time
-    if [[ -d "${health_dir}/health.json" ]]; then rm -rf "${health_dir}/health.json"; fi
+    # Clean up legacy layout: if previous deploy used file-mount, docker may have
+    # created ${INSTALL_DIR}/docker/nginx/health.json as a directory — remove it.
+    local legacy_path="${INSTALL_DIR}/docker/nginx/health.json"
+    if [[ -e "$legacy_path" ]]; then rm -rf "$legacy_path"; fi
     if [[ ! -f "${health_dir}/health.json" ]]; then
         echo '{"status": "starting", "timestamp": "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}' > "${health_dir}/health.json"
     fi

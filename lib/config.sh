@@ -416,6 +416,33 @@ _append_provider_vars() {
             esac
         fi
     } >> "$env_file"
+
+    # Phase 36: collapse duplicate keys, keeping the LAST value (docker compose semantics).
+    # _generate_env_file appends conditional overrides after the template was copied in,
+    # producing duplicate KEY= lines. Callers (docker compose, dnsmasq generator) rely on
+    # last-wins, but scripts using `grep "^KEY=" | head -1` read the wrong value.
+    _dedupe_env_file "$env_file"
+}
+
+# Keep last occurrence of each KEY= line, preserve comment/blank order.
+# Non KEY= lines (comments, blanks, exports) pass through unchanged.
+_dedupe_env_file() {
+    local env_file="$1"
+    [[ -f "$env_file" ]] || return 0
+    local tmp
+    tmp=$(mktemp "${env_file}.dedupe.XXXXXX") || return 0
+    awk -F= '
+        NR==FNR {
+            if (/^[A-Za-z_][A-Za-z0-9_]*=/) last[$1] = NR
+            next
+        }
+        /^[A-Za-z_][A-Za-z0-9_]*=/ {
+            if (FNR == last[$1]) print
+            next
+        }
+        { print }
+    ' "$env_file" "$env_file" > "$tmp" && mv "$tmp" "$env_file"
+    chmod 600 "$env_file"
 }
 
 _copy_versions() {
