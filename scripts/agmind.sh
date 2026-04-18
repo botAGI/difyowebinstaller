@@ -891,6 +891,8 @@ Commands:
     list               List available scenarios
     chat|embed|kb      Run scenario; pass --duration/--vus after name
     last               Show 5 most recent result JSON files
+  docling bench <pdf>  Benchmark docling-serve on a real PDF (Phase 42)
+                       Iterates ?=3 times, reports cold/warm/per-page timing
   init-dify          Initialize Dify admin (if auto-init failed)
   backup             Create backup (root)
   restore <path>     Restore from backup (root)
@@ -932,6 +934,11 @@ case "${1:-help}" in
     gpu)            shift; cmd_gpu "$@" ;;
     model)          shift; cmd_model "$@" ;;
     loadtest)       shift; cmd_loadtest "$@" ;;
+    docling)        shift
+                    case "${1:-}" in
+                        bench) shift; exec "${SCRIPTS_DIR}/docling-bench.sh" "$@" ;;
+                        *)     echo "Usage: agmind docling bench <pdf>" >&2; exit 1 ;;
+                    esac ;;
     help|--help|-h) cmd_help ;;
     *)              echo -e "${RED}Unknown command: ${1}${NC}" >&2; cmd_help; exit 1 ;;
 esac
