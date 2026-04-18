@@ -804,12 +804,13 @@ cmd_loadtest() {
             echo -e "${BOLD}Recent results:${NC}"
             ls -lt "$results_dir"/*.json 2>/dev/null | head -5 | awk '{print "  "$9" ("$5" bytes, "$6" "$7" "$8")"}'
             ;;
-        chat|embed|kb)
+        chat|embed|kb|dify-chat)
             local scenario="chat-baseline"
             case "$sub" in
-                chat)  scenario="chat-baseline" ;;
-                embed) scenario="embed-burst" ;;
-                kb)    scenario="kb-indexing" ;;
+                chat)      scenario="chat-baseline" ;;
+                embed)     scenario="embed-burst" ;;
+                kb)        scenario="kb-indexing" ;;
+                dify-chat) scenario="dify-chat" ;;
             esac
             local scenario_file="${SCRIPTS_DIR}/loadtest/${scenario}.js"
             if [[ ! -f "$scenario_file" ]]; then
@@ -824,7 +825,13 @@ cmd_loadtest() {
             # k6 returns non-zero on threshold breach — don't let `set -e` kill us
             # before we move the summary file.
             local rc=0
+            # Pass through user-provided DIFY_* / VLLM_* / MODEL env so k6 scripts see them
+            local env_args=()
+            for v in DIFY_URL DIFY_APP_TOKEN DIFY_TOKEN DATASET_ID VLLM_URL EMBED_URL MODEL EMBED_MODEL; do
+                if [[ -n "${!v:-}" ]]; then env_args+=(-e "${v}=${!v}"); fi
+            done
             docker compose -f "$COMPOSE_FILE" --profile loadtest run --rm \
+                ${env_args[@]+"${env_args[@]}"} \
                 k6 run "$@" "/scripts/${scenario}.js" || rc=$?
             if [[ -f "${results_dir}/summary.json" ]]; then
                 mv "${results_dir}/summary.json" "$result_file"

@@ -792,7 +792,14 @@ services:
     image: langgenius/dify-plugin-daemon:${PLUGIN_DAEMON_VERSION:-0.5.3-local}
     container_name: agmind-plugin-daemon
     restart: always
-    mem_limit: ${PLUGIN_DAEMON_MEM_LIMIT:-6g}
+    # Phase 41 calibration (2026-04-18): Dify chat load 8 VU × 2min → 760 msgs,
+    # plugin_daemon steady ~2 GiB (cold-start init of all python plugins),
+    # chat working-set peak 645 MiB before recreate. No OOM at 3g; 4g gives
+    # 2x headroom over steady 2 GiB. Was 10g legacy under old architecture
+    # where docling plugin ran inside plugin_daemon (peak 6.5 GiB GPU+CPU).
+    # Docling is now standalone (agmind-docling) — plugin_daemon handles only
+    # lightweight python plugins (openai_api_compatible, etc.).
+    mem_limit: ${PLUGIN_DAEMON_MEM_LIMIT:-4g}
     extra_hosts:
       - "cdn-lfs-cn-1.modelscope.cn:163.181.225.49"
       - "huggingface.co:3.174.113.115"
