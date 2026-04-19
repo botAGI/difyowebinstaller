@@ -594,6 +594,11 @@ services:
       DEFAULT_VECTORIZER_MODULE: none
       CLUSTER_HOSTNAME: node1
       GOMEMLIMIT: "3GiB"
+      # v3.0 hotfix (2026-04-19): expose Prometheus /metrics on :2112,
+      # required by prometheus.yml scrape job 'weaviate'. Was applied in runtime
+      # (Phase 44) but missed from template — fresh install had target DOWN.
+      PROMETHEUS_MONITORING_ENABLED: "true"
+      PROMETHEUS_MONITORING_PORT: "2112"
     volumes:
       - ./volumes/weaviate:/var/lib/weaviate
     healthcheck:
@@ -1124,12 +1129,9 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     expose:
       - "9121"
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:9121/metrics || exit 1"]
-      interval: ${HEALTHCHECK_INTERVAL:-30s}
-      timeout: 5s
-      retries: 3
-      start_period: 10s
+    # No healthcheck: oliver006/redis_exporter is distroless (no /bin/sh), so
+    # CMD-SHELL probes fail with exit -1 and container is forever unhealthy.
+    # Liveness is monitored via Prometheus `up{job="redis-exporter"}` metric.
     networks:
       - agmind-backend
 
@@ -1171,12 +1173,9 @@ services:
       - '--nginx.scrape-uri=http://nginx:80/stub_status'
     expose:
       - "9113"
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:9113/metrics || exit 1"]
-      interval: ${HEALTHCHECK_INTERVAL:-30s}
-      timeout: 5s
-      retries: 3
-      start_period: 10s
+    # No healthcheck: nginx-prometheus-exporter is distroless (no /bin/sh), so
+    # CMD-SHELL probes fail with exit -1 and container is forever unhealthy.
+    # Liveness is monitored via Prometheus `up{job="nginx-exporter"}` metric.
     networks:
       - agmind-backend
 

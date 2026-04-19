@@ -590,13 +590,31 @@ generate_nginx_config() {
 # ============================================================================
 
 _register_local_dns() {
-    # Ensure avahi-daemon is installed and running
-    if ! command -v avahi-daemon >/dev/null 2>&1; then
-        log_info "Installing avahi-daemon for mDNS..."
-        DEBIAN_FRONTEND=noninteractive apt-get install -y avahi-daemon avahi-utils >/dev/null 2>&1 || {
-            log_warn "Failed to install avahi-daemon — mDNS disabled, use IP directly"
-            return 0
+    # Ensure avahi-daemon + libnss-mdns installed and running.
+    # libnss-mdns is what makes `ping foo.local` actually resolve via NSS.
+    # Without it /etc/avahi/hosts is published but system resolver can't read it.
+    if ! command -v avahi-daemon >/dev/null 2>&1 || ! dpkg -l libnss-mdns 2>/dev/null | grep -q '^ii'; then
+        log_info "Installing avahi-daemon + libnss-mdns for mDNS..."
+        DEBIAN_FRONTEND=noninteractive apt-get install -y avahi-daemon avahi-utils libnss-mdns >/dev/null 2>&1 || {
+            log_warn "Failed to install avahi stack — mDNS disabled, /etc/hosts fallback only"
         }
+    fi
+
+    # v3.0 hotfix (2026-04-19): exclude Docker veth interfaces from avahi mDNS publish.
+    # On hosts with 30+ containers avahi announces hostname via every veth*/br-*,
+    # causing "Local name collision" with its own records — /etc/avahi/hosts
+    # entries then silently fail to publish. Restrict avahi to physical interfaces.
+    local avahi_conf="/etc/avahi/avahi-daemon.conf"
+    if [[ -f "$avahi_conf" ]] && ! grep -q '^deny-interfaces=' "$avahi_conf"; then
+        # avahi comma-lists literal interface names AND matches prefix; docker's
+        # ephemeral veth names look like veth1a2b3c4, so listing 'veth' alone
+        # wouldn't help (no exact match). We explicitly allow only the primary
+        # interface instead, which is simpler and future-proof.
+        local primary_if
+        primary_if="$(ip -o -4 route show to default | awk '{print $5; exit}')"
+        if [[ -n "$primary_if" ]]; then
+            sed -i "/^\[server\]/a allow-interfaces=${primary_if}" "$avahi_conf"
+        fi
     fi
 
     if ! systemctl is-active --quiet avahi-daemon 2>/dev/null; then
@@ -642,6 +660,17 @@ _register_local_dns() {
         rm -f /etc/systemd/system/agmind-mdns.service
         rm -f /usr/local/bin/agmind-mdns-publish
         systemctl daemon-reload 2>/dev/null || true
+    fi
+
+    # v3.0 hotfix (2026-04-19): /etc/hosts fallback for local host-side resolution.
+    # install.sh healthcheck + agmind CLI + post-install curl all run on the host
+    # and benefit from instant resolution independent of avahi/mDNS quirks.
+    # LAN clients still use mDNS via avahi (or dnsmasq below) — this entry is
+    # host-local only.
+    if ! grep -q "agmind-dify.local" /etc/hosts 2>/dev/null; then
+        for name in "${names[@]}"; do
+            echo "${server_ip} ${name}.local" >> /etc/hosts
+        done
     fi
 
     log_success "mDNS published via /etc/avahi/hosts: ${names[*]}"
