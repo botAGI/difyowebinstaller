@@ -184,7 +184,7 @@ phase_models_graceful() {
     fi
 }
 phase_backups()     { setup_backups; setup_tunnel; }
-phase_complete()    { create_openwebui_admin; _init_minio_bucket; _init_dify_admin; _save_credentials; _install_cli; _install_crons; _install_systemd_service; verify_services || true; _show_final_summary; _apply_dify_patches; }
+phase_complete()    { create_openwebui_admin; _init_minio_bucket; _init_dify_admin; _save_credentials; _install_cli; _install_crons; _install_systemd_service; verify_services || true; _verify_post_install_smoke || true; _show_final_summary; _apply_dify_patches; }
 
 _apply_dify_patches() {
     [[ "${ENABLE_DIFY_PREMIUM:-false}" == "true" ]] || return 0
@@ -245,6 +245,14 @@ _copy_runtime_files() {
     if [[ "$INSTALLER_DIR" != "$INSTALL_DIR" ]]; then
         for s in "${scripts[@]}"; do
             if [[ -f "${INSTALLER_DIR}/scripts/${s}" ]]; then cp "${INSTALLER_DIR}/scripts/${s}" "${INSTALL_DIR}/scripts/"; fi
+        done
+        # Subdirectories (Phase 40: loadtest k6 scenarios; extend whitelist as new ones land)
+        local script_subdirs=(loadtest)
+        for d in "${script_subdirs[@]}"; do
+            if [[ -d "${INSTALLER_DIR}/scripts/${d}" ]]; then
+                mkdir -p "${INSTALL_DIR}/scripts/${d}"
+                cp -r "${INSTALLER_DIR}/scripts/${d}/." "${INSTALL_DIR}/scripts/${d}/"
+            fi
         done
     fi
     # lib/ → scripts/ copy: different subdirs, always safe even in self-install
@@ -721,6 +729,35 @@ _install_systemd_service() {
     systemctl daemon-reload
     systemctl enable agmind-stack.service
     log_success "Auto-start service installed (agmind-stack.service)"
+}
+
+_verify_post_install_smoke() {
+    # Post-install smoke: catches regressions that shellcheck + bash -n miss.
+    # Non-blocking — logs warnings with concrete next steps, never fails install.
+    local warn_count=0
+
+    # mDNS: first configured name should resolve via avahi (not /etc/hosts fallback)
+    if command -v avahi-resolve >/dev/null 2>&1; then
+        if ! timeout 4 avahi-resolve -n agmind-dify.local >/dev/null 2>&1; then
+            log_warn "mDNS: agmind-dify.local does not resolve via avahi"
+            log_warn "  Causes: foreign mDNS stack on :5353 (NoMachine, iTunes), missing default route, or libnss-mdns not installed"
+            log_warn "  Diagnose:  journalctl -u avahi-daemon -n 50 ; ss -ulnp | grep 5353"
+            log_warn "  Fallback:  /etc/hosts entries work host-local only — LAN clients will fail"
+            warn_count=$((warn_count + 1))
+        fi
+    fi
+
+    # Loadtest scenarios: agmind CLI needs scripts/loadtest/*.js to function
+    local loadtest_dir="${INSTALL_DIR}/scripts/loadtest"
+    if [[ ! -d "$loadtest_dir" ]] || [[ -z "$(ls -A "$loadtest_dir" 2>/dev/null)" ]]; then
+        log_warn "loadtest: ${loadtest_dir} missing or empty"
+        log_warn "  'agmind loadtest chat|kb-indexing|embed-burst' will fail"
+        log_warn "  Regression from install.sh _copy_runtime_files script_subdirs whitelist"
+        warn_count=$((warn_count + 1))
+    fi
+
+    [[ $warn_count -eq 0 ]] && log_success "Post-install smoke: all checks passed"
+    return 0
 }
 
 _show_final_summary() {
