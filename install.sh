@@ -368,10 +368,28 @@ _init_minio_bucket() {
 
     # Use minio/mc sidecar container — robust across all minio image versions.
     # Joins the same Docker network to reach minio:9000 by service name.
-    docker run --rm --network "$(docker network ls --format '{{.Name}}' | grep -m1 agmind-backend)" \
+    local net
+    net="$(docker network ls --format '{{.Name}}' | grep -m1 agmind-backend)"
+    docker run --rm --network "$net" \
         -e "MC_HOST_local=http://${user}:${pass}@agmind-minio:9000" \
         minio/mc:latest mb --ignore-existing "local/${bucket}" 2>/dev/null \
         || log_warn "MinIO bucket creation failed — create manually via http://<IP>:9001"
+
+    # v3.0 hotfix (2026-04-19): Dify writes to MinIO via S3_ACCESS_KEY/S3_SECRET_KEY,
+    # which are DIFFERENT from MINIO_ROOT_USER/_PASSWORD. Without a service account
+    # bound to those keys, Dify init fails with "InvalidAccessKeyId" on PutObject.
+    local s3_ak s3_sk
+    s3_ak="$(grep '^S3_ACCESS_KEY=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
+    s3_sk="$(grep '^S3_SECRET_KEY=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
+    if [[ -n "$s3_ak" && -n "$s3_sk" && "$s3_ak" != "$user" ]]; then
+        docker run --rm --network "$net" \
+            -e "MC_HOST_local=http://${user}:${pass}@agmind-minio:9000" \
+            minio/mc:latest admin user svcacct add \
+                --access-key "$s3_ak" \
+                --secret-key "$s3_sk" \
+                local "$user" >/dev/null 2>&1 \
+            || log_warn "MinIO service account creation failed — Dify storage will be unavailable"
+    fi
 }
 
 _save_credentials() {
