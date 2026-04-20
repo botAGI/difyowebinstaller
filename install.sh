@@ -241,12 +241,11 @@ _check_critical_services() {
 _copy_runtime_files() {
     # When installer runs from INSTALL_DIR (git clone /opt/agmind), skip script
     # self-copy but still populate scripts/{health,detect}.sh from lib/ subdir.
-    local scripts=(backup.sh restore.sh uninstall.sh update.sh agmind.sh health-gen.sh rotate_secrets.sh dr-drill.sh generate-manifest.sh redis-lock-cleanup.sh patch_dify_features.sh gpu-metrics.sh)
+    # Glob-copy — no whitelist. Whitelist protukaet every time a new script is
+    # added; classes of regression include docling-bench.sh, loadtest/ etc.
     if [[ "$INSTALLER_DIR" != "$INSTALL_DIR" ]]; then
-        for s in "${scripts[@]}"; do
-            if [[ -f "${INSTALLER_DIR}/scripts/${s}" ]]; then cp "${INSTALLER_DIR}/scripts/${s}" "${INSTALL_DIR}/scripts/"; fi
-        done
-        # Subdirectories (Phase 40: loadtest k6 scenarios; extend whitelist as new ones land)
+        cp "${INSTALLER_DIR}/scripts/"*.sh "${INSTALL_DIR}/scripts/" 2>/dev/null || true
+        # Subdirectories — explicit list (directories are less common additions)
         local script_subdirs=(loadtest)
         for d in "${script_subdirs[@]}"; do
             if [[ -d "${INSTALLER_DIR}/scripts/${d}" ]]; then
