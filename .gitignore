@@ -15,6 +15,7 @@ __pycache__/
 
 # Internal dev artifacts (kept locally, not in repo)
 .planning/
+/dify-workflows/
 /workflows/
 CLAUDE.md
 SPEC.md
