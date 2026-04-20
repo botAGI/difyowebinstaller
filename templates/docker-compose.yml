@@ -133,6 +133,16 @@ x-shared-env: &shared-env
   INNER_API_KEY_FOR_PLUGIN: ${PLUGIN_INNER_API_KEY:-}
   # --- Ollama ---
   OLLAMA_API_BASE: ${OLLAMA_API_BASE:-http://ollama:11434}
+  # --- Performance tuning (Celery / Graph engine) ---
+  # Defaults = upstream Dify safe fallback для fresh installs без .env
+  CELERY_WORKER_AMOUNT: ${CELERY_WORKER_AMOUNT:-1}
+  CELERY_ACKS_LATE: ${CELERY_ACKS_LATE:-false}
+  CELERY_WORKER_POOL: ${CELERY_WORKER_POOL:-gevent}
+  # --- Upload limits (upstream defaults: 15MB / 5 files per batch — too small for KB ingest) ---
+  UPLOAD_FILE_SIZE_LIMIT: ${UPLOAD_FILE_SIZE_LIMIT:-15}
+  UPLOAD_FILE_BATCH_LIMIT: ${UPLOAD_FILE_BATCH_LIMIT:-5}
+  BATCH_UPLOAD_LIMIT: ${BATCH_UPLOAD_LIMIT:-20}
+  WORKFLOW_FILE_UPLOAD_LIMIT: ${WORKFLOW_FILE_UPLOAD_LIMIT:-10}
 
 services:
   # ==================== Dify API ====================

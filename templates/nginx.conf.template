@@ -16,7 +16,7 @@ http {
     proxy_socket_keepalive on;
     types_hash_max_size 2048;
 
-    client_max_body_size 50M;
+    client_max_body_size 500M;
 
     # Gzip compression
     gzip on;
@@ -48,49 +48,6 @@ http {
     access_log /var/log/nginx/access.log main;
     error_log /var/log/nginx/error.log warn;
 
-    # Upstream: Dify API
-    upstream dify_api {
-        server api:5001;
-    }
-
-    # Upstream: Dify Web Console
-    upstream dify_web {
-        server web:3000;
-    }
-
-    #__OPENWEBUI__# Upstream: Open WebUI
-    #__OPENWEBUI__upstream openwebui {
-    #__OPENWEBUI__    server open-webui:8080;
-    #__OPENWEBUI__}
-
-    #__LITELLM__# Upstream: LiteLLM AI Gateway
-    #__LITELLM__upstream litellm {
-    #__LITELLM__    server litellm:4000;
-    #__LITELLM__}
-
-    #__DBGPT__# Upstream: DB-GPT
-    #__DBGPT__upstream dbgpt {
-    #__DBGPT__    server dbgpt:5670;
-    #__DBGPT__}
-
-    #__NOTEBOOK__# Upstream: Open Notebook (frontend + API)
-    #__NOTEBOOK__upstream open_notebook {
-    #__NOTEBOOK__    server open-notebook:8502;
-    #__NOTEBOOK__}
-    #__NOTEBOOK__upstream open_notebook_api {
-    #__NOTEBOOK__    server open-notebook:5055;
-    #__NOTEBOOK__}
-
-    #__SEARXNG__# Upstream: SearXNG
-    #__SEARXNG__upstream searxng {
-    #__SEARXNG__    server searxng:8080;
-    #__SEARXNG__}
-
-    #__CRAWL4AI__# Upstream: Crawl4AI
-    #__CRAWL4AI__upstream crawl4ai {
-    #__CRAWL4AI__    server crawl4ai:11235;
-    #__CRAWL4AI__}
-
     # Plugin Daemon resolved dynamically (allows nginx to start even if daemon is down)
     resolver 127.0.0.11 valid=10s;
 
@@ -108,7 +65,8 @@ http {
     #__AUTHELIA__# Uses /api/authz/auth-request (replaces legacy /api/verify).
     #__AUTHELIA__location = /authelia-auth {
     #__AUTHELIA__    internal;
-    #__AUTHELIA__    proxy_pass http://authelia:9091/api/authz/auth-request;
+    #__AUTHELIA__    set $u_authelia http://authelia:9091;
+    #__AUTHELIA__    proxy_pass $u_authelia/api/authz/auth-request;
     #__AUTHELIA__    proxy_pass_request_body off;
     #__AUTHELIA__    proxy_set_header Content-Length "";
     #__AUTHELIA__    proxy_set_header X-Original-Method $request_method;
@@ -119,7 +77,8 @@ http {
     #__AUTHELIA__
     #__AUTHELIA__# Authelia portal
     #__AUTHELIA__location /authelia {
-    #__AUTHELIA__    proxy_pass http://authelia:9091;
+    #__AUTHELIA__    set $u_authelia http://authelia:9091;
+    #__AUTHELIA__    proxy_pass $u_authelia;
     #__AUTHELIA__    proxy_set_header Host $host;
     #__AUTHELIA__    proxy_set_header X-Real-IP $remote_addr;
     #__AUTHELIA__    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -157,7 +116,8 @@ http {
         # =============================================
         location / {
             #__TLS_REDIRECT__return 301 https://$host$request_uri;
-            proxy_pass http://dify_web;
+            set $u_dify_web http://web:3000;
+            proxy_pass $u_dify_web;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
@@ -173,7 +133,8 @@ http {
         # Dify Console Login — tighter rate limit
         location /console/api/login {
             limit_req zone=login burst=3 nodelay;
-            proxy_pass http://dify_api;
+            set $u_dify_api http://api:5001;
+            proxy_pass $u_dify_api;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
@@ -186,7 +147,8 @@ http {
         # Dify Console API (SSE streaming for chat)
         location /console/api {
             limit_req zone=api burst=20 nodelay;
-            proxy_pass http://dify_api;
+            set $u_dify_api http://api:5001;
+            proxy_pass $u_dify_api;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
@@ -201,7 +163,8 @@ http {
         # Dify API (SSE streaming for chat)
         location /api {
             limit_req zone=api burst=20 nodelay;
-            proxy_pass http://dify_api;
+            set $u_dify_api http://api:5001;
+            proxy_pass $u_dify_api;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
@@ -216,7 +179,8 @@ http {
         # Dify Service API (/v1) — SSE streaming
         location /v1 {
             limit_req zone=api burst=20 nodelay;
-            proxy_pass http://dify_api;
+            set $u_dify_api http://api:5001;
+            proxy_pass $u_dify_api;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
@@ -231,7 +195,8 @@ http {
         # Dify Files
         location /files {
             limit_req zone=api burst=20 nodelay;
-            proxy_pass http://dify_api;
+            set $u_dify_api http://api:5001;
+            proxy_pass $u_dify_api;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
@@ -259,7 +224,8 @@ http {
         #__OPENWEBUI__# Open WebUI — optional chat frontend (/chat)
         #__OPENWEBUI__# =============================================
         #__OPENWEBUI__location /chat {
-        #__OPENWEBUI__    proxy_pass http://openwebui;
+        #__OPENWEBUI__    set $u_openwebui http://open-webui:8080;
+        #__OPENWEBUI__    proxy_pass $u_openwebui;
         #__OPENWEBUI__    proxy_http_version 1.1;
         #__OPENWEBUI__    proxy_set_header Host $host;
         #__OPENWEBUI__    proxy_set_header X-Real-IP $remote_addr;
@@ -289,7 +255,8 @@ http {
     #__LITELLM__    server_name _;
     #__LITELLM__
     #__LITELLM__    location / {
-    #__LITELLM__        proxy_pass http://litellm/;
+    #__LITELLM__        set $u_litellm http://litellm:4000;
+    #__LITELLM__        proxy_pass $u_litellm/;
     #__LITELLM__        proxy_http_version 1.1;
     #__LITELLM__        proxy_set_header Host $host:$server_port;
     #__LITELLM__        proxy_set_header X-Real-IP $remote_addr;
@@ -306,10 +273,11 @@ http {
     #__DBGPT__    listen 5670;
     #__DBGPT__    server_name _;
     #__DBGPT__
-    #__DBGPT__    client_max_body_size 50M;
+    #__DBGPT__    client_max_body_size 500M;
     #__DBGPT__
     #__DBGPT__    location / {
-    #__DBGPT__        proxy_pass http://dbgpt;
+    #__DBGPT__        set $u_dbgpt http://dbgpt:5670;
+    #__DBGPT__        proxy_pass $u_dbgpt;
     #__DBGPT__        proxy_http_version 1.1;
     #__DBGPT__        proxy_set_header Host $host:$server_port;
     #__DBGPT__        proxy_set_header X-Real-IP $remote_addr;
@@ -327,10 +295,11 @@ http {
     #__NOTEBOOK__    listen 8502;
     #__NOTEBOOK__    server_name _;
     #__NOTEBOOK__
-    #__NOTEBOOK__    client_max_body_size 50M;
+    #__NOTEBOOK__    client_max_body_size 500M;
     #__NOTEBOOK__
     #__NOTEBOOK__    location / {
-    #__NOTEBOOK__        proxy_pass http://open_notebook;
+    #__NOTEBOOK__        set $u_open_notebook http://open-notebook:8502;
+    #__NOTEBOOK__        proxy_pass $u_open_notebook;
     #__NOTEBOOK__        proxy_http_version 1.1;
     #__NOTEBOOK__        proxy_set_header Host $host:$server_port;
     #__NOTEBOOK__        proxy_set_header X-Real-IP $remote_addr;
@@ -350,10 +319,11 @@ http {
     #__NOTEBOOK__    listen 5055;
     #__NOTEBOOK__    server_name _;
     #__NOTEBOOK__
-    #__NOTEBOOK__    client_max_body_size 50M;
+    #__NOTEBOOK__    client_max_body_size 500M;
     #__NOTEBOOK__
     #__NOTEBOOK__    location / {
-    #__NOTEBOOK__        proxy_pass http://open_notebook_api;
+    #__NOTEBOOK__        set $u_open_notebook_api http://open-notebook:5055;
+    #__NOTEBOOK__        proxy_pass $u_open_notebook_api;
     #__NOTEBOOK__        proxy_http_version 1.1;
     #__NOTEBOOK__        proxy_set_header Host $host:$server_port;
     #__NOTEBOOK__        proxy_set_header X-Real-IP $remote_addr;
@@ -372,7 +342,8 @@ http {
     #__SEARXNG__    server_name _;
     #__SEARXNG__
     #__SEARXNG__    location / {
-    #__SEARXNG__        proxy_pass http://searxng;
+    #__SEARXNG__        set $u_searxng http://searxng:8080;
+    #__SEARXNG__        proxy_pass $u_searxng;
     #__SEARXNG__        proxy_http_version 1.1;
     #__SEARXNG__        proxy_set_header Host $host:$server_port;
     #__SEARXNG__        proxy_set_header X-Real-IP $remote_addr;
@@ -391,7 +362,8 @@ http {
     #__CRAWL4AI__    client_max_body_size 10M;
     #__CRAWL4AI__
     #__CRAWL4AI__    location / {
-    #__CRAWL4AI__        proxy_pass http://crawl4ai;
+    #__CRAWL4AI__        set $u_crawl4ai http://crawl4ai:11235;
+    #__CRAWL4AI__        proxy_pass $u_crawl4ai;
     #__CRAWL4AI__        proxy_http_version 1.1;
     #__CRAWL4AI__        proxy_set_header Host $host:$server_port;
     #__CRAWL4AI__        proxy_set_header X-Real-IP $remote_addr;
@@ -412,7 +384,7 @@ http {
     #__OPENWEBUI__    listen 80;
     #__OPENWEBUI__    server_name agmind-chat.local;
     #__OPENWEBUI__
-    #__OPENWEBUI__    client_max_body_size 50M;
+    #__OPENWEBUI__    client_max_body_size 500M;
     #__OPENWEBUI__
     #__OPENWEBUI__    # --- Health endpoint (shared JSON, see phase 36) ---
     #__OPENWEBUI__    location = /health {
@@ -424,7 +396,8 @@ http {
     #__OPENWEBUI__    }
     #__OPENWEBUI__
     #__OPENWEBUI__    location / {
-    #__OPENWEBUI__        proxy_pass http://openwebui;
+    #__OPENWEBUI__        set $u_openwebui http://open-webui:8080;
+    #__OPENWEBUI__        proxy_pass $u_openwebui;
     #__OPENWEBUI__        proxy_http_version 1.1;
     #__OPENWEBUI__        proxy_set_header Host $host;
     #__OPENWEBUI__        proxy_set_header X-Real-IP $remote_addr;
@@ -445,7 +418,7 @@ http {
     #__DBGPT__    listen 80;
     #__DBGPT__    server_name agmind-dbgpt.local;
     #__DBGPT__
-    #__DBGPT__    client_max_body_size 50M;
+    #__DBGPT__    client_max_body_size 500M;
     #__DBGPT__
     #__DBGPT__    # --- Health endpoint (shared JSON, see phase 36) ---
     #__DBGPT__    location = /health {
@@ -457,7 +430,8 @@ http {
     #__DBGPT__    }
     #__DBGPT__
     #__DBGPT__    location / {
-    #__DBGPT__        proxy_pass http://dbgpt;
+    #__DBGPT__        set $u_dbgpt http://dbgpt:5670;
+    #__DBGPT__        proxy_pass $u_dbgpt;
     #__DBGPT__        proxy_http_version 1.1;
     #__DBGPT__        proxy_set_header Host $host;
     #__DBGPT__        proxy_set_header X-Real-IP $remote_addr;
@@ -475,7 +449,7 @@ http {
     #__NOTEBOOK__    listen 80;
     #__NOTEBOOK__    server_name agmind-notebook.local;
     #__NOTEBOOK__
-    #__NOTEBOOK__    client_max_body_size 50M;
+    #__NOTEBOOK__    client_max_body_size 500M;
     #__NOTEBOOK__
     #__NOTEBOOK__    # --- Health endpoint (shared JSON, see phase 36) ---
     #__NOTEBOOK__    location = /health {
@@ -487,7 +461,8 @@ http {
     #__NOTEBOOK__    }
     #__NOTEBOOK__
     #__NOTEBOOK__    location / {
-    #__NOTEBOOK__        proxy_pass http://open_notebook;
+    #__NOTEBOOK__        set $u_open_notebook http://open-notebook:8502;
+    #__NOTEBOOK__        proxy_pass $u_open_notebook;
     #__NOTEBOOK__        proxy_http_version 1.1;
     #__NOTEBOOK__        proxy_set_header Host $host;
     #__NOTEBOOK__        proxy_set_header X-Real-IP $remote_addr;
@@ -502,7 +477,8 @@ http {
     #__NOTEBOOK__    }
     #__NOTEBOOK__
     #__NOTEBOOK__    location /api {
-    #__NOTEBOOK__        proxy_pass http://open_notebook_api;
+    #__NOTEBOOK__        set $u_open_notebook_api http://open-notebook:5055;
+    #__NOTEBOOK__        proxy_pass $u_open_notebook_api;
     #__NOTEBOOK__        proxy_http_version 1.1;
     #__NOTEBOOK__        proxy_set_header Host $host;
     #__NOTEBOOK__        proxy_set_header X-Real-IP $remote_addr;
@@ -528,7 +504,8 @@ http {
     #__SEARXNG__    }
     #__SEARXNG__
     #__SEARXNG__    location / {
-    #__SEARXNG__        proxy_pass http://searxng;
+    #__SEARXNG__        set $u_searxng http://searxng:8080;
+    #__SEARXNG__        proxy_pass $u_searxng;
     #__SEARXNG__        proxy_http_version 1.1;
     #__SEARXNG__        proxy_set_header Host $host;
     #__SEARXNG__        proxy_set_header X-Real-IP $remote_addr;
@@ -554,7 +531,8 @@ http {
     #__CRAWL4AI__    }
     #__CRAWL4AI__
     #__CRAWL4AI__    location / {
-    #__CRAWL4AI__        proxy_pass http://crawl4ai;
+    #__CRAWL4AI__        set $u_crawl4ai http://crawl4ai:11235;
+    #__CRAWL4AI__        proxy_pass $u_crawl4ai;
     #__CRAWL4AI__        proxy_http_version 1.1;
     #__CRAWL4AI__        proxy_set_header Host $host;
     #__CRAWL4AI__        proxy_set_header X-Real-IP $remote_addr;
@@ -572,7 +550,7 @@ http {
         listen 80;
         server_name agmind-dify.local;
 
-        client_max_body_size 50M;
+        client_max_body_size 500M;
 
         # --- Health endpoint (shared JSON, see phase 36) ---
         location = /health {
@@ -584,7 +562,8 @@ http {
         }
 
         location / {
-            proxy_pass http://dify_web;
+            set $u_dify_web http://web:3000;
+            proxy_pass $u_dify_web;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
@@ -599,7 +578,8 @@ http {
 
         location /console/api/login {
             limit_req zone=login burst=3 nodelay;
-            proxy_pass http://dify_api;
+            set $u_dify_api http://api:5001;
+            proxy_pass $u_dify_api;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
@@ -611,7 +591,8 @@ http {
 
         location /console/api {
             limit_req zone=api burst=20 nodelay;
-            proxy_pass http://dify_api;
+            set $u_dify_api http://api:5001;
+            proxy_pass $u_dify_api;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
@@ -625,7 +606,8 @@ http {
 
         location /api {
             limit_req zone=api burst=20 nodelay;
-            proxy_pass http://dify_api;
+            set $u_dify_api http://api:5001;
+            proxy_pass $u_dify_api;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
@@ -639,7 +621,8 @@ http {
 
         location /v1 {
             limit_req zone=api burst=20 nodelay;
-            proxy_pass http://dify_api;
+            set $u_dify_api http://api:5001;
+            proxy_pass $u_dify_api;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
@@ -653,7 +636,8 @@ http {
 
         location /files {
             limit_req zone=api burst=20 nodelay;
-            proxy_pass http://dify_api;
+            set $u_dify_api http://api:5001;
+            proxy_pass $u_dify_api;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
@@ -684,13 +668,14 @@ http {
         listen 3000;
         server_name __SERVER_NAME__;
 
-        client_max_body_size 50M;
+        client_max_body_size 500M;
 
     #__AUTHELIA__# Authelia auth_request internal endpoint (Phase 47; API 4.38+)
     #__AUTHELIA__# Uses /api/authz/auth-request (replaces legacy /api/verify).
     #__AUTHELIA__location = /authelia-auth {
     #__AUTHELIA__    internal;
-    #__AUTHELIA__    proxy_pass http://authelia:9091/api/authz/auth-request;
+    #__AUTHELIA__    set $u_authelia http://authelia:9091;
+    #__AUTHELIA__    proxy_pass $u_authelia/api/authz/auth-request;
     #__AUTHELIA__    proxy_pass_request_body off;
     #__AUTHELIA__    proxy_set_header Content-Length "";
     #__AUTHELIA__    proxy_set_header X-Original-Method $request_method;
@@ -704,7 +689,8 @@ http {
     #__AUTHELIA__    auth_request /authelia-auth;
     #__AUTHELIA__    auth_request_set $user $upstream_http_remote_user;
     #__AUTHELIA__    auth_request_set $groups $upstream_http_remote_groups;
-            proxy_pass http://dify_web;
+            set $u_dify_web http://web:3000;
+            proxy_pass $u_dify_web;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
@@ -719,7 +705,8 @@ http {
         # Dify Console Login — tighter rate limit (1r/10s, burst=3)
         location /console/api/login {
             limit_req zone=login burst=3 nodelay;
-            proxy_pass http://dify_api;
+            set $u_dify_api http://api:5001;
+            proxy_pass $u_dify_api;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
@@ -732,7 +719,8 @@ http {
         # Dify Console API (SSE streaming for chat)
         location /console/api {
             limit_req zone=api burst=20 nodelay;
-            proxy_pass http://dify_api;
+            set $u_dify_api http://api:5001;
+            proxy_pass $u_dify_api;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
@@ -747,7 +735,8 @@ http {
         # Dify API (SSE streaming for chat)
         location /api {
             limit_req zone=api burst=20 nodelay;
-            proxy_pass http://dify_api;
+            set $u_dify_api http://api:5001;
+            proxy_pass $u_dify_api;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
@@ -762,7 +751,8 @@ http {
         # Dify Service API (/v1) — SSE streaming
         location /v1 {
             limit_req zone=api burst=20 nodelay;
-            proxy_pass http://dify_api;
+            set $u_dify_api http://api:5001;
+            proxy_pass $u_dify_api;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
@@ -777,7 +767,8 @@ http {
         # Dify Files
         location /files {
             limit_req zone=api burst=20 nodelay;
-            proxy_pass http://dify_api;
+            set $u_dify_api http://api:5001;
+            proxy_pass $u_dify_api;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
@@ -823,7 +814,8 @@ http {
     #__TLS__    #__AUTHELIA__# Authelia verify endpoint
     #__TLS__    #__AUTHELIA__location /api/verify {
     #__TLS__    #__AUTHELIA__    internal;
-    #__TLS__    #__AUTHELIA__    proxy_pass http://authelia:9091/api/verify;
+    #__TLS__    #__AUTHELIA__    set $u_authelia http://authelia:9091;
+    #__TLS__    #__AUTHELIA__    proxy_pass $u_authelia/api/verify;
     #__TLS__    #__AUTHELIA__    proxy_pass_request_body off;
     #__TLS__    #__AUTHELIA__    proxy_set_header Content-Length "";
     #__TLS__    #__AUTHELIA__    proxy_set_header X-Original-URL $scheme://$http_host$request_uri;
@@ -833,7 +825,8 @@ http {
     #__TLS__    #__AUTHELIA__
     #__TLS__    #__AUTHELIA__# Authelia portal
     #__TLS__    #__AUTHELIA__location /authelia {
-    #__TLS__    #__AUTHELIA__    proxy_pass http://authelia:9091;
+    #__TLS__    #__AUTHELIA__    set $u_authelia http://authelia:9091;
+    #__TLS__    #__AUTHELIA__    proxy_pass $u_authelia;
     #__TLS__    #__AUTHELIA__    proxy_set_header Host $host;
     #__TLS__    #__AUTHELIA__    proxy_set_header X-Real-IP $remote_addr;
     #__TLS__    #__AUTHELIA__    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -852,7 +845,8 @@ http {
     #__TLS__
     #__TLS__    # Dify App — default frontend
     #__TLS__    location / {
-    #__TLS__        proxy_pass http://dify_web;
+    #__TLS__        set $u_dify_web http://web:3000;
+    #__TLS__        proxy_pass $u_dify_web;
     #__TLS__        proxy_http_version 1.1;
     #__TLS__        proxy_set_header Host $host;
     #__TLS__        proxy_set_header X-Real-IP $remote_addr;
@@ -867,7 +861,8 @@ http {
     #__TLS__    # Dify Console Login — tighter rate limit
     #__TLS__    location /console/api/login {
     #__TLS__        limit_req zone=login burst=3 nodelay;
-    #__TLS__        proxy_pass http://dify_api;
+    #__TLS__        set $u_dify_api http://api:5001;
+    #__TLS__        proxy_pass $u_dify_api;
     #__TLS__        proxy_http_version 1.1;
     #__TLS__        proxy_set_header Host $host;
     #__TLS__        proxy_set_header X-Real-IP $remote_addr;
@@ -880,7 +875,8 @@ http {
     #__TLS__    # Dify Console API (SSE streaming)
     #__TLS__    location /console/api {
     #__TLS__        limit_req zone=api burst=20 nodelay;
-    #__TLS__        proxy_pass http://dify_api;
+    #__TLS__        set $u_dify_api http://api:5001;
+    #__TLS__        proxy_pass $u_dify_api;
     #__TLS__        proxy_http_version 1.1;
     #__TLS__        proxy_set_header Host $host;
     #__TLS__        proxy_set_header X-Real-IP $remote_addr;
@@ -895,7 +891,8 @@ http {
     #__TLS__    # Dify API (SSE streaming)
     #__TLS__    location /api {
     #__TLS__        limit_req zone=api burst=20 nodelay;
-    #__TLS__        proxy_pass http://dify_api;
+    #__TLS__        set $u_dify_api http://api:5001;
+    #__TLS__        proxy_pass $u_dify_api;
     #__TLS__        proxy_http_version 1.1;
     #__TLS__        proxy_set_header Host $host;
     #__TLS__        proxy_set_header X-Real-IP $remote_addr;
@@ -910,7 +907,8 @@ http {
     #__TLS__    # Dify Service API (/v1) — SSE streaming
     #__TLS__    location /v1 {
     #__TLS__        limit_req zone=api burst=20 nodelay;
-    #__TLS__        proxy_pass http://dify_api;
+    #__TLS__        set $u_dify_api http://api:5001;
+    #__TLS__        proxy_pass $u_dify_api;
     #__TLS__        proxy_http_version 1.1;
     #__TLS__        proxy_set_header Host $host;
     #__TLS__        proxy_set_header X-Real-IP $remote_addr;
@@ -925,7 +923,8 @@ http {
     #__TLS__    # Dify Files
     #__TLS__    location /files {
     #__TLS__        limit_req zone=api burst=20 nodelay;
-    #__TLS__        proxy_pass http://dify_api;
+    #__TLS__        set $u_dify_api http://api:5001;
+    #__TLS__        proxy_pass $u_dify_api;
     #__TLS__        proxy_http_version 1.1;
     #__TLS__        proxy_set_header Host $host;
     #__TLS__        proxy_set_header X-Real-IP $remote_addr;
@@ -951,7 +950,8 @@ http {
     #__TLS__
     #__TLS__    #__OPENWEBUI__# Open WebUI — optional chat frontend (/chat)
     #__TLS__    #__OPENWEBUI__location /chat {
-    #__TLS__    #__OPENWEBUI__    proxy_pass http://openwebui;
+    #__TLS__    #__OPENWEBUI__    set $u_openwebui http://open-webui:8080;
+    #__TLS__    #__OPENWEBUI__    proxy_pass $u_openwebui;
     #__TLS__    #__OPENWEBUI__    proxy_http_version 1.1;
     #__TLS__    #__OPENWEBUI__    proxy_set_header Host $host;
     #__TLS__    #__OPENWEBUI__    proxy_set_header X-Real-IP $remote_addr;
