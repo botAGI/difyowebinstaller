@@ -38,6 +38,7 @@ generate_config() {
     if [[ "${MONITORING_MODE:-none}" == "local" ]]; then
         _copy_monitoring_files "$template_dir"
         _configure_alertmanager
+        _configure_peer_monitoring || log_warn "Peer monitoring setup had issues (non-fatal)"
     fi
 
     generate_redis_config
@@ -1326,6 +1327,70 @@ _copy_monitoring_files() {
     done
 
     log_success "Monitoring files copied"
+}
+
+# ============================================================================
+# PEER MONITORING (Plan 02-05, PEER-05) — uncomment scrape targets and
+# substitute PEER_IP in rendered prometheus.yml when AGMIND_MODE=master.
+# Called after _copy_monitoring_files from generate_config.
+# ============================================================================
+
+_configure_peer_monitoring() {
+    local mode="${AGMIND_MODE:-single}"
+    if [[ "$mode" != "master" ]]; then
+        log_info "Cluster mode=${mode} — peer monitoring scrape skipped"
+        return 0
+    fi
+
+    local prom_conf="${INSTALL_DIR}/docker/monitoring/prometheus.yml"
+
+    # MAJOR 3 FIX — defensive checks on dependencies before use
+    command -v _atomic_sed >/dev/null 2>&1 || {
+        # _atomic_sed defined in lib/common.sh — if absent, this is a structural bug
+        log_error "_atomic_sed helper missing (required from lib/common.sh) — peer monitoring not configured"
+        return 1
+    }
+    if [[ ! -f "$prom_conf" ]]; then
+        log_error "${prom_conf} not found — run config phase first (generate_config → _copy_monitoring_files)"
+        return 1
+    fi
+
+    local peer_ip="${PEER_IP:-}"
+    local state_file="${AGMIND_CLUSTER_STATE_FILE:-/var/lib/agmind/state/cluster.json}"
+    if [[ -z "$peer_ip" ]] && [[ -f "$state_file" ]] && command -v jq >/dev/null 2>&1; then
+        peer_ip="$(jq -r '.peer_ip // empty' "$state_file" 2>/dev/null || true)"
+    fi
+    if [[ -z "$peer_ip" ]]; then
+        log_warn "PEER_IP unknown — peer monitoring scrape not configured"
+        return 0
+    fi
+
+    # Idempotency: if PEER_SCRAPE block already uncommented — skip or rewrite if IP changed.
+    # Uncommented state = '- job_name: peer-node-exporter' (no leading # in rendered jobs).
+    if grep -qE "^  - job_name: 'peer-node-exporter'" "$prom_conf"; then
+        log_info "Peer scrape jobs already configured — checking PEER_IP consistency"
+        if grep -qF "targets: ['${peer_ip}:9100']" "$prom_conf"; then
+            return 0
+        fi
+        # IP changed — fall through to rewrite
+    fi
+
+    # Substitute __PEER_IP__ placeholder with actual IP
+    _atomic_sed "$prom_conf" -e "s|__PEER_IP__|${peer_ip}|g" || {
+        log_error "Failed to substitute __PEER_IP__ in ${prom_conf}"
+        return 1
+    }
+
+    # Uncomment the PEER_SCRAPE block (remove leading '  # ' on lines between markers,
+    # EXCEPT the marker lines themselves). Sed range: from BEGIN to END marker.
+    # shellcheck disable=SC2016  # single-quotes are intentional in sed expression (not shell var)
+    _atomic_sed "$prom_conf" \
+        -e '/__PEER_SCRAPE_BEGIN__/,/__PEER_SCRAPE_END__/{ /__PEER_SCRAPE_/!s/^  # /  /; }' || {
+        log_error "Failed to uncomment peer scrape jobs in ${prom_conf}"
+        return 1
+    }
+
+    log_success "Peer monitoring configured: scrape targets ${peer_ip}:9100 + ${peer_ip}:8000"
 }
 
 _configure_alertmanager() {
