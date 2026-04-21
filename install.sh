@@ -159,6 +159,11 @@ phase_diagnostics() {
         exit 1
     fi
     preflight_checks || _confirm_continue "Pre-flight errors found"
+    # PEER-02, PEER-01: ensure lldpd running (QSFP neighbour table), then detect peer.
+    # Never fails install — soft detection; sets PEER_HOSTNAME/PEER_IP/PEER_USER for wizard.
+    # DETECTED_NETWORK env (set by preflight_checks) gates apt-install path in _ensure_lldpd.
+    _ensure_lldpd
+    hw_detect_peer
 }
 phase_wizard()      { run_wizard; }
 phase_docker()      { setup_docker; }
