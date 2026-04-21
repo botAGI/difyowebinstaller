@@ -16,8 +16,8 @@
 - [x] **PEER-02**: Auto-install `lldpd` если отсутствует (`apt install -y lldpd` + `systemctl enable --now lldpd`). Только если apt доступен (offline / air-gap → skip с warn). Не ломает offline профиль.
 - [x] **PEER-03**: `hw_detect_peer` результат (peer hostname + peer IP) передаётся в wizard (через env vars `PEER_HOSTNAME`, `PEER_IP`) — wizard показывает mode menu ТОЛЬКО при detected peer.
 - [x] **PEER-04**: Persistent state `/var/lib/agmind/state/cluster.json` сохраняет `{mode, peer_hostname, peer_ip, subnet}`. Re-run install — читает cluster.json, не re-prompt'ит mode. Override через env `AGMIND_MODE_OVERRIDE=single|master|worker` (для CI/non-interactive).
-- [ ] **PEER-05**: `phase_deploy_peer` (новая фаза в `install.sh`, вызывается после `phase_start` если `MODE=master`): `scp templates/docker-compose.worker.yml + rendered .env` на peer → `ssh peer 'cd /opt/agmind && docker compose -f docker-compose.worker.yml up -d'` → wait `curl http://${PEER_IP}:8000/v1/models` returns 200 (timeout 30 min для первой скачки модели) → `cluster.json.status=running`.
-- [ ] **PEER-06**: `phase_post_install_smoke` на master включает peer check: `curl -sSf http://${PEER_IP}:8000/v1/models | jq '.data[0].id'` возвращает выбранную модель. Smoke exit 1 при failure (STRICT).
+- [x] **PEER-05**: `phase_deploy_peer` (новая фаза в `install.sh`, вызывается после `phase_start` если `MODE=master`): `scp templates/docker-compose.worker.yml + rendered .env` на peer → `ssh peer 'cd /opt/agmind && docker compose -f docker-compose.worker.yml up -d'` → wait `curl http://${PEER_IP}:8000/v1/models` returns 200 (timeout 30 min для первой скачки модели) → `cluster.json.status=running`.
+- [x] **PEER-06**: `phase_post_install_smoke` на master включает peer check: `curl -sSf http://${PEER_IP}:8000/v1/models | jq '.data[0].id'` возвращает выбранную модель. Smoke exit 1 при failure (STRICT).
 
 ### CLUSTER — Mode selection & persistence (Phase 2)
 
