@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Mock curl — echoes MOCK_CURL_RESPONSE and returns MOCK_CURL_EXIT.
+# Ignores all flags. Reusable for Plan 02-04 Task 4 MAJOR 6.
+[[ "${MOCK_DEBUG:-0}" == "1" ]] && echo "mock-curl $*" >&2
+if [[ "${MOCK_CURL_EXIT:-0}" != "0" ]]; then
+    exit "${MOCK_CURL_EXIT}"
+fi
+if [[ -n "${MOCK_CURL_RESPONSE:-}" ]]; then
+    echo "${MOCK_CURL_RESPONSE}"
+fi
+exit 0

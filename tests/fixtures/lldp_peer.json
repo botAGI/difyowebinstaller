@@ -1,0 +1,17 @@
+{
+  "lldp": {
+    "interface": [
+      {
+        "enp1s0f0np0": {
+          "chassis": {
+            "spark-69a2": {
+              "id": {"type": "mac", "value": "aa:bb:cc:dd:ee:ff"},
+              "descr": "Ubuntu 24.04.1 LTS Linux 6.8.0",
+              "mgmt-ip": ["192.168.100.2", "fe80::aabb:ccff:fedd:eeff"]
+            }
+          }
+        }
+      }
+    ]
+  }
+}

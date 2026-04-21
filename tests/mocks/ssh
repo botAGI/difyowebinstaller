@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Mock ssh — records call + exits with MOCK_SSH_EXIT (default 0).
+# Reusable for Plan 02-04 Task 4 MAJOR 6.
+[[ "${MOCK_DEBUG:-0}" == "1" ]] && echo "mock-ssh $*" >&2
+if [[ -n "${MOCK_SSH_STDOUT:-}" ]]; then
+    echo "${MOCK_SSH_STDOUT}"
+fi
+exit "${MOCK_SSH_EXIT:-0}"

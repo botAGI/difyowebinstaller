@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Mock lldpcli — outputs fixture selected by MOCK_LLDP_SCENARIO env var.
+# Scenarios: peer | self_only | empty | missing (exits 127 to simulate not-installed)
+case "${MOCK_LLDP_SCENARIO:-empty}" in
+    peer)      cat "${MOCK_FIXTURE_DIR:?}/lldp_peer.json" ;;
+    self_only) cat "${MOCK_FIXTURE_DIR:?}/lldp_self_only.json" ;;
+    empty)     cat "${MOCK_FIXTURE_DIR:?}/lldp_empty.json" ;;
+    missing)   echo "lldpcli: command not found" >&2; exit 127 ;;
+    *)         echo "{}" ;;
+esac

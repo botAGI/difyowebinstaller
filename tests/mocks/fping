@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Mock fping — echoes MOCK_FPING_ALIVE or nothing. Accepts all flags as no-op.
+if [[ -n "${MOCK_FPING_ALIVE:-}" ]]; then
+    echo "${MOCK_FPING_ALIVE}"
+fi
+exit 0

@@ -17,4 +17,5 @@ if [[ "${1:-}" == "-I" ]]; then
     esac
     exit 0
 fi
-echo "mock-host"
+# No-arg: return MOCK_HOSTNAME if set, else default
+echo "${MOCK_HOSTNAME:-mock-host}"
