@@ -21,6 +21,7 @@ set -euo pipefail
 # ============================================================================
 
 _init_wizard_defaults() {
+    AGMIND_MODE="${AGMIND_MODE:-}"
     DEPLOY_PROFILE="${DEPLOY_PROFILE:-}"
     DOMAIN="${DOMAIN:-}"
     CERTBOT_EMAIL="${CERTBOT_EMAIL:-}"
@@ -1651,6 +1652,40 @@ _wizard_confirm() {
 }
 
 # ============================================================================
+# CLUSTER MODE (single / master / worker) — first question if peer detected
+# Sources lib/cluster_mode.sh on demand. Respects PEER_HOSTNAME/PEER_IP set by
+# hw_detect_peer (Plan 02-01) and AGMIND_MODE_OVERRIDE env var.
+# ============================================================================
+
+_wizard_cluster_mode() {
+    local installer_dir="${INSTALLER_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+    # Lazy source — cluster_mode.sh not needed if run_wizard is called standalone without peer context
+    if ! declare -F cluster_mode_select >/dev/null 2>&1; then
+        # shellcheck source=./cluster_mode.sh
+        source "${installer_dir}/lib/cluster_mode.sh"
+    fi
+
+    AGMIND_MODE="$(cluster_mode_select "${PEER_HOSTNAME:-}" "${PEER_IP:-}")"
+    export AGMIND_MODE
+
+    # Persist immediately so resume re-reads without re-prompt (PEER-04).
+    # peer_hostname / peer_ip come from hw_detect_peer; empty if single mode.
+    cluster_mode_save \
+        "$AGMIND_MODE" \
+        "${PEER_HOSTNAME:-}" \
+        "${PEER_IP:-}" \
+        "${AGMIND_CLUSTER_SUBNET:-192.168.100.0/24}" \
+        "configured" || log_warn "Failed to persist cluster mode — continuing"
+
+    log_info "Cluster mode: ${AGMIND_MODE}"
+    case "$AGMIND_MODE" in
+        master) log_info "  vLLM will deploy to peer ${PEER_IP:-?} via SSH (Plan 02-04)." ;;
+        worker) log_info "  This host runs only vLLM + node-exporter (lightweight stack)." ;;
+        single) log_info "  Single-node install (no peer)." ;;
+    esac
+}
+
+# ============================================================================
 # MAIN ENTRY POINT
 # ============================================================================
 
@@ -1666,6 +1701,7 @@ run_wizard() {
 
     _init_wizard_defaults
 
+    _wizard_cluster_mode
     _wizard_profile
     _wizard_security_defaults
     _wizard_domain
@@ -1691,6 +1727,7 @@ run_wizard() {
     _wizard_confirm
 
     # Export all choices
+    export AGMIND_MODE PEER_HOSTNAME PEER_IP PEER_USER
     export DEPLOY_PROFILE DOMAIN CERTBOT_EMAIL VECTOR_STORE ENABLE_DOCLING
     export DOCLING_IMAGE OCR_LANG NVIDIA_VISIBLE_DEVICES
     export LLM_PROVIDER LLM_MODEL VLLM_MODEL VLLM_CUDA_SUFFIX VLLM_MAX_MODEL_LEN EMBED_PROVIDER EMBEDDING_MODEL TEI_EMBED_VERSION
