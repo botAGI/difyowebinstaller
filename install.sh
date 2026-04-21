@@ -148,7 +148,18 @@ _run_with_timeout() {
 }
 
 # --- Phase functions (thin wrappers) ---
-phase_diagnostics() { run_diagnostics || _confirm_continue "System below minimum requirements"; preflight_checks || _confirm_continue "Pre-flight errors found"; }
+phase_diagnostics() {
+    run_diagnostics || _confirm_continue "System below minimum requirements"
+    # MDNS-02: HARD abort exit 1 on foreign :5353 responder — never silent continue,
+    # even in NON_INTERACTIVE mode. Broken mDNS is a silent deploy disaster (CLAUDE.md §8).
+    # _assert_no_foreign_mdns is defined in lib/detect.sh (sourced above).
+    if ! _assert_no_foreign_mdns; then
+        log_error "Refusing to continue: foreign mDNS responder on UDP/5353 will break agmind-*.local"
+        log_error "Follow the instructions above, then re-run: sudo bash install.sh"
+        exit 1
+    fi
+    preflight_checks || _confirm_continue "Pre-flight errors found"
+}
 phase_wizard()      { run_wizard; }
 phase_docker()      { setup_docker; }
 phase_config()      { ensure_bind_mount_files; export INSTALL_DIR; generate_config "$DEPLOY_PROFILE" "$TEMPLATE_DIR"; enable_gpu_compose; setup_security; if [[ "$ENABLE_AUTHELIA" == "true" ]]; then configure_authelia "$TEMPLATE_DIR"; fi; _copy_runtime_files; }

@@ -53,8 +53,18 @@ _set_env_var() {
 }
 
 _get_ip() {
-    if [[ "$(uname)" == "Darwin" ]]; then ipconfig getifaddr en0 2>/dev/null || echo "localhost"
-    else hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost"; fi
+    if [[ "$(uname)" == "Darwin" ]]; then
+        ipconfig getifaddr en0 2>/dev/null || echo "localhost"
+        return
+    fi
+    # Prefer shared helper from detect.sh (same logic as mDNS publish).
+    if declare -F _mdns_get_primary_ip >/dev/null 2>&1; then
+        local ip
+        ip="$(_mdns_get_primary_ip)"
+        [[ -n "$ip" ]] && { echo "$ip"; return; }
+    fi
+    # Legacy fallback (only if helper missing AND no primary IP found).
+    hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost"
 }
 
 # ============================================================================

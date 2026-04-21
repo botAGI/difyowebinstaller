@@ -390,6 +390,56 @@ run_diagnostics() {
 }
 
 # ============================================================================
+# mDNS / NETWORK HELPERS (shared between lib/config.sh and scripts/agmind.sh)
+# ============================================================================
+
+# Returns the primary uplink IPv4 address (IP of the default-route interface).
+# Fallback: first non-docker (not 172.x) and non-loopback (not 127.x) IP from hostname -I.
+# Safe to call without root. Returns empty string if no route and no usable IP.
+# Used by: _register_local_dns (lib/config.sh), _get_ip (scripts/agmind.sh), agmind mdns-status.
+_mdns_get_primary_ip() {
+    local primary_if ip_addr=""
+    primary_if="$(ip -o -4 route show to default 2>/dev/null | awk 'NR==1 {print $5}')"
+    if [[ -n "$primary_if" ]]; then
+        ip_addr="$(ip -o -4 addr show dev "${primary_if}" 2>/dev/null \
+            | awk 'NR==1 {split($4,a,"/"); print a[1]}')"
+    fi
+    if [[ -z "${ip_addr:-}" ]]; then
+        ip_addr="$(hostname -I 2>/dev/null \
+            | tr ' ' '\n' \
+            | grep -Ev '^172\.|^127\.' \
+            | head -1 || echo "")"
+    fi
+    echo "${ip_addr:-}"
+}
+
+# Detect non-avahi processes occupying UDP/5353 (NoMachine nxserver, iTunes mDNSResponder,
+# systemd-resolved with MulticastDNS=yes, mdns-repeater, etc.).
+# MUST be called from root context — ss shows process names only for root.
+# Returns 0 if port 5353 is empty or owned only by avahi-daemon.
+# Returns 1 + prints actionable fix instructions to stderr if a foreign responder is found.
+_assert_no_foreign_mdns() {
+    local squatters
+    squatters="$(ss -ulnp 2>/dev/null \
+        | awk '$5 ~ /:5353$/ {
+            if (match($0, /users:\(\("([^"]+)"/, a) && a[1] != "" && a[1] != "avahi-daemon") print a[1]
+          }' | sort -u | tr '\n' ' ' || true)"
+    squatters="${squatters% }"
+    if [[ -n "$squatters" ]]; then
+        echo -e "  ${RED}[FAIL]${NC} mDNS port 5353 occupied by non-avahi: ${squatters}" >&2
+        echo -e "         ${CYAN}-> NoMachine: set EnableLocalNetworkBroadcast 0 in${NC}" >&2
+        echo -e "         ${CYAN}   /etc/NX/server/localhost/server.cfg, then: systemctl restart nxserver${NC}" >&2
+        echo -e "         ${CYAN}-> systemd-resolved: MulticastDNS=no in /etc/systemd/resolved.conf${NC}" >&2
+        echo -e "         ${CYAN}   then: systemctl restart systemd-resolved${NC}" >&2
+        echo -e "         ${CYAN}-> iTunes Bonjour: uninstall Apple Bonjour Print Services${NC}" >&2
+        echo -e "         ${CYAN}-> mdns-repeater: systemctl stop mdns-repeater${NC}" >&2
+        echo -e "         ${CYAN}-> Verify after fix: sudo ss -ulnp | grep 5353 (only avahi-daemon allowed)${NC}" >&2
+        return 1
+    fi
+    return 0
+}
+
+# ============================================================================
 # PREFLIGHT CHECKS
 # ============================================================================
 
@@ -587,7 +637,6 @@ preflight_checks() {
     fi
 
     # --- 11. DNS resolution ---
-    local dns_ok=true
     for host in hub.docker.com ghcr.io; do
         if getent hosts "$host" >/dev/null 2>&1; then
             echo -e "  ${GREEN}[PASS]${NC} DNS: ${host}"
@@ -596,9 +645,21 @@ preflight_checks() {
         else
             echo -e "  ${RED}[FAIL]${NC} DNS: cannot resolve ${host}"
             errors=$((errors + 1))
-            dns_ok=false
         fi
     done
+
+    # --- 12. Foreign mDNS responder on UDP/5353 (Phase 1 / MDNS-02 regression) ---
+    # Primary gate is phase_diagnostics (hard exit 1). This is the secondary gate
+    # for DRY_RUN (install.sh:922-923) and resume paths (install.sh:914-916) that
+    # bypass phase_diagnostics. Increments errors counter — _confirm_continue on
+    # call site allows operator to confirm continuation, but in NON_INTERACTIVE
+    # the error is still visible in the log.
+    if ! _assert_no_foreign_mdns 2>/dev/null; then
+        log_error "Check 12 FAILED: foreign mDNS responder on UDP/5353 (NoMachine/iTunes/etc.)"
+        log_info "  Run: sudo ss -ulnp | grep :5353  — to identify the process"
+        log_info "  NoMachine fix: EnableLocalNetworkBroadcast 0 in /etc/NX/server/localhost/server.cfg"
+        errors=$((errors + 1))
+    fi
 
     # --- Summary ---
     echo ""

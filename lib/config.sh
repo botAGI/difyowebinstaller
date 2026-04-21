@@ -632,9 +632,10 @@ _register_local_dns() {
     [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]] && names+=("agmind-crawl")
 
     local server_ip
-    server_ip="$(hostname -I 2>/dev/null | awk '{print $1}' || echo "")"
+    server_ip="$(_mdns_get_primary_ip)"
     if [[ -z "$server_ip" ]]; then
-        log_warn "Cannot determine server IP, skipping mDNS publish"
+        log_warn "Cannot determine primary uplink IP, skipping mDNS publish"
+        log_warn "  Check: ip -o -4 route show to default"
         return 0
     fi
 
@@ -658,7 +659,7 @@ _register_local_dns() {
         echo 'set -e'
         echo "trap 'kill \$(jobs -p) 2>/dev/null' EXIT TERM INT"
         for name in "${names[@]}"; do
-            echo "/usr/bin/avahi-publish-address -R \"${name}.local\" \"${server_ip}\" &"
+            echo "/usr/bin/avahi-publish-address -R --no-fail \"${name}.local\" \"${server_ip}\" &"
         done
         echo 'wait'
     } > "$wrapper"
@@ -666,9 +667,12 @@ _register_local_dns() {
 
     cat > "$unit" <<'EOF'
 [Unit]
-Description=AGmind mDNS .local aliases
+Description=AGmind mDNS .local aliases (avahi-publish-address wrapper)
+Documentation=https://github.com/botAGI/AGmind CLAUDE.md#8
 After=avahi-daemon.service
 Requires=avahi-daemon.service
+BindsTo=avahi-daemon.service
+PartOf=avahi-daemon.service
 
 [Service]
 Type=simple
@@ -685,6 +689,14 @@ EOF
     sleep 1
     systemctl enable --now agmind-mdns.service >/dev/null 2>&1 \
         || log_warn "agmind-mdns.service failed to start — see: journalctl -u agmind-mdns"
+
+    # LEGACY SAFETY NET — this warn-only block is kept as tertiary defence-in-depth.
+    # PRIMARY gate is _assert_no_foreign_mdns() called from:
+    #   - install.sh phase_diagnostics (normal flow — hard exit 1)
+    #   - lib/detect.sh preflight_checks Check 12 (DRY_RUN + resume paths — errors++)
+    # Both abort install before this code runs. This block logs if _register_local_dns
+    # is ever called outside install.sh flow (standalone tests, custom scripts).
+    # Do NOT remove — defence in depth per CLAUDE.md §8 "Second mDNS responder" lesson.
 
     # Detect foreign mDNS responders on 5353 (NoMachine, iTunes, etc.) that
     # compete with avahi for the multicast socket and trigger Local name collision.
