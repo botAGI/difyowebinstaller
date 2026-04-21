@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v3.0.1
 milestone_name: milestone
 status: Ready to execute
-last_updated: "2026-04-21T19:49:46.006Z"
+last_updated: "2026-04-21T19:56:39.679Z"
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 7
-  completed_plans: 3
-  percent: 43
+  completed_plans: 4
+  percent: 57
 ---
 
 # State: AGmind Installer v3.0.1
@@ -25,7 +25,7 @@ See: `.planning/PROJECT.md`
 ## Current Position
 
 Phase: 2 (Dual-Spark detect + wizard) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Milestone: v3.0.1
 
 ## Milestone Roadmap
@@ -72,6 +72,12 @@ See: `.planning/ROADMAP.md`
 11. **hard exit 1 в `_verify_post_install_smoke`** — единственный способ обойти `|| true` на call site (install.sh:198).
 12. **export pattern для bash function fixtures** — inline `VAR=val func` работает только для внешних команд, не для bash-функций.
 
+### Plan 02-02 Decisions (2026-04-21)
+
+13. **default_tag="single" locked per ROADMAP SC#1** — peer detected shows HINT but never pre-selects master/worker; user must opt in explicitly.
+14. **exit 1 (not return 1) on invalid AGMIND_MODE_OVERRIDE** — fails loudly to prevent silent misconfiguration in CI pipelines.
+15. **child bash subprocess for invalid-override unit test** — `exit 1` in sourced function kills caller shell with `set -e`; test spawns `bash -c` subshell to capture exit code.
+
 ## Performance Metrics
 
 | Phase | Plan | Duration | Tasks | Files |
@@ -79,11 +85,12 @@ See: `.planning/ROADMAP.md`
 | 01 | 01-01 | 11 min | 4/4 | 13 |
 | 01 | 01-02 | 10 min | 9/9 | 14 |
 | Phase 02-dual-spark-detect-master-worker-wizard-compose-split P01 | 20 | 3 tasks | 11 files |
+| Phase 02-dual-spark-detect-master-worker-wizard-compose-split P02 | 25 | 5 tasks | 6 files |
 
 ## Next Action
 
-**Next:** `/gsd-verify-work 1` — verify Phase 1 goals met (mDNS reliability + diagnostic CLI)
+**Next:** Plan 02-03 — compose profile split (single/master/worker) using AGMIND_MODE from cluster.json
 
 ---
 
-*Updated: 2026-04-21T19:36Z — Plan 01-02 complete (commits 78677a7..aa18287)*
+*Updated: 2026-04-21 — Plan 02-02 complete (commits 95216ab..30c7b04)*

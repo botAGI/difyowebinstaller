@@ -15,14 +15,14 @@
 - [x] **PEER-01**: `hw_detect_peer` в `lib/detect.sh` (новая функция) — primary channel LLDP (`lldpctl show neighbors -f json`), fallback ping sweep на QSFP subnet `${AGMIND_CLUSTER_SUBNET:-192.168.100.0/24}`. Timeout 3 sec — при fail возвращает empty (single-node). Никогда non-zero exit.
 - [x] **PEER-02**: Auto-install `lldpd` если отсутствует (`apt install -y lldpd` + `systemctl enable --now lldpd`). Только если apt доступен (offline / air-gap → skip с warn). Не ломает offline профиль.
 - [x] **PEER-03**: `hw_detect_peer` результат (peer hostname + peer IP) передаётся в wizard (через env vars `PEER_HOSTNAME`, `PEER_IP`) — wizard показывает mode menu ТОЛЬКО при detected peer.
-- [ ] **PEER-04**: Persistent state `/var/lib/agmind/state/cluster.json` сохраняет `{mode, peer_hostname, peer_ip, subnet}`. Re-run install — читает cluster.json, не re-prompt'ит mode. Override через env `AGMIND_MODE_OVERRIDE=single|master|worker` (для CI/non-interactive).
+- [x] **PEER-04**: Persistent state `/var/lib/agmind/state/cluster.json` сохраняет `{mode, peer_hostname, peer_ip, subnet}`. Re-run install — читает cluster.json, не re-prompt'ит mode. Override через env `AGMIND_MODE_OVERRIDE=single|master|worker` (для CI/non-interactive).
 - [ ] **PEER-05**: `phase_deploy_peer` (новая фаза в `install.sh`, вызывается после `phase_start` если `MODE=master`): `scp templates/docker-compose.worker.yml + rendered .env` на peer → `ssh peer 'cd /opt/agmind && docker compose -f docker-compose.worker.yml up -d'` → wait `curl http://${PEER_IP}:8000/v1/models` returns 200 (timeout 30 min для первой скачки модели) → `cluster.json.status=running`.
 - [ ] **PEER-06**: `phase_post_install_smoke` на master включает peer check: `curl -sSf http://${PEER_IP}:8000/v1/models | jq '.data[0].id'` возвращает выбранную модель. Smoke exit 1 при failure (STRICT).
 
 ### CLUSTER — Mode selection & persistence (Phase 2)
 
-- [ ] **CLUSTER-01**: `cluster_mode_select` TUI (в `lib/wizard.sh` или новом `lib/cluster_mode.sh`) показывает 3 options: single / master / worker. Dialog/whiptail primary + readline fallback. Persist `cluster.json` atomic (`.tmp` + `mv`).
-- [ ] **CLUSTER-02**: Mode menu вызывается в `run_wizard()` **сразу после** `phase_preflight` (который вызвал `hw_detect_peer`). Если peer not detected — menu skip'ается, `mode=single` default (uncommitted в cluster.json).
+- [x] **CLUSTER-01**: `cluster_mode_select` TUI (в `lib/wizard.sh` или новом `lib/cluster_mode.sh`) показывает 3 options: single / master / worker. Dialog/whiptail primary + readline fallback. Persist `cluster.json` atomic (`.tmp` + `mv`).
+- [x] **CLUSTER-02**: Mode menu вызывается в `run_wizard()` **сразу после** `phase_preflight` (который вызвал `hw_detect_peer`). Если peer not detected — menu skip'ается, `mode=single` default (uncommitted в cluster.json).
 
 ### COMPOSE — Compose split for master/worker (Phase 2)
 
