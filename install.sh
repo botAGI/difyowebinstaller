@@ -204,7 +204,7 @@ phase_models_graceful() {
     fi
 }
 phase_backups()     { setup_backups; setup_tunnel; }
-phase_complete()    { create_openwebui_admin; _init_minio_bucket; _init_dify_admin; _save_credentials; _install_cli; _install_crons; _install_systemd_service; verify_services || true; _verify_post_install_smoke || true; _show_final_summary; _apply_dify_patches; }
+phase_complete()    { create_openwebui_admin; _init_minio_bucket; _init_dify_admin; _save_credentials; _install_cli; _install_crons; _install_systemd_service; verify_services || true; _verify_post_install_smoke; _show_final_summary; _apply_dify_patches; }
 
 # ============================================================================
 # PEER DEPLOY (Plan 02-04, PEER-05)
@@ -944,10 +944,48 @@ _install_systemd_service() {
     log_success "Auto-start service installed (agmind-stack.service)"
 }
 
+# Smoke peer vLLM check — STRICT. Returns 0 if no peer required (mode != master).
+# Returns 0 if peer healthy. Returns 1 if peer required but unhealthy.
+# cluster.json is source of truth (not AGMIND_MODE env — resume path may not have wizard run).
+_smoke_peer_vllm_check() {
+    local state_file="${AGMIND_CLUSTER_STATE_FILE:-/var/lib/agmind/state/cluster.json}"
+    if [[ ! -f "$state_file" ]]; then
+        return 0  # No cluster state — nothing to check
+    fi
+    if ! command -v jq >/dev/null 2>&1; then
+        log_warn "jq missing — cannot verify cluster.json for peer smoke check"
+        return 0
+    fi
+    local mode peer_ip
+    mode="$(jq -r '.mode // "single"' "$state_file" 2>/dev/null || echo single)"
+    peer_ip="$(jq -r '.peer_ip // empty' "$state_file" 2>/dev/null || true)"
+
+    [[ "$mode" != "master" ]] && return 0
+    if [[ -z "$peer_ip" ]]; then
+        log_error "STRICT: cluster.json mode=master but peer_ip empty — phase_deploy_peer inconsistency"
+        return 1
+    fi
+
+    if ! curl -sSf --max-time 5 "http://${peer_ip}:8000/v1/models" >/dev/null 2>&1; then
+        log_error "STRICT: peer vLLM on ${peer_ip}:8000 not reachable (mode=master)"
+        log_error "  Diagnose: ssh ${AGMIND_PEER_USER:-agmind2}@${peer_ip} 'docker logs agmind-vllm --tail 50'"
+        log_error "  Fix: rerun 'sudo bash install.sh' — phase_deploy_peer idempotent"
+        return 1
+    fi
+    local model
+    model="$(curl -sSf --max-time 5 "http://${peer_ip}:8000/v1/models" 2>/dev/null \
+        | jq -r '.data[0].id // "unknown"' 2>/dev/null || echo "unknown")"
+    log_success "Peer vLLM on ${peer_ip} healthy (model: ${model})"
+    return 0
+}
+
 _verify_post_install_smoke() {
     # Post-install smoke: catches regressions that shellcheck + bash -n miss.
-    # Non-blocking — logs warnings with concrete next steps, never fails install.
+    # Soft checks: log warnings. Strict checks: return 1 (propagates via phase_complete).
     local warn_count=0
+    local strict_fail=0
+
+    # --- Soft checks (warnings only, install continues) ---
 
     # mDNS: first configured name should resolve via avahi (not /etc/hosts fallback)
     if command -v avahi-resolve >/dev/null 2>&1; then
@@ -970,28 +1008,40 @@ _verify_post_install_smoke() {
     fi
 
     # MDNS-04/05: STRICT mDNS smoke per CLAUDE.md §8 "Post-install smoke обязателен".
-    # We use 'exit 1' (NOT 'return 1') because call site at install.sh:198 has
-    # '_verify_post_install_smoke || true' which would swallow a soft return.
-    # exit 1 bypasses that soft handler and hard-exits the installer.
     if command -v agmind >/dev/null 2>&1; then
         if ! agmind mdns-status >/dev/null 2>&1; then
             log_error "FATAL smoke: agmind mdns-status reported issue(s) — details below:"
             agmind mdns-status || true
             log_error "Fix mDNS before using AGmind — agmind-*.local will not resolve"
             log_error "Re-run install.sh after fixing the issue"
-            exit 1
+            strict_fail=$((strict_fail + 1))
+        else
+            log_success "post-install smoke: mDNS OK"
         fi
-        log_success "post-install smoke: mDNS OK"
     elif [[ -x "${INSTALL_DIR}/scripts/mdns-status.sh" ]]; then
         if ! bash "${INSTALL_DIR}/scripts/mdns-status.sh" >/dev/null 2>&1; then
             log_error "FATAL smoke: agmind mdns-status reported issue(s)"
             bash "${INSTALL_DIR}/scripts/mdns-status.sh" || true
-            exit 1
+            strict_fail=$((strict_fail + 1))
+        else
+            log_success "post-install smoke: mDNS OK"
         fi
-        log_success "post-install smoke: mDNS OK"
     fi
 
-    [[ $warn_count -eq 0 ]] && log_success "Post-install smoke: all checks passed"
+    # --- STRICT checks (install fails if any breaks) ---
+
+    # PEER-06: if cluster.json mode=master, peer vLLM MUST respond /v1/models.
+    _smoke_peer_vllm_check || strict_fail=$((strict_fail + 1))
+
+    # --- Result ---
+
+    [[ $warn_count -eq 0 && $strict_fail -eq 0 ]] && log_success "Post-install smoke: all checks passed"
+    [[ $warn_count -gt 0 ]] && log_warn "Post-install smoke: ${warn_count} warning(s)"
+
+    if [[ $strict_fail -gt 0 ]]; then
+        log_error "Post-install smoke STRICT check FAILED (${strict_fail}). Installation cannot be considered successful."
+        return 1
+    fi
     return 0
 }
 
