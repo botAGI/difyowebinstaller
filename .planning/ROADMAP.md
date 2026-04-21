@@ -48,12 +48,12 @@
 
 **UI hint:** no (CLI/wizard only)
 
-**Plans:** 2/5 plans executed
+**Plans:** 5/5 plans complete
 - [x] 02-01-PLAN.md — Peer detection (hw_detect_peer, _ensure_lldpd, _peer_ping_fallback) + phase_diagnostics wiring + unit test (PEER-01, PEER-02, PEER-03)
 - [x] 02-02-PLAN.md — lib/cluster_mode.sh (select/save/read) + _wizard_cluster_mode + AGMIND_MODE_OVERRIDE + --mode flag + 2 unit tests (CLUSTER-01, CLUSTER-02, PEER-04)
 - [x] 02-03-PLAN.md — templates/docker-compose.worker.yml + build_compose_profiles master-skip + lib/ssh_trust.sh + integration SSH test + image tag registry gate (COMPOSE-01, SSH-01)
 - [x] 02-04-PLAN.md — phase_deploy_peer (scp+ssh compose up+vLLM poll) + STRICT _smoke_peer_vllm_check + agmind doctor --peer + _doctor_peer (PEER-05, PEER-06)
-- [ ] 02-05-PLAN.md — monitoring/peer-offline.yml alerts + prometheus.yml scrape placeholder + _configure_peer_monitoring sed + plan-wide shellcheck DoD gate (PEER-05)
+- [x] 02-05-PLAN.md — monitoring/peer-offline.yml alerts + prometheus.yml scrape placeholder + _configure_peer_monitoring sed + plan-wide shellcheck DoD gate (PEER-05)
 
 ---
 

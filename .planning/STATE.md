@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v3.0.1
 milestone_name: milestone
-status: Ready to execute
-last_updated: "2026-04-21T20:15:48.761Z"
+status: Phase complete — ready for verification
+last_updated: "2026-04-21T20:21:38.055Z"
 progress:
   total_phases: 2
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 7
-  completed_plans: 6
-  percent: 86
+  completed_plans: 7
+  percent: 100
 ---
 
 # State: AGmind Installer v3.0.1
@@ -88,11 +88,17 @@ See: `.planning/ROADMAP.md`
 | Phase 02-dual-spark-detect-master-worker-wizard-compose-split P02 | 25 | 5 tasks | 6 files |
 | Phase 02 P03 | 4 | 5 tasks | 5 files |
 | Phase 02-dual-spark-detect-master-worker-wizard-compose-split P04 | 9 | 4 tasks | 4 files |
+| Phase 02 P05 | 6 | 4 tasks | 3 files |
 
 ## Next Action
 
-**Next:** Plan 02-03 — compose profile split (single/master/worker) using AGMIND_MODE from cluster.json
+**Phase 2 COMPLETE — all 5 plans executed.** Ready for `/gsd-verify-work Phase 2`.
+
+Live UAT on spark-3eac:
+- `sudo bash install.sh` → wizard selects master → phase 7 deploys peer → vLLM up on spark-69a2
+- Prometheus loads `peer-offline.yml` rules + peer scrape targets uncommented
+- `agmind health --peer` → [OK] Peer reachable + [OK] Peer vLLM :8000
 
 ---
 
-*Updated: 2026-04-21 — Plan 02-02 complete (commits 95216ab..30c7b04)*
+*Updated: 2026-04-21 — Plan 02-05 complete (commits db160fe..1972b5c) — Phase 2 all 5 plans done*
