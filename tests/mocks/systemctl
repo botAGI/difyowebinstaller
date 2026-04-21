@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Mock for systemctl — keyed by MOCK_SYSTEMCTL_FIXTURE env var.
+# Handles: is-active
+# Fixtures: active | inactive | failed | missing
+set -euo pipefail
+if [[ "${1:-}" == "is-active" ]]; then
+    case "${MOCK_SYSTEMCTL_FIXTURE:-active}" in
+        active)   echo "active";   exit 0 ;;
+        inactive) echo "inactive"; exit 3 ;;
+        failed)   echo "failed";   exit 3 ;;
+        missing)                   exit 4 ;;
+        *)
+            echo "mock systemctl: unknown MOCK_SYSTEMCTL_FIXTURE=${MOCK_SYSTEMCTL_FIXTURE:-(unset)}" >&2
+            exit 2
+            ;;
+    esac
+fi
+exit 0

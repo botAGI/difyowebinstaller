@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Mock for ss — keyed by MOCK_SS_FIXTURE env var.
+# Fixtures: clean | foreign_nx | foreign_resolved | empty
+set -euo pipefail
+case "${MOCK_SS_FIXTURE:-clean}" in
+    clean)
+        cat <<'EOF'
+State  Recv-Q Send-Q Local Address:Port Peer Address:Port Process
+UNCONN 0      0      0.0.0.0:5353       0.0.0.0:*         users:(("avahi-daemon",pid=1613,fd=12))
+UNCONN 0      0      [::]:5353          [::]:*            users:(("avahi-daemon",pid=1613,fd=13))
+EOF
+        ;;
+    foreign_nx)
+        cat <<'EOF'
+State  Recv-Q Send-Q Local Address:Port Peer Address:Port Process
+UNCONN 0      0      0.0.0.0:5353       0.0.0.0:*         users:(("nxserver.bin",pid=9999,fd=5))
+UNCONN 0      0      0.0.0.0:5353       0.0.0.0:*         users:(("avahi-daemon",pid=1613,fd=12))
+EOF
+        ;;
+    foreign_resolved)
+        cat <<'EOF'
+State  Recv-Q Send-Q Local Address:Port Peer Address:Port Process
+UNCONN 0      0      0.0.0.0:5353       0.0.0.0:*         users:(("systemd-resolve",pid=777,fd=9))
+EOF
+        ;;
+    empty)
+        echo "State  Recv-Q Send-Q Local Address:Port Peer Address:Port Process"
+        ;;
+    *)
+        echo "mock ss: unknown MOCK_SS_FIXTURE=${MOCK_SS_FIXTURE:-(unset)}" >&2
+        exit 2
+        ;;
+esac

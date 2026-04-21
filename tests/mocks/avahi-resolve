@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Mock for avahi-resolve — keyed by MOCK_AVAHI_FIXTURE env var.
+# Fixtures: primary | wrong_ip | timeout
+set -euo pipefail
+# Last argument is the hostname being resolved
+name="${*: -1}"
+case "${MOCK_AVAHI_FIXTURE:-primary}" in
+    primary)   printf '%s\t192.168.1.45\n' "$name" ;;
+    wrong_ip)  printf '%s\t172.17.0.1\n'  "$name" ;;
+    timeout)   exit 1 ;;
+    *)
+        echo "mock avahi-resolve: unknown MOCK_AVAHI_FIXTURE=${MOCK_AVAHI_FIXTURE:-(unset)}" >&2
+        exit 2
+        ;;
+esac
