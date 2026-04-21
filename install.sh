@@ -766,6 +766,28 @@ _verify_post_install_smoke() {
         warn_count=$((warn_count + 1))
     fi
 
+    # MDNS-04/05: STRICT mDNS smoke per CLAUDE.md §8 "Post-install smoke обязателен".
+    # We use 'exit 1' (NOT 'return 1') because call site at install.sh:198 has
+    # '_verify_post_install_smoke || true' which would swallow a soft return.
+    # exit 1 bypasses that soft handler and hard-exits the installer.
+    if command -v agmind >/dev/null 2>&1; then
+        if ! agmind mdns-status >/dev/null 2>&1; then
+            log_error "FATAL smoke: agmind mdns-status reported issue(s) — details below:"
+            agmind mdns-status || true
+            log_error "Fix mDNS before using AGmind — agmind-*.local will not resolve"
+            log_error "Re-run install.sh after fixing the issue"
+            exit 1
+        fi
+        log_success "post-install smoke: mDNS OK"
+    elif [[ -x "${INSTALL_DIR}/scripts/mdns-status.sh" ]]; then
+        if ! bash "${INSTALL_DIR}/scripts/mdns-status.sh" >/dev/null 2>&1; then
+            log_error "FATAL smoke: agmind mdns-status reported issue(s)"
+            bash "${INSTALL_DIR}/scripts/mdns-status.sh" || true
+            exit 1
+        fi
+        log_success "post-install smoke: mDNS OK"
+    fi
+
     [[ $warn_count -eq 0 ]] && log_success "Post-install smoke: all checks passed"
     return 0
 }
