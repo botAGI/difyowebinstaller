@@ -421,7 +421,7 @@ _mdns_get_primary_ip() {
 _assert_no_foreign_mdns() {
     local squatters
     squatters="$(ss -ulnp 2>/dev/null \
-        | awk '$5 ~ /:5353$/ {
+        | awk '$4 ~ /:5353$/ {
             if (match($0, /users:\(\("([^"]+)"/, a) && a[1] != "" && a[1] != "avahi-daemon") print a[1]
           }' | sort -u | tr '\n' ' ' || true)"
     squatters="${squatters% }"
