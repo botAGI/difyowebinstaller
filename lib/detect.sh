@@ -554,7 +554,7 @@ hw_detect_peer() {
                  | if type == "object" then
                      "\(.hostname)\t" +
                      ((.ips | if type == "array" then . else [.] end
-                       | map(select(test("^" + ($pfx | gsub("\\."; "\\\\.")) + "\\.")))
+                       | map(select(startswith($pfx + ".")))
                        | .[0] // ""))
                    else "" end
                 ' 2>/dev/null || true)"
