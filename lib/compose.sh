@@ -33,7 +33,16 @@ build_compose_profiles() {
     if [[ "${LLM_PROVIDER:-}" == "ollama" || "${EMBED_PROVIDER:-}" == "ollama" ]]; then
         profiles="${profiles:+$profiles,}ollama"
     fi
-    if [[ "${LLM_PROVIDER:-}" == "vllm" ]]; then profiles="${profiles:+$profiles,}vllm"; fi
+    if [[ "${LLM_PROVIDER:-}" == "vllm" ]]; then
+        # Master mode: vllm runs on peer (Plan 02-04 phase_deploy_peer), not locally.
+        # Single + Worker modes: vllm runs locally (worker mode has no other services anyway).
+        # AGMIND_MODE is set by _wizard_cluster_mode (Plan 02-02). Defaults to "single" if unset.
+        if [[ "${AGMIND_MODE:-single}" != "master" ]]; then
+            profiles="${profiles:+$profiles,}vllm"
+        else
+            log_info "Cluster mode=master: vllm profile skipped locally (runs on peer ${PEER_IP:-?})"
+        fi
+    fi
     if [[ "${EMBED_PROVIDER:-}" == "tei" ]]; then profiles="${profiles:+$profiles,}tei"; fi
     if [[ "${EMBED_PROVIDER:-}" == "vllm-embed" ]]; then profiles="${profiles:+$profiles,}vllm-embed"; fi
     if [[ "${ENABLE_RERANKER:-false}" == "true" ]]; then
