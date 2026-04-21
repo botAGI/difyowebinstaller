@@ -26,11 +26,11 @@
 
 ### COMPOSE — Compose split for master/worker (Phase 2)
 
-- [ ] **COMPOSE-01**: `templates/docker-compose.worker.yml` (новый) содержит только: `vllm` (с ${VLLM_*} env), `socket-proxy` (wollomatic, для docker API access на peer если потребуется), опционально `node-exporter` (prometheus scrape target). Нет Dify, Postgres, Redis, etc. — они только на master. Labels совместимы с master'ским мониторингом (scrape endpoint discovery).
+- [x] **COMPOSE-01**: `templates/docker-compose.worker.yml` (новый) содержит только: `vllm` (с ${VLLM_*} env), `socket-proxy` (wollomatic, для docker API access на peer если потребуется), опционально `node-exporter` (prometheus scrape target). Нет Dify, Postgres, Redis, etc. — они только на master. Labels совместимы с master'ским мониторингом (scrape endpoint discovery).
 
 ### SSH — Passwordless SSH setup (Phase 2)
 
-- [ ] **SSH-01**: `_ensure_ssh_trust <peer_ip>` (новый helper в `lib/detect.sh` или отдельный `lib/ssh_trust.sh`): (1) проверяет `ssh -o BatchMode=yes ${peer_user}@${peer_ip} true` — если OK, return 0. (2) Если fail — wizard prompt'ит пароль peer один раз через TUI password input. (3) `ssh-copy-id -i ~/.ssh/agmind_peer_ed25519.pub ${peer_user}@${peer_ip}` (key генерится если отсутствует). (4) Verify через `ssh -o BatchMode=yes`. Credentials (пароль) в memory only, не на disk.
+- [x] **SSH-01**: `_ensure_ssh_trust <peer_ip>` (новый helper в `lib/detect.sh` или отдельный `lib/ssh_trust.sh`): (1) проверяет `ssh -o BatchMode=yes ${peer_user}@${peer_ip} true` — если OK, return 0. (2) Если fail — wizard prompt'ит пароль peer один раз через TUI password input. (3) `ssh-copy-id -i ~/.ssh/agmind_peer_ed25519.pub ${peer_user}@${peer_ip}` (key генерится если отсутствует). (4) Verify через `ssh -o BatchMode=yes`. Credentials (пароль) в memory only, не на disk.
 
 ## Future Requirements (v3.1+)
 
