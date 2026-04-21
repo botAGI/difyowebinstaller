@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Mock whiptail — returns MOCK_WT_CHOICE via stdout (wt_menu captures stdout via $(...) redirect).
+# Supports --menu --radiolist --passwordbox --yesno. Ignores size/items args.
+# Exit code: 0 (OK) unless MOCK_WT_EXIT set.
+mode=""
+for a in "$@"; do
+    case "$a" in
+        --menu)        mode="menu" ;;
+        --passwordbox) mode="password" ;;
+        --yesno)       mode="yesno" ;;
+        --radiolist)   mode="radio" ;;
+    esac
+done
+
+# wt_menu in tui.sh does: whiptail ... 3>&1 1>&2 2>&3
+# which swaps stdout/stderr, so the value on stderr becomes stdout of the subshell.
+# We write to stderr here so after the 3>&1 1>&2 2>&3 swap it lands on stdout.
+case "$mode" in
+    menu|radio)  printf '%s' "${MOCK_WT_CHOICE:-}" >&2 ;;
+    password)    printf '%s' "${MOCK_WT_PASSWORD:-}" >&2 ;;
+    yesno)       exit "${MOCK_WT_YESNO:-0}" ;;
+esac
+exit "${MOCK_WT_EXIT:-0}"
