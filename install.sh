@@ -20,6 +20,8 @@ fi
 # --- Source library modules ---
 source "${INSTALLER_DIR}/lib/common.sh"
 source "${INSTALLER_DIR}/lib/detect.sh"
+# shellcheck source=lib/cluster_mode.sh
+source "${INSTALLER_DIR}/lib/cluster_mode.sh"
 source "${INSTALLER_DIR}/lib/tui.sh"
 source "${INSTALLER_DIR}/lib/wizard.sh"
 source "${INSTALLER_DIR}/lib/docker.sh"
@@ -897,7 +899,15 @@ main() {
             --force-restart) FORCE_RESTART=true;;
             --dry-run) DRY_RUN=true;;
             --vds) DEPLOY_PROFILE="vps"; VDS_MODE=true;;
-            --help|-h) echo "Usage: sudo bash install.sh [--non-interactive] [--force-restart] [--dry-run] [--vds]"; exit 0;;
+            --mode=*)
+                AGMIND_MODE_OVERRIDE="${1#*=}"
+                case "$AGMIND_MODE_OVERRIDE" in
+                    single|master|worker) ;;
+                    *) echo "ERROR: --mode must be one of: single, master, worker (got: $AGMIND_MODE_OVERRIDE)" >&2; exit 1 ;;
+                esac
+                export AGMIND_MODE_OVERRIDE
+                ;;
+            --help|-h) echo "Usage: sudo bash install.sh [--non-interactive] [--force-restart] [--dry-run] [--vds] [--mode=single|master|worker]"; exit 0;;
         esac; shift
     done
 
