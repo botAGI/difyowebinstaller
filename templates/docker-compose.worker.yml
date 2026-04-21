@@ -1,0 +1,100 @@
+# AGmind Worker Compose — dual-Spark peer node.
+# Runs ONLY vLLM + node-exporter. Main stack (Dify, Postgres, Redis, etc.)
+# lives on master. Deployed by master's phase_deploy_peer via scp+ssh.
+#
+# References:
+#   CLAUDE.md §6 — VLLM_SPARK_IMAGE primary on DGX Spark (GB10 arm64)
+#   CLAUDE.md §8 — NVIDIA_DRIVER_CAPABILITIES=compute,utility mandatory;
+#                  gpu_memory_utilization=0.60 safe default on Spark shared memory;
+#                  mem_limit 96g unified memory budget for gemma-4-26B
+#   CLAUDE.md §10 — image tags pinned (no :latest) + registry validation gate
+
+x-logging: &logging-defaults
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+
+  # ============================================================================
+  # vLLM (OpenAI-compatible LLM server)
+  # Exposes :8000 on peer host — master connects via http://${PEER_IP}:8000/v1/*
+  # ============================================================================
+  vllm:
+    <<: *logging-defaults
+    image: ${VLLM_IMAGE:-${VLLM_SPARK_IMAGE:-vllm/vllm-openai:gemma4-cu130}}
+    container_name: agmind-vllm
+    restart: unless-stopped
+    mem_limit: ${VLLM_MEM_LIMIT:-96g}
+    mem_swappiness: 0
+    ipc: host
+    environment:
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
+      - CUDA_VISIBLE_DEVICES=${VLLM_CUDA_DEVICE:-0}
+      # CLAUDE.md §8: compute,utility required for NVML/CUDA to work on DGX Spark.
+      # Without this env var, torch.cuda.is_available()=False and vLLM silently falls back to CPU.
+      - NVIDIA_DRIVER_CAPABILITIES=${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
+    command: >-
+      ${VLLM_CMD_PREFIX:-}
+      --model ${VLLM_MODEL:-${VLLM_SPARK_MODEL:-google/gemma-4-26B-A4B-it}}
+      --host 0.0.0.0
+      --port 8000
+      --gpu-memory-utilization ${VLLM_GPU_MEM_UTIL:-0.60}
+      --max-model-len ${VLLM_MAX_MODEL_LEN:-65536}
+      ${VLLM_EXTRA_ARGS:+${VLLM_EXTRA_ARGS}}
+      --trust-remote-code
+    volumes:
+      - agmind_vllm_cache:/root/.cache/huggingface
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      # Exposed directly on peer host — master connects via PEER_IP:8000
+      - "8000:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 1800s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${VLLM_CUDA_DEVICE:-0}"]
+              capabilities: [gpu]
+
+  # ============================================================================
+  # node-exporter — host metrics for master's Prometheus scrape
+  # Exposes :9100 on peer host (peer-node-exporter scrape job in Plan 02-05)
+  # Note: no healthcheck — distroless image has no /bin/sh (CLAUDE.md §8)
+  # ============================================================================
+  node-exporter:
+    <<: *logging-defaults
+    image: prom/node-exporter:${NODE_EXPORTER_VERSION:-v1.11.1}
+    container_name: agmind-node-exporter
+    restart: unless-stopped
+    pid: host
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/host/root'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro,rslave
+    ports:
+      - "9100:9100"
+
+volumes:
+  agmind_vllm_cache:
