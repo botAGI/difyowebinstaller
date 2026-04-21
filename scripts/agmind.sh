@@ -380,6 +380,29 @@ cmd_doctor() {
         [[ -z "$rest" ]] && _check OK "No restart loops" || _check FAIL "Restart loop" "$rest"
     fi
 
+    # --peer shorthand: show only peer section then exit
+    if [[ "${1:-}" == "--peer" ]]; then
+        [[ "$output_json" != "true" ]] && echo -e "\n${BOLD}Peer Node:${NC}"
+        _doctor_peer
+        if [[ "$output_json" != "true" ]]; then
+            echo ""
+            if [[ $errors -gt 0 ]]; then
+                echo -e "${RED}${errors} error(s), ${warnings} warning(s)${NC}" >&2
+                return 2
+            elif [[ $warnings -gt 0 ]]; then
+                echo -e "${YELLOW}${warnings} warning(s)${NC}"
+                return 1
+            else
+                echo -e "${GREEN}All checks passed${NC}"
+            fi
+        fi
+        return 0
+    fi
+
+    # Full doctor — always include peer section if cluster.json may exist
+    [[ "$output_json" != "true" ]] && echo -e "\n${BOLD}Peer Node:${NC}"
+    _doctor_peer
+
     # Output
     if [[ "$output_json" == "true" ]]; then
         local cj; cj="$(printf '%s,' "${checks[@]}" | sed 's/,$//')"
@@ -886,7 +909,8 @@ Usage: agmind <command> [options]
 
 Commands:
   status [--json]    Show stack status (services, GPU, models, endpoints)
-  doctor [--json]    Run system diagnostics
+  doctor [--peer] [--json]   Run system diagnostics (--peer = only peer section)
+  health [--peer] [--json]   Alias for doctor
   logs [-f] [svc]    Show container logs
   stop               Stop all containers
   start              Start containers
@@ -931,6 +955,7 @@ HELP
 case "${1:-help}" in
     status)         shift; cmd_status "${1:-}" ;;
     doctor)         shift; cmd_doctor "${1:-}" ;;
+    health)         shift; cmd_doctor "${1:-}" ;;   # alias: agmind health [--peer] [--json]
     stop)           cmd_stop ;;
     start)          cmd_start ;;
     restart)        cmd_restart ;;

@@ -812,6 +812,73 @@ report_health() {
 # STANDALONE
 # ============================================================================
 
+# ============================================================================
+# PEER DOCTOR (Plan 02-04, PEER-06)
+# Reports peer vLLM + reachability + cluster.json state.
+# Used by cmd_doctor (agmind.sh) for full health and --peer shorthand.
+# Requires _check to be defined in the calling scope (cmd_doctor nested fn).
+# ============================================================================
+
+_doctor_peer() {
+    local state_file="${AGMIND_CLUSTER_STATE_FILE:-/var/lib/agmind/state/cluster.json}"
+    if [[ ! -f "$state_file" ]]; then
+        _check SKIP "Peer Node" "cluster.json missing (single install)"
+        return 0
+    fi
+    if ! command -v jq >/dev/null 2>&1; then
+        _check WARN "Peer Node" "jq missing — cannot read cluster.json"
+        return 0
+    fi
+    local mode peer_hostname peer_ip status
+    mode="$(jq -r '.mode // "single"'                "$state_file" 2>/dev/null || echo single)"
+    peer_hostname="$(jq -r '.peer_hostname // empty' "$state_file" 2>/dev/null || true)"
+    peer_ip="$(jq -r '.peer_ip // empty'             "$state_file" 2>/dev/null || true)"
+    status="$(jq -r '.status // "unknown"'           "$state_file" 2>/dev/null || echo unknown)"
+
+    if [[ "$mode" != "master" ]]; then
+        _check SKIP "Peer Node" "mode=${mode} (single-node install)"
+        return 0
+    fi
+    if [[ -z "$peer_ip" ]]; then
+        _check FAIL "Peer Node" "mode=master but peer_ip empty in cluster.json" \
+            "rerun install.sh — phase_deploy_peer will re-detect"
+        return 1
+    fi
+
+    # Reachability
+    if ping -c 1 -W 2 "$peer_ip" >/dev/null 2>&1; then
+        _check OK "Peer reachable" "${peer_hostname:-unknown} (${peer_ip})"
+    else
+        _check FAIL "Peer unreachable" "ping ${peer_ip} failed" \
+            "check QSFP link; mtu; ip route"
+        return 1
+    fi
+
+    # vLLM health
+    if curl -sSf --max-time 5 "http://${peer_ip}:8000/v1/models" >/dev/null 2>&1; then
+        local model
+        model="$(curl -sSf --max-time 5 "http://${peer_ip}:8000/v1/models" 2>/dev/null \
+            | jq -r '.data[0].id // "unknown"' 2>/dev/null || echo "unknown")"
+        _check OK "Peer vLLM :8000" "model: ${model}"
+    else
+        _check FAIL "Peer vLLM :8000" "not responding" \
+            "ssh ${AGMIND_PEER_USER:-agmind2}@${peer_ip} docker logs agmind-vllm --tail 30"
+        return 1
+    fi
+
+    # cluster.json status sanity
+    case "$status" in
+        running)    _check OK   "cluster.json status" "running" ;;
+        configured) _check WARN "cluster.json status" "configured (deploy not completed?)" \
+                        "rerun install.sh from phase 7: sudo bash install.sh" ;;
+        failed)     _check FAIL "cluster.json status" "failed — last deploy errored" \
+                        "rerun install.sh" ;;
+        *)          _check WARN "cluster.json status" "${status}" ;;
+    esac
+
+    return 0
+}
+
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     # shellcheck source=common.sh
