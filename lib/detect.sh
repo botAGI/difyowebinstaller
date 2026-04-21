@@ -440,6 +440,152 @@ _assert_no_foreign_mdns() {
 }
 
 # ============================================================================
+# PEER DETECTION (PEER-01, PEER-02, PEER-03)
+# Dual-Spark: find another AGmind node on direct-attach QSFP subnet.
+# Primary: LLDP (lldpcli -f json). Fallback: fping targeted on first 10 IPs.
+# All functions return 0 always — soft dependency, never breaks install.
+# ============================================================================
+
+# Ensure lldpd is installed and running. On DGX Spark, QSFP interface
+# (enp1s0f0np0) only joins neighbour table after explicit restart — known
+# lldpd 1.0.18 quirk (RESEARCH.md §1).
+# Air-gap friendly (PEER-02): honors DETECTED_NETWORK env var set by
+# preflight_checks. If offline, silent skip with warn — NO 3-sec curl delay.
+# Returns 0 always (soft dependency).
+_ensure_lldpd() {
+    # Skip install if lldpd already present
+    if command -v lldpcli >/dev/null 2>&1; then
+        systemctl enable lldpd >/dev/null 2>&1 || true
+        # CRITICAL: restart to pick up QSFP interfaces after boot (RESEARCH.md §1)
+        systemctl restart lldpd 2>/dev/null || true
+        # LIVE VERIFIED: QSFP interface enumeration requires grace period after restart —
+        # spark-69a2 broadcasts LLDP every 30 sec; snapshot after restart ready in ~1-2s.
+        sleep 2
+        return 0
+    fi
+
+    # PEER-02: honor offline/air-gap — skip with warn, NOT abort, NO curl-delay
+    if [[ "${DETECTED_NETWORK:-true}" != "true" ]]; then
+        log_warn "lldpd absent + network offline — peer detection skipped (PEER-02 offline/air-gap profile)"
+        return 0
+    fi
+
+    if command -v apt-get >/dev/null 2>&1; then
+        log_info "Installing lldpd for peer detection..."
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -q lldpd >/dev/null 2>&1 || {
+            log_warn "lldpd install failed — peer detection via LLDP disabled (fping fallback only)"
+            return 0
+        }
+        # LIVE VERIFIED: QSFP interface enumeration requires systemctl restart
+        systemctl enable lldpd >/dev/null 2>&1 || true
+        systemctl restart lldpd 2>/dev/null || true
+        sleep 2  # grace period for interface enumeration
+    else
+        log_warn "apt-get not available — lldpd install skipped; peer detection via fping fallback only"
+    fi
+    return 0
+}
+
+# fping-based fallback on AGMIND_CLUSTER_SUBNET_PREFIX (default 192.168.100).
+# Scans first 10 IPs only — direct QSFP supports 2 nodes, /30 or /29 realistic.
+# Total timeout: 300ms x 10 = 3s max. Skips self-IP.
+# Prints first responding peer IP to stdout, or empty string.
+_peer_ping_fallback() {
+    local subnet_prefix="${AGMIND_CLUSTER_SUBNET_PREFIX:-192.168.100}"
+    local our_ip=""
+    # Find our QSFP IP on any interface that has subnet_prefix.*
+    our_ip="$(ip -o -4 addr show 2>/dev/null \
+        | awk -v pfx="$subnet_prefix" '$4 ~ "^"pfx"\\." {split($4,a,"/"); print a[1]}' \
+        | head -1 || true)"
+    if ! command -v fping >/dev/null 2>&1; then
+        log_warn "fping not available — peer ping fallback skipped"
+        echo ""
+        return 0
+    fi
+    local candidates=() i
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+        local candidate="${subnet_prefix}.${i}"
+        [[ "$candidate" == "$our_ip" ]] && continue
+        candidates+=("$candidate")
+    done
+    if [[ ${#candidates[@]} -eq 0 ]]; then
+        echo ""
+        return 0
+    fi
+    # -a: print only alive. -t: per-target timeout ms. -r: retries.
+    local alive
+    alive="$(fping -a -t 300 -r 1 "${candidates[@]}" 2>/dev/null | head -1 || true)"
+    echo "${alive:-}"
+}
+
+# Detect peer node on direct-attach QSFP. Soft: never non-zero exit.
+# Exports (via export; caller reads env):
+#   PEER_HOSTNAME  — peer chassis name (e.g. spark-69a2), or empty
+#   PEER_IP        — peer IP on QSFP subnet (e.g. 192.168.100.2), or empty
+#   PEER_USER      — default remote SSH username (agmind2 per live verify; overridable)
+hw_detect_peer() {
+    PEER_HOSTNAME=""
+    PEER_IP=""
+    PEER_USER="${AGMIND_PEER_USER:-agmind2}"
+    export PEER_HOSTNAME PEER_IP PEER_USER
+
+    local our_host
+    our_host="$(hostname 2>/dev/null || echo '')"
+    local subnet_prefix="${AGMIND_CLUSTER_SUBNET_PREFIX:-192.168.100}"
+
+    # --- Primary: LLDP (lldpcli -f json, NOT lldpctl — RESEARCH.md §1) ---
+    if command -v lldpcli >/dev/null 2>&1; then
+        local peer_json
+        peer_json="$(lldpcli -f json show neighbors 2>/dev/null || true)"
+        if [[ -n "$peer_json" ]] && command -v jq >/dev/null 2>&1; then
+            # Extract first non-self chassis with mgmt-ip in our subnet
+            local peer_entry
+            peer_entry="$(echo "$peer_json" | jq -r \
+                --arg self "$our_host" \
+                --arg pfx "$subnet_prefix" \
+                '[.lldp.interface // [] | .[]?
+                  | to_entries[]?
+                  | .value.chassis
+                  | to_entries[]?
+                  | select(.key != $self)
+                  | select(.key | test("spark-"; "i"))
+                  | {hostname: .key, ips: (.value["mgmt-ip"] // [])}
+                 ] | .[0] // empty
+                 | if type == "object" then
+                     "\(.hostname)\t" +
+                     ((.ips | if type == "array" then . else [.] end
+                       | map(select(test("^" + ($pfx | gsub("\\."; "\\\\.")) + "\\.")))
+                       | .[0] // ""))
+                   else "" end
+                ' 2>/dev/null || true)"
+            if [[ -n "$peer_entry" && "$peer_entry" == *$'\t'* ]]; then
+                PEER_HOSTNAME="${peer_entry%%$'\t'*}"
+                PEER_IP="${peer_entry#*$'\t'}"
+                if [[ -n "$PEER_HOSTNAME" && -n "$PEER_IP" ]]; then
+                    log_success "LLDP: peer ${PEER_HOSTNAME} at ${PEER_IP}"
+                    export PEER_HOSTNAME PEER_IP PEER_USER
+                    return 0
+                fi
+            fi
+        fi
+    fi
+
+    # --- Fallback: fping subnet scan ---
+    local ping_ip
+    ping_ip="$(_peer_ping_fallback || true)"
+    if [[ -n "$ping_ip" ]]; then
+        PEER_IP="$ping_ip"
+        # Hostname unknown without LLDP — will be discovered via SSH in Plan 02-04
+        log_info "fping: peer found at ${PEER_IP} (hostname unknown — will resolve via SSH)"
+        export PEER_HOSTNAME PEER_IP PEER_USER
+        return 0
+    fi
+
+    log_info "No peer detected on ${subnet_prefix}.0/24 — proceeding in single-node mode"
+    return 0
+}
+
+# ============================================================================
 # PREFLIGHT CHECKS
 # ============================================================================
 
