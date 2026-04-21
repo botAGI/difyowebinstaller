@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Mock for ip — keyed by MOCK_IP_FIXTURE env var.
+# Handles: ip -o -4 route show to default
+#          ip -o -4 addr show dev <iface>
+# Fixtures: primary | no_route | docker
+set -euo pipefail
+FIX="${MOCK_IP_FIXTURE:-primary}"
+if [[ "${1:-}" == "-o" && "${2:-}" == "-4" && "${3:-}" == "route" ]]; then
+    case "$FIX" in
+        primary)  echo "default via 192.168.1.1 dev enP7s7 proto dhcp metric 100" ;;
+        docker)   echo "default via 172.17.0.1 dev docker0 proto dhcp metric 100" ;;
+        no_route) ;; # empty — no default route
+        *)
+            echo "mock ip: unknown MOCK_IP_FIXTURE=$FIX" >&2
+            exit 2
+            ;;
+    esac
+    exit 0
+fi
+if [[ "${1:-}" == "-o" && "${2:-}" == "-4" && "${3:-}" == "addr" ]]; then
+    iface="${6:-}"
+    case "$FIX" in
+        primary)
+            [[ "$iface" == "enP7s7" ]] && \
+                echo "2: enP7s7    inet 192.168.1.45/24 brd 192.168.1.255 scope global enP7s7"
+            ;;
+        docker)
+            [[ "$iface" == "docker0" ]] && \
+                echo "3: docker0    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0"
+            ;;
+        no_route) ;;
+        *)
+            echo "mock ip: unknown MOCK_IP_FIXTURE=$FIX" >&2
+            exit 2
+            ;;
+    esac
+    exit 0
+fi
+exit 0

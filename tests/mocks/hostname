@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Mock for hostname — keyed by MOCK_HOSTNAME_FIXTURE env var.
+# Handles: hostname -I
+# Fixtures: docker_first | primary_first | only_docker | empty
+set -euo pipefail
+FIX="${MOCK_HOSTNAME_FIXTURE:-docker_first}"
+if [[ "${1:-}" == "-I" ]]; then
+    case "$FIX" in
+        docker_first)  echo "172.17.0.1 192.168.1.45 192.168.100.1" ;;
+        primary_first) echo "192.168.1.45 172.17.0.1 192.168.100.1" ;;
+        only_docker)   echo "172.17.0.1" ;;
+        empty)         echo "" ;;
+        *)
+            echo "mock hostname: unknown MOCK_HOSTNAME_FIXTURE=$FIX" >&2
+            exit 2
+            ;;
+    esac
+    exit 0
+fi
+echo "mock-host"
