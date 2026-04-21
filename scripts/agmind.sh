@@ -902,6 +902,7 @@ Commands:
     last               Show 5 most recent result JSON files
   docling bench <pdf>  Benchmark docling-serve on a real PDF (Phase 42)
                        Iterates ?=3 times, reports cold/warm/per-page timing
+  mdns-status [--json]  Diagnose mDNS publishing (exits 1 on any issue)
   init-dify          Initialize Dify admin (if auto-init failed)
   backup             Create backup (root)
   restore <path>     Restore from backup (root)
@@ -943,6 +944,7 @@ case "${1:-help}" in
     gpu)            shift; cmd_gpu "$@" ;;
     model)          shift; cmd_model "$@" ;;
     loadtest)       shift; cmd_loadtest "$@" ;;
+    mdns-status)    shift; exec "${SCRIPTS_DIR}/mdns-status.sh" "$@" ;;
     docling)        shift
                     case "${1:-}" in
                         bench) shift; exec "${SCRIPTS_DIR}/docling-bench.sh" "$@" ;;
