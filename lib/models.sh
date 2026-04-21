@@ -273,7 +273,6 @@ check_ollama_models() {
 download_models() {
     local llm_model="${LLM_MODEL:-qwen2.5:14b}"
     local embedding_model="${EMBEDDING_MODEL:-bge-m3}"
-    local profile="${DEPLOY_PROFILE:-lan}"
     local llm_provider="${LLM_PROVIDER:-ollama}"
     local embed_provider="${EMBED_PROVIDER:-ollama}"
 

@@ -11,6 +11,7 @@ if [[ -n "${_SERVICE_MAP_LOADED:-}" ]]; then return 0; fi
 _SERVICE_MAP_LOADED=1
 
 # Short component name -> versions.env variable key
+# shellcheck disable=SC2034  # sourced globals used by health.sh, update.sh, compose.sh
 declare -A NAME_TO_VERSION_KEY=(
     [dify-api]=DIFY_VERSION
     [dify-worker]=DIFY_VERSION
@@ -53,6 +54,7 @@ declare -A NAME_TO_VERSION_KEY=(
 )
 
 # Short component name -> compose service name(s) to restart on update
+# shellcheck disable=SC2034  # sourced global
 declare -A NAME_TO_SERVICES=(
     [dify-api]="api worker web sandbox plugin_daemon"
     [dify-worker]="api worker web sandbox plugin_daemon"
@@ -95,9 +97,11 @@ declare -A NAME_TO_SERVICES=(
 )
 
 # Components sharing the same Docker image (restart all when one updates)
+# shellcheck disable=SC2034  # sourced global
 declare -A SERVICE_GROUPS=(
     [dify]="dify-api dify-worker dify-web sandbox plugin-daemon"
 )
 
 # All known compose profiles (for compose down --remove-orphans)
+# shellcheck disable=SC2034  # sourced global used by compose.sh _compose_down_all
 ALL_COMPOSE_PROFILES="vps,monitoring,qdrant,weaviate,etl,authelia,ollama,vllm,tei,reranker,vllm-embed,vllm-rerank,docling,litellm,searxng,notebook,dbgpt,crawl4ai,openwebui,minio"

@@ -6,10 +6,14 @@ umask 077
 INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
 ENV_FILE="${INSTALL_DIR}/docker/.env"
 LOG_FILE="${INSTALL_DIR}/logs/secret_rotation.log"
+# shellcheck disable=SC2034  # COMPOSE_FILE reserved for future use
 COMPOSE_FILE="${INSTALL_DIR}/docker/docker-compose.yml"
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
-CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m'
 
 # --- Exclusive lock ---
 LOCK_FILE="/var/lock/agmind-operation.lock"

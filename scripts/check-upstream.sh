@@ -11,8 +11,6 @@ REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 VERSIONS_FILE="${REPO_DIR}/templates/versions.env"
 REPORT_FILE="/tmp/upstream-report.md"
 TODAY=$(date +%Y-%m-%d)
-DAY=$(date +%d)
-MONTH=$(date +%m)
 
 # --- Component definitions: "Name|VERSION_VAR|repo|source" ---
 # source: gh = GitHub Releases (default), hub = Docker Hub tags

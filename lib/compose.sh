@@ -317,15 +317,13 @@ _pull_with_progress() {
 
     log_info "Pulling ${total} images..."
 
-    local pull_rc=0
-
     if [[ -n "${ORIGINAL_TTY_FD:-}" ]] && { true >&"${ORIGINAL_TTY_FD}"; } 2>/dev/null; then
         # TTY: pull in foreground on original TTY (fd 3) for interactive progress.
         # No watchdog — Docker handles its own timeouts. User can Ctrl+C if stuck.
         if [[ -n "$profiles" ]]; then
-            COMPOSE_PROFILES="$profiles" docker compose pull >&"${ORIGINAL_TTY_FD}" 2>&1 || pull_rc=$?
+            COMPOSE_PROFILES="$profiles" docker compose pull >&"${ORIGINAL_TTY_FD}" 2>&1 || true
         else
-            docker compose pull >&"${ORIGINAL_TTY_FD}" 2>&1 || pull_rc=$?
+            docker compose pull >&"${ORIGINAL_TTY_FD}" 2>&1 || true
         fi
     else
         # non-TTY: redirect to log file, monitor by file size
@@ -337,7 +335,7 @@ _pull_with_progress() {
             docker compose pull > "$pull_log" 2>&1 &
         fi
         local pull_pid=$!
-        _monitor_pull_inactivity "$pull_pid" "$pull_log" || pull_rc=$?
+        _monitor_pull_inactivity "$pull_pid" "$pull_log" || true
         rm -f "$pull_log"
     fi
 

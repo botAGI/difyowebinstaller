@@ -21,7 +21,6 @@ CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/agmind}"
 REPORT_DIR="${INSTALL_DIR}/logs/dr-drills"
-COMPOSE_FILE="${INSTALL_DIR}/docker/docker-compose.yml"
 HEALTH_SCRIPT="${INSTALL_DIR}/scripts/health.sh"
 BACKUP_SCRIPT="${INSTALL_DIR}/scripts/backup.sh"
 RESTORE_SCRIPT="${INSTALL_DIR}/scripts/restore.sh"

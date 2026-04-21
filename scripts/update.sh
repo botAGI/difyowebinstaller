@@ -15,6 +15,7 @@ ROLLBACK_DIR="${INSTALL_DIR}/.rollback"
 ENV_FILE="${INSTALL_DIR}/docker/.env"
 LOG_FILE="${INSTALL_DIR}/logs/update_history.log"
 BACKUP_SCRIPT="${INSTALL_DIR}/scripts/backup.sh"
+# shellcheck disable=SC2034  # HEALTH_SCRIPT reserved for future health verification use
 HEALTH_SCRIPT="${INSTALL_DIR}/scripts/health.sh"
 GITHUB_API_URL="https://api.github.com/repos/botAGI/AGmind/releases/latest"
 RELEASE_FILE="${INSTALL_DIR}/RELEASE"
@@ -165,7 +166,8 @@ update_scripts() {
     fi
 
     # Stash any local changes (safety net per Pitfall C-01)
-    local stash_msg="agmind-update-$(date +%s)"
+    local stash_msg
+    stash_msg="agmind-update-$(date +%s)"
     if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
         log_info "Stashing local changes before pull..."
         git stash push -m "$stash_msg" --include-untracked 2>/dev/null || true
@@ -330,7 +332,7 @@ fetch_release_info() {
             log_error "Check network or try: agmind update --component <name> --version <tag>"
         fi
         # Continue without release notes — versions.env already fetched from branch
-        RELEASE_TAG=""; RELEASE_NAME=""; RELEASE_DATE=""; RELEASE_NOTES=""
+        RELEASE_TAG=""; RELEASE_DATE=""; RELEASE_NOTES=""
         json_data=""
     }
 
@@ -347,7 +349,7 @@ print(f\"RELEASE_TAG='{tag}'\")
 print(f\"RELEASE_NAME='{name}'\")
 print(f\"RELEASE_DATE='{date}'\")
 print(f\"RELEASE_NOTES='{body}'\")
-")" || { log_warn "Failed to parse GitHub API response — continuing without release notes"; RELEASE_TAG=""; RELEASE_NAME=""; RELEASE_DATE=""; RELEASE_NOTES=""; }
+")" || { log_warn "Failed to parse GitHub API response — continuing without release notes"; RELEASE_TAG=""; RELEASE_DATE=""; RELEASE_NOTES=""; }
     fi
 
     # Download versions.env from branch (not from release assets)
