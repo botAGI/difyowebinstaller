@@ -64,6 +64,8 @@
 - Model picker wizard (v3.1 кандидат)
 - VPS profile изменения (v3.1+)
 - Kubernetes, multi-peer (>2 Spark), GPU budget tracker
+- **Open Notebook fix** — disabled on deploy, tracked in `.planning/BACKLOG.md` #999.1
+  (SurrealDB auth divergence on recreate; fix approaches listed there)
 
 ---
 
