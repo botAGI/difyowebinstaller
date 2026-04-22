@@ -204,7 +204,7 @@ phase_models_graceful() {
     fi
 }
 phase_backups()     { setup_backups; setup_tunnel; }
-phase_complete()    { create_openwebui_admin; _init_minio_bucket; _init_dify_admin; _save_credentials; _install_cli; _install_crons; _install_systemd_service; verify_services || true; _verify_post_install_smoke; _show_final_summary; _apply_dify_patches; }
+phase_complete()    { create_openwebui_admin; _init_minio_bucket; _ensure_api_responsive; _init_dify_admin; _sync_grafana_admin_password; _ensure_docling_ocr_models; _save_credentials; _install_cli; _install_crons; _install_systemd_service; verify_services || true; _verify_post_install_smoke; _show_final_summary; _apply_dify_patches; }
 
 # ============================================================================
 # PEER DEPLOY (Plan 02-04, PEER-05)
@@ -221,11 +221,15 @@ VLLM_SPARK_IMAGE=${VLLM_SPARK_IMAGE:-vllm/vllm-openai:gemma4-cu130}
 VLLM_MODEL=${VLLM_MODEL:-${VLLM_SPARK_MODEL:-google/gemma-4-26B-A4B-it}}
 VLLM_SPARK_MODEL=${VLLM_SPARK_MODEL:-google/gemma-4-26B-A4B-it}
 VLLM_CMD_PREFIX=${VLLM_CMD_PREFIX:-}
-VLLM_EXTRA_ARGS=${VLLM_EXTRA_ARGS:-}
+VLLM_EXTRA_ARGS="${VLLM_EXTRA_ARGS:---kv-cache-dtype fp8 --enable-prefix-caching --enforce-eager}"
 VLLM_CUDA_SUFFIX=${VLLM_CUDA_SUFFIX:-}
 VLLM_MAX_MODEL_LEN=${VLLM_MAX_MODEL_LEN:-65536}
-VLLM_GPU_MEM_UTIL=${VLLM_GPU_MEM_UTIL:-0.60}
-VLLM_MEM_LIMIT=${VLLM_MEM_LIMIT:-96g}
+# Peer = dedicated under vLLM (no docling/embed/rerank sharing GPU).
+# Override master's shared-budget defaults with peer-dedicated values:
+# - 0.85 util × 121 GiB unified = 103 GiB vLLM, 18 GiB OS headroom
+# - CLAUDE.md §8: 0.90 too tight for OS+Docker+ssh+avahi baseline.
+VLLM_GPU_MEM_UTIL=${AGMIND_PEER_VLLM_GPU_MEM_UTIL:-0.85}
+VLLM_MEM_LIMIT=${AGMIND_PEER_VLLM_MEM_LIMIT:-110g}
 VLLM_CUDA_DEVICE=${VLLM_CUDA_DEVICE:-0}
 HF_TOKEN=${HF_TOKEN:-}
 # NVIDIA — CLAUDE.md §8 compute,utility required for NVML/libcuda
@@ -246,15 +250,43 @@ _deploy_image_to_peer() {
     local ssh_opts
     ssh_opts="$(_agmind_peer_ssh_opts)"
 
+    # Peer user NOT in docker group → all docker commands на peer use `sudo -n docker`.
+    # NOPASSWD sudo pre-configured on DGX Spark peer (see project_spark_cluster memory).
+
+    # 1. If peer already has image locally — skip (idempotent).
+    # shellcheck disable=SC2086
     if ssh $ssh_opts "${peer_user}@${peer_ip}" \
-            "docker image inspect ${image} >/dev/null 2>&1"; then
+            "sudo -n docker image inspect ${image} >/dev/null 2>&1"; then
         log_info "Image ${image} already present on peer — skipping transfer"
         return 0
     fi
 
-    log_info "Transferring image ${image} to peer ${peer_ip} (may take several minutes)..."
+    # 2. Prefer peer-side direct pull (saves 10+ GB SSH transfer if peer has WAN).
+    log_info "Attempting peer-side pull of ${image} (peer has WAN via wifi)..."
     # shellcheck disable=SC2086
-    if ! docker save "${image}" | ssh $ssh_opts "${peer_user}@${peer_ip}" "docker load" >/dev/null 2>&1; then
+    if ssh $ssh_opts "${peer_user}@${peer_ip}" \
+            "sudo -n docker pull ${image}" 2>&1 | tail -5; then
+        # shellcheck disable=SC2086
+        if ssh $ssh_opts "${peer_user}@${peer_ip}" \
+                "sudo -n docker image inspect ${image} >/dev/null 2>&1"; then
+            log_success "Peer pulled ${image} directly"
+            return 0
+        fi
+    fi
+    log_warn "Peer-side pull failed — falling back to master save|load transfer"
+
+    # 3. Fallback: master must have image locally to save. Pull if absent.
+    if ! docker image inspect "${image}" >/dev/null 2>&1; then
+        log_info "Pulling ${image} on master for transfer..."
+        if ! docker pull "${image}"; then
+            log_error "Master pull of ${image} failed — cannot transfer to peer"
+            return 1
+        fi
+    fi
+
+    log_info "Transferring image ${image} master→peer via SSH save|load (may take 5-10 min)..."
+    # shellcheck disable=SC2086
+    if ! docker save "${image}" | ssh $ssh_opts "${peer_user}@${peer_ip}" "sudo -n docker load" >/dev/null 2>&1; then
         log_error "Image transfer to peer failed"
         return 1
     fi
@@ -265,7 +297,7 @@ _deploy_image_to_peer() {
 # Timeout 30 min (cold gemma-4-26B download may take 15+ min).
 _wait_peer_vllm_ready() {
     local peer_ip="${1:?peer_ip required}"
-    local timeout="${2:-1800}"
+    local timeout="${2:-5400}"
     local start elapsed
     start="$(date +%s)"
     log_info "Waiting for vLLM on peer ${peer_ip}:8000 (timeout: ${timeout}s)..."
@@ -335,7 +367,7 @@ phase_deploy_peer() {
     local current_image
     # shellcheck disable=SC2086
     current_image="$(ssh $ssh_opts "${peer_user}@${peer_ip}" \
-        "docker ps --filter 'name=agmind-vllm' --format '{{.Image}}' 2>/dev/null | head -1" 2>/dev/null || true)"
+        "sudo -n docker ps --filter 'name=agmind-vllm' --format '{{.Image}}' 2>/dev/null | head -1" 2>/dev/null || true)"
     if [[ -n "$current_image" && "$current_image" == "$target_image" ]]; then
         log_info "vLLM already running on peer with image ${current_image} — checking health"
         if _wait_peer_vllm_ready "$peer_ip" 60; then
@@ -382,15 +414,15 @@ phase_deploy_peer() {
     # Use `compose up -d` (not --force-recreate): respects existing containers.
     # shellcheck disable=SC2086
     if ! ssh $ssh_opts "${peer_user}@${peer_ip}" \
-            "cd ${peer_dir} && docker compose -f docker-compose.worker.yml up -d" >/dev/null 2>&1; then
+            "cd ${peer_dir} && sudo -n docker compose -f docker-compose.worker.yml up -d" >/dev/null 2>&1; then
         log_error "docker compose up on peer failed"
-        log_error "  Diagnose: ssh ${peer_user}@${peer_ip} 'cd ${peer_dir} && docker compose -f docker-compose.worker.yml logs'"
+        log_error "  Diagnose: ssh ${peer_user}@${peer_ip} 'cd ${peer_dir} && sudo -n docker compose -f docker-compose.worker.yml logs'"
         cluster_status_update "failed" 2>/dev/null || true
         return 1
     fi
 
     # 7. Wait for vllm healthy
-    if ! _wait_peer_vllm_ready "$peer_ip" 1800; then
+    if ! _wait_peer_vllm_ready "$peer_ip" 5400; then
         cluster_status_update "failed" 2>/dev/null || true
         return 1
     fi
@@ -472,6 +504,59 @@ _copy_runtime_files() {
     cp "${INSTALLER_DIR}/lib/health.sh" "${INSTALL_DIR}/scripts/health.sh" 2>/dev/null || true
     cp "${INSTALLER_DIR}/lib/detect.sh" "${INSTALL_DIR}/scripts/detect.sh" 2>/dev/null || true
     chmod +x "${INSTALL_DIR}/scripts/"*.sh 2>/dev/null || true
+}
+
+# Cleans stale Redis state left by prior force-recreate of api/worker.
+# Celery hostnames change on recreate, but generate_task_belong:* (DB 0) and
+# celery-task-meta-* (DB 1) still reference the dead hostname — workers pub/sub
+# on wrong channels → new tasks hang. See CLAUDE.md §8 "force-recreate trap".
+# Safe to run anytime: DEL by pattern, no FLUSHDB (Redis ACL blocks it anyway).
+_clean_stale_celery_state() {
+    local pw
+    pw="$(grep '^REDIS_PASSWORD=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2-)"
+    [[ -z "$pw" ]] && return 0
+    docker ps --filter 'name=agmind-redis' --filter 'status=running' --format '{{.Names}}' \
+        | grep -q agmind-redis || return 0
+    docker exec agmind-redis sh -c "redis-cli -a '$pw' --no-auth-warning -n 0 --scan --pattern 'generate_task_belong:*' | xargs -r redis-cli -a '$pw' --no-auth-warning -n 0 DEL >/dev/null" 2>/dev/null || true
+    docker exec agmind-redis sh -c "redis-cli -a '$pw' --no-auth-warning -n 1 --scan --pattern 'celery-task-meta-*' | xargs -r redis-cli -a '$pw' --no-auth-warning -n 1 DEL >/dev/null" 2>/dev/null || true
+}
+
+# Verifies Dify API is truly responsive, not just gunicorn-listening.
+# Gunicorn can accept TCP but gevent worker can deadlock during cold boot
+# (lazy imports + migrations + aws_s3 init). /health answers fast, but real
+# endpoints like /console/api/setup hang for 60+ sec.
+# If deadlock detected → clean stale state → docker restart (NOT recreate).
+_ensure_api_responsive() {
+    if ! docker ps --filter 'name=agmind-api' --filter 'status=running' --format '{{.Names}}' | grep -q agmind-api; then
+        return 0
+    fi
+    log_info "Verifying Dify API is responsive (deep check: /console/api/setup)..."
+    local attempts=0 max_attempts=24  # 24 × 5s = 2 min
+    while [[ $attempts -lt $max_attempts ]]; do
+        if docker exec agmind-api sh -c 'curl -sf --max-time 5 http://localhost:5001/console/api/setup -o /dev/null' 2>/dev/null; then
+            log_success "Dify API responsive"
+            return 0
+        fi
+        sleep 5
+        attempts=$((attempts + 1))
+    done
+
+    log_warn "Dify API deadlock detected (gunicorn listening but endpoints hang)"
+    log_warn "  Applying CLAUDE.md §8 force-recreate recovery: clean Redis + restart"
+    _clean_stale_celery_state
+    docker restart agmind-api agmind-worker >/dev/null 2>&1 || true
+
+    attempts=0
+    while [[ $attempts -lt $max_attempts ]]; do
+        if docker exec agmind-api sh -c 'curl -sf --max-time 5 http://localhost:5001/console/api/setup -o /dev/null' 2>/dev/null; then
+            log_success "Dify API recovered after restart"
+            return 0
+        fi
+        sleep 5
+        attempts=$((attempts + 1))
+    done
+    log_warn "Dify API still unresponsive after restart — _init_dify_admin may skip"
+    return 0
 }
 
 _init_dify_admin() {
@@ -568,6 +653,70 @@ _init_dify_admin() {
     log_warn "[dify-init] Dify init failed after 3 attempts — run 'agmind init-dify' manually"
 }
 
+# Pre-download EasyOCR Cyrillic model so first OCR on RU scans doesn't
+# stall on network fetch (or fail in air-gapped installs). CLAUDE.md §8:
+# cyrillic_g2.pth не в bundled image, качается at first-use, теряется при
+# recreate. Download here makes it persistent in docling_cache volume.
+_ensure_docling_ocr_models() {
+    [[ "${ENABLE_DOCLING:-false}" == "true" ]] || return 0
+    docker ps --filter 'name=agmind-docling' --filter 'status=running' --format '{{.Names}}' \
+        | grep -q agmind-docling || return 0
+    local lang="${OCR_LANG:-rus,eng}"
+    case ",$lang," in
+        *,rus,*|*,ru,*|*,cyrillic,*) ;;
+        *) log_info "Docling OCR: ${lang} — Cyrillic pre-download skipped"; return 0 ;;
+    esac
+
+    # Volume path inside container (matches compose mount: agmind_docling_cache → /opt/app-root/src/.cache).
+    local easyocr_dir='/opt/app-root/src/.cache/docling/models/EasyOcr'
+    if docker exec agmind-docling sh -c "test -f '${easyocr_dir}/cyrillic_g2.pth'" 2>/dev/null; then
+        log_info "Docling OCR: cyrillic_g2.pth already present"
+        return 0
+    fi
+
+    log_info "Docling OCR: downloading cyrillic_g2.pth (~15 MB)..."
+    if docker exec agmind-docling python3 -c "
+import easyocr
+easyocr.Reader(['ru','en'], model_storage_directory='${easyocr_dir}', download_enabled=True, verbose=False)
+" >/dev/null 2>&1; then
+        log_success "Docling OCR: Cyrillic model ready"
+    else
+        log_warn "Docling OCR: cyrillic download failed — first RU scan will fetch on-demand"
+    fi
+}
+
+# Grafana persists admin pw in grafana.db on first boot and IGNORES
+# GF_SECURITY_ADMIN_PASSWORD on subsequent boots. If .env password was
+# regenerated (second install / upgrade), stored pw diverges from .env and
+# credentials.txt — user gets 401. Force-sync via grafana-cli is idempotent:
+# on fresh install no-op (matches env), on regen install — rewrites.
+_sync_grafana_admin_password() {
+    [[ "${MONITORING_MODE:-}" == "local" ]] || return 0
+    docker ps --filter 'name=agmind-grafana' --filter 'status=running' --format '{{.Names}}' \
+        | grep -q agmind-grafana || return 0
+
+    local pw
+    pw="$(grep '^GRAFANA_ADMIN_PASSWORD=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2-)"
+    [[ -z "$pw" ]] && return 0
+
+    # Wait for /api/health — grafana.db must be migrated & unlocked
+    local attempts=0
+    while [[ $attempts -lt 40 ]]; do
+        if docker exec agmind-grafana wget -qO- http://localhost:3000/api/health 2>/dev/null | grep -q '"database":"ok"'; then
+            break
+        fi
+        sleep 3
+        attempts=$((attempts + 1))
+    done
+    [[ $attempts -ge 40 ]] && { log_warn "Grafana not ready in 2 min — admin password sync skipped"; return 0; }
+
+    if docker exec agmind-grafana grafana cli admin reset-admin-password "$pw" >/dev/null 2>&1; then
+        log_info "Grafana admin password synced with .env"
+    else
+        log_warn "Grafana password sync failed — credentials.txt may be out of date"
+    fi
+}
+
 _init_minio_bucket() {
     [[ "${ENABLE_MINIO:-false}" == "true" ]] || return 0
     log_info "Creating MinIO bucket..."
@@ -654,13 +803,28 @@ _save_credentials() {
         fi
         # Model API Endpoints — Dify "Add Model" form fields, copy-paste ready
         if [[ "${LLM_PROVIDER:-}" == "vllm" ]]; then
+            # In master/worker cluster mode the LLM runs on peer (via QSFP) —
+            # master has no local agmind-vllm container. Read cluster.json to pick host.
+            local _vllm_host="agmind-vllm"
+            local _state_file="${AGMIND_CLUSTER_STATE_FILE:-/var/lib/agmind/state/cluster.json}"
+            if command -v jq >/dev/null 2>&1 && [[ -f "$_state_file" ]]; then
+                local _mode _peer_ip
+                _mode="$(jq -r '.mode // "single"' "$_state_file" 2>/dev/null)"
+                _peer_ip="$(jq -r '.peer_ip // empty' "$_state_file" 2>/dev/null)"
+                if [[ "$_mode" == "master" && -n "$_peer_ip" ]]; then
+                    _vllm_host="$_peer_ip"
+                fi
+            fi
             echo ""
             echo "=== vLLM (Dify → Settings → Model Provider → OpenAI-API-compatible) ==="
             echo "  Model Type:              LLM"
             echo "  Model Name:              ${VLLM_MODEL:-QuantTrio/Qwen3.5-27B-AWQ}"
-            echo "  API endpoint URL:        http://agmind-vllm:8000/v1"
+            echo "  API endpoint URL:        http://${_vllm_host}:8000/v1"
             echo "  API Key:                 none"
             echo "  model name for endpoint: ${VLLM_MODEL:-QuantTrio/Qwen3.5-27B-AWQ}"
+            if [[ "$_vllm_host" != "agmind-vllm" ]]; then
+                echo "  Note: LLM runs on peer Spark (${_vllm_host}) via QSFP — master has no local vllm container"
+            fi
         fi
         if [[ "${LLM_PROVIDER:-}" == "ollama" || "${EMBED_PROVIDER:-}" == "ollama" ]]; then
             echo ""
@@ -708,7 +872,7 @@ _save_credentials() {
             echo "=== vLLM Reranker (DGX Spark) ==="
             echo "  Model Type:              Rerank"
             echo "  Model Name:              ${VLLM_RERANK_MODEL:-BAAI/bge-reranker-v2-m3}"
-            echo "  API endpoint:            http://agmind-vllm-rerank:8000/score"
+            echo "  API endpoint URL:        http://agmind-vllm-rerank:8000/v1"
             echo "  API Key:                 none"
             echo "  Dify:                    Settings → Model Provider → OpenAI-API-compatible"
             echo "  model name for endpoint: ${VLLM_RERANK_MODEL:-BAAI/bge-reranker-v2-m3}"
@@ -1087,6 +1251,10 @@ _show_final_summary() {
     if [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]]; then
         echo -e "  ${BOLD}Crawl4AI:${NC}        ${GREEN}http://agmind-crawl.local/docs${NC}"
     fi
+    if [[ "${ENABLE_MINIO:-false}" == "true" ]]; then
+        echo -e "  ${BOLD}MinIO:${NC}           ${GREEN}http://${ip}:9001${NC}"
+        echo -e "    (credentials in ${INSTALL_DIR}/credentials.txt)"
+    fi
     if [[ "${MONITORING_MODE:-}" == "local" ]]; then
         echo ""
         echo -e "  ${BOLD}Grafana:${NC}         ${GREEN}http://${ip}:${GRAFANA_PORT:-3001}${NC}"
@@ -1124,13 +1292,7 @@ _show_final_summary() {
     echo -e "  ${BOLD}Credentials:${NC}     nano ${INSTALL_DIR}/credentials.txt"
     echo -e "  ${BOLD}Логи:${NC}            ${INSTALL_DIR}/install.log"
     echo -e "  ${BOLD}CLI:${NC}             agmind status | agmind health"
-    echo ""
-    echo -e "  ${BOLD}Next steps:${NC}"
-    echo -e "    1. Включи Citations в Dify app: Answer node → Show Citation ON"
-    echo -e "       Гайд: ${INSTALL_DIR}/docs/citations-guide.md"
-    echo -e "    2. Alerts по умолчанию OFF — включи канал (tg/email/webhook) при желании:"
-    echo -e "       see ${INSTALL_DIR}/docs/alerts-channels.md"
-    echo -e "    3. Замеряй производительность: agmind docling bench <pdf>"
+    echo -e "  ${BOLD}Документация:${NC}    ${INSTALL_DIR}/docs/  (citations, alerts, docling)"
     echo ""
     echo -e "  +--------------------------------------------------+"
     echo ""
