@@ -429,6 +429,17 @@ _append_provider_vars() {
         fi
     } >> "$env_file"
 
+    # Auto-detect host docker socket GID for portainer group_add. Without this,
+    # portainer (uid=0) cannot read /var/run/docker.sock (mode 660 root:docker)
+    # → master endpoint shows "Down" forever. See templates/docker-compose.yml
+    # portainer service for context.
+    if [[ -S /var/run/docker.sock ]]; then
+        local _docker_gid
+        _docker_gid="$(stat -c %g /var/run/docker.sock 2>/dev/null || echo 988)"
+        echo "DOCKER_GID=${_docker_gid}" >> "$env_file"
+        log_info "Detected host docker GID: ${_docker_gid} (portainer needs this)"
+    fi
+
     # Phase 36: collapse duplicate keys, keeping the LAST value (docker compose semantics).
     # _generate_env_file appends conditional overrides after the template was copied in,
     # producing duplicate KEY= lines. Callers (docker compose, dnsmasq generator) rely on
@@ -980,6 +991,14 @@ http_access deny all
 
 http_port 3128
 coredump_dir /var/spool/squid
+
+# Long-running requests (docling 500+ page PDF extraction can take 10+ min).
+# Default squid timeouts (5 min) cause 504 Gateway Timeout → Dify retries →
+# docling double-processes same file → 3× slowdown observed 2026-04-22 UAT.
+# See CLAUDE.md §8 + BACKLOG 999.3 context.
+request_timeout 30 minutes
+read_timeout 30 minutes
+connect_timeout 2 minutes
 SQUIDEOF
 
     chmod 644 "$squid_conf"
@@ -1153,6 +1172,28 @@ enable_gpu_compose() {
                 echo "VLLM_RERANK_GPU_MEM_UTIL=0.03" >> "$env_file"
                 echo "VLLM_RERANK_MEM_LIMIT=8g" >> "$env_file"
                 echo "DOCLING_MEM_LIMIT=16g" >> "$env_file"
+
+                # Cluster mode=master: vLLM main runs on peer, master GPU is free
+                # for embed/rerank/docling. Benchmarked 2026-04-22 on spark-3eac:
+                # 4 PDF (181+530+680+руководство) parallel → 5m36s total
+                # (~5 pages/sec throughput, 7-10× faster than conservative defaults).
+                # Safe because master has no ~73 GiB vllm main hogging the GPU.
+                if [[ "${AGMIND_MODE:-single}" == "master" ]]; then
+                    log_info "Cluster master mode — applying aggressive embed/rerank/docling limits (peer hosts LLM)"
+                    echo "# cluster mode=master overrides — vLLM main on peer, master GPU free" >> "$env_file"
+                    echo "VLLM_EMBED_GPU_MEM_UTIL=0.10" >> "$env_file"
+                    echo "VLLM_EMBED_MEM_LIMIT=12g" >> "$env_file"
+                    echo "VLLM_RERANK_GPU_MEM_UTIL=0.08" >> "$env_file"
+                    echo "VLLM_RERANK_MEM_LIMIT=10g" >> "$env_file"
+                    echo "DOCLING_MEM_LIMIT=32g" >> "$env_file"
+                    echo "DOCLING_SERVE_LAYOUT_BATCH_SIZE=256" >> "$env_file"
+                    echo "DOCLING_SERVE_OCR_BATCH_SIZE=256" >> "$env_file"
+                    echo "DOCLING_SERVE_TABLE_BATCH_SIZE=32" >> "$env_file"
+                    # 1 uvicorn process keeps models loaded once (no duplicate VRAM),
+                    # 4 async local workers serve concurrent requests efficiently.
+                    echo "DOCLING_UVICORN_WORKERS=1" >> "$env_file"
+                    echo "DOCLING_SERVE_WORKERS=4" >> "$env_file"
+                fi
             else
                 vllm_util=$(LC_NUMERIC=C awk "BEGIN { printf \"%.2f\", ($total_vram_mb - $tei_reserve_mb) / $total_vram_mb }")
                 # Clamp to [0.40, 0.92] — never starve vLLM or oversubscribe

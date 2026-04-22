@@ -652,6 +652,9 @@ services:
     mem_swappiness: 0
     profiles:
       - docling
+    ports:
+      # Expose UI/Swagger on host so ops can hit /docs without SSRF proxy detour.
+      - "${EXPOSE_DOCLING_PORT:-8765}:8765"
     expose:
       - "8765"
     command: ["docling-serve", "run", "--port", "8765", "--host", "0.0.0.0"]
@@ -1242,12 +1245,19 @@ services:
   # Set ENABLE_PORTAINER=false to disable entirely if not needed.
   portainer:
     <<: *security-defaults
-    image: portainer/portainer-ce:${PORTAINER_VERSION:-2.21.4}
+    image: portainer/portainer-ce:${PORTAINER_VERSION:-2.36.0}
     container_name: agmind-portainer
     restart: on-failure:5
     mem_limit: ${PORTAINER_MEM_LIMIT:-256m}
     profiles:
       - monitoring
+    # Portainer process runs as uid=0 but needs membership in the host's `docker`
+    # group to read /var/run/docker.sock (mode 660 root:docker). Without group_add
+    # the local endpoint snapshot fails permanently → master node shows "Down" in
+    # UI even though container is healthy. DOCKER_GID auto-detected at install via
+    # `stat -c %g /var/run/docker.sock` and written to .env (lib/config.sh).
+    group_add:
+      - "${DOCKER_GID:-988}"
     ports:
       - "${PORTAINER_BIND_ADDR:-127.0.0.1}:${PORTAINER_PORT:-9443}:9443"
     read_only: true
@@ -1343,6 +1353,9 @@ services:
       - SURREAL_PASSWORD=${SURREALDB_PASSWORD:-changeme}
       - SURREAL_NAMESPACE=open_notebook
       - SURREAL_DATABASE=open_notebook
+      # Frontend (Next.js) runs in user's browser — API_URL must be externally reachable.
+      # Port 5055 is published on the host (see ports mapping above) and resolves via mDNS alias.
+      - API_URL=${OPEN_NOTEBOOK_API_URL:-http://agmind-notebook.local:5055}
     depends_on:
       surrealdb:
         condition: service_healthy

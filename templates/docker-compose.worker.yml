@@ -30,6 +30,13 @@ services:
     mem_limit: ${VLLM_MEM_LIMIT:-96g}
     mem_swappiness: 0
     ipc: host
+    # CLAUDE.md §8: Docker embedded DNS (127.0.0.11) drops large DNS responses for
+    # HF xet/LFS CDNs. Explicit resolvers prevent DNS timeout stalls during model
+    # weight downloads (observed 2026-04-22 — 14 GB downloaded then stall).
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+      - 192.168.1.1
     environment:
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
       - CUDA_VISIBLE_DEVICES=${VLLM_CUDA_DEVICE:-0}

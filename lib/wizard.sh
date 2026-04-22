@@ -311,18 +311,18 @@ _wizard_llm_provider() {
         log_info "Blackwell GPU (compute ${DETECTED_GPU_COMPUTE}) -> vLLM с CUDA 13.0 (-cu130)"
     fi
 
-    # DGX Spark: hardcoded to Gemma 4 on gemma4-cu130 image
-    # - Best tested model on Spark (NVIDIA official playbook)
-    # - ~40 tok/s, 256K context, 3.8B active params (MoE)
-    # - NGC 26.03 lacks transformers 5.5+ needed for Gemma 4
-    # - Embed/rerank stay on NGC (different containers)
+    # DGX Spark: scitrera image (CUDA 13, GB10 sm_121 compatible) + Gemma 4
+    # - vllm/vllm-openai:gemma4-cu130 hangs on torch.compile for sm_121 (PyTorch 8.0-12.0 cap)
+    # - vllm/vllm-openai:gemma4-cu130 = custom build for GB10 Blackwell CUDA 13+
+    # - NGC entrypoint style: exec "$@" requires VLLM_CMD_PREFIX=""
+    # - Embed/rerank stay on NGC (different containers, smaller models)
     if [[ "$LLM_PROVIDER" == "vllm" && "${DETECTED_DGX_SPARK:-false}" == "true" ]]; then
         VLLM_IMAGE="vllm/vllm-openai:gemma4-cu130"
         VLLM_MODEL="google/gemma-4-26B-A4B-it"
         VLLM_CUDA_SUFFIX=""
-        VLLM_CMD_PREFIX=""  # gemma4 image has standard vllm entrypoint
+        VLLM_CMD_PREFIX=""  # scitrera NGC entrypoint needs program name
         VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-65536}"
-        VLLM_EXTRA_ARGS="--kv-cache-dtype fp8 --enable-prefix-caching"
+        VLLM_EXTRA_ARGS="--kv-cache-dtype fp8 --enable-prefix-caching --enforce-eager"
         log_info "DGX Spark → Gemma 4 26B-A4B (${VLLM_IMAGE})"
     fi
 }
@@ -344,7 +344,7 @@ _apply_blackwell_cu130() {
             VLLM_CUDA_SUFFIX=""
             VLLM_CMD_PREFIX=""
             VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-65536}"
-            VLLM_EXTRA_ARGS="--kv-cache-dtype fp8 --enable-prefix-caching"
+            VLLM_EXTRA_ARGS="--kv-cache-dtype fp8 --enable-prefix-caching --enforce-eager"
             log_info "DGX Spark (NI) → Gemma 4 26B-A4B (${VLLM_IMAGE})"
         else
             VLLM_CUDA_SUFFIX="-cu130"
@@ -765,7 +765,7 @@ _wizard_llm_model() {
         if [[ "$LLM_PROVIDER" == "vllm" && "${DETECTED_DGX_SPARK:-false}" == "true" ]]; then
             local spark_ctx
             spark_ctx=$(wt_menu "DGX Spark — Gemma 4 контекст" \
-                "Модель: google/gemma-4-26B-A4B-it (MoE, 3.8B active)\nОбраз: vllm/vllm-openai:gemma4-cu130\n\nВыберите максимальный контекст (fp8 KV-кэш):\n(128 GB unified memory, ~53 GB доступно для KV-кэша)" \
+                "Модель: google/gemma-4-26B-A4B-it (MoE, 3.8B active)\nОбраз: vllm/vllm-openai:gemma4-cu130 (GB10 CUDA 13)\n\nВыберите максимальный контекст (fp8 KV-кэш):\n(128 GB unified memory, ~53 GB доступно для KV-кэша)" \
                 "1" "32K   — минимум памяти, макс. concurrency" \
                 "2" "64K   — баланс (рекомендуется)" \
                 "3" "128K  — большие документы, меньше concurrency")
@@ -798,7 +798,7 @@ _wizard_llm_model() {
             VLLM_CUDA_SUFFIX=""
             VLLM_CMD_PREFIX=""
             VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-65536}"
-            VLLM_EXTRA_ARGS="--kv-cache-dtype fp8 --enable-prefix-caching"
+            VLLM_EXTRA_ARGS="--kv-cache-dtype fp8 --enable-prefix-caching --enforce-eager"
         else
             VLLM_MODEL="QuantTrio/Qwen3.5-27B-AWQ"
         fi
@@ -1461,7 +1461,7 @@ _wizard_optional_services() {
         "Выберите дополнительные сервисы для установки:" \
         "litellm"  "LiteLLM  -- AI Gateway, прокси для LLM (~1 GB RAM)"            "$litellm_default" \
         "searxng"  "SearXNG  -- мета-поисковик для агентов (~256 MB RAM)"           "OFF" \
-        "notebook" "Open Notebook -- исследовательский ассистент (~512 MB RAM)"     "OFF" \
+        "notebook" "Open Notebook -- [BROKEN v3.0.1 — не выбирать] SurrealDB auth"  "OFF" \
         "dbgpt"    "DB-GPT   -- AI-агент для анализа данных и SQL (~1 GB RAM)"      "OFF" \
         "crawl4ai" "Crawl4AI -- веб-краулер с REST API (~2 GB RAM)"                 "OFF")
 
