@@ -48,13 +48,11 @@ get_service_list() {
         if [[ "$llm_provider" == "ollama" || "$embed_provider" == "ollama" ]]; then
             services+=(ollama)
         fi
-        # AGMIND_MODE=master → vllm запускается на peer, не на master. Skip local check.
-        # cluster.json = source of truth (resume path может не иметь env).
-        local _agmind_mode="${AGMIND_MODE:-}"
-        if [[ -z "$_agmind_mode" && -f "${AGMIND_CLUSTER_STATE_FILE:-/var/lib/agmind/state/cluster.json}" ]]; then
-            _agmind_mode="$(jq -r '.mode // empty' "${AGMIND_CLUSTER_STATE_FILE:-/var/lib/agmind/state/cluster.json}" 2>/dev/null || echo "")"
-        fi
-        if [[ "$llm_provider" == "vllm" && "$_agmind_mode" != "master" ]]; then services+=(vllm); fi
+        # LLM_ON_PEER=true → vllm runs on peer, skip local service check.
+        # Set by cluster_mode_save (lib/cluster_mode.sh), persisted to .env by config.sh.
+        local _llm_on_peer
+        _llm_on_peer="$(grep '^LLM_ON_PEER=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+        if [[ "$llm_provider" == "vllm" && "${_llm_on_peer:-false}" != "true" ]]; then services+=(vllm); fi
         if [[ "$embed_provider" == "tei" ]]; then services+=(tei); fi
         if [[ "$embed_provider" == "vllm-embed" ]]; then services+=(vllm-embed); fi
 
@@ -460,12 +458,10 @@ verify_services() {
         embed_prov="$(grep '^EMBED_PROVIDER=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "")"
         vector_store="$(grep '^VECTOR_STORE=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "weaviate")"
 
-        # AGMIND_MODE=master → vllm на peer, проверяется отдельно в _doctor_peer.
-        local _mode="${AGMIND_MODE:-}"
-        if [[ -z "$_mode" && -f "${AGMIND_CLUSTER_STATE_FILE:-/var/lib/agmind/state/cluster.json}" ]]; then
-            _mode="$(jq -r '.mode // empty' "${AGMIND_CLUSTER_STATE_FILE:-/var/lib/agmind/state/cluster.json}" 2>/dev/null || echo "")"
-        fi
-        if [[ "$llm_prov" == "vllm" && "$_mode" != "master" ]]; then svc_checks+=("vLLM|http://localhost:8000/v1/models|agmind-vllm|vllm"); fi
+        # LLM_ON_PEER=true → vllm на peer, проверяется отдельно в _doctor_peer.
+        local _llm_on_peer
+        _llm_on_peer="$(grep '^LLM_ON_PEER=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+        if [[ "$llm_prov" == "vllm" && "${_llm_on_peer:-false}" != "true" ]]; then svc_checks+=("vLLM|http://localhost:8000/v1/models|agmind-vllm|vllm"); fi
         if [[ "$llm_prov" == "ollama" || "$embed_prov" == "ollama" ]]; then svc_checks+=("Ollama|http://localhost:11434/api/tags|agmind-ollama|ollama"); fi
         if [[ "$embed_prov" == "tei" ]]; then svc_checks+=("TEI|http://localhost:80/info|agmind-tei|tei"); fi
         if [[ "$vector_store" == "weaviate" ]]; then svc_checks+=("Weaviate|http://localhost:8080/v1/.well-known/ready|agmind-weaviate|weaviate"); fi

@@ -554,8 +554,8 @@ _check_critical_services() {
         fi
     done
     # GPU compatibility hint for vLLM (warning only — not critical)
-    # AGMIND_MODE=master → vllm runs on peer, no local container to check.
-    if [[ "${LLM_PROVIDER:-}" == "vllm" && "${AGMIND_MODE:-single}" != "master" ]]; then
+    # LLM_ON_PEER=true → vllm runs on peer, no local container to check.
+    if [[ "${LLM_PROVIDER:-}" == "vllm" && "${LLM_ON_PEER:-false}" != "true" ]]; then
         local vllm_st; vllm_st="$(docker ps --filter "name=agmind-vllm" --format "{{.Status}}" 2>/dev/null | head -1)"
         if echo "$vllm_st" | grep -qi "exited\|restarting"; then
             log_warn "vLLM не запустился: ${vllm_st}"
@@ -904,17 +904,11 @@ _save_credentials() {
         fi
         # Model API Endpoints — Dify "Add Model" form fields, copy-paste ready
         if [[ "${LLM_PROVIDER:-}" == "vllm" ]]; then
-            # In master/worker cluster mode the LLM runs on peer (via QSFP) —
-            # master has no local agmind-vllm container. Read cluster.json to pick host.
+            # LLM_ON_PEER=true → master has no local agmind-vllm container,
+            # Dify must point at peer's IP. Both vars exported by wizard / written to .env.
             local _vllm_host="agmind-vllm"
-            local _state_file="${AGMIND_CLUSTER_STATE_FILE:-/var/lib/agmind/state/cluster.json}"
-            if command -v jq >/dev/null 2>&1 && [[ -f "$_state_file" ]]; then
-                local _mode _peer_ip
-                _mode="$(jq -r '.mode // "single"' "$_state_file" 2>/dev/null)"
-                _peer_ip="$(jq -r '.peer_ip // empty' "$_state_file" 2>/dev/null)"
-                if [[ "$_mode" == "master" && -n "$_peer_ip" ]]; then
-                    _vllm_host="$_peer_ip"
-                fi
+            if [[ "${LLM_ON_PEER:-false}" == "true" && -n "${PEER_IP:-}" ]]; then
+                _vllm_host="${PEER_IP}"
             fi
             echo ""
             echo "=== vLLM (Dify → Settings → Model Provider → OpenAI-API-compatible) ==="

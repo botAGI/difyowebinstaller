@@ -408,6 +408,11 @@ _append_provider_vars() {
                 fi
                 ;;
         esac
+        # Canonical cluster placement flags — set by cluster_mode_save (lib/cluster_mode.sh).
+        # Single source of truth for "vllm runs on peer" decision in downstream modules.
+        echo "LLM_ON_PEER=${LLM_ON_PEER:-false}"
+        if [[ -n "${PEER_IP:-}" ]]; then echo "PEER_IP=${PEER_IP}"; fi
+
         # DGX Spark / vLLM embed/rerank vars (written regardless of LLM provider)
         if [[ -n "${VLLM_IMAGE:-}" ]]; then echo "VLLM_IMAGE=${VLLM_IMAGE}"; fi
         if [[ -n "${VLLM_CMD_PREFIX:-}" ]]; then echo "VLLM_CMD_PREFIX=${VLLM_CMD_PREFIX}"; fi
@@ -1027,9 +1032,9 @@ _generate_litellm_config() {
             ;;
         vllm)
             local vllm_model="${VLLM_MODEL:-QuantTrio/Qwen3.5-27B-AWQ}"
-            # AGMIND_MODE=master → vllm runs on peer Spark, LiteLLM must reach it via PEER_IP.
+            # LLM_ON_PEER=true → vllm runs on peer Spark, LiteLLM must reach it via PEER_IP.
             local _vllm_host="vllm"
-            if [[ "${AGMIND_MODE:-single}" == "master" && -n "${PEER_IP:-}" ]]; then
+            if [[ "${LLM_ON_PEER:-false}" == "true" && -n "${PEER_IP:-}" ]]; then
                 _vllm_host="${PEER_IP}"
             fi
             model_list="  - model_name: ${vllm_model}

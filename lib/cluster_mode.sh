@@ -98,6 +98,14 @@ cluster_mode_save() {
     fi
     chmod 0644 "$tmp"
     mv "$tmp" "$AGMIND_CLUSTER_STATE_FILE"
+
+    # Canonical compute-placement flag — single source of truth for downstream
+    # modules (compose.sh, config.sh, models.sh, health.sh, install.sh).
+    # Replaces ad-hoc "if AGMIND_MODE=master + jq cluster.json" duplicates.
+    case "$mode" in
+        master) export LLM_ON_PEER=true  ;;
+        *)      export LLM_ON_PEER=false ;;
+    esac
 }
 
 # ============================================================================

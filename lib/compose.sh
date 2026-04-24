@@ -34,13 +34,12 @@ build_compose_profiles() {
         profiles="${profiles:+$profiles,}ollama"
     fi
     if [[ "${LLM_PROVIDER:-}" == "vllm" ]]; then
-        # Master mode: vllm runs on peer (Plan 02-04 phase_deploy_peer), not locally.
-        # Single + Worker modes: vllm runs locally (worker mode has no other services anyway).
-        # AGMIND_MODE is set by _wizard_cluster_mode (Plan 02-02). Defaults to "single" if unset.
-        if [[ "${AGMIND_MODE:-single}" != "master" ]]; then
+        # LLM_ON_PEER=true → vllm runs on peer Spark (Plan 02-04 phase_deploy_peer).
+        # Set by cluster_mode_save (lib/cluster_mode.sh) when AGMIND_MODE=master.
+        if [[ "${LLM_ON_PEER:-false}" != "true" ]]; then
             profiles="${profiles:+$profiles,}vllm"
         else
-            log_info "Cluster mode=master: vllm profile skipped locally (runs on peer ${PEER_IP:-?})"
+            log_info "LLM_ON_PEER=true: vllm profile skipped locally (runs on peer ${PEER_IP:-?})"
         fi
     fi
     if [[ "${EMBED_PROVIDER:-}" == "tei" ]]; then profiles="${profiles:+$profiles,}tei"; fi

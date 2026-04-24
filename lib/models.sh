@@ -292,8 +292,8 @@ download_models() {
 
     # vLLM/TEI: models download at container startup (Phase 6).
     # Only stream logs if container is NOT yet healthy — skip if already loaded.
-    # AGMIND_MODE=master → vllm runs on peer, no local container to poll.
-    if [[ "$llm_provider" == "vllm" && "${AGMIND_MODE:-single}" != "master" ]]; then
+    # LLM_ON_PEER=true → vllm runs on peer, no local container to poll.
+    if [[ "$llm_provider" == "vllm" && "${LLM_ON_PEER:-false}" != "true" ]]; then
         local vllm_health
         vllm_health="$(docker inspect --format='{{.State.Health.Status}}' agmind-vllm 2>/dev/null || echo "none")"
         if [[ "$vllm_health" != "healthy" ]] \
