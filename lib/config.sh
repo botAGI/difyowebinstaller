@@ -1027,10 +1027,15 @@ _generate_litellm_config() {
             ;;
         vllm)
             local vllm_model="${VLLM_MODEL:-QuantTrio/Qwen3.5-27B-AWQ}"
+            # AGMIND_MODE=master → vllm runs on peer Spark, LiteLLM must reach it via PEER_IP.
+            local _vllm_host="vllm"
+            if [[ "${AGMIND_MODE:-single}" == "master" && -n "${PEER_IP:-}" ]]; then
+                _vllm_host="${PEER_IP}"
+            fi
             model_list="  - model_name: ${vllm_model}
     litellm_params:
       model: openai/${vllm_model}
-      api_base: http://vllm:8000/v1"
+      api_base: http://${_vllm_host}:8000/v1"
             ;;
         external|skip)
             model_list="  # No local LLM provider selected.
@@ -1193,6 +1198,11 @@ enable_gpu_compose() {
                     # 4 async local workers serve concurrent requests efficiently.
                     echo "DOCLING_UVICORN_WORKERS=1" >> "$env_file"
                     echo "DOCLING_SERVE_WORKERS=4" >> "$env_file"
+                    # Docling VLM picture description calls main LLM. Master has no
+                    # local vllm (it's on peer) — redirect via PEER_IP or VLM breaks.
+                    if [[ -n "${PEER_IP:-}" ]]; then
+                        echo "DOCLING_VLM_URL=http://${PEER_IP}:8000/v1/chat/completions" >> "$env_file"
+                    fi
                 fi
             else
                 vllm_util=$(LC_NUMERIC=C awk "BEGIN { printf \"%.2f\", ($total_vram_mb - $tei_reserve_mb) / $total_vram_mb }")
@@ -1431,7 +1441,17 @@ _configure_peer_monitoring() {
         return 1
     }
 
-    log_success "Peer monitoring configured: scrape targets ${peer_ip}:9100 + ${peer_ip}:8000"
+    # Mask local-vllm scrape target: main LLM lives on peer in master mode, so
+    # agmind-vllm:8000 is permanently down. Embed/rerank stay on master untouched.
+    # Regex [^# ] ensures idempotency — already-commented lines are skipped.
+    # shellcheck disable=SC2016  # single-quotes are intentional in sed expression (not shell var)
+    _atomic_sed "$prom_conf" \
+        -e '/__LLM_LOCAL_BEGIN__/,/__LLM_LOCAL_END__/{ /__LLM_LOCAL_/!s/^\(  *\)\([^# ]\)/\1# \2/; }' || {
+        log_error "Failed to mask local vllm scrape in ${prom_conf}"
+        return 1
+    }
+
+    log_success "Peer monitoring configured: scrape targets ${peer_ip}:9100 + ${peer_ip}:8000 (local vllm scrape masked)"
 }
 
 _configure_alertmanager() {

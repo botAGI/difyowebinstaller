@@ -408,7 +408,15 @@ phase_deploy_peer() {
         return 1
     }
 
-    # 6. docker compose up on peer
+    # 6. Install gpu-metrics.sh on peer + cron + textfile dir.
+    # Feeds peer node-exporter textfile collector (enabled via compose volume +
+    # --collector.textfile.directory=/textfile) so agmind_gpu_* HW metrics become
+    # visible to Prometheus peer-node-exporter scrape, powering Grafana
+    # "AGMind GPU — worker" dashboard (gauges temp/util/power/clock).
+    _deploy_peer_gpu_metrics "$peer_ip" "$peer_user" "$ssh_opts" "$peer_dir" \
+        || log_warn "Peer GPU metrics setup had issues (non-fatal — dashboard HW panels may stay empty)"
+
+    # 7. docker compose up on peer
     # NOTE: CLAUDE.md §8 "force-recreate trap" applies to master stack (Redis/Celery state).
     # Worker compose = vllm + node-exporter only. No Redis, no Celery → no stale state.
     # Use `compose up -d` (not --force-recreate): respects existing containers.
@@ -421,15 +429,107 @@ phase_deploy_peer() {
         return 1
     fi
 
-    # 7. Wait for vllm healthy
+    # 8. Wait for vllm healthy
     if ! _wait_peer_vllm_ready "$peer_ip" 5400; then
         cluster_status_update "failed" 2>/dev/null || true
         return 1
     fi
 
-    # 8. Persist success
+    # 9. Install systemd unit on peer so `docker compose up -d` runs after reboot.
+    # Without this, peer relies solely on restart=unless-stopped, with no
+    # application-level safety net if docker daemon is restarted manually.
+    _deploy_peer_systemd "$peer_ip" "$peer_user" "$ssh_opts" "$peer_dir" \
+        || log_warn "Peer systemd unit install had issues (non-fatal — vLLM restart policy still covers reboot)"
+
+    # 10. Persist success
     cluster_status_update "running" 2>/dev/null || true
     log_success "vLLM deployed and healthy on peer ${peer_ip}"
+}
+
+# Install gpu-metrics.sh + cron on peer host so node-exporter textfile collector
+# exposes agmind_gpu_temperature_celsius / utilization_percent / power_watts /
+# clock_mhz / memory_* for peer-node-exporter scrape. Idempotent.
+_deploy_peer_gpu_metrics() {
+    local peer_ip="$1" peer_user="$2" ssh_opts="$3" peer_dir="$4"
+    local script_src="${INSTALLER_DIR:-/opt/agmind}/scripts/gpu-metrics.sh"
+    [[ -f "$script_src" ]] || script_src="${INSTALL_DIR:-/opt/agmind}/scripts/gpu-metrics.sh"
+    if [[ ! -f "$script_src" ]]; then
+        log_warn "gpu-metrics.sh not found at ${script_src} — skipping peer GPU textfile setup"
+        return 1
+    fi
+    local peer_script="/opt/agmind/scripts/gpu-metrics.sh"
+    local peer_textfile="${peer_dir}/monitoring/textfile"
+
+    # shellcheck disable=SC2086
+    ssh $ssh_opts "${peer_user}@${peer_ip}" \
+        "sudo -n mkdir -p /opt/agmind/scripts ${peer_textfile} && sudo -n chown ${peer_user}: /opt/agmind/scripts ${peer_textfile}" \
+        >/dev/null 2>&1 || { log_warn "peer mkdir scripts/textfile failed"; return 1; }
+
+    # shellcheck disable=SC2086
+    scp $ssh_opts "$script_src" "${peer_user}@${peer_ip}:${peer_script}" >/dev/null 2>&1 \
+        || { log_warn "scp gpu-metrics.sh to peer failed"; return 1; }
+
+    # shellcheck disable=SC2086
+    ssh $ssh_opts "${peer_user}@${peer_ip}" "sudo -n chmod +x ${peer_script}" >/dev/null 2>&1 || true
+
+    # Seed textfile so first scrape has data
+    # shellcheck disable=SC2086
+    ssh $ssh_opts "${peer_user}@${peer_ip}" "sudo -n ${peer_script} ${peer_textfile}" >/dev/null 2>&1 || true
+
+    # Install cron (4 ticks/min = 15s resolution, mirrors master _install_crons).
+    # shellcheck disable=SC2086
+    ssh $ssh_opts "${peer_user}@${peer_ip}" "sudo -n tee /etc/cron.d/agmind-gpu-metrics >/dev/null <<CRON
+* * * * * root ${peer_script} ${peer_textfile} >/dev/null 2>&1
+* * * * * root sleep 15 && ${peer_script} ${peer_textfile} >/dev/null 2>&1
+* * * * * root sleep 30 && ${peer_script} ${peer_textfile} >/dev/null 2>&1
+* * * * * root sleep 45 && ${peer_script} ${peer_textfile} >/dev/null 2>&1
+CRON
+sudo -n chmod 644 /etc/cron.d/agmind-gpu-metrics" >/dev/null 2>&1 || {
+        log_warn "peer cron install failed"
+        return 1
+    }
+
+    log_info "Peer GPU metrics cron installed (15s interval, textfile ${peer_textfile})"
+    return 0
+}
+
+# Install agmind-stack.service on peer — ensures `docker compose up -d` runs
+# after peer reboot, matching master's auto-start pattern. Idempotent:
+# subsequent runs overwrite unit file (safe — same content) + daemon-reload.
+_deploy_peer_systemd() {
+    local peer_ip="$1" peer_user="$2" ssh_opts="$3" peer_dir="$4"
+    local unit_src="${TEMPLATE_DIR:-${INSTALLER_DIR}/templates}/agmind-stack-worker.service.template"
+    if [[ ! -f "$unit_src" ]]; then
+        log_warn "agmind-stack-worker.service.template not found — peer auto-start skipped"
+        return 1
+    fi
+
+    # Render template — substitute __INSTALL_DIR__ with peer's install dir.
+    local unit_tmp="${INSTALL_DIR:-/opt/agmind}/docker/agmind-stack.service.worker"
+    sed "s|__INSTALL_DIR__|/opt/agmind|g" "$unit_src" > "$unit_tmp" || {
+        log_warn "render worker systemd unit failed"
+        return 1
+    }
+    chmod 0644 "$unit_tmp"
+
+    # shellcheck disable=SC2086
+    scp $ssh_opts "$unit_tmp" "${peer_user}@${peer_ip}:/tmp/agmind-stack.service" >/dev/null 2>&1 \
+        || { log_warn "scp worker systemd unit to peer failed"; return 1; }
+
+    # Install + enable (no start: compose up -d already ran in step 7 above,
+    # service will reach active state on next reboot).
+    # shellcheck disable=SC2086
+    ssh $ssh_opts "${peer_user}@${peer_ip}" \
+        "sudo -n mv /tmp/agmind-stack.service /etc/systemd/system/agmind-stack.service \
+            && sudo -n chmod 644 /etc/systemd/system/agmind-stack.service \
+            && sudo -n systemctl daemon-reload \
+            && sudo -n systemctl enable agmind-stack.service" >/dev/null 2>&1 || {
+        log_warn "peer systemd enable failed"
+        return 1
+    }
+
+    log_info "Peer systemd unit installed + enabled (agmind-stack.service)"
+    return 0
 }
 
 _apply_dify_patches() {
@@ -454,7 +554,8 @@ _check_critical_services() {
         fi
     done
     # GPU compatibility hint for vLLM (warning only — not critical)
-    if [[ "${LLM_PROVIDER:-}" == "vllm" ]]; then
+    # AGMIND_MODE=master → vllm runs on peer, no local container to check.
+    if [[ "${LLM_PROVIDER:-}" == "vllm" && "${AGMIND_MODE:-single}" != "master" ]]; then
         local vllm_st; vllm_st="$(docker ps --filter "name=agmind-vllm" --format "{{.Status}}" 2>/dev/null | head -1)"
         if echo "$vllm_st" | grep -qi "exited\|restarting"; then
             log_warn "vLLM не запустился: ${vllm_st}"

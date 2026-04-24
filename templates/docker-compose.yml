@@ -238,7 +238,7 @@ services:
     # WARNING: open-webui version pinned for white-label compatibility
     image: ghcr.io/open-webui/open-webui:${OPENWEBUI_VERSION:-v0.8.12}
     container_name: agmind-openwebui
-    restart: on-failure:5
+    restart: unless-stopped
     mem_limit: ${OPENWEBUI_MEM_LIMIT:-2g}
     profiles:
       - openwebui
@@ -282,7 +282,7 @@ services:
     <<: *security-defaults
     image: ghcr.io/open-webui/pipelines:${PIPELINES_VERSION:-main}
     container_name: agmind-pipelines
-    restart: on-failure:5
+    restart: unless-stopped
     mem_limit: ${PIPELINES_MEM_LIMIT:-1g}
     profiles:
       - openwebui
@@ -647,7 +647,7 @@ services:
     <<: *logging-defaults
     image: ${DOCLING_IMAGE:-quay.io/docling-project/docling-serve-cu130:v1.16.1}
     container_name: agmind-docling
-    restart: on-failure:5
+    restart: unless-stopped
     mem_limit: ${DOCLING_MEM_LIMIT:-8g}
     mem_swappiness: 0
     profiles:
@@ -705,7 +705,7 @@ services:
     <<: *security-defaults
     image: ghcr.io/berriai/litellm:${LITELLM_VERSION:-v1.82.3-stable.patch.2}
     container_name: agmind-litellm
-    restart: on-failure:5
+    restart: unless-stopped
     mem_limit: ${LITELLM_MEM_LIMIT:-1g}
     profiles:
       - litellm
@@ -974,7 +974,7 @@ services:
     <<: *security-defaults
     image: prom/prometheus:${PROMETHEUS_VERSION:-v2.54.1}
     container_name: agmind-prometheus
-    restart: on-failure:5
+    restart: unless-stopped
     mem_limit: ${PROMETHEUS_MEM_LIMIT:-1g}
     profiles:
       - monitoring
@@ -1003,7 +1003,7 @@ services:
     <<: *security-defaults
     image: prom/alertmanager:${ALERTMANAGER_VERSION:-v0.32.0}
     container_name: agmind-alertmanager
-    restart: on-failure:5
+    restart: unless-stopped
     mem_limit: ${ALERTMANAGER_MEM_LIMIT:-256m}
     profiles:
       - monitoring
@@ -1027,7 +1027,7 @@ services:
       - SETUID
       - SETGID
     container_name: agmind-loki
-    restart: on-failure:5
+    restart: unless-stopped
     mem_limit: ${LOKI_MEM_LIMIT:-1g}
     profiles:
       - monitoring
@@ -1044,7 +1044,7 @@ services:
     <<: *security-defaults
     image: grafana/promtail:${PROMTAIL_VERSION:-3.6.10}
     container_name: agmind-promtail
-    restart: on-failure:5
+    restart: unless-stopped
     mem_limit: ${PROMTAIL_MEM_LIMIT:-256m}
     profiles:
       - monitoring
@@ -1071,7 +1071,7 @@ services:
     <<: *security-defaults
     image: prom/node-exporter:${NODE_EXPORTER_VERSION:-v1.11.1}
     container_name: agmind-node-exporter
-    restart: on-failure:5
+    restart: unless-stopped
     mem_limit: ${NODE_EXPORTER_MEM_LIMIT:-128m}
     profiles:
       - monitoring
@@ -1105,7 +1105,7 @@ services:
     <<: *logging-defaults
     image: gcr.io/cadvisor/cadvisor:${CADVISOR_VERSION:-v0.52.1}
     container_name: agmind-cadvisor
-    restart: on-failure:5
+    restart: unless-stopped
     mem_limit: ${CADVISOR_MEM_LIMIT:-512m}
     privileged: true
     profiles:
@@ -1142,7 +1142,7 @@ services:
     <<: *security-defaults
     image: oliver006/redis_exporter:${REDIS_EXPORTER_VERSION:-v1.69.0}
     container_name: agmind-redis-exporter
-    restart: on-failure:5
+    restart: unless-stopped
     mem_limit: ${REDIS_EXPORTER_MEM_LIMIT:-64m}
     profiles:
       - monitoring
@@ -1163,7 +1163,7 @@ services:
     <<: *security-defaults
     image: prometheuscommunity/postgres-exporter:${POSTGRES_EXPORTER_VERSION:-v0.17.1}
     container_name: agmind-postgres-exporter
-    restart: on-failure:5
+    restart: unless-stopped
     mem_limit: ${POSTGRES_EXPORTER_MEM_LIMIT:-128m}
     profiles:
       - monitoring
@@ -1187,7 +1187,7 @@ services:
     <<: *security-defaults
     image: nginx/nginx-prometheus-exporter:${NGINX_EXPORTER_VERSION:-1.4.2}
     container_name: agmind-nginx-exporter
-    restart: on-failure:5
+    restart: unless-stopped
     mem_limit: ${NGINX_EXPORTER_MEM_LIMIT:-64m}
     profiles:
       - monitoring
@@ -1206,7 +1206,7 @@ services:
     <<: *security-defaults
     image: grafana/grafana:${GRAFANA_VERSION:-12.4.2}
     container_name: agmind-grafana
-    restart: on-failure:5
+    restart: unless-stopped
     mem_limit: ${GRAFANA_MEM_LIMIT:-512m}
     cap_add:
       - CHOWN
@@ -1247,7 +1247,7 @@ services:
     <<: *security-defaults
     image: portainer/portainer-ce:${PORTAINER_VERSION:-2.36.0}
     container_name: agmind-portainer
-    restart: on-failure:5
+    restart: unless-stopped
     mem_limit: ${PORTAINER_MEM_LIMIT:-256m}
     profiles:
       - monitoring
@@ -1300,7 +1300,7 @@ services:
     <<: *security-defaults
     image: docker.io/searxng/searxng:${SEARXNG_VERSION:-2026.4.7-08ef7a63d}
     container_name: agmind-searxng
-    restart: on-failure:5
+    restart: unless-stopped
     mem_limit: ${SEARXNG_MEM_LIMIT:-256m}
     profiles:
       - searxng
@@ -1321,7 +1321,7 @@ services:
     image: docker.io/surrealdb/surrealdb:${SURREALDB_VERSION:-v2.2.1}
     container_name: agmind-surrealdb
     user: "0:0"
-    restart: on-failure:5
+    restart: unless-stopped
     mem_limit: ${SURREALDB_MEM_LIMIT:-256m}
     profiles:
       - notebook
@@ -1342,7 +1342,7 @@ services:
     <<: *security-defaults
     image: docker.io/lfnovo/open_notebook:${OPEN_NOTEBOOK_VERSION:-v1-latest}
     container_name: agmind-notebook
-    restart: on-failure:5
+    restart: unless-stopped
     mem_limit: ${OPEN_NOTEBOOK_MEM_LIMIT:-512m}
     profiles:
       - notebook
@@ -1373,7 +1373,7 @@ services:
     <<: *security-defaults
     image: docker.io/eosphorosai/dbgpt-openai:${DBGPT_VERSION:-v0.8.0}
     container_name: agmind-dbgpt
-    restart: on-failure:5
+    restart: unless-stopped
     mem_limit: ${DBGPT_MEM_LIMIT:-1g}
     profiles:
       - dbgpt
@@ -1398,7 +1398,7 @@ services:
     <<: *security-defaults
     image: docker.io/unclecode/crawl4ai:${CRAWL4AI_VERSION:-0.8.6}
     container_name: agmind-crawl4ai
-    restart: on-failure:5
+    restart: unless-stopped
     mem_limit: ${CRAWL4AI_MEM_LIMIT:-2g}
     shm_size: '1g'
     profiles:
@@ -1417,7 +1417,7 @@ services:
     <<: *security-defaults
     image: certbot/certbot:${CERTBOT_VERSION:-v3.1.0}
     container_name: agmind-certbot
-    restart: on-failure:5
+    restart: unless-stopped
     mem_limit: ${CERTBOT_MEM_LIMIT:-128m}
     profiles:
       - vps

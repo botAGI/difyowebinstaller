@@ -44,8 +44,10 @@ scrape_configs:
   # Phase 37/P2: vLLM + Weaviate + Docling (runtime-only, already applied)
   - job_name: 'vllm'
     static_configs:
+      # __LLM_LOCAL_BEGIN__ — commented out by _configure_peer_monitoring when AGMIND_MODE=master
       - targets: ['agmind-vllm:8000']
         labels: {service: 'llm'}
+      # __LLM_LOCAL_END__
       - targets: ['agmind-vllm-embed:8000']
         labels: {service: 'embed'}
       - targets: ['agmind-vllm-rerank:8000']

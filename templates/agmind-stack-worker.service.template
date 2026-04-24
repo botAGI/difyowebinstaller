@@ -1,0 +1,26 @@
+[Unit]
+Description=AGMind AI Stack Worker (Docker Compose — peer vLLM)
+After=docker.service
+Requires=docker.service
+# If NVIDIA drivers are present, wait for persistenced too
+After=nvidia-persistenced.service
+# Network must be up for image pulls / QSFP link to master
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=__INSTALL_DIR__/docker
+EnvironmentFile=-__INSTALL_DIR__/docker/.env
+# Pre-check: wait for Docker daemon to be responsive (up to 30s)
+ExecStartPre=/bin/bash -c 'for i in $(seq 1 30); do docker info >/dev/null 2>&1 && exit 0; sleep 1; done; exit 1'
+# Optional: wait for nvidia-smi if GPU is expected
+ExecStartPre=/bin/bash -c 'command -v nvidia-smi >/dev/null 2>&1 && { for i in $(seq 1 15); do nvidia-smi >/dev/null 2>&1 && exit 0; sleep 1; done; echo "WARNING: nvidia-smi not ready, continuing anyway"; } || true'
+ExecStart=/usr/bin/docker compose -f docker-compose.worker.yml up -d
+ExecStop=/usr/bin/docker compose -f docker-compose.worker.yml down
+TimeoutStartSec=1800
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target
