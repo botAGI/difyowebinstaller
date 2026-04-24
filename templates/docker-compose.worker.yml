@@ -84,6 +84,8 @@ services:
   # node-exporter — host metrics for master's Prometheus scrape
   # Exposes :9100 on peer host (peer-node-exporter scrape job in Plan 02-05)
   # Note: no healthcheck — distroless image has no /bin/sh (CLAUDE.md §8)
+  # Textfile collector: reads gpu_metrics.prom written by gpu-metrics.sh cron
+  # on peer host — exposes agmind_gpu_* HW metrics for Grafana GPU — worker dashboard.
   # ============================================================================
   node-exporter:
     <<: *logging-defaults
@@ -96,10 +98,12 @@ services:
       - '--path.sysfs=/host/sys'
       - '--path.rootfs=/host/root'
       - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+      - '--collector.textfile.directory=/textfile'
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /:/host/root:ro,rslave
+      - ./monitoring/textfile:/textfile:ro
     ports:
       - "9100:9100"
 

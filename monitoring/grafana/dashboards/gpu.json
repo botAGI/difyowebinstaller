@@ -12,7 +12,7 @@
       "gridPos": { "h": 8, "w": 6, "x": 0, "y": 0 },
       "targets": [
         {
-          "expr": "agmind_gpu_temperature_celsius",
+          "expr": "agmind_gpu_temperature_celsius{job=\"node-exporter\"}",
           "legendFormat": "{{name}}",
           "refId": "A"
         }
@@ -39,7 +39,7 @@
       "gridPos": { "h": 8, "w": 6, "x": 6, "y": 0 },
       "targets": [
         {
-          "expr": "agmind_gpu_utilization_percent",
+          "expr": "agmind_gpu_utilization_percent{job=\"node-exporter\"}",
           "legendFormat": "{{name}}",
           "refId": "A"
         }
@@ -65,7 +65,7 @@
       "gridPos": { "h": 8, "w": 6, "x": 12, "y": 0 },
       "targets": [
         {
-          "expr": "agmind_gpu_power_watts",
+          "expr": "agmind_gpu_power_watts{job=\"node-exporter\"}",
           "legendFormat": "{{name}}",
           "refId": "A"
         }
@@ -92,7 +92,7 @@
       "gridPos": { "h": 8, "w": 6, "x": 18, "y": 0 },
       "targets": [
         {
-          "expr": "agmind_gpu_clock_mhz",
+          "expr": "agmind_gpu_clock_mhz{job=\"node-exporter\"}",
           "legendFormat": "{{name}}",
           "refId": "A"
         }
@@ -117,7 +117,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
       "targets": [
         {
-          "expr": "agmind_gpu_temperature_celsius",
+          "expr": "agmind_gpu_temperature_celsius{job=\"node-exporter\"}",
           "legendFormat": "GPU Temp",
           "refId": "A"
         }
@@ -148,12 +148,12 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
       "targets": [
         {
-          "expr": "agmind_gpu_power_watts",
+          "expr": "agmind_gpu_power_watts{job=\"node-exporter\"}",
           "legendFormat": "Power (W)",
           "refId": "A"
         },
         {
-          "expr": "agmind_gpu_utilization_percent",
+          "expr": "agmind_gpu_utilization_percent{job=\"node-exporter\"}",
           "legendFormat": "Utilization (%)",
           "refId": "B"
         }
@@ -183,7 +183,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
       "targets": [
         {
-          "expr": "agmind_gpu_clock_mhz",
+          "expr": "agmind_gpu_clock_mhz{job=\"node-exporter\"}",
           "legendFormat": "Clock (MHz)",
           "refId": "A"
         }
@@ -211,17 +211,17 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
       "targets": [
         {
-          "expr": "node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes",
+          "expr": "node_memory_MemTotal_bytes{job=\"node-exporter\"} - node_memory_MemAvailable_bytes{job=\"node-exporter\"}",
           "legendFormat": "Used",
           "refId": "A"
         },
         {
-          "expr": "node_memory_MemAvailable_bytes",
+          "expr": "node_memory_MemAvailable_bytes{job=\"node-exporter\"}",
           "legendFormat": "Available",
           "refId": "B"
         },
         {
-          "expr": "node_memory_SwapTotal_bytes - node_memory_SwapFree_bytes",
+          "expr": "node_memory_SwapTotal_bytes{job=\"node-exporter\"} - node_memory_SwapFree_bytes{job=\"node-exporter\"}",
           "legendFormat": "Swap Used",
           "refId": "C"
         }
@@ -242,6 +242,6 @@
   "tags": ["agmind", "gpu", "nvidia"],
   "templating": { "list": [] },
   "time": { "from": "now-1h", "to": "now" },
-  "title": "AGMind GPU",
+  "title": "AGMind GPU — master (Spark)",
   "uid": "agmind-gpu"
 }
