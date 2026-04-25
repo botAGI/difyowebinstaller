@@ -228,7 +228,7 @@ ensure_bind_mount_files() {
         "monitoring/alert_rules.yml"
         "monitoring/alertmanager.yml"
         "monitoring/loki-config.yml"
-        "monitoring/promtail-config.yml"
+        "monitoring/alloy-config.river"
         "nginx/nginx.conf"
         "nginx/health.json"
         "volumes/redis/redis.conf"
@@ -279,7 +279,7 @@ preflight_bind_mount_check() {
         "monitoring/alert_rules.yml"
         "monitoring/alertmanager.yml"
         "monitoring/loki-config.yml"
-        "monitoring/promtail-config.yml"
+        "monitoring/alloy-config.river"
     )
     local enable_litellm
     enable_litellm="$(grep '^ENABLE_LITELLM=' "${docker_dir}/.env" 2>/dev/null | cut -d'=' -f2- || echo "true")"

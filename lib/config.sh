@@ -959,7 +959,7 @@ _squid_agmind_whitelist() {
             # Skip ssrf_proxy itself and utility containers
             # Skip ssrf_proxy itself and utility containers
             case "$svc" in
-                ssrf_proxy|redis-lock-cleaner|certbot|promtail|node-exporter|cadvisor) continue ;;
+                ssrf_proxy|redis-lock-cleaner|certbot|alloy|node-exporter|cadvisor) continue ;;
             esac
             acl_line="${acl_line} ${svc}"
         done
@@ -1369,7 +1369,7 @@ _copy_monitoring_files() {
     mkdir -p "$dest"
 
     # Core config files
-    local mon_files=("prometheus.yml" "alert_rules.yml" "alertmanager.yml" "loki-config.yml" "promtail-config.yml")
+    local mon_files=("prometheus.yml" "alert_rules.yml" "alertmanager.yml" "loki-config.yml" "alloy-config.river")
     for f in "${mon_files[@]}"; do
         if [[ -f "${installer_root}/monitoring/${f}" ]]; then
             safe_write_file "${dest}/${f}"

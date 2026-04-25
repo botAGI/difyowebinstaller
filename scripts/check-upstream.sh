@@ -54,7 +54,7 @@ ALL_CHECKS=(
     "Alertmanager|ALERTMANAGER_VERSION|prometheus/alertmanager|gh"
     "Grafana|GRAFANA_VERSION|grafana/grafana|gh"
     "Loki|LOKI_VERSION|grafana/loki|gh"
-    "Promtail|PROMTAIL_VERSION|grafana/promtail|gh"
+    "Alloy|ALLOY_VERSION|grafana/alloy|gh"
     "Node Exporter|NODE_EXPORTER_VERSION|prometheus/node_exporter|gh"
     "cAdvisor|CADVISOR_VERSION|google/cadvisor|gh"
 )
@@ -71,7 +71,7 @@ declare -A NO_V_PREFIX=(
     [Prometheus]=1
     [Alertmanager]=1
     [Loki]=1
-    [Promtail]=1
+    [Alloy]=1
     [Node\ Exporter]=1
     [cAdvisor]=1
 )

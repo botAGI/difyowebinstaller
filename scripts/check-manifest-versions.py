@@ -62,7 +62,7 @@ def main() -> int:
         "dify-sandbox", "squid", "nginx", "certbot",
         "dify-plugin-daemon", "docling-serve",
         "authelia", "grafana", "portainer", "node-exporter",
-        "cadvisor", "prometheus", "alertmanager", "loki", "promtail",
+        "cadvisor", "prometheus", "alertmanager", "loki", "alloy",
     }
     missing = required_services - set(images.keys())
     if missing:
@@ -98,7 +98,7 @@ def main() -> int:
         "prometheus": "PROMETHEUS_VERSION",
         "alertmanager": "ALERTMANAGER_VERSION",
         "loki": "LOKI_VERSION",
-        "promtail": "PROMTAIL_VERSION",
+        "alloy": "ALLOY_VERSION",
     }
 
     for svc, version_key in tag_to_version_key.items():
