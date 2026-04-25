@@ -18,7 +18,7 @@ IMAGE_VALIDATION_TIMEOUT="${IMAGE_VALIDATION_TIMEOUT:-20}"
 build_compose_profiles() {
     local profiles=""
 
-    if [[ "${DEPLOY_PROFILE:-}" == "vps" ]]; then profiles="vps"; fi
+    # VPS profile dropped 2026-04-25 — DGX Spark (LAN) only.
     if [[ "${VECTOR_STORE:-weaviate}" == "qdrant" ]]; then profiles="${profiles:+$profiles,}qdrant"; fi
     if [[ "${VECTOR_STORE:-weaviate}" == "weaviate" ]]; then profiles="${profiles:+$profiles,}weaviate"; fi
     # Docling: check both wizard var (ENABLE_DOCLING) and .env var (ETL_TYPE) for resume support

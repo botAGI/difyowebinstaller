@@ -426,7 +426,7 @@ cmd_stop() {
     _require_root stop
     cd "$COMPOSE_DIR"
     echo -e "${YELLOW}Stopping AGMind...${NC}"
-    COMPOSE_PROFILES=vps,monitoring,qdrant,weaviate,etl,authelia,ollama,vllm,tei \
+    COMPOSE_PROFILES=monitoring,qdrant,weaviate,etl,authelia,ollama,vllm,tei \
         docker compose stop
     echo -e "${GREEN}Stopped${NC}"
 }
@@ -444,7 +444,7 @@ cmd_restart() {
     _require_root restart
     cd "$COMPOSE_DIR"
     echo -e "${YELLOW}Restarting AGMind...${NC}"
-    COMPOSE_PROFILES=vps,monitoring,qdrant,weaviate,etl,authelia,ollama,vllm,tei \
+    COMPOSE_PROFILES=monitoring,qdrant,weaviate,etl,authelia,ollama,vllm,tei \
         docker compose restart
     echo -e "${GREEN}Restarted${NC}"
 }

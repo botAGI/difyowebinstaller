@@ -8,7 +8,6 @@
 #   MONITORING_MODE, MONITORING_ENDPOINT, MONITORING_TOKEN,
 #   ALERT_MODE, ALERT_WEBHOOK_URL, ALERT_TELEGRAM_TOKEN, ALERT_TELEGRAM_CHAT_ID,
 #   ENABLE_UFW, ENABLE_FAIL2BAN, ENABLE_AUTHELIA,
-#   ENABLE_TUNNEL, TUNNEL_VPS_HOST, TUNNEL_VPS_PORT, TUNNEL_REMOTE_PORT,
 #   BACKUP_TARGET, BACKUP_SCHEDULE, REMOTE_BACKUP_HOST, REMOTE_BACKUP_PORT,
 #   REMOTE_BACKUP_USER, REMOTE_BACKUP_KEY, REMOTE_BACKUP_PATH,
 #   ADMIN_UI_OPEN
@@ -69,10 +68,7 @@ _init_wizard_defaults() {
     ENABLE_UFW="${ENABLE_UFW:-false}"
     ENABLE_FAIL2BAN="${ENABLE_FAIL2BAN:-false}"
     ENABLE_AUTHELIA="${ENABLE_AUTHELIA:-false}"
-    ENABLE_TUNNEL="${ENABLE_TUNNEL:-false}"
-    TUNNEL_VPS_HOST="${TUNNEL_VPS_HOST:-}"
-    TUNNEL_VPS_PORT="${TUNNEL_VPS_PORT:-22}"
-    TUNNEL_REMOTE_PORT="${TUNNEL_REMOTE_PORT:-8080}"
+    # ENABLE_TUNNEL/TUNNEL_VPS_* убраны 2026-04-25 (VPS profile dropped — DGX Spark only).
     BACKUP_TARGET="${BACKUP_TARGET:-local}"
     BACKUP_SCHEDULE="${BACKUP_SCHEDULE:-0 3 * * *}"
     REMOTE_BACKUP_HOST="${REMOTE_BACKUP_HOST:-}"
@@ -130,23 +126,10 @@ _ask_choice() {
 # ============================================================================
 
 _wizard_profile() {
-    if [[ "${NON_INTERACTIVE}" == "true" && -n "${DEPLOY_PROFILE}" ]]; then
-        return 0
-    fi
-
-    local choice
-    choice=$(wt_menu "Профиль развёртывания" \
-        "Выберите профиль развёртывания:" \
-        "1" "LAN  -- локальная / офисная сеть (по умолчанию)" \
-        "2" "VDS/VPS -- публичный сервер (ветка agmind-caddy)")
-
-    case "$choice" in
-        2)
-            log_info "Переключение на ветку agmind-caddy для VDS/VPS..."
-            git fetch origin agmind-caddy && git checkout agmind-caddy && exec bash install.sh --vds
-            ;;
-        *) DEPLOY_PROFILE="lan";;
-    esac
+    # AGmind v3.1+ targets DGX Spark only. Single profile = LAN.
+    # VDS/VPS path был удалён 2026-04-25 (вместе с веткой agmind-caddy).
+    DEPLOY_PROFILE="lan"
+    return 0
 }
 
 _wizard_security_defaults() {
@@ -271,14 +254,11 @@ _wizard_openwebui() {
 }
 
 _wizard_llm_provider() {
+    # AGmind v3.1+ (DGX Spark only): GPU всегда есть, default = vLLM. Ollama путь скрыт
+    # (можно вернуться в LLM_PROVIDER=ollama через env override). Внешний API + Skip
+    # для тех кто использует BYO LLM или отлаживает без LLM.
     local default_provider="vllm"
-    local default_tag="2"
-    local gpu_note=""
-    if [[ "${DETECTED_GPU:-none}" != "nvidia" ]]; then
-        default_provider="ollama"
-        default_tag="1"
-        gpu_note=" (NVIDIA GPU не обнаружен)"
-    fi
+    local default_tag="1"
 
     # Respect env override only in non-interactive mode
     if [[ "${NON_INTERACTIVE}" == "true" && -n "$LLM_PROVIDER" ]]; then
@@ -288,20 +268,18 @@ _wizard_llm_provider() {
 
     local choice
     choice=$(wt_menu "LLM-провайдер" \
-        "Выберите LLM-провайдер:${gpu_note}" \
-        "1" "Ollama" \
-        "2" "vLLM" \
-        "3" "Внешний API" \
-        "4" "Пропустить")
+        "Выберите LLM-провайдер:" \
+        "1" "vLLM (рекомендуется для DGX Spark)" \
+        "2" "Внешний API" \
+        "3" "Пропустить")
 
     # Default to detected preference if empty
     choice="${choice:-$default_tag}"
 
     case "$choice" in
-        1) LLM_PROVIDER="ollama";;
-        2) LLM_PROVIDER="vllm";;
-        3) LLM_PROVIDER="external";;
-        4) LLM_PROVIDER="skip";;
+        1) LLM_PROVIDER="vllm";;
+        2) LLM_PROVIDER="external";;
+        3) LLM_PROVIDER="skip";;
         *) LLM_PROVIDER="$default_provider";;
     esac
 
@@ -1304,29 +1282,10 @@ _wizard_security() {
 }
 
 _wizard_tunnel() {
-    if [[ "$DEPLOY_PROFILE" != "lan" ]]; then
-        return 0
-    fi
-    if [[ "${NON_INTERACTIVE}" == "true" ]]; then
-        return 0
-    fi
-
-    if wt_yesno "SSH-туннель" \
-        "Обратный SSH-туннель (доступ к LAN через VPS)?\nВыберите Да, если хотите пробросить доступ через внешний сервер." \
-        --defaultno; then
-        ENABLE_TUNNEL="true"
-
-        local vps_host vps_port remote_port
-        vps_host=$(wt_input "SSH-туннель" "Хост VPS:" "")
-        TUNNEL_VPS_HOST="$vps_host"
-        validate_hostname "$TUNNEL_VPS_HOST" || { log_warn "Некорректный хост, туннель отключён"; ENABLE_TUNNEL="false"; return 0; }
-
-        vps_port=$(wt_input "SSH-туннель" "SSH-порт VPS:" "22")
-        TUNNEL_VPS_PORT="${vps_port:-22}"
-
-        remote_port=$(wt_input "SSH-туннель" "Удалённый порт для веб:" "8080")
-        TUNNEL_REMOTE_PORT="${remote_port:-8080}"
-    fi
+    # Reverse SSH tunnel был частью VPS-feature (доступ к LAN через внешний VPS).
+    # Удалён 2026-04-25 вместе с VPS profile (lib/tunnel.sh + autossh.service.template).
+    # Stub оставлен чтобы не ломать call-сайт в run_wizard. No-op.
+    return 0
 }
 
 _wizard_backups() {
@@ -1398,9 +1357,8 @@ _wizard_backups() {
 
 # Individual optional service functions kept for backward compatibility and NI mode
 _wizard_litellm() {
-    # LAN — локальные модели, прокси не нужен; VPS — multi-user, прокси полезен
+    # LAN-only — локальные модели, прокси не нужен (VPS path удалён 2026-04-25).
     local default_litellm="false"
-    if [[ "${DEPLOY_PROFILE:-lan}" == "vps" ]]; then default_litellm="true"; fi
 
     if [[ "${NON_INTERACTIVE:-false}" == "true" ]]; then
         ENABLE_LITELLM="${ENABLE_LITELLM:-$default_litellm}"
@@ -1452,9 +1410,8 @@ _wizard_optional_services() {
         return 0
     fi
 
-    # Determine LiteLLM default state
+    # LiteLLM default OFF (VPS path удалён 2026-04-25, всегда LAN — локальные модели).
     local litellm_default="OFF"
-    if [[ "${DEPLOY_PROFILE:-lan}" == "vps" ]]; then litellm_default="ON"; fi
 
     local result
     result=$(wt_checklist "Дополнительные сервисы" \
@@ -1541,7 +1498,6 @@ _wizard_summary() {
     if [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]]; then summary+="Crawl4AI:     agmind-crawl.local\n"; fi
     if [[ "${ENABLE_OPENWEBUI:-false}" == "true" ]]; then summary+="Open WebUI:   agmind-chat.local\n"; fi
     if [[ "${ENABLE_DIFY_PREMIUM:-true}" == "true" ]]; then summary+="Dify Premium: включён (патч после запуска)\n"; fi
-    if [[ "$ENABLE_TUNNEL" == "true" ]]; then summary+="Туннель:      ${TUNNEL_VPS_HOST}:${TUNNEL_REMOTE_PORT}\n"; fi
     summary+="Бэкапы:       ${BACKUP_TARGET} (${BACKUP_SCHEDULE})\n"
 
     # VRAM plan (only for vLLM — Ollama manages VRAM internally)
@@ -1738,7 +1694,6 @@ run_wizard() {
     export ALERT_MODE ALERT_WEBHOOK_URL ALERT_TELEGRAM_TOKEN ALERT_TELEGRAM_CHAT_ID
     export ALERT_EMAIL_TO ALERT_EMAIL_FROM ALERT_EMAIL_SMARTHOST ALERT_EMAIL_AUTH_USER ALERT_EMAIL_AUTH_PASS
     export ENABLE_UFW ENABLE_FAIL2BAN ENABLE_AUTHELIA
-    export ENABLE_TUNNEL TUNNEL_VPS_HOST TUNNEL_VPS_PORT TUNNEL_REMOTE_PORT
     export BACKUP_TARGET BACKUP_SCHEDULE BACKUP_DIR
     export REMOTE_BACKUP_HOST REMOTE_BACKUP_PORT REMOTE_BACKUP_USER REMOTE_BACKUP_KEY REMOTE_BACKUP_PATH
     export ADMIN_UI_OPEN

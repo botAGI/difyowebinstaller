@@ -34,7 +34,6 @@ source "${INSTALLER_DIR}/lib/models.sh"
 source "${INSTALLER_DIR}/lib/backup.sh"
 source "${INSTALLER_DIR}/lib/security.sh"
 source "${INSTALLER_DIR}/lib/authelia.sh"
-source "${INSTALLER_DIR}/lib/tunnel.sh"
 source "${INSTALLER_DIR}/lib/openwebui.sh"
 
 # --- Global defaults ---
@@ -44,7 +43,6 @@ TIMEOUT_START="${TIMEOUT_START:-300}"
 TIMEOUT_HEALTH="${TIMEOUT_HEALTH:-300}"
 TIMEOUT_GPU_HEALTH="${TIMEOUT_GPU_HEALTH:-0}"  # no limit — GPU models can take 30+ min to download
 TIMEOUT_MODELS="${TIMEOUT_MODELS:-1200}"
-VDS_MODE="${VDS_MODE:-false}"
 
 # --- Exclusive lock ---
 _acquire_lock() {
@@ -153,6 +151,25 @@ _run_with_timeout() {
 
 # --- Phase functions (thin wrappers) ---
 phase_diagnostics() {
+    # ARCH GATE (since v3.1, 2026-04-25): AGmind targets DGX Spark (GB10 / aarch64) only.
+    # x86_64/amd64 deployment path is dropped — no Yellow zone testing, no maintained
+    # NGC/CUDA images for amd64, no community Spark vLLM build for amd64. Install on
+    # aarch64-only hosts. To override (testing/CI): AGMIND_ALLOW_AMD64=true.
+    local _arch
+    _arch="$(uname -m)"
+    if [[ "$_arch" != "aarch64" && "$_arch" != "arm64" ]]; then
+        if [[ "${AGMIND_ALLOW_AMD64:-false}" != "true" ]]; then
+            log_error "Unsupported architecture: ${_arch}"
+            log_error "AGmind v3.1+ targets DGX Spark (aarch64) only — x86_64 path dropped."
+            log_error "If you really need to run on this host (CI/testing): export AGMIND_ALLOW_AMD64=true"
+            log_error "For a real install — use a DGX Spark or arm64 server."
+            exit 1
+        else
+            log_warn "AGMIND_ALLOW_AMD64=true — running on ${_arch} despite unsupported arch."
+            log_warn "Stack may not start: NGC vLLM/Docling cu130 имеют только arm64 manifest."
+        fi
+    fi
+
     run_diagnostics || _confirm_continue "System below minimum requirements"
     # MDNS-02: HARD abort exit 1 on foreign :5353 responder — never silent continue,
     # even in NON_INTERACTIVE mode. Broken mDNS is a silent deploy disaster (CLAUDE.md §8).
@@ -206,7 +223,7 @@ phase_models_graceful() {
         return 0  # Do NOT propagate error — installation continues
     fi
 }
-phase_backups()     { setup_backups; setup_tunnel; }
+phase_backups()     { setup_backups; }
 phase_complete()    { create_openwebui_admin; _init_minio_bucket; _ensure_api_responsive; _init_dify_admin; _sync_grafana_admin_password; _ensure_docling_ocr_models; _save_credentials; _install_cli; _install_crons; _install_systemd_service; verify_services || true; _verify_post_install_smoke; _show_final_summary; _apply_dify_patches; }
 
 # ============================================================================
@@ -936,7 +953,7 @@ _init_minio_bucket() {
 
 _save_credentials() {
     local ip; ip="$(_get_ip)"
-    local url="http://${ip}"; if [[ "${DEPLOY_PROFILE:-}" == "vps" && -n "${DOMAIN:-}" ]]; then url="https://${DOMAIN}"; fi
+    local url="http://${ip}"
     local owui_pass=""; if [[ -f "${INSTALL_DIR}/.admin_password" ]]; then owui_pass="$(cat "${INSTALL_DIR}/.admin_password")"; fi
     {
         echo "# AGMind Credentials — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -1393,7 +1410,6 @@ _verify_post_install_smoke() {
 _show_final_summary() {
     local ip; ip="$(_get_ip)"
     local url="http://${ip}"
-    if [[ "${DEPLOY_PROFILE:-}" == "vps" && -n "${DOMAIN:-}" ]]; then url="https://${DOMAIN}"; fi
     local owui_pass=""
     if [[ -f "${INSTALL_DIR}/.admin_password" ]]; then owui_pass="$(cat "${INSTALL_DIR}/.admin_password")"; fi
 
@@ -1487,7 +1503,6 @@ main() {
             --non-interactive) NON_INTERACTIVE=true;;
             --force-restart) FORCE_RESTART=true;;
             --dry-run) DRY_RUN=true;;
-            --vds) DEPLOY_PROFILE="vps"; VDS_MODE=true;;
             --mode=*)
                 AGMIND_MODE_OVERRIDE="${1#*=}"
                 case "$AGMIND_MODE_OVERRIDE" in
@@ -1496,7 +1511,7 @@ main() {
                 esac
                 export AGMIND_MODE_OVERRIDE
                 ;;
-            --help|-h) echo "Usage: sudo bash install.sh [--non-interactive] [--force-restart] [--dry-run] [--vds] [--mode=single|master|worker]"; exit 0;;
+            --help|-h) echo "Usage: sudo bash install.sh [--non-interactive] [--force-restart] [--dry-run] [--mode=single|master|worker]"; exit 0;;
         esac; shift
     done
 

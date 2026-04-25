@@ -272,13 +272,11 @@ _generate_env_file() {
         etl_type="Unstructured"
     fi
 
-    # FILES_URL: VPS uses domain (already in template), others use server IP
+    # FILES_URL: server IP for LAN profile (VPS path dropped 2026-04-25)
     local files_url=""
-    if [[ "${DEPLOY_PROFILE:-}" != "vps" ]]; then
-        local server_ip
-        server_ip="$(hostname -I 2>/dev/null | awk '{print $1}' || echo "127.0.0.1")"
-        files_url="http://${server_ip}"
-    fi
+    local server_ip
+    server_ip="$(hostname -I 2>/dev/null | awk '{print $1}' || echo "127.0.0.1")"
+    files_url="http://${server_ip}"
     local safe_files_url
     safe_files_url="$(escape_sed "${files_url}")"
 
@@ -524,10 +522,8 @@ generate_nginx_config() {
     safe_write_file "$nginx_conf"
     cp "${template_dir}/nginx.conf.template" "$nginx_conf"
 
+    # VPS profile с domain server_name был удалён 2026-04-25 — оставляем wildcard.
     local server_name="_"
-    if [[ "$profile" == "vps" && -n "${DOMAIN:-}" ]]; then
-        server_name="${DOMAIN}"
-    fi
 
     _atomic_sed "$nginx_conf" -e "s|__SERVER_NAME__|${server_name}|g"
 
@@ -961,27 +957,12 @@ http_access deny metadata
 
 SQUIDEOF
 
-    # RFC1918 blocking: VPS — block all private nets for SSRF safety
-    # LAN — allow RFC1918 so Dify sandbox can call internal webhooks
-    if [[ "${DEPLOY_PROFILE:-vps}" == "lan" ]]; then
-        cat >> "$squid_conf" << 'SQUIDEOF'
+    # LAN profile (VPS dropped 2026-04-25): allow RFC1918 for internal webhook
+    # calls from Dify sandbox. Metadata endpoints are still blocked above.
+    cat >> "$squid_conf" << 'SQUIDEOF'
 # LAN profile: allow RFC1918 for internal webhook calls from Dify sandbox
 # Metadata endpoints are still blocked above
 SQUIDEOF
-    else
-        # Build whitelist from docker-compose service names so Dify API/sandbox
-        # can reach internal services (model validation, webhooks, vector DB)
-        # even when RFC1918 is blocked for SSRF protection.
-        _squid_agmind_whitelist "$squid_conf"
-
-        cat >> "$squid_conf" << 'SQUIDEOF'
-# Block RFC1918 private networks (SSRF protection for public-facing profiles)
-acl private_nets dst 10.0.0.0/8
-acl private_nets dst 172.16.0.0/12
-acl private_nets dst 192.168.0.0/16
-http_access deny private_nets
-SQUIDEOF
-    fi
 
     cat >> "$squid_conf" << 'SQUIDEOF'
 

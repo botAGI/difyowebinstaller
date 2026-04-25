@@ -92,7 +92,7 @@ CLEANUP_STAGE="docker-compose-down"
 if [[ -f "$COMPOSE_FILE" ]]; then
     echo -e "${YELLOW}Stopping containers...${NC}"
     # Source ALL_COMPOSE_PROFILES if service-map.sh exists, otherwise use hardcoded superset
-    ALL_PROFILES="vps,monitoring,qdrant,weaviate,etl,authelia,ollama,vllm,tei,reranker,vllm-embed,vllm-rerank,docling,litellm,searxng,notebook,dbgpt,crawl4ai,openwebui"
+    ALL_PROFILES="monitoring,qdrant,weaviate,etl,authelia,ollama,vllm,tei,reranker,vllm-embed,vllm-rerank,docling,litellm,searxng,notebook,dbgpt,crawl4ai,openwebui"
     if [[ -f "${INSTALL_DIR}/lib/service-map.sh" ]]; then
         ALL_PROFILES="$(grep '^ALL_COMPOSE_PROFILES=' "${INSTALL_DIR}/lib/service-map.sh" 2>/dev/null | cut -d'"' -f2 || echo "$ALL_PROFILES")"
     fi

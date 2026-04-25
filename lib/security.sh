@@ -68,9 +68,8 @@ configure_ufw() {
     ufw allow 80/tcp comment "AGMind HTTP"
     ufw allow 443/tcp comment "AGMind HTTPS"
 
-    if [[ "${DEPLOY_PROFILE:-}" == "lan" ]]; then
-        ufw allow from "${LAN_SUBNET:-192.168.0.0/16}" comment "LAN access"
-    fi
+    # LAN profile (always since 2026-04-25, VPS dropped): allow internal subnet.
+    ufw allow from "${LAN_SUBNET:-192.168.0.0/16}" comment "LAN access"
     if [[ "${MONITORING_MODE:-none}" == "local" ]]; then
         ufw allow 3001/tcp comment "Grafana"
         ufw allow 9443/tcp comment "Portainer"
@@ -373,11 +372,8 @@ setup_security() {
     log_info "Setting up security..."
     configure_ufw
     configure_fail2ban
-    # SSH hardening (disable password auth) — only for VPS/public servers.
-    # LAN: server behind NAT, risk of locking yourself out > benefit.
-    if [[ "${DEPLOY_PROFILE:-lan}" != "lan" ]]; then
-        harden_ssh
-    fi
+    # SSH hardening пропускается на LAN (DGX Spark) — server обычно за NAT,
+    # риск locking out себя > benefit. VPS path удалён 2026-04-25.
     harden_docker_compose
     encrypt_secrets
     echo ""
