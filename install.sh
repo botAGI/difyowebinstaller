@@ -1506,7 +1506,7 @@ main() {
     _acquire_lock
     mkdir -p "$INSTALL_DIR"
 
-    # Initialize git repo so agmind update --main works after fresh install
+    # Initialize git repo so `agmind update` works after fresh install (main is default since 2026-04)
     if [[ ! -d "${INSTALL_DIR}/.git" ]]; then
         git -C "$INSTALL_DIR" init -b main >/dev/null 2>&1
         git -C "$INSTALL_DIR" remote add origin https://github.com/botAGI/AGmind.git 2>/dev/null || true

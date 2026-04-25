@@ -75,7 +75,7 @@ TARGET_VERSION=""
 ROLLBACK_TARGET=""
 ROLLBACK_MODE=false
 FORCE=false
-UPDATE_BRANCH="${UPDATE_BRANCH:-release}"
+UPDATE_BRANCH="${UPDATE_BRANCH:-main}"
 SCRIPTS_ONLY="${SCRIPTS_ONLY:-false}"
 
 # Parse arguments
@@ -96,7 +96,8 @@ while [[ $# -gt 0 ]]; do
             fi
             ;;
         --force)        FORCE=true; shift ;;
-        --main)         UPDATE_BRANCH="main"; shift ;;
+        --main)         UPDATE_BRANCH="main"; shift ;;        # back-compat (default since 2026-04)
+        --release)      UPDATE_BRANCH="release"; shift ;;     # opt-in to legacy release-track branch
         --scripts-only) SCRIPTS_ONLY=true; shift ;;
         *)              log_error "Unknown option: $1"; exit 1 ;;
     esac
@@ -151,9 +152,9 @@ CURL_CFG
     esac
 }
 
-# Update installer scripts via git pull from release (or main) branch
+# Update installer scripts via git pull from main (default) or release branch
 update_scripts() {
-    local branch="${UPDATE_BRANCH:-release}"
+    local branch="${UPDATE_BRANCH:-main}"
     log_info "Updating scripts from branch: ${branch}..."
 
     cd "$INSTALL_DIR" || { log_error "Cannot cd to $INSTALL_DIR"; return 1; }
@@ -180,11 +181,35 @@ update_scripts() {
         return 1
     }
 
-    # Fast-forward pull (no merge commits)
-    git checkout "$branch" 2>/dev/null || {
-        log_error "Failed to checkout branch '${branch}'"
-        return 1
-    }
+    # One-time migration: if local repo doesn't have a branch checked out (fresh
+    # init -b main without commits) OR is on a different branch (e.g. legacy
+    # 'release' tracking), force-switch to target branch from origin. This handles
+    # the 2026-04 default flip release→main without breaking existing installs.
+    local current_branch
+    current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)"
+    if [[ "$current_branch" != "$branch" ]]; then
+        log_info "Switching tracked branch: ${current_branch} → ${branch}"
+        # Untracked files that conflict with branch contents (e.g. runtime-installed
+        # scripts/) need to be removed before checkout — git refuses to overwrite untracked.
+        # Safe because runtime files are reproduced by checkout itself.
+        git checkout -B "$branch" "origin/${branch}" 2>/dev/null || {
+            # Conflict: remove untracked files that shadow tracked ones
+            local conflicts
+            conflicts="$(git checkout -B "$branch" "origin/${branch}" 2>&1 | grep -E '^\s+\S' | awk '{print $1}' | tr -d '\t')"
+            if [[ -n "$conflicts" ]]; then
+                log_warn "Removing shadowing untracked files: ${conflicts}"
+                # shellcheck disable=SC2086
+                rm -f $conflicts
+                git checkout -B "$branch" "origin/${branch}" 2>/dev/null || {
+                    log_error "Failed to switch to branch '${branch}' even after cleanup"
+                    return 1
+                }
+            else
+                log_error "Failed to checkout branch '${branch}'"
+                return 1
+            fi
+        }
+    fi
 
     git pull --ff-only origin "$branch" 2>/dev/null || {
         log_error "Failed to pull from '${branch}' — possible conflict"
@@ -192,10 +217,9 @@ update_scripts() {
         return 1
     }
 
-    # If --main was used, switch back to release for next time
-    if [[ "$branch" == "main" ]]; then
-        log_warn "One-time pull from 'main' complete. Next 'agmind update' will use 'release'."
-        # Do NOT persist the branch change -- UPDATE_BRANCH defaults to release
+    # Notify if --release legacy branch was used (default is main since 2026-04)
+    if [[ "$branch" == "release" ]]; then
+        log_warn "Pulled from legacy 'release' branch. Default is 'main' — use 'agmind update' without --release for fresh updates."
     fi
 
     log_success "Scripts updated from branch: ${branch}"

@@ -996,6 +996,7 @@ Commands:
     --rollback <name>      Rollback single component (legacy)
     --auto                 Skip all confirmation prompts
     --scripts-only         Update scripts/configs only (skip docker pull)
+    --release              Pull from legacy 'release' branch (default = 'main' since 2026-04)
   plugins <sub>      Dify plugin daemon marketplace toggle (root for online/offline)
     online               Enable marketplace.dify.ai (allow external plugins)
     offline              Disable marketplace (local .difypkg only — recommended)
