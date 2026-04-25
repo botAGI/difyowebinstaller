@@ -192,7 +192,38 @@ _generate_secrets() {
     _AUTHELIA_STORAGE_KEY="$(generate_random 64)"
     _LITELLM_MASTER_KEY="sk-$(generate_random 32)"
     _SEARXNG_SECRET_KEY="$(generate_random 32)"
-    _SURREALDB_PASSWORD="$(generate_random 24)"
+
+    # SurrealDB password must persist across re-installs (BACKLOG #999.1):
+    # SurrealDB CLI args `--user root --pass X` пишут ROOT creds в rocksdb
+    # volume на first-boot. Subsequent re-install с новым паролем НЕ обновляет
+    # БД (только CLI args), Notebook backend получает auth failure.
+    # Fix: храним пароль в /opt/agmind/.secrets/surrealdb_password (chmod 600),
+    # читаем при re-install вместо regen. Удалить файл = генерация заново
+    # (понадобится после `uninstall.sh` без `--keep-models` — volume snесён,
+    # пароль больше не нужен).
+    local _sdb_secrets_dir="${INSTALL_DIR}/.secrets"
+    local _sdb_pw_file="${_sdb_secrets_dir}/surrealdb_password"
+    local _sdb_pw_preserved="/var/lib/agmind/state/surrealdb_password.preserved"
+    mkdir -p "$_sdb_secrets_dir" 2>/dev/null || true
+    chmod 700 "$_sdb_secrets_dir" 2>/dev/null || true
+    # Restore from uninstall --keep-models stash if INSTALL_DIR was wiped
+    # but state survived. One-time migration: rename to canonical path.
+    if [[ ! -s "$_sdb_pw_file" ]] && [[ -s "$_sdb_pw_preserved" ]]; then
+        cp "$_sdb_pw_preserved" "$_sdb_pw_file"
+        chmod 600 "$_sdb_pw_file"
+        rm -f "$_sdb_pw_preserved"
+        log_info "SurrealDB password restored from /var/lib/agmind/state/ (--keep-models stash)"
+    fi
+    if [[ -s "$_sdb_pw_file" ]]; then
+        _SURREALDB_PASSWORD="$(cat "$_sdb_pw_file")"
+        log_info "SurrealDB password loaded from ${_sdb_pw_file} (preserved across re-install)"
+    else
+        _SURREALDB_PASSWORD="$(generate_random 24)"
+        printf '%s' "$_SURREALDB_PASSWORD" > "$_sdb_pw_file"
+        chmod 600 "$_sdb_pw_file"
+        log_info "SurrealDB password generated and persisted: ${_sdb_pw_file}"
+    fi
+
     _NOTEBOOK_ENCRYPTION_KEY="$(generate_random 32)"
 
     _MINIO_ROOT_USER="agmind-admin"

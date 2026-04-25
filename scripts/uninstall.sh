@@ -209,7 +209,17 @@ if [[ -L /usr/local/bin/agmind ]]; then
 fi
 
 # 11. Remove installation directory
+# When --keep-models is set, persist .secrets/surrealdb_password to
+# /var/lib/agmind/state/ before INSTALL_DIR wipe — это обязательно потому что
+# SurrealDB volume preserved (model cache) и пароль ДОЛЖЕН совпадать на
+# next install.sh run, иначе auth fails (BACKLOG #999.1).
 CLEANUP_STAGE="install-dir"
+if [[ "$KEEP_MODELS" == "true" ]] && [[ -s "${INSTALL_DIR}/.secrets/surrealdb_password" ]]; then
+    mkdir -p /var/lib/agmind/state 2>/dev/null || true
+    cp "${INSTALL_DIR}/.secrets/surrealdb_password" /var/lib/agmind/state/surrealdb_password.preserved
+    chmod 600 /var/lib/agmind/state/surrealdb_password.preserved
+    echo "  Preserved SurrealDB password (will be restored on next install.sh)"
+fi
 echo -e "${YELLOW}Removing ${INSTALL_DIR}...${NC}"
 rm -rf "${INSTALL_DIR}"
 
