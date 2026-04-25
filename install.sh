@@ -180,6 +180,7 @@ phase_diagnostics() {
         exit 1
     fi
     preflight_checks || _confirm_continue "Pre-flight errors found"
+    _inventory_existing_models
     # PEER-02, PEER-01: ensure lldpd running (QSFP neighbour table), then detect peer.
     # Never fails install — soft detection; sets PEER_HOSTNAME/PEER_IP/PEER_USER for wizard.
     # DETECTED_NETWORK env (set by preflight_checks) gates apt-install path in _ensure_lldpd.
@@ -628,6 +629,30 @@ _apply_dify_patches() {
 _confirm_continue() {
     if [[ "$NON_INTERACTIVE" == "true" ]]; then log_warn "Non-interactive: continuing despite: $1"; return 0; fi
     read -rp "$1. Continue? (yes/no): " r; [[ "$r" == "yes" ]] || exit 1
+}
+
+# _inventory_existing_models: log existing model cache volumes BEFORE install
+# touches anything. Reassures operator that gemma-4 (~52GB) / bge-m3 / docling
+# models will be reused. install.sh + compose pull НЕ удаляют volumes —
+# wipe только при explicit `bash uninstall.sh` без `--keep-models` flag.
+_inventory_existing_models() {
+    if ! command -v docker >/dev/null 2>&1; then return 0; fi
+    local model_vols
+    model_vols="$(docker volume ls -q 2>/dev/null | grep -E '^(agmind_ollama_data|docker_agmind_vllm_cache|docker_agmind_vllm_embed_cache|docker_agmind_vllm_rerank_cache|docker_agmind_docling_cache|docker_agmind_huggingface_cache)$' || true)"
+    if [[ -z "$model_vols" ]]; then
+        log_info "Model cache: чистая система (модели будут скачаны при первом запуске GPU-контейнеров)"
+        return 0
+    fi
+    log_info "Существующие model caches будут переиспользованы (re-download не требуется):"
+    while read -r vol; do
+        [[ -z "$vol" ]] && continue
+        local mount; mount="$(docker volume inspect -f '{{.Mountpoint}}' "$vol" 2>/dev/null)"
+        local size="?"
+        if [[ -n "$mount" && -d "$mount" ]]; then
+            size="$(du -sh "$mount" 2>/dev/null | awk '{print $1}')"
+        fi
+        log_info "  - ${vol} (${size})"
+    done <<< "$model_vols"
 }
 
 _check_critical_services() {

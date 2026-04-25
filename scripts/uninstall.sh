@@ -29,18 +29,30 @@ trap cleanup_status EXIT
 # Parse flags
 FORCE=false
 DRY_RUN=false
+KEEP_MODELS=false
 for arg in "$@"; do
     case "$arg" in
-        --force|-f) FORCE=true ;;
-        --dry-run) DRY_RUN=true ;;
+        --force|-f)    FORCE=true ;;
+        --dry-run)     DRY_RUN=true ;;
+        --keep-models) KEEP_MODELS=true ;;
     esac
 done
+
+# Model cache volume names — preserved when --keep-models is set.
+# Сохраняет gemma-4 (vllm), bge-m3 (embed), bge-reranker-v2-m3 (rerank), Ollama models, docling.
+# Полезно при rerun install.sh без re-download (gemma-4 ~52GB на pretty slow link).
+MODEL_VOLUMES_REGEX='^(agmind_ollama_data|docker_agmind_vllm_cache|docker_agmind_vllm_embed_cache|docker_agmind_vllm_rerank_cache|docker_agmind_docling_cache|docker_agmind_huggingface_cache)$'
 
 if [[ "$DRY_RUN" == "true" ]]; then
     echo -e "${YELLOW}=== DRY RUN — nothing will be deleted ===${NC}"
     echo ""
     echo "Will be removed:"
-    echo "  - Docker containers and volumes for AGMind"
+    if [[ "$KEEP_MODELS" == "true" ]]; then
+        echo "  - Docker containers + volumes (EXCEPT model caches per --keep-models)"
+        echo "      preserved: $(docker volume ls -q 2>/dev/null | grep -E "$MODEL_VOLUMES_REGEX" | tr '\n' ' ')"
+    else
+        echo "  - Docker containers and volumes for AGMind (including model caches — use --keep-models to preserve)"
+    fi
     [[ -f /etc/systemd/system/agmind-tunnel.service ]] && echo "  - Systemd service agmind-tunnel"
     echo "  - AGMind cron jobs"
     [[ -f /etc/fail2ban/filter.d/agmind-nginx.conf ]] && echo "  - Fail2ban configuration"
@@ -102,10 +114,21 @@ fi
 # Also stop any orphan agmind containers not managed by compose
 docker ps -aq --filter "name=agmind-" 2>/dev/null | xargs -r docker rm -f 2>/dev/null || true
 
-# 2. Remove Docker volumes (match both agmind_ and docker_agmind_ prefixes)
+# 2. Remove Docker volumes (match both agmind_ and docker_agmind_ prefixes).
+# When --keep-models is set, skip volumes matching MODEL_VOLUMES_REGEX so
+# previously downloaded models (gemma-4 / bge-m3 / docling) survive uninstall
+# and are reused on the next install.sh.
 CLEANUP_STAGE="docker-volumes"
-echo -e "${YELLOW}Removing Docker volumes...${NC}"
+if [[ "$KEEP_MODELS" == "true" ]]; then
+    echo -e "${YELLOW}Removing Docker volumes (preserving models — --keep-models)...${NC}"
+else
+    echo -e "${YELLOW}Removing Docker volumes...${NC}"
+fi
 docker volume ls -q 2>/dev/null | grep -E "^agmind_|^docker_agmind_" | while read -r vol; do
+    if [[ "$KEEP_MODELS" == "true" ]] && [[ "$vol" =~ $MODEL_VOLUMES_REGEX ]]; then
+        echo "  Preserved volume: $vol"
+        continue
+    fi
     docker volume rm "$vol" 2>/dev/null || true
     echo "  Removed volume: $vol"
 done
