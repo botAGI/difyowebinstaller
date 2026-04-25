@@ -2,12 +2,45 @@
 # security.sh — UFW, fail2ban (SSH jail), SSH hardening, SOPS/age encryption, Docker hardening.
 # Dependencies: common.sh (log_*, generate_random)
 # Functions: setup_security(), configure_ufw(), configure_fail2ban(), harden_ssh(),
-#            encrypt_secrets(), harden_docker_compose()
+#            encrypt_secrets(), harden_docker_compose(), pin_nvidia_driver_dgx_spark()
 # Expects: INSTALL_DIR, DEPLOY_PROFILE, ENABLE_UFW, ENABLE_FAIL2BAN, ENABLE_SOPS,
-#          ENABLE_SSH_HARDENING, MONITORING_MODE, NON_INTERACTIVE
+#          ENABLE_SSH_HARDENING, MONITORING_MODE, NON_INTERACTIVE, DETECTED_DGX_SPARK
 set -euo pipefail
 
 INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
+
+# ============================================================================
+# DGX SPARK NVIDIA DRIVER HOLD (CLAUDE.md §8 — Driver 580 HOLD)
+# ============================================================================
+
+# NVIDIA staff explicitly state: "we do not support new drivers past version
+# 580.126.09 on Spark". 590+/595+ have 3 hard regressions on GB10 unified
+# memory: CUDAGraph deadlock, UMA leak (~80 GiB), TMA bug in 595.58.03.
+# Without apt-mark hold, unattended-upgrades will pull 590+ → next reboot
+# breaks vLLM. This function is idempotent — safe to call repeatedly.
+pin_nvidia_driver_dgx_spark() {
+    if [[ "${DETECTED_DGX_SPARK:-false}" != "true" ]]; then return 0; fi
+    if ! command -v apt-mark >/dev/null 2>&1; then
+        log_warn "apt-mark not found — cannot pin NVIDIA driver (non-Debian system?)"
+        return 0
+    fi
+    log_info "DGX Spark detected — pinning NVIDIA driver 580 (CLAUDE.md §8 mandatory)"
+    local pkgs=()
+    # Discover installed nvidia-* packages matching driver/kernel/dkms patterns.
+    # Avoid hardcoding exact package list — Ubuntu version may rename slightly.
+    while IFS= read -r pkg; do
+        [[ -n "$pkg" ]] && pkgs+=("$pkg")
+    done < <(dpkg -l 2>/dev/null | awk '/^ii  nvidia-(driver|dkms|kernel)/ {print $2}')
+    if [[ ${#pkgs[@]} -eq 0 ]]; then
+        log_warn "No nvidia-driver packages installed yet — pin deferred"
+        return 0
+    fi
+    if apt-mark hold "${pkgs[@]}" >/dev/null 2>&1; then
+        log_success "NVIDIA driver pinned: ${pkgs[*]}"
+    else
+        log_warn "apt-mark hold failed — manual: sudo apt-mark hold ${pkgs[*]}"
+    fi
+}
 
 # ============================================================================
 # UFW FIREWALL
@@ -195,6 +228,13 @@ encrypt_secrets() {
     local install_dir="${INSTALL_DIR}"
     [[ "${install_dir}" == /* ]] || { log_error "INSTALL_DIR must be absolute"; return 1; }
 
+    # Source pinned versions (SOPS_VERSION + SOPS_SHA256_*). _copy_versions
+    # writes only *_VERSION to .env, but SHA256 pins live in versions.env itself.
+    if [[ -f "${install_dir}/versions.env" ]]; then
+        # shellcheck disable=SC1091
+        source "${install_dir}/versions.env"
+    fi
+
     local age_dir="${install_dir}/.age"
     local age_key="${age_dir}/agmind.key"
 
@@ -208,28 +248,42 @@ encrypt_secrets() {
         fi
     fi
 
-    # Install sops if missing
+    # Install sops if missing — SHA256 verification is MANDATORY to defend
+    # against supply-chain compromise of github.com/getsops/sops releases.
+    # Hashes pinned in templates/versions.env (cross-checked against vendor
+    # checksums.txt). If hash unset or mismatch — refuse install.
     if ! command -v sops &>/dev/null; then
-        local arch="amd64"
-        if [[ "$(uname -m)" == "aarch64" || "$(uname -m)" == "arm64" ]]; then arch="arm64"; fi
-        local sops_url="https://github.com/getsops/sops/releases/download/v3.9.4/sops-v3.9.4.linux.${arch}"
-        if curl -sSL "$sops_url" -o /usr/local/bin/sops; then
-            # Verify checksum if provided
-            if [[ -n "${SOPS_EXPECTED_SHA256:-}" ]]; then
-                if ! echo "${SOPS_EXPECTED_SHA256}  /usr/local/bin/sops" | sha256sum -c - >/dev/null 2>&1; then
-                    log_error "SOPS binary checksum mismatch!"
-                    rm -f /usr/local/bin/sops
-                    return 1
-                fi
-                log_success "SOPS checksum verified"
-            else
-                log_warn "SOPS checksum not verified (set SOPS_EXPECTED_SHA256 to enable)"
-            fi
-            chmod +x /usr/local/bin/sops
+        local arch="amd64" sops_expected
+        if [[ "$(uname -m)" == "aarch64" || "$(uname -m)" == "arm64" ]]; then
+            arch="arm64"
+            sops_expected="${SOPS_SHA256_ARM64:-${SOPS_EXPECTED_SHA256:-}}"
         else
-            log_warn "Failed to download sops"
-            return 0
+            sops_expected="${SOPS_SHA256_AMD64:-${SOPS_EXPECTED_SHA256:-}}"
         fi
+        local sops_ver="${SOPS_VERSION:-v3.9.4}"
+        local sops_url="https://github.com/getsops/sops/releases/download/${sops_ver}/sops-${sops_ver}.linux.${arch}"
+
+        if [[ -z "$sops_expected" ]]; then
+            log_error "SOPS install refused: SHA256 not pinned (SOPS_SHA256_${arch^^} unset)"
+            log_error "Fix: ensure templates/versions.env is sourced (versions.env defines SOPS_SHA256_${arch^^})"
+            return 1
+        fi
+
+        if ! curl -sSL --fail "$sops_url" -o /usr/local/bin/sops; then
+            log_error "Failed to download sops from ${sops_url}"
+            rm -f /usr/local/bin/sops
+            return 1
+        fi
+
+        if ! echo "${sops_expected}  /usr/local/bin/sops" | sha256sum -c - >/dev/null 2>&1; then
+            log_error "SOPS binary SHA256 mismatch — supply-chain compromise risk!"
+            log_error "  expected: ${sops_expected}"
+            log_error "  got:      $(sha256sum /usr/local/bin/sops 2>/dev/null | awk '{print $1}')"
+            rm -f /usr/local/bin/sops
+            return 1
+        fi
+        log_success "SOPS ${sops_ver} ${arch} checksum verified"
+        chmod +x /usr/local/bin/sops
     fi
 
     # Generate age keypair (umask ensures correct perms from creation)
