@@ -889,11 +889,14 @@ _sync_grafana_admin_password() {
 _init_minio_bucket() {
     [[ "${ENABLE_MINIO:-false}" == "true" ]] || return 0
     log_info "Creating MinIO bucket..."
-    local user pass bucket
+    local user pass bucket mc_version
     user="$(grep '^MINIO_ROOT_USER=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
     pass="$(grep '^MINIO_ROOT_PASSWORD=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
     bucket="$(grep '^S3_BUCKET_NAME=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
     bucket="${bucket:-dify-storage}"
+    mc_version="$(grep '^MC_VERSION=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
+    mc_version="${mc_version:-RELEASE.2025-08-13T08-35-41Z}"
+    export MC_VERSION="$mc_version"
 
     # Wait for MinIO container to be running (healthcheck may take longer)
     local i=0
@@ -911,7 +914,7 @@ _init_minio_bucket() {
     net="$(docker network ls --format '{{.Name}}' | grep -m1 agmind-backend)"
     docker run --rm --network "$net" \
         -e "MC_HOST_local=http://${user}:${pass}@agmind-minio:9000" \
-        minio/mc:latest mb --ignore-existing "local/${bucket}" 2>/dev/null \
+        minio/mc:${MC_VERSION:-RELEASE.2025-08-13T08-35-41Z} mb --ignore-existing "local/${bucket}" 2>/dev/null \
         || log_warn "MinIO bucket creation failed — create manually via http://<IP>:9001"
 
     # v3.0 hotfix (2026-04-19): Dify writes to MinIO via S3_ACCESS_KEY/S3_SECRET_KEY,
@@ -923,7 +926,7 @@ _init_minio_bucket() {
     if [[ -n "$s3_ak" && -n "$s3_sk" && "$s3_ak" != "$user" ]]; then
         docker run --rm --network "$net" \
             -e "MC_HOST_local=http://${user}:${pass}@agmind-minio:9000" \
-            minio/mc:latest admin user svcacct add \
+            minio/mc:${MC_VERSION:-RELEASE.2025-08-13T08-35-41Z} admin user svcacct add \
                 --access-key "$s3_ak" \
                 --secret-key "$s3_sk" \
                 local "$user" >/dev/null 2>&1 \

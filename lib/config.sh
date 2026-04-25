@@ -490,7 +490,8 @@ _copy_versions() {
     while IFS='=' read -r key value; do
         # Validate key format and value safety
         [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*_VERSION$ ]] || continue
-        [[ "$value" =~ ^[a-zA-Z0-9._:-]+$ ]] || continue
+        # Allow @ for tag@digest pinning (e.g. PIPELINES_VERSION=main@sha256:...)
+        [[ "$value" =~ ^[a-zA-Z0-9._:@-]+$ ]] || continue
         echo "${key}=${value}" >> "$env_file"
     done < <(LC_ALL=C grep -E '^[A-Z].*_VERSION=' "$versions_file")
 }

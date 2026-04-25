@@ -107,6 +107,16 @@
 - [x] 03-01-PLAN.md — Edit templates/versions.env (11 bumps + 3 SOPS строки) + DoD §10 gates (test_image_tags_exist, shellcheck, compose config). NO commit.
 - [x] 03-02-PLAN.md — Live UAT на spark-3eac: Wave A-D per-service recreate + Wave E SOPS binary + STATE.md update + STOP-gate для user apr'ува commit.
 
+### Phase 4: Pin rolling tags — MinIO mc + Open WebUI Pipelines (close :latest gap)
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 3
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 4 to break down)
+
 ---
 
 *Updated: 2026-04-25 — Phase 3 planned (2 plans, 11 VBUMP requirements, autonomous: false on plan 02 due to live sudo + commit gate)*
