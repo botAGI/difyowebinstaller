@@ -78,6 +78,35 @@
 - `lib/wizard.sh` — куда добавить mode selection
 - `templates/docker-compose.yml` — split candidate для worker compose
 
+### Phase 3: Version bumps Green zone — 11 arm64-verified
+
+**Goal:** Поднять 11 версий в `templates/versions.env` (security CVE-fixes + bugfix bumps), все верифицированы через `docker manifest inspect` с подтверждённым `architecture: arm64` для конкретного tag. Прогнать live на работающем стеке spark-3eac (master) с per-service recreate (по очереди, без глобального `compose up -d --force-recreate`), убедиться что existing функционал не сломался.
+
+**Requirements:** VBUMP-01..VBUMP-11 (см. CONTEXT.md и BACKLOG #999.4)
+
+**Depends on:** Phase 2
+
+**Success Criteria:**
+1. `templates/versions.env` содержит 11 обновлённых версий: Redis `7.4.8-alpine`, Grafana `12.4.3`, SOPS `v3.12.2` (+ новые `SOPS_SHA256_ARM64` и `SOPS_SHA256_AMD64` из upstream checksums), Ollama `v0.21.2`, SearXNG `2026.4.24`, SurrealDB `v2.6.5`, Postgres `16-alpine3.23`, Redis Exporter `v1.82.0`, Postgres Exporter `v0.19.1`, Nginx Exporter `1.5.1`, cAdvisor `v0.55.1`.
+2. `bash tests/compose/test_image_tags_exist.sh core/compose.yml` (или эквивалент для `templates/docker-compose.yml`) PASS — все 11 image manifests resolve, arm64 architecture verified для каждого.
+3. `shellcheck -S warning lib/*.sh scripts/*.sh install.sh` PASS (если правки задели shell).
+4. **Live deploy на spark-3eac:** per-service recreate выполнен в правильном порядке (Postgres последним из-за depends_on api/worker service_healthy):
+   - `sudo docker compose up -d redis grafana ollama surrealdb`
+   - `sudo docker compose up -d redis-exporter postgres-exporter nginx-exporter cadvisor`
+   - `sudo docker compose up -d searxng`
+   - `sudo docker compose up -d postgres` (внимание: Dify api/worker depends_on, ~10 сек простоя)
+   - SOPS binary обновлён в `/opt/agmind/bin/sops` с verified sha256.
+5. После live recreate: `sudo docker ps --filter status=unhealthy` пуст, `agmind health` всё OK, `curl -sf http://agmind-dify.local/console/api/setup` → 200, Grafana login `http://agmind-grafana.local` доступен.
+6. **HOLD list соблюдён** — НЕ обновлены: plugin_daemon (0.5.3-local), VLLM_NGC (26.02-py3), VLLM_SPARK (gemma4-cu130), Qdrant (RocksDB break), Prometheus v3.x, SurrealDB v3.x, Grafana v13, Loki/Promtail (отдельная фаза 999.5 → Alloy migration), cAdvisor v0.56+ (arm64 broken).
+7. Yellow zone (Open WebUI, Weaviate, MinIO, Docling, LiteLLM, Portainer 2.39, Nginx 1.30, Authelia 4.39) — НЕ trogать в этой фазе, отдельный milestone.
+
+**UI hint:** no (infra/version bumps only)
+
+**Plans:** 2 plans
+
+- [ ] 03-01-PLAN.md — Edit templates/versions.env (11 bumps + 3 SOPS строки) + DoD §10 gates (test_image_tags_exist, shellcheck, compose config). NO commit.
+- [ ] 03-02-PLAN.md — Live UAT на spark-3eac: Wave A-D per-service recreate + Wave E SOPS binary + STATE.md update + STOP-gate для user apr'ува commit.
+
 ---
 
-*Updated: 2026-04-21 — 2-day sprint roadmap, 2 phases*
+*Updated: 2026-04-25 — Phase 3 planned (2 plans, 11 VBUMP requirements, autonomous: false on plan 02 due to live sudo + commit gate)*

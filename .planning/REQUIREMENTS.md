@@ -32,6 +32,28 @@
 
 - [x] **SSH-01**: `_ensure_ssh_trust <peer_ip>` (новый helper в `lib/detect.sh` или отдельный `lib/ssh_trust.sh`): (1) проверяет `ssh -o BatchMode=yes ${peer_user}@${peer_ip} true` — если OK, return 0. (2) Если fail — wizard prompt'ит пароль peer один раз через TUI password input. (3) `ssh-copy-id -i ~/.ssh/agmind_peer_ed25519.pub ${peer_user}@${peer_ip}` (key генерится если отсутствует). (4) Verify через `ssh -o BatchMode=yes`. Credentials (пароль) в memory only, не на disk.
 
+### VBUMP — Version bumps Green zone, arm64-verified (Phase 3)
+
+Source of truth: `.planning/BACKLOG.md` #999.4. arm64 manifest verified 2026-04-25 через `docker manifest inspect <image>:<tag>` (architecture: arm64 в multi-arch index). Live UAT requirement: каждая правка прогоняется на работающем стеке spark-3eac до коммита.
+
+- [ ] **VBUMP-01**: Redis `7.4.1-alpine` → `7.4.8-alpine`. **Security** (CRLF injection fix). arm64 ✅. После recreate: `redis-cli ping` → PONG, Dify api/worker не теряют connection (depends_on с healthcheck).
+- [ ] **VBUMP-02**: Grafana `12.4.2` → `12.4.3`. **Security** (CVE-2026-27876, CVE-2026-27877). arm64 ✅. После recreate: `http://agmind-grafana.local` login OK, дашборды master + peer-worker рендерятся, datasource Prometheus OK.
+- [ ] **VBUMP-03**: SOPS binary `v3.9.4` → `v3.12.2`. **Bugfixes + age plugin**. ОБЯЗАТЕЛЬНО обновить `SOPS_SHA256_ARM64` и `SOPS_SHA256_AMD64` в `templates/versions.env` (новые hashes из `https://github.com/getsops/sops/releases/download/v3.12.2/sops-v3.12.2.checksums.txt`). После: `/opt/agmind/bin/sops --version` показывает `3.12.2`, decrypt существующего secrets-файла OK.
+- [ ] **VBUMP-04**: Ollama `0.20.6` → `v0.21.2`. Stability. arm64 ✅. После recreate: `curl http://localhost:11434/api/tags` OK, embedding model отвечает (`agmind health`).
+- [ ] **VBUMP-05**: SearXNG `2026.4.7` → `2026.4.24`. Rolling release. arm64 ✅. После recreate: search query через UI отдаёт результаты.
+- [ ] **VBUMP-06**: SurrealDB `v2.2.1` → `v2.6.5` (within 2.x). **DO NOT v3.x** (major API breaking — HOLD list). arm64 ✅. Notebook сейчас disabled (BACKLOG #999.1) — но тег обновляем чтобы fresh install не тащил старый. После recreate (если ENABLE_NOTEBOOK=true): startup OK, нет ROOT auth divergence (это уже отдельный баг #999.1).
+- [ ] **VBUMP-07**: Postgres `16-alpine` → `16-alpine3.23`. Alpine base bump (security patches userland). arm64 ✅. **ОСТОРОЖНО при recreate** — Dify api/worker depends_on postgres service_healthy, ~10 сек простоя ожидаемо. После: `psql` connect OK, Dify console грузится, knowledge base list работает.
+- [ ] **VBUMP-08**: Redis Exporter `oliver006/redis_exporter:v1.69.0` → `v1.82.0`. Distroless, healthcheck unchanged. arm64 ✅. После recreate: `curl http://localhost:9121/metrics` отдаёт `redis_*`, Prometheus target `up{job="redis-exporter"}=1`.
+- [ ] **VBUMP-09**: Postgres Exporter `prometheuscommunity/postgres-exporter:v0.17.1` → `v0.19.1`. Perf + bugfixes. arm64 ✅. После recreate: `pg_*` метрики в Prometheus OK.
+- [ ] **VBUMP-10**: Nginx Exporter `nginx/nginx-prometheus-exporter:1.4.2` → `1.5.1`. Proxy v2 fix. arm64 ✅. После recreate: `nginx_*` метрики OK, dashboard "AGmind Nginx" рендерится.
+- [ ] **VBUMP-11**: cAdvisor `gcr.io/cadvisor/cadvisor:v0.52.1` → `v0.55.1`. **arm64 ceiling** — v0.56.0/v0.56.1/v0.56.2 НЕ имеют arm64 manifest (CLAUDE.md §8 правило подтверждено). После recreate: `container_*` метрики, GPU containers visible, dashboard "AGmind Containers" OK.
+
+**Live UAT acceptance (общий для VBUMP-01..11):**
+- `bash tests/compose/test_image_tags_exist.sh` PASS (DoD §10 gate, ловит галлюцинации).
+- `sudo docker ps --filter status=unhealthy` пуст после всех recreate.
+- `agmind health` всё OK (включая peer если cluster_mode=master).
+- `sudo docker compose config | grep image:` показывает все 11 новых тегов.
+
 ## Future Requirements (v3.1+)
 
 ### Model picker wizard (deferred из v3.0 discussions)
@@ -41,4 +63,4 @@
 
 ---
 
-*Updated: 2026-04-21 — 14 requirements mapped to 2 phases*
+*Updated: 2026-04-25 — 25 requirements mapped to 3 phases (14 v3.0.1 + 11 VBUMP)*

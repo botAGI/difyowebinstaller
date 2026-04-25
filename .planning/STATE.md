@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v3.0.1
 milestone_name: milestone
-status: Milestone complete
-last_updated: "2026-04-21T20:29:44.334Z"
+status: Phase 3 complete (live UAT passed)
+last_updated: "2026-04-25T19:00:00.000Z"
 progress:
-  total_phases: 2
-  completed_phases: 2
-  total_plans: 7
-  completed_plans: 7
+  total_phases: 3
+  completed_phases: 3
+  total_plans: 9
+  completed_plans: 9
   percent: 100
 ---
 
@@ -20,12 +20,12 @@ See: `.planning/PROJECT.md`
 
 **Core value:** Один `sudo bash install.sh` поднимает RAG-платформу на DGX Spark с надёжным mDNS резолвом и автодетекции peer для dual-Spark deploy.
 
-**Current focus:** Phase 2 — Dual-Spark detect + wizard
+**Current focus:** Phase 3 — Version bumps Green zone — 11 arm64-verified
 
 ## Current Position
 
-Phase: 2
-Plan: Not started
+Phase: 3 (Version bumps Green zone — 11 arm64-verified) — EXECUTING
+Plan: 1 of 2
 Milestone: v3.0.1
 
 ## Milestone Roadmap
@@ -90,16 +90,18 @@ See: `.planning/ROADMAP.md`
 | Phase 02-dual-spark-detect-master-worker-wizard-compose-split P04 | 9 | 4 tasks | 4 files |
 | Phase 02 P05 | 6 | 4 tasks | 3 files |
 
+## Roadmap Evolution
+
+- Phase 3 added: Version bumps Green zone — 11 arm64-verified (Redis 7.4.8 security, Grafana 12.4.3 CVE, SOPS v3.12.2 + new hashes, Ollama v0.21.2, SearXNG 2026.4.24, SurrealDB v2.6.5, Postgres 16-alpine3.23, Redis Exporter v1.82.0, Postgres Exporter v0.19.1, Nginx Exporter 1.5.1, cAdvisor v0.55.1 arm64-ceiling)
+
 ## Next Action
 
-**Phase 2 COMPLETE — all 5 plans executed.** Ready for `/gsd-verify-work Phase 2`.
+**Phase 3 added — ready for `/gsd-plan-phase 3`.**
 
-Live UAT on spark-3eac:
+Phase 2 (dual-spark) complete. Phase 3 = security/version bumps batch from BACKLOG #999.4. arm64 manifest verified (cAdvisor v0.55.1 ceiling, Promtail/Alloy excluded → 999.5).
 
-- `sudo bash install.sh` → wizard selects master → phase 7 deploys peer → vLLM up on spark-69a2
-- Prometheus loads `peer-offline.yml` rules + peer scrape targets uncommented
-- `agmind health --peer` → [OK] Peer reachable + [OK] Peer vLLM :8000
+Live UAT requirement: каждая правка прогоняется на работающем стеке spark-3eac до коммита (memory: feedback_test_live_before_commit).
 
 ---
 
-*Updated: 2026-04-21 — Plan 02-05 complete (commits db160fe..1972b5c) — Phase 2 all 5 plans done*
+*Updated: 2026-04-25 — Phase 3 added (Version bumps Green zone)*
