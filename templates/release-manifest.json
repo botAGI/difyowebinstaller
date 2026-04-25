@@ -212,10 +212,10 @@
         "linux/arm64"
       ]
     },
-    "promtail": {
+    "alloy": {
       "registry": "docker.io",
-      "image": "grafana/promtail",
-      "tag": "3.3.2",
+      "image": "grafana/alloy",
+      "tag": "v1.16.0",
       "digest": "",
       "platforms": [
         "linux/amd64",

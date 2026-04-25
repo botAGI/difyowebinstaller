@@ -71,7 +71,7 @@ declare -a IMAGE_MAP=(
     "prometheus|docker.io|prom/prometheus|${PROMETHEUS_VERSION}|linux/amd64,linux/arm64"
     "alertmanager|docker.io|prom/alertmanager|${ALERTMANAGER_VERSION}|linux/amd64,linux/arm64"
     "loki|docker.io|grafana/loki|${LOKI_VERSION}|linux/amd64,linux/arm64"
-    "promtail|docker.io|grafana/promtail|${PROMTAIL_VERSION}|linux/amd64,linux/arm64"
+    "alloy|docker.io|grafana/alloy|${ALLOY_VERSION}|linux/amd64,linux/arm64"
 )
 
 resolve_digest() {

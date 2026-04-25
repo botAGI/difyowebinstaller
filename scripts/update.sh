@@ -907,7 +907,7 @@ perform_bundle_update() {
         "weaviate" "qdrant" "docling"
         "litellm" "searxng" "surrealdb" "open-notebook" "dbgpt" "crawl4ai"
         "grafana" "portainer" "prometheus" "alertmanager"
-        "loki" "promtail" "node-exporter" "cadvisor" "authelia"
+        "loki" "alloy" "node-exporter" "cadvisor" "authelia"
         "certbot" "ssrf_proxy"
     )
 

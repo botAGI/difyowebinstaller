@@ -1041,27 +1041,29 @@ services:
     networks:
       - agmind-backend
 
-  # ==================== Promtail (monitoring profile) ====================
-  promtail:
+  # ==================== Alloy (monitoring profile) ====================
+  # Replaces deprecated Promtail (BACKLOG #999.5, migrated 2026-04-25).
+  # Reads docker container logs → forwards to Loki. arm64-verified.
+  alloy:
     <<: *security-defaults
-    image: grafana/promtail:${PROMTAIL_VERSION:-3.6.10}
-    container_name: agmind-promtail
+    image: grafana/alloy:${ALLOY_VERSION:-v1.16.0}
+    container_name: agmind-alloy
     restart: unless-stopped
-    mem_limit: ${PROMTAIL_MEM_LIMIT:-256m}
+    mem_limit: ${ALLOY_MEM_LIMIT:-256m}
     profiles:
       - monitoring
     volumes:
-      - ./monitoring/promtail-config.yml:/etc/promtail/config.yml:ro
+      - ./monitoring/alloy-config.river:/etc/alloy/config.river:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - agmind_promtail_positions:/promtail
-    command: -config.file=/etc/promtail/config.yml
-    healthcheck:
-      # promtail image has no wget/curl; use promtail's built-in check
-      test: ["CMD-SHELL", "promtail -check-syntax -config.file=/etc/promtail/config.yml 2>/dev/null || exit 1"]
-      interval: ${HEALTHCHECK_INTERVAL:-30s}
-      timeout: 10s
-      retries: ${HEALTHCHECK_RETRIES:-5}
-      start_period: 15s
+      - agmind_alloy_data:/var/lib/alloy/data
+    command:
+      - run
+      - /etc/alloy/config.river
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=0.0.0.0:12345
+    # No healthcheck — Alloy distroless image не имеет wget/curl/sh.
+    # Pitfall 6 в CLAUDE.md §8 (как у redis-exporter, nginx-exporter).
+    # Мониторинг через Prometheus `up{job="alloy"}` если targets настроены.
     depends_on:
       loki:
         condition: service_started
@@ -1473,7 +1475,7 @@ volumes:
   agmind_prometheus_data:
   agmind_authelia_data:
   agmind_loki_data:
-  agmind_promtail_positions:
+  agmind_alloy_data:
   agmind_docling_cache:
   agmind_vllm_cache:
   agmind_tei_cache:

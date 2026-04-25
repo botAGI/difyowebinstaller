@@ -41,7 +41,7 @@ KEY_MAP = {
     "PROMETHEUS_VERSION": ["prometheus"],
     "ALERTMANAGER_VERSION": ["alertmanager"],
     "LOKI_VERSION": ["loki"],
-    "PROMTAIL_VERSION": ["promtail"],
+    "ALLOY_VERSION": ["alloy"],
     "VLLM_VERSION": ["vllm"],
     "TEI_VERSION": ["tei"],
     "PIPELINES_VERSION": ["pipelines"],
