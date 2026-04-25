@@ -102,10 +102,10 @@
 
 **UI hint:** no (infra/version bumps only)
 
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 
-- [ ] 03-01-PLAN.md — Edit templates/versions.env (11 bumps + 3 SOPS строки) + DoD §10 gates (test_image_tags_exist, shellcheck, compose config). NO commit.
-- [ ] 03-02-PLAN.md — Live UAT на spark-3eac: Wave A-D per-service recreate + Wave E SOPS binary + STATE.md update + STOP-gate для user apr'ува commit.
+- [x] 03-01-PLAN.md — Edit templates/versions.env (11 bumps + 3 SOPS строки) + DoD §10 gates (test_image_tags_exist, shellcheck, compose config). NO commit.
+- [x] 03-02-PLAN.md — Live UAT на spark-3eac: Wave A-D per-service recreate + Wave E SOPS binary + STATE.md update + STOP-gate для user apr'ува commit.
 
 ---
 
