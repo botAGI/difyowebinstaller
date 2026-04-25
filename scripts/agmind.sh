@@ -450,6 +450,63 @@ cmd_restart() {
 }
 
 # ============================================================================
+# PLUGIN DAEMON ONLINE / OFFLINE TOGGLE
+# Default install: offline (MARKETPLACE_ENABLED=false) — supply-chain safe.
+# Admin can flip to online when intentionally installing marketplace plugins.
+# Uses `docker restart` (NOT recreate) to preserve plugin daemon state per
+# CLAUDE.md §8 force-recreate trap (avoids stale Redis/Celery cleanup risk).
+# ============================================================================
+
+cmd_plugins() {
+    local sub="${1:-status}"
+    case "$sub" in
+        online|on|enable)
+            _require_root "plugins online"
+            echo -e "${YELLOW}Enabling Dify marketplace (MARKETPLACE_ENABLED=true)...${NC}"
+            _set_env_var MARKETPLACE_ENABLED true
+            docker restart agmind-api agmind-plugin-daemon >/dev/null
+            echo -e "${GREEN}Plugin daemon ONLINE — marketplace.dify.ai accessible${NC}"
+            echo -e "${YELLOW}Reminder: marketplace plugins run as root in plugin_daemon — install only trusted${NC}"
+            ;;
+        offline|off|disable)
+            _require_root "plugins offline"
+            echo -e "${YELLOW}Disabling Dify marketplace (MARKETPLACE_ENABLED=false)...${NC}"
+            _set_env_var MARKETPLACE_ENABLED false
+            docker restart agmind-api agmind-plugin-daemon >/dev/null
+            echo -e "${GREEN}Plugin daemon OFFLINE — local .difypkg upload still works${NC}"
+            ;;
+        status|"")
+            # .env is mode 600 root:root — _read_env silently falls back to default
+            # without sudo. Use sudo -n explicitly so status is honest with NOPASSWD,
+            # falls back to default with clear UX otherwise.
+            local current
+            if [[ -r "$ENV_FILE" ]]; then
+                current="$(_read_env MARKETPLACE_ENABLED "false")"
+            else
+                current="$(sudo -n grep '^MARKETPLACE_ENABLED=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- || echo 'unknown')"
+                [[ -z "$current" ]] && current="unknown"
+            fi
+            local mode_label color
+            case "$current" in
+                true)    mode_label="ONLINE (marketplace.dify.ai accessible)"; color="$YELLOW" ;;
+                false)   mode_label="OFFLINE (local .difypkg only — recommended)"; color="$GREEN" ;;
+                unknown) mode_label="UNKNOWN (run with sudo to read .env)";       color="$RED" ;;
+                *)       mode_label="UNEXPECTED ($current)";                       color="$RED" ;;
+            esac
+            echo -e "Plugin daemon: ${color}${mode_label}${NC}"
+            echo "  MARKETPLACE_ENABLED=${current}"
+            local pd_status; pd_status="$(docker ps --filter 'name=agmind-plugin-daemon' --format '{{.Status}}' 2>/dev/null | head -1)"
+            echo "  Container:           ${pd_status:-not running}"
+            ;;
+        *)
+            echo -e "${RED}Unknown plugins subcommand: ${sub}${NC}" >&2
+            echo "Usage: agmind plugins [online|offline|status]" >&2
+            exit 1
+            ;;
+    esac
+}
+
+# ============================================================================
 # GPU MANAGEMENT
 # ============================================================================
 
@@ -939,6 +996,10 @@ Commands:
     --rollback <name>      Rollback single component (legacy)
     --auto                 Skip all confirmation prompts
     --scripts-only         Update scripts/configs only (skip docker pull)
+  plugins <sub>      Dify plugin daemon marketplace toggle (root for online/offline)
+    online               Enable marketplace.dify.ai (allow external plugins)
+    offline              Disable marketplace (local .difypkg only — recommended)
+    status               Show current marketplace state (no root)
   uninstall          Remove AGMind (root)
   rotate-secrets     Rotate passwords and keys (root)
   help               Show this help
@@ -970,6 +1031,7 @@ case "${1:-help}" in
     model)          shift; cmd_model "$@" ;;
     loadtest)       shift; cmd_loadtest "$@" ;;
     mdns-status)    shift; exec "${SCRIPTS_DIR}/mdns-status.sh" "$@" ;;
+    plugins)        shift; cmd_plugins "$@" ;;
     docling)        shift
                     case "${1:-}" in
                         bench) shift; exec "${SCRIPTS_DIR}/docling-bench.sh" "$@" ;;

@@ -168,6 +168,9 @@ phase_diagnostics() {
     # DETECTED_NETWORK env (set by preflight_checks) gates apt-install path in _ensure_lldpd.
     _ensure_lldpd
     hw_detect_peer
+    # CLAUDE.md §8 — pin nvidia driver 580 on DGX Spark (auto-upgrade past 580.126.09
+    # breaks vLLM via UMA leak / CUDAGraph deadlock / TMA bug). No-op on non-Spark.
+    pin_nvidia_driver_dgx_spark
 }
 phase_wizard()      { run_wizard; }
 phase_docker()      { setup_docker; }
@@ -340,6 +343,22 @@ phase_deploy_peer() {
     if [[ -z "$peer_ip" ]]; then
         log_error "PEER_IP unavailable (not detected by hw_detect_peer, not in cluster.json) — cannot deploy"
         log_error "Fix: re-run install.sh with working QSFP link to peer, or AGMIND_MODE_OVERRIDE=single"
+        cluster_status_update "failed" 2>/dev/null || true
+        return 1
+    fi
+
+    # Strict regex validation BEFORE any ssh/scp invocation. PEER_IP/PEER_USER are
+    # untrusted (LLDP frame source on QSFP segment) — without validation a malicious
+    # neighbor could inject shell metacharacters into the remote command line.
+    # Subnet anchored to 192.168.100.0/24 — our QSFP cluster subnet (cluster_mode.sh).
+    if ! [[ "$peer_ip" =~ ^192\.168\.100\.[0-9]{1,3}$ ]]; then
+        log_error "PEER_IP failed validation: '${peer_ip}' (must match 192.168.100.X)"
+        cluster_status_update "failed" 2>/dev/null || true
+        return 1
+    fi
+    # POSIX-portable username regex per useradd(8): [a-z_][a-z0-9_-]{0,31}
+    if ! [[ "$peer_user" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; then
+        log_error "PEER_USER failed validation: '${peer_user}' (must match POSIX username)"
         cluster_status_update "failed" 2>/dev/null || true
         return 1
     fi
@@ -1148,6 +1167,20 @@ _install_crons() {
         echo "* * * * * root ${INSTALL_DIR}/scripts/health-gen.sh >> ${INSTALL_DIR}/health-gen.log 2>&1" > /etc/cron.d/agmind-health
         chmod 644 /etc/cron.d/agmind-health
 
+        # Daily backup at 03:00 — Postgres dump + Weaviate snapshot + MinIO mirror +
+        # tar of credentials/.env. Without this RPO=∞ on disk failure / ransomware /
+        # accidental `docker volume rm`. Retention controlled by backup.conf.
+        local backup_dir="${INSTALL_DIR}/backups"
+        mkdir -p "$backup_dir"
+        chmod 700 "$backup_dir"
+        if [[ -x "${INSTALL_DIR}/scripts/backup.sh" ]]; then
+            cat > /etc/cron.d/agmind-backup <<BACKUPCRON
+0 3 * * * root ${INSTALL_DIR}/scripts/backup.sh >> /var/log/agmind-backup.log 2>&1
+BACKUPCRON
+            chmod 644 /etc/cron.d/agmind-backup
+            log_info "Daily backup cron installed (03:00, output → /var/log/agmind-backup.log)"
+        fi
+
         # GPU metrics for Prometheus (via node-exporter textfile collector)
         if [[ "${MONITORING_MODE:-none}" == "local" ]] && command -v nvidia-smi &>/dev/null; then
             local gpu_script="${INSTALL_DIR}/scripts/gpu-metrics.sh"
@@ -1446,9 +1479,9 @@ main() {
     if [[ "$FORCE_RESTART" == "true" ]]; then rm -f "${INSTALL_DIR}/.install_phase"; fi
     if [[ -f "${INSTALL_DIR}/.install_phase" ]]; then
         local saved; saved="$(cat "${INSTALL_DIR}/.install_phase" 2>/dev/null)"
-        if [[ "$saved" =~ ^[1-9]$ ]]; then
+        if [[ "$saved" =~ ^([1-9]|1[01])$ ]]; then
             if [[ "$NON_INTERACTIVE" == "true" ]]; then start="$saved"
-            else read -rp "Resume from phase ${saved}/9? (yes/no/restart): " r
+            else read -rp "Resume from phase ${saved}/11? (yes/no/restart): " r
                 case "$r" in yes|y) start="$saved";; restart) rm -f "${INSTALL_DIR}/.install_phase";; *) exit 0;; esac
             fi
         fi

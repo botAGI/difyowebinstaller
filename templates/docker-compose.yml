@@ -654,7 +654,8 @@ services:
       - docling
     ports:
       # Expose UI/Swagger on host so ops can hit /docs without SSRF proxy detour.
-      - "${EXPOSE_DOCLING_PORT:-8765}:8765"
+      # Default 127.0.0.1 — Docling has no auth, public exposure = LAN GPU-DoS risk.
+      - "${DOCLING_BIND_ADDR:-127.0.0.1}:${EXPOSE_DOCLING_PORT:-8765}:8765"
     expose:
       - "8765"
     command: ["docling-serve", "run", "--port", "8765", "--host", "0.0.0.0"]
@@ -955,7 +956,8 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-}
     ports:
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      # Default 127.0.0.1 — MinIO Console has admin UI; public exposure = LAN attack surface.
+      - "${MINIO_BIND_ADDR:-127.0.0.1}:${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - agmind_minio_data:/data
     healthcheck:
