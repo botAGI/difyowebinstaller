@@ -91,8 +91,9 @@ cd AGmind
 sudo bash install.sh
 ```
 
-The wizard asks ~12 questions (stack mode, LLM model, optional services,
-security toggles, monitoring). After ~25 minutes the stack is live.
+The wizard asks 10–15 questions depending on choices (stack mode, LLM model,
+optional services, security toggles, monitoring). After ~25 minutes the
+stack is live.
 
 ### Endpoints (mDNS — no DNS server needed)
 
@@ -186,9 +187,53 @@ sudo NON_INTERACTIVE=true \
 
 ## 🏗 Architecture
 
-<p align="center">
-  <img src="branding/architecture.svg" alt="AGMind Architecture" width="900">
-</p>
+```
+                                Clients (LAN)
+                                      │
+                                      ▼  mDNS resolution (*.local → 192.168.x.x)
+       ┌─────────────────────────────────────────────────────────────────────┐
+       │  nginx — variable-form proxy_pass · agmind-*.local server-blocks    │
+       │           :80  :443  :3000  :4001 LiteLLM                           │
+       └────┬────────┬─────────┬───────────┬──────────────┬──────────────────┘
+            │        │         │           │              │
+   agmind-dify   agmind-rag  /litellm  /storage     agmind-chat (opt)
+   .local (Dify) .local      .local    .local       .local (Open WebUI)
+            │        │
+            ▼        ▼
+       ┌────────────────────────────────────────────────────────────────────┐
+       │  Dify (api · worker · web · sandbox · plugin_daemon)               │
+       │  RAGFlow (ragflow + mysql + ES) + Dify plugin witmeng/ragflow-api  │
+       └────────┬───────────┬───────────┬──────────────────┬────────────────┘
+                │           │           │                  │
+                ▼           ▼           ▼                  ▼
+            Postgres     Redis      Weaviate           MinIO (S3-compat)
+            metadata    queues       vectors           agmind-storage.local
+
+  ─── ML inference on GB10 unified memory (121 GiB pool) ───────────────────
+   vLLM-embed (NGC 26.02-py3) :8001  bge-m3 1024-dim
+   vLLM-rerank (NGC 26.02-py3) :8002  bge-reranker-v2-m3
+   Docling-serve cu130        :8765  PDF/DOCX/PPTX → MD + OCR + VLM
+   vLLM gemma-4-26B-A4B (cu130)
+       single-Spark → shares GPU above, wizard asks ctx 32K/64K/128K
+       dual-Spark   → peer 192.168.100.2:8000, dedicated GPU, 128K default
+
+  ─── Monitoring (always on) ────────────────────────────────────────────────
+   Prometheus :9090 → Grafana :3001 (5 dashboards)
+   Loki + Grafana Alloy (Promtail migrated 2026-04)
+   Alertmanager → Telegram / Webhook
+   Portainer :9443 — master + auto-deployed agent on peer:9001
+   node-exporter + cAdvisor — both nodes; agmind_gpu_* via textfile collector
+
+  ─── Docker networks ───────────────────────────────────────────────────────
+   agmind-frontend — nginx ↔ web UIs · Grafana · Portainer
+   agmind-backend  — all services east-west
+   ssrf-network    — isolated: Dify Sandbox ↔ Squid proxy
+```
+
+> [!NOTE]
+> Hardcoded SVG diagram in `branding/architecture.svg` is from v2.x and no
+> longer reflects the stack (Ollama / TEI / Promtail / VPS profile shown there
+> have all been retired). Treat the ASCII above as the source of truth.
 
 ### Repository Layout
 
@@ -197,13 +242,13 @@ agmind/
 ├── install.sh                   # Main orchestrator (11 phases)
 ├── lib/                         # 15 modules: wizard, config, compose, health, security, detect, …
 ├── scripts/                     # Day-2 CLI: agmind, update, backup, restore, mdns-status, docling-bench, gpu-metrics
-├── templates/                   # docker-compose.yml, nginx.conf, env templates, versions.env
+├── templates/                   # docker-compose.yml, docker-compose.worker.yml, nginx.conf, env templates, versions.env
 ├── monitoring/                  # Prometheus, Grafana dashboards, Loki, Alloy, Alertmanager
 ├── pipelines/                   # Universal Auto-Router DSL (Dify workflows + docling-serve)
 ├── dify-workflows/              # KB / workflow templates stash
 ├── plugins/                     # Forked / patched Dify plugins
 ├── docs/                        # Detailed documentation
-└── branding/                    # Logo, theme, architecture SVG
+└── branding/                    # Logo + theme (architecture.svg outdated, see ASCII above)
 ```
 
 ### Docker Networks
@@ -222,7 +267,7 @@ agmind/
 | #  | Name          | What it does                                                              |
 |----|---------------|---------------------------------------------------------------------------|
 | 1  | Diagnostics   | OS, CPU, GPU, driver, disk, RAM, ports, mDNS prerequisites                |
-| 2  | Wizard        | ~12 interactive questions (stack mode, LLM, optionals, security)          |
+| 2  | Wizard        | 10–15 interactive questions (stack mode, LLM, optionals, security)        |
 | 3  | Docker        | Install Docker CE + NVIDIA Container Toolkit (idempotent)                 |
 | 4  | Configuration | Generate `.env`, nginx config, secrets, mDNS aliases                      |
 | 5  | Pull          | Validate manifests (arm64 required) and pull images                       |
@@ -345,7 +390,7 @@ agmind update [--check|--auto]       # Update stack from main branch
 ```bash
 agmind gpu status                    # Loaded models, VRAM, utilization
 agmind gpu assign <svc> <id>         # Pin service to GPU id
-agmind model list                    # All loaded models across vLLM/Ollama
+agmind model list                    # All loaded models (vLLM endpoints)
 ```
 
 ### RAGFlow
@@ -563,7 +608,7 @@ cd AGmind
 sudo bash install.sh
 ```
 
-Визард задаст ~12 вопросов. Через ~25 минут стек поднят.
+Визард задаст 10–15 вопросов в зависимости от выборов. Через ~25 минут стек поднят.
 
 ### Эндпоинты (через mDNS)
 
