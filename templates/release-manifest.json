@@ -249,16 +249,6 @@
       "platforms": [
         "linux/amd64"
       ]
-    },
-    "pipelines": {
-      "registry": "ghcr.io",
-      "image": "open-webui/pipelines",
-      "tag": "main",
-      "digest": "",
-      "platforms": [
-        "linux/amd64",
-        "linux/arm64"
-      ]
     }
   },
   "compatibility": {

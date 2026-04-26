@@ -58,6 +58,13 @@ build_compose_profiles() {
     if [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]]; then profiles="${profiles:+$profiles,}crawl4ai"; fi
     if [[ "${ENABLE_OPENWEBUI:-false}" == "true" ]]; then profiles="${profiles:+$profiles,}openwebui"; fi
     if [[ "${ENABLE_MINIO:-false}" == "true" ]]; then profiles="${profiles:+$profiles,}minio"; fi
+    # RAGFlow auto-pulls minio profile (shared bucket).
+    if [[ "${ENABLE_RAGFLOW:-false}" == "true" ]]; then
+        profiles="${profiles:+$profiles,}ragflow"
+        if [[ "${ENABLE_MINIO:-true}" != "false" ]] && [[ "$profiles" != *",minio"* ]] && [[ "$profiles" != "minio"* ]]; then
+            profiles="${profiles:+$profiles,}minio"
+        fi
+    fi
 
     COMPOSE_PROFILE_STRING="$profiles"
     export COMPOSE_PROFILE_STRING
@@ -69,16 +76,30 @@ build_compose_profiles() {
 
 # Parse image reference into registry, repo, tag components.
 # Examples:
-#   nginx:1.25           -> docker.io, library/nginx, 1.25
-#   ghcr.io/org/img:v1   -> ghcr.io, org/img, v1
-#   quay.io/org/img:v1   -> quay.io, org/img, v1
+#   nginx:1.25                            -> docker.io, library/nginx, 1.25
+#   ghcr.io/org/img:v1                    -> ghcr.io, org/img, v1
+#   quay.io/org/img:v1                    -> quay.io, org/img, v1
+#   infiniflow/ragflow@sha256:abc...      -> docker.io, infiniflow/ragflow, sha256:abc...
+#   ghcr.io/x/y:tag@sha256:abc...         -> ghcr.io, x/y, sha256:abc...  (tag dropped, digest authoritative)
 _parse_image_ref() {
     local image="$1"
     local -n _registry=$2 _repo=$3 _tag=$4
 
-    # Split tag: last colon is a tag only if the part after it has no slash
-    # (avoids confusing registry:port with image:tag)
-    if [[ "$image" == *":"* ]]; then
+    # Digest pin takes precedence over tag (per OCI spec: registry MUST resolve
+    # by digest if both present). Strip any preceding tag from the repo part.
+    if [[ "$image" == *"@sha256:"* ]]; then
+        _tag="sha256:${image##*@sha256:}"
+        image="${image%@sha256:*}"
+        # If a tag still hangs onto repo (e.g. "repo:tag" before "@sha256:"), drop it.
+        if [[ "$image" == *":"* ]]; then
+            local _maybe_remainder="${image##*:}"
+            if [[ "$_maybe_remainder" != *"/"* ]]; then
+                image="${image%:*}"
+            fi
+        fi
+    elif [[ "$image" == *":"* ]]; then
+        # Split tag: last colon is a tag only if the part after it has no slash
+        # (avoids confusing registry:port with image:tag)
         local _maybe_tag="${image##*:}"
         if [[ "$_maybe_tag" != *"/"* ]]; then
             _tag="$_maybe_tag"
@@ -147,6 +168,16 @@ _get_registry_token() {
 # Returns: 0 = exists, 1 = not found (404), 2 = registry error (skip)
 _check_image_exists() {
     local full_image="$1"
+
+    # Skip locally-built images (no registry to query). Pattern matches
+    # ragflow-local:arm64, ragflow-deps-local:arm64 (Hendrik build).
+    if [[ "$full_image" == *"-local:"* ]]; then
+        if docker image inspect "$full_image" >/dev/null 2>&1; then
+            return 0
+        else
+            return 2
+        fi
+    fi
 
     # Parse image into registry, repo, tag
     local registry repo tag

@@ -40,6 +40,12 @@ ALL_CHECKS=(
     "DB-GPT|DBGPT_VERSION|eosphoros-ai/DB-GPT|gh"
     "Crawl4AI|CRAWL4AI_VERSION|unclecode/crawl4ai|gh"
     "SurrealDB|SURREALDB_VERSION|surrealdb/surrealdb|gh"
+    # RAGFlow ships как Hendrik build (HendrikSchoettle/ragflow-dgx-spark) — track
+    # его GitHub releases (он пинит конкретный upstream RAGFlow tag в своих patches).
+    # ES + MySQL = pre-built Docker Hub images.
+    "RAGFlow|RAGFLOW_VERSION|HendrikSchoettle/ragflow-dgx-spark|gh"
+    "RAGFlow ES|RAGFLOW_ES_VERSION|elasticsearch|hub"
+    "RAGFlow MySQL|RAGFLOW_MYSQL_VERSION|mysql|hub"
     # --- Security ---
     "Authelia|AUTHELIA_VERSION|authelia/authelia|gh"
     "Certbot|CERTBOT_VERSION|certbot/certbot|gh"

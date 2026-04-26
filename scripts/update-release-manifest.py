@@ -44,7 +44,6 @@ KEY_MAP = {
     "ALLOY_VERSION": ["alloy"],
     "VLLM_VERSION": ["vllm"],
     "TEI_VERSION": ["tei"],
-    "PIPELINES_VERSION": ["pipelines"],
 }
 
 

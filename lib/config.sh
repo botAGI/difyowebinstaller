@@ -25,6 +25,8 @@ generate_config() {
     _append_provider_vars
     _copy_versions "$template_dir"
     _copy_release_manifest "$template_dir"
+    # RAGFlow service_conf render (нужен .env с готовыми секретами).
+    _copy_ragflow_templates "$template_dir"
 
     # Sub-configs
     generate_nginx_config "$profile" "$template_dir"
@@ -98,6 +100,69 @@ _create_directory_structure() {
 _copy_compose_file() {
     local template_dir="$1"
     cp "${template_dir}/docker-compose.yml" "${INSTALL_DIR}/docker/docker-compose.yml"
+    # _copy_ragflow_templates вызывается из generate_config ПОСЛЕ _generate_env_file —
+    # render service_conf.yaml читает значения из .env который создаётся на шаге 4.
+}
+
+# Copy RAGFlow templates AND render service_conf.yaml.template → service_conf.yaml.
+# Render обязателен: RAGFlow entrypoint.sh НЕ делает env substitution, а ожидает
+# готовый /ragflow/docker/service_conf.yaml (symlinked from /ragflow/conf/).
+# Always copy (overhead 0) — лучше иметь файл готовым чем лечить «file not found»
+# при ad-hoc включении ragflow profile через `docker compose --profile ragflow up`.
+_copy_ragflow_templates() {
+    local template_dir="$1"
+    local src_dir="${template_dir}/ragflow"
+    local dst_dir="${INSTALL_DIR}/docker/ragflow"
+    [[ -d "$src_dir" ]] || return 0
+    mkdir -p "$dst_dir"
+    cp -r "${src_dir}/." "${dst_dir}/"
+
+    # Render service_conf.yaml.template → service_conf.yaml (substitute env vars).
+    # Скрипт читает реальные значения из .env (уже сгенерированный в _generate_env_file).
+    local tpl="${dst_dir}/service_conf.yaml.template"
+    local out="${dst_dir}/service_conf.yaml"
+    local env_file="${INSTALL_DIR}/docker/.env"
+    [[ -f "$tpl" ]] || return 0
+    [[ -f "$env_file" ]] || {
+        log_warn "_copy_ragflow_templates: ${env_file} not yet generated — skipping render (will retry on next install)"
+        return 0
+    }
+
+    # Pre-load values from .env (avoiding source — .env values may contain shell metacharacters).
+    # `grep || true` обязательно: при `set -o pipefail` если grep не находит ключ → exit 1 →
+    # pipe → весь generate_config умирает (BUG-V3-FIX 2026-04-26 phase 4 abort).
+    local _v_redis_pw _v_ragflow_mysql_pw _v_ragflow_es_pw _v_ragflow_minio_user _v_ragflow_minio_pw
+    local _v_vllm_model _v_vllm_embed _v_vllm_rerank
+    _v_redis_pw="$( { grep '^REDIS_PASSWORD=' "$env_file" || true; } | cut -d= -f2-)"
+    _v_ragflow_mysql_pw="$( { grep '^RAGFLOW_MYSQL_PASSWORD=' "$env_file" || true; } | cut -d= -f2-)"
+    _v_ragflow_es_pw="$( { grep '^RAGFLOW_ES_PASSWORD=' "$env_file" || true; } | cut -d= -f2-)"
+    _v_ragflow_minio_user="$( { grep '^RAGFLOW_MINIO_USER=' "$env_file" || true; } | cut -d= -f2-)"
+    _v_ragflow_minio_user="${_v_ragflow_minio_user:-ragflow}"
+    _v_ragflow_minio_pw="$( { grep '^RAGFLOW_MINIO_PASSWORD=' "$env_file" || true; } | cut -d= -f2-)"
+    _v_vllm_model="$( { grep '^VLLM_SPARK_MODEL=' "$env_file" || true; } | cut -d= -f2-)"
+    _v_vllm_model="${_v_vllm_model:-google/gemma-4-26B-A4B-it}"
+    _v_vllm_embed="$( { grep '^VLLM_EMBED_MODEL=' "$env_file" || true; } | cut -d= -f2-)"
+    _v_vllm_embed="${_v_vllm_embed:-deepvk/USER-bge-m3}"
+    _v_vllm_rerank="$( { grep '^VLLM_RERANK_MODEL=' "$env_file" || true; } | cut -d= -f2-)"
+    _v_vllm_rerank="${_v_vllm_rerank:-BAAI/bge-reranker-v2-m3}"
+
+    sed \
+        -e "s|\${MYSQL_DBNAME:-rag_flow}|rag_flow|g" \
+        -e "s|\${MYSQL_PASSWORD}|$(escape_sed "${_v_ragflow_mysql_pw}")|g" \
+        -e "s|\${MYSQL_HOST:-ragflow_mysql}|ragflow_mysql|g" \
+        -e "s|\${MINIO_USER:-ragflow}|${_v_ragflow_minio_user}|g" \
+        -e "s|\${MINIO_PASSWORD}|$(escape_sed "${_v_ragflow_minio_pw}")|g" \
+        -e "s|\${MINIO_HOST:-minio}:\${MINIO_PORT:-9000}|minio:9000|g" \
+        -e "s|\${ES_HOST:-ragflow_es01}|ragflow_es01|g" \
+        -e "s|\${ES_PORT:-9200}|9200|g" \
+        -e "s|\${ELASTIC_PASSWORD}|$(escape_sed "${_v_ragflow_es_pw}")|g" \
+        -e "s|\${REDIS_PASSWORD}|$(escape_sed "${_v_redis_pw}")|g" \
+        -e "s|\${REDIS_HOST:-redis}:\${REDIS_PORT:-6379}|redis:6379|g" \
+        -e "s|\${VLLM_SPARK_MODEL:-google/gemma-4-26B-A4B-it}|$(escape_sed "${_v_vllm_model}")|g" \
+        -e "s|\${VLLM_EMBED_MODEL:-deepvk/USER-bge-m3}|$(escape_sed "${_v_vllm_embed}")|g" \
+        -e "s|\${VLLM_RERANK_MODEL:-BAAI/bge-reranker-v2-m3}|$(escape_sed "${_v_vllm_rerank}")|g" \
+        "$tpl" > "$out"
+    chmod 640 "$out"
 }
 
 # ============================================================================
@@ -127,6 +192,9 @@ _MINIO_ROOT_USER=""
 _MINIO_ROOT_PASSWORD=""
 _S3_ACCESS_KEY=""
 _S3_SECRET_KEY=""
+_RAGFLOW_MYSQL_PASSWORD=""
+_RAGFLOW_ES_PASSWORD=""
+_RAGFLOW_MINIO_PASSWORD=""
 
 # _restore_secrets_from_backup — restore volume-bound secrets when PG data exists (IREL-03)
 # Returns 0 if any secrets were restored, 1 if nothing restored.
@@ -230,6 +298,12 @@ _generate_secrets() {
     _MINIO_ROOT_PASSWORD="$(generate_random 32)"
     _S3_ACCESS_KEY="$(generate_random 20)"
     _S3_SECRET_KEY="$(generate_random 40)"
+
+    # RAGFlow secrets (BACKLOG #999.7) — generated even если ENABLE_RAGFLOW=false,
+    # placeholders в .env остаются stub значениями но не пустыми (избегаем "пустой пароль" errors).
+    _RAGFLOW_MYSQL_PASSWORD="$(generate_random 32)"
+    _RAGFLOW_ES_PASSWORD="$(generate_random 32)"
+    _RAGFLOW_MINIO_PASSWORD="$(generate_random 32)"
 
     _ADMIN_PASSWORD_PLAIN="$(generate_random 16)"
     _ADMIN_PASSWORD_B64="$(echo -n "$_ADMIN_PASSWORD_PLAIN" | base64)"
@@ -376,6 +450,11 @@ _generate_env_file() {
         -e "s|__ENABLE_CRAWL4AI__|$(escape_sed "${ENABLE_CRAWL4AI:-false}")|g" \
         -e "s|__ENABLE_OPENWEBUI__|$(escape_sed "${ENABLE_OPENWEBUI:-false}")|g" \
         -e "s|__ENABLE_DIFY_PREMIUM__|$(escape_sed "${ENABLE_DIFY_PREMIUM:-true}")|g" \
+        -e "s|__ENABLE_RAGFLOW__|$(escape_sed "${ENABLE_RAGFLOW:-false}")|g" \
+        -e "s|__RAGFLOW_DEVICE__|$(escape_sed "${RAGFLOW_DEVICE:-cuda}")|g" \
+        -e "s|__RAGFLOW_MYSQL_PASSWORD__|${_RAGFLOW_MYSQL_PASSWORD}|g" \
+        -e "s|__RAGFLOW_ES_PASSWORD__|${_RAGFLOW_ES_PASSWORD}|g" \
+        -e "s|__RAGFLOW_MINIO_PASSWORD__|${_RAGFLOW_MINIO_PASSWORD}|g" \
         -e "s|__SEARXNG_SECRET_KEY__|$(escape_sed "${_SEARXNG_SECRET_KEY}")|g" \
         -e "s|__SURREALDB_PASSWORD__|$(escape_sed "${_SURREALDB_PASSWORD}")|g" \
         -e "s|__NOTEBOOK_ENCRYPTION_KEY__|$(escape_sed "${_NOTEBOOK_ENCRYPTION_KEY}")|g" \
@@ -519,7 +598,7 @@ _copy_versions() {
     while IFS='=' read -r key value; do
         # Validate key format and value safety
         [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*_VERSION$ ]] || continue
-        # Allow @ for tag@digest pinning (e.g. PIPELINES_VERSION=main@sha256:...)
+        # Allow @ for tag@digest pinning (e.g. RAGFLOW_DIGEST=sha256:...)
         [[ "$value" =~ ^[a-zA-Z0-9._:@-]+$ ]] || continue
         echo "${key}=${value}" >> "$env_file"
     done < <(LC_ALL=C grep -E '^[A-Z].*_VERSION=' "$versions_file")
@@ -613,6 +692,13 @@ generate_nginx_config() {
         _atomic_sed "$nginx_conf" '/#__CRAWL4AI__/d'
     fi
 
+    # RAGFlow markers
+    if [[ "${ENABLE_RAGFLOW:-false}" == "true" ]]; then
+        _atomic_sed "$nginx_conf" 's|#__RAGFLOW__||g'
+    else
+        _atomic_sed "$nginx_conf" '/#__RAGFLOW__/d'
+    fi
+
     # Open WebUI markers
     if [[ "${ENABLE_OPENWEBUI:-false}" == "true" ]]; then
         _atomic_sed "$nginx_conf" 's|#__OPENWEBUI__||g'
@@ -675,6 +761,7 @@ _register_local_dns() {
     [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]] && names+=("agmind-notebook")
     [[ "${ENABLE_SEARXNG:-false}" == "true" ]] && names+=("agmind-search")
     [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]] && names+=("agmind-crawl")
+    [[ "${ENABLE_RAGFLOW:-false}" == "true" ]] && names+=("agmind-rag")
 
     local server_ip
     server_ip="$(_mdns_get_primary_ip)"
@@ -948,7 +1035,7 @@ _squid_agmind_whitelist() {
 
     # Fallback: hardcoded list if docker compose not available yet
     if [[ -z "$services" ]]; then
-        services="api worker web open-webui pipelines ollama vllm tei tei-rerank db redis weaviate qdrant docling sandbox plugin_daemon nginx"
+        services="api worker web open-webui ollama vllm tei tei-rerank db redis weaviate qdrant docling sandbox plugin_daemon nginx"
     fi
 
     {
@@ -1394,6 +1481,16 @@ _copy_monitoring_files() {
             cp "${installer_root}/monitoring/${f}" "${dest}/${f}" 2>/dev/null || touch "${dest}/${f}"
         fi
     done
+
+    # BACKLOG #999.7 — substitute RAGFLOW_ES_PASSWORD placeholder in prometheus.yml.
+    # Without this Prometheus's basic_auth для ragflow-es job провалится с 401 Unauthorized.
+    # _atomic_sed handles escape для special chars в пароле.
+    if [[ -n "${_RAGFLOW_ES_PASSWORD:-}" ]] && [[ -f "${dest}/prometheus.yml" ]]; then
+        local _safe_pw
+        _safe_pw="$(escape_sed "${_RAGFLOW_ES_PASSWORD}")"
+        sed -i "s|__RAGFLOW_ES_PASSWORD__|${_safe_pw}|g" "${dest}/prometheus.yml"
+        chmod 640 "${dest}/prometheus.yml"  # tighten — содержит ES password
+    fi
 
     log_success "Monitoring files copied"
 }

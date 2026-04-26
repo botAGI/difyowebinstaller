@@ -1043,6 +1043,96 @@ LTHELP
 # HELP
 # ============================================================================
 
+cmd_ragflow() {
+    local sub="${1:-status}"; shift || true
+    if [[ "${ENABLE_RAGFLOW:-false}" != "true" ]]; then
+        # Tolerate missing — don't bail before reading .env (status/logs могут хотеть видеть disabled).
+        local enabled
+        enabled="$(grep '^ENABLE_RAGFLOW=' "${ENV_FILE}" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+        if [[ "$enabled" != "true" ]]; then
+            echo -e "${YELLOW}RAGFlow disabled (ENABLE_RAGFLOW=false).${NC}"
+            echo "Enable: re-run install.sh and select ragflow в чек-листе optional services."
+            [[ "$sub" == "status" || "$sub" == "version" ]] && exit 0 || exit 1
+        fi
+    fi
+
+    case "$sub" in
+        status)
+            docker ps --filter 'name=agmind-ragflow' --format 'table {{.Names}}\t{{.Status}}' || true
+            ;;
+        logs)
+            local svc="${1:-ragflow}"; shift || true
+            local cname="agmind-${svc}"
+            [[ "$svc" == "ragflow" ]] && cname="agmind-ragflow"
+            [[ "$svc" == "mysql" || "$svc" == "ragflow_mysql" ]] && cname="agmind-ragflow-mysql"
+            [[ "$svc" == "es" || "$svc" == "ragflow_es01" ]] && cname="agmind-ragflow-es"
+            exec docker logs -f --tail 100 "$cname" "$@"
+            ;;
+        version)
+            docker exec agmind-ragflow curl -fsS http://localhost:9380/v1/system/version 2>/dev/null \
+                || { echo "ragflow API not reachable" >&2; exit 1; }
+            echo ""
+            ;;
+        query)
+            local q="${1:-}"
+            [[ -z "$q" ]] && { echo "Usage: agmind ragflow query <text>" >&2; exit 1; }
+            local key dset
+            key="$(grep '^RAGFLOW_API_KEY=' "${ENV_FILE}" 2>/dev/null | cut -d'=' -f2-)"
+            dset="$(grep '^RAGFLOW_DATASET_ID=' "${ENV_FILE}" 2>/dev/null | cut -d'=' -f2-)"
+            if [[ -z "$key" || -z "$dset" ]]; then
+                echo "RAGFLOW_API_KEY и RAGFLOW_DATASET_ID должны быть в ${ENV_FILE}." >&2
+                echo "Создай через RAGFlow UI → Profile → API → API Keys, прописать в .env." >&2
+                exit 1
+            fi
+            docker exec agmind-ragflow curl -fsS \
+                -H "Authorization: Bearer ${key}" \
+                -H "Content-Type: application/json" \
+                -X POST "http://localhost:9380/api/v1/dify/retrieval" \
+                -d "{\"knowledge_id\":\"${dset}\",\"query\":\"${q}\",\"retrieval_setting\":{\"top_k\":5,\"score_threshold\":0.3}}"
+            echo ""
+            ;;
+        keys)
+            # Diagnostic: show whether key+dataset prописаны (без значений секретов).
+            local key dset
+            key="$(grep '^RAGFLOW_API_KEY=' "${ENV_FILE}" 2>/dev/null | cut -d'=' -f2-)"
+            dset="$(grep '^RAGFLOW_DATASET_ID=' "${ENV_FILE}" 2>/dev/null | cut -d'=' -f2-)"
+            echo "RAGFLOW_API_KEY:    $([[ -n "$key" ]] && echo SET || echo UNSET)"
+            echo "RAGFLOW_DATASET_ID: $([[ -n "$dset" ]] && echo SET || echo UNSET)"
+            ;;
+        restart)
+            _require_root "ragflow restart"
+            cd "$(dirname "$COMPOSE_FILE")"
+            docker compose restart ragflow ragflow_mysql ragflow_es01
+            ;;
+        backup)
+            _require_root "ragflow backup"
+            exec "${SCRIPTS_DIR}/backup.sh" --component ragflow "$@"
+            ;;
+        es-health)
+            local pw
+            pw="$(grep '^RAGFLOW_ES_PASSWORD=' "${ENV_FILE}" 2>/dev/null | cut -d'=' -f2-)"
+            [[ -z "$pw" ]] && { echo "RAGFLOW_ES_PASSWORD missing" >&2; exit 1; }
+            docker exec agmind-ragflow-es curl -fsS -u "elastic:${pw}" \
+                "http://localhost:9200/_cluster/health?pretty" 2>/dev/null \
+                || { echo "ES not reachable" >&2; exit 1; }
+            ;;
+        *)
+            cat >&2 <<EOF
+Usage: agmind ragflow <subcommand>
+  status              Show 3 ragflow containers status
+  logs [svc]          Tail logs (svc: ragflow|mysql|es; default ragflow)
+  version             Print RAGFlow API version
+  query <text>        Test retrieval against RAGFLOW_DATASET_ID
+  keys                Check RAGFLOW_API_KEY/DATASET_ID env присутствие
+  restart             Restart ragflow + mysql + es (root)
+  backup              Backup ragflow stack only (root)
+  es-health           ES cluster health (raw JSON)
+EOF
+            exit 1
+            ;;
+    esac
+}
+
 cmd_help() {
     cat <<'HELP'
 Usage: agmind <command> [options]
@@ -1066,6 +1156,15 @@ Commands:
     last               Show 5 most recent result JSON files
   docling bench <pdf>  Benchmark docling-serve on a real PDF (Phase 42)
                        Iterates ?=3 times, reports cold/warm/per-page timing
+  ragflow <sub>      RAGFlow stack management (BACKLOG #999.7)
+    status               3 ragflow containers status
+    logs [svc]           Tail logs (ragflow|mysql|es)
+    version              RAGFlow API version
+    query <text>         Test retrieval against RAGFLOW_DATASET_ID
+    keys                 Check RAGFLOW_API_KEY/DATASET_ID env
+    restart              Restart 3 ragflow containers (root)
+    backup               Backup ragflow stack (root)
+    es-health            ES cluster health
   mdns-status [--json]  Diagnose mDNS publishing (exits 1 on any issue)
   init-dify          Initialize Dify admin (if auto-init failed)
   backup             Create backup (root)
@@ -1135,6 +1234,7 @@ case "${1:-help}" in
                         import-workflow) shift; exec "${SCRIPTS_DIR}/import-dify-workflow.sh" "$@" ;;
                         *)               echo "Usage: agmind dify import-workflow <dsl.yaml>" >&2; exit 1 ;;
                     esac ;;
+    ragflow)        shift; cmd_ragflow "$@" ;;
     help|--help|-h) cmd_help ;;
     *)              echo -e "${RED}Unknown command: ${1}${NC}" >&2; cmd_help; exit 1 ;;
 esac
