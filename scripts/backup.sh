@@ -198,6 +198,57 @@ if docker volume ls -q 2>/dev/null | grep -q surrealdb; then
         alpine tar czf /backup/surrealdb.tar.gz -C /data . 2>/dev/null || true
 fi
 
+# 6g. RAGFlow stack (BACKLOG #999.7) — mysql dump + ES snapshot/raw + minio bucket mirror.
+# Skip cleanly if ragflow disabled — нет volumes, ничего не теряем.
+if docker ps --filter 'name=agmind-ragflow-mysql' --format '{{.Names}}' 2>/dev/null | grep -q ragflow-mysql; then
+    echo "  RAGFlow MySQL..."
+    _ragflow_mysql_pw="$(grep '^RAGFLOW_MYSQL_PASSWORD=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2-)"
+    if [[ -n "$_ragflow_mysql_pw" ]]; then
+        if docker exec agmind-ragflow-mysql sh -c "exec mysqldump --single-transaction --quick -uroot -p'${_ragflow_mysql_pw}' rag_flow" \
+            > "${TARGET_DIR}/ragflow_mysql.sql" 2>>"$PGDUMP_LOG"; then
+            gzip "${TARGET_DIR}/ragflow_mysql.sql"
+        else
+            echo -e "${YELLOW}  ragflow mysqldump failed (non-fatal)${NC}"
+        fi
+    fi
+
+    # ES: snapshot API требует repo registration; fallback на raw volume tar (быстрее, без extra setup).
+    # Volume name варьируется: docker_agmind_ragflow_es_data на старых compose, agmind_ragflow_es_data на новых.
+    echo "  RAGFlow ES (volume tar)..."
+    _ragflow_es_vol="$(docker volume ls -q 2>/dev/null | grep -E 'ragflow_es_data' | head -1)"
+    if [[ -n "$_ragflow_es_vol" ]]; then
+        # ES volume read while running = inconsistency risk. Stop temporarily если doable.
+        # Простой подход: tar live volume — ES документация говорит OK для cold backup, для warm — snapshot API.
+        # Mark filename .live чтобы restore знал что это не consistent dump.
+        docker run --rm -v "${_ragflow_es_vol}:/data:ro" alpine \
+            tar czf - -C /data . > "${TARGET_DIR}/ragflow_es.live.tar.gz" 2>/dev/null \
+            || echo -e "${YELLOW}  ragflow ES tar failed (non-fatal)${NC}"
+    fi
+
+    # MinIO bucket mirror (только если ragflow bucket существует).
+    echo "  RAGFlow MinIO bucket..."
+    _minio_pw="$(grep '^MINIO_ROOT_PASSWORD=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2-)"
+    _minio_user="$(grep '^MINIO_ROOT_USER=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2-)"
+    _mc_ver="$(grep '^MC_VERSION=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2-)"
+    _mc_ver="${_mc_ver:-RELEASE.2025-08-13T08-35-41Z}"
+    if [[ -n "$_minio_pw" && -n "$_minio_user" ]]; then
+        _net="$(docker network ls --format '{{.Name}}' | grep -m1 agmind-backend)"
+        mkdir -p "${TARGET_DIR}/ragflow_minio"
+        docker run --rm --network "$_net" \
+            -v "${TARGET_DIR}/ragflow_minio:/out" \
+            -e "MC_HOST_local=http://${_minio_user}:${_minio_pw}@agmind-minio:9000" \
+            "minio/mc:${_mc_ver}" mirror local/ragflow-storage /out 2>/dev/null \
+            || echo -e "${YELLOW}  ragflow MinIO mirror failed (bucket may not exist yet)${NC}"
+        # Tar чтобы не плодить тысячи мелких файлов в backup.
+        if [[ -d "${TARGET_DIR}/ragflow_minio" ]] && [[ -n "$(ls -A "${TARGET_DIR}/ragflow_minio" 2>/dev/null)" ]]; then
+            tar czf "${TARGET_DIR}/ragflow_minio.tar.gz" -C "${TARGET_DIR}/ragflow_minio" . 2>/dev/null && \
+                rm -rf "${TARGET_DIR}/ragflow_minio"
+        else
+            rm -rf "${TARGET_DIR}/ragflow_minio"
+        fi
+    fi
+fi
+
 # 7. Checksums
 echo "  Checksums..."
 cd "${TARGET_DIR}"

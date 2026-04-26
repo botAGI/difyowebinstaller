@@ -189,7 +189,26 @@ phase_diagnostics() {
     # CLAUDE.md §8 — pin nvidia driver 580 on DGX Spark (auto-upgrade past 580.126.09
     # breaks vLLM via UMA leak / CUDAGraph deadlock / TMA bug). No-op on non-Spark.
     pin_nvidia_driver_dgx_spark
+    # ES (BACKLOG #999.7) requires vm.max_map_count >= 262144. Persist в sysctl.d
+    # чтобы переживало reboot. Idempotent — wizard выбор ENABLE_RAGFLOW не известен
+    # на этом этапе (phase_diagnostics → phase_wizard), всегда применяем — overhead 0.
+    _ensure_es_sysctl
 }
+
+# Ensure kernel param vm.max_map_count >= 262144 для Elasticsearch 9.x (RAGFlow).
+# Без этого ES bootstrap fails: "max virtual memory areas vm.max_map_count [65530] is too low".
+# Persist в /etc/sysctl.d/ чтобы переживало reboot.
+_ensure_es_sysctl() {
+    local current
+    current="$(sysctl -n vm.max_map_count 2>/dev/null || echo 0)"
+    if [[ "$current" -lt 262144 ]]; then
+        log_info "Setting vm.max_map_count=262144 for Elasticsearch (RAGFlow)..."
+        echo "vm.max_map_count=262144" > /etc/sysctl.d/99-agmind-es.conf
+        sysctl -w vm.max_map_count=262144 >/dev/null 2>&1 \
+            || log_warn "sysctl -w vm.max_map_count failed — ES may fail to start"
+    fi
+}
+
 phase_wizard()      { run_wizard; }
 phase_docker()      { setup_docker; }
 phase_config()      { ensure_bind_mount_files; export INSTALL_DIR; generate_config "$DEPLOY_PROFILE" "$TEMPLATE_DIR"; enable_gpu_compose; setup_security; if [[ "$ENABLE_AUTHELIA" == "true" ]]; then configure_authelia "$TEMPLATE_DIR"; fi; _copy_runtime_files; }
@@ -225,7 +244,7 @@ phase_models_graceful() {
     fi
 }
 phase_backups()     { setup_backups; }
-phase_complete()    { create_openwebui_admin; _init_minio_bucket; _ensure_api_responsive; _init_dify_admin; _sync_grafana_admin_password; _ensure_docling_ocr_models; _save_credentials; _install_cli; _install_crons; _install_systemd_service; verify_services || true; _verify_post_install_smoke; _show_final_summary; _apply_dify_patches; }
+phase_complete()    { create_openwebui_admin; _init_minio_bucket; _init_ragflow_minio_user; _ensure_api_responsive; _init_dify_admin; _sync_grafana_admin_password; _ensure_docling_ocr_models; _save_credentials; _install_cli; _install_crons; _install_systemd_service; verify_services || true; _verify_post_install_smoke; _show_final_summary; _apply_dify_patches; }
 
 # ============================================================================
 # PEER DEPLOY (Plan 02-04, PEER-05)
@@ -928,6 +947,53 @@ _sync_grafana_admin_password() {
     fi
 }
 
+# RAGFlow integration (BACKLOG #999.7) — provisions isolated MinIO bucket
+# и read-write service account для RAGFlow. Запускается ПОСЛЕ _init_minio_bucket
+# (полагается на тот же mc sidecar pattern).
+_init_ragflow_minio_user() {
+    [[ "${ENABLE_RAGFLOW:-false}" == "true" ]] || return 0
+    [[ "${ENABLE_MINIO:-false}" == "true" ]] || {
+        log_warn "RAGFlow enabled but MinIO disabled — RAGFlow object storage will fail"
+        return 0
+    }
+
+    log_info "Provisioning MinIO bucket+user for RAGFlow..."
+    local user pass mc_version ragflow_user ragflow_pass
+    user="$(grep '^MINIO_ROOT_USER=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
+    pass="$(grep '^MINIO_ROOT_PASSWORD=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
+    ragflow_user="$(grep '^RAGFLOW_MINIO_USER=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
+    ragflow_user="${ragflow_user:-ragflow}"
+    ragflow_pass="$(grep '^RAGFLOW_MINIO_PASSWORD=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
+    mc_version="$(grep '^MC_VERSION=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
+    mc_version="${mc_version:-RELEASE.2025-08-13T08-35-41Z}"
+
+    if [[ -z "$ragflow_pass" ]]; then
+        log_warn "RAGFLOW_MINIO_PASSWORD empty — skip RAGFlow MinIO setup"
+        return 0
+    fi
+
+    local net
+    net="$(docker network ls --format '{{.Name}}' | grep -m1 agmind-backend)"
+
+    # Bucket (idempotent — mc mb --ignore-existing).
+    docker run --rm --network "$net" \
+        -e "MC_HOST_local=http://${user}:${pass}@agmind-minio:9000" \
+        "minio/mc:${mc_version}" mb --ignore-existing local/ragflow-storage 2>/dev/null \
+        || log_warn "RAGFlow MinIO bucket creation failed"
+
+    # User add (idempotent — fails silently if exists, then policy attach succeeds either way).
+    docker run --rm --network "$net" \
+        -e "MC_HOST_local=http://${user}:${pass}@agmind-minio:9000" \
+        "minio/mc:${mc_version}" admin user add local "$ragflow_user" "$ragflow_pass" >/dev/null 2>&1 \
+        || true
+    docker run --rm --network "$net" \
+        -e "MC_HOST_local=http://${user}:${pass}@agmind-minio:9000" \
+        "minio/mc:${mc_version}" admin policy attach local readwrite --user "$ragflow_user" >/dev/null 2>&1 \
+        || log_warn "RAGFlow MinIO policy attach failed"
+
+    log_success "RAGFlow MinIO: bucket=ragflow-storage, user=${ragflow_user}"
+}
+
 _init_minio_bucket() {
     [[ "${ENABLE_MINIO:-false}" == "true" ]] || return 0
     log_info "Creating MinIO bucket..."
@@ -1476,6 +1542,15 @@ _show_final_summary() {
     if [[ "${ENABLE_MINIO:-false}" == "true" ]]; then
         echo -e "  ${BOLD}MinIO:${NC}           ${GREEN}http://${ip}:9001${NC}"
         echo -e "    (credentials in ${INSTALL_DIR}/credentials.txt)"
+    fi
+    if [[ "${ENABLE_RAGFLOW:-false}" == "true" ]]; then
+        echo ""
+        echo -e "  ${BOLD}RAGFlow UI:${NC}      ${GREEN}http://agmind-rag.local${NC} (или http://${ip}:${EXPOSE_RAGFLOW_PORT:-9380})"
+        echo -e "    ${YELLOW}При первом входе:${NC} зарегистрируй admin вручную через UI"
+        echo -e "    ${YELLOW}После регистрации:${NC} Profile → API → API Keys → Create"
+        echo -e "    Прописать в .env: RAGFLOW_API_KEY=<ключ> + RAGFLOW_DATASET_ID=<из URL датасета>"
+        echo -e "    Затем в Dify Marketplace install ${BOLD}witmeng/ragflow-api${NC} плагин"
+        echo -e "    Диагностика: ${CYAN}agmind ragflow status${NC} / ${CYAN}agmind ragflow query <text>${NC}"
     fi
     if [[ "${MONITORING_MODE:-}" == "local" ]]; then
         echo ""

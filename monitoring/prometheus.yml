@@ -61,6 +61,27 @@ scrape_configs:
     static_configs:
       - targets: ['agmind-docling:8765']
 
+  # BACKLOG #999.7 — RAGFlow stack. ES exposes /_prometheus/metrics natively
+  # since 8.x (no plugin); MySQL needs sidecar exporter (ragflow_mysql_exporter)
+  # not yet provisioned — повесим job когда добавим. Сейчас только ES.
+  # Все три target зарезолвятся в "down" если ENABLE_RAGFLOW=false — это OK для
+  # Grafana алертов (RAGFlowDown срабатывает только когда target должен быть up).
+  - job_name: 'ragflow'
+    static_configs:
+      - targets: ['agmind-ragflow:9380']
+        labels: {service: 'ragflow-api', stack: 'ragflow'}
+
+  # ES basic_auth password substituted by lib/config.sh::_configure_ragflow_monitoring.
+  # Placeholder __RAGFLOW_ES_PASSWORD__ заменяется на реальный пароль во время config phase.
+  - job_name: 'ragflow-es'
+    metrics_path: /_prometheus/metrics
+    basic_auth:
+      username: elastic
+      password: '__RAGFLOW_ES_PASSWORD__'
+    static_configs:
+      - targets: ['agmind-ragflow-es:9200']
+        labels: {service: 'ragflow-es', stack: 'ragflow'}
+
   # Phase 2 (Plan 02-05): peer node-exporter + vllm on worker Spark.
   # PEER_IP is substituted by lib/config.sh::_configure_peer_monitoring when AGMIND_MODE=master.
   # If AGMIND_MODE != master, these jobs are commented out at install time.

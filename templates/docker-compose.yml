@@ -252,7 +252,7 @@ services:
       - ENABLE_OLLAMA_API=${ENABLE_OLLAMA_API:-false}
       - ENABLE_OPENAI_API=${ENABLE_OPENAI_API:-false}
       - OPENAI_API_BASE_URL=${OPENAI_API_BASE_URL:-}
-      - PIPELINES_URLS=http://pipelines:9099
+      # Pipelines container removed 2026-04-26 — RAG лежит в Dify, OpenWebUI = только chat UI.
       # Disable HuggingFace model downloads — Open WebUI is UI-only proxy
       - ENABLE_RAG=false
       - RAG_EMBEDDING_MODEL=
@@ -265,35 +265,12 @@ services:
       - ENABLE_RAG_LOCAL_WEB_FETCH=false
     volumes:
       - agmind_openwebui_data:/app/backend/data
-    depends_on:
-      pipelines:
-        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY && curl -sf http://localhost:8080/health 2>/dev/null || wget -qO- http://localhost:8080/health 2>/dev/null || exit 1"]
       interval: ${HEALTHCHECK_INTERVAL:-30s}
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
       start_period: 30s
-    networks:
-      - agmind-backend
-
-  # ==================== Open WebUI Pipelines ====================
-  pipelines:
-    <<: *security-defaults
-    image: ghcr.io/open-webui/pipelines:${PIPELINES_VERSION:-main}
-    container_name: agmind-pipelines
-    restart: unless-stopped
-    mem_limit: ${PIPELINES_MEM_LIMIT:-1g}
-    profiles:
-      - openwebui
-    volumes:
-      - agmind_pipelines_data:/app/pipelines
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9099/')"]
-      interval: ${HEALTHCHECK_INTERVAL:-30s}
-      timeout: 10s
-      retries: ${HEALTHCHECK_RETRIES:-5}
-      start_period: 15s
     networks:
       - agmind-backend
 
@@ -1416,6 +1393,180 @@ services:
     networks:
       - agmind-backend
 
+  # ==================== RAGFlow (BACKLOG #999.7) ====================
+  # Specialized document parsing + retrieval engine. NOT a Dify replacement —
+  # plugged into Dify через plugin witmeng/ragflow-api (manual install после first start).
+  # Three isolated containers: ragflow + ragflow_mysql + ragflow_es01.
+  # Reuses existing MinIO (own bucket) и Redis (DB=2). vLLM/embed/rerank — через DNS.
+  # Image: infiniflow upstream dev-slim-arm64 by digest (NOT community fork — see versions.env).
+  ragflow_mysql:
+    <<: *security-defaults
+    image: docker.io/mysql:${RAGFLOW_MYSQL_VERSION:-8.0.39}
+    container_name: agmind-ragflow-mysql
+    restart: unless-stopped
+    mem_limit: ${RAGFLOW_MYSQL_MEM_LIMIT:-1g}
+    profiles:
+      - ragflow
+    environment:
+      MYSQL_ROOT_PASSWORD: ${RAGFLOW_MYSQL_PASSWORD:-}
+      MYSQL_DATABASE: rag_flow
+    command:
+      - --max_connections=1000
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+      - --tls_version=TLSv1.2,TLSv1.3
+      - --binlog_expire_logs_seconds=604800
+    volumes:
+      - agmind_ragflow_mysql_data:/var/lib/mysql
+    expose:
+      - "3306"
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 30s
+    networks:
+      - agmind-backend
+
+  ragflow_es01:
+    <<: *security-defaults
+    image: docker.io/elasticsearch:${RAGFLOW_ES_VERSION:-9.0.2}
+    container_name: agmind-ragflow-es
+    restart: unless-stopped
+    mem_limit: ${RAGFLOW_ES_MEM_LIMIT:-4g}
+    profiles:
+      - ragflow
+    environment:
+      - node.name=es01
+      - ELASTIC_PASSWORD=${RAGFLOW_ES_PASSWORD:-}
+      # IPC_LOCK is in cap_drop default → memlock impossible. Set false explicitly.
+      - bootstrap.memory_lock=false
+      - discovery.type=single-node
+      - xpack.security.enabled=true
+      - xpack.security.http.ssl.enabled=false
+      - xpack.security.transport.ssl.enabled=false
+      # Disk watermarks low to keep ES yellow→green on small dataset volumes.
+      - cluster.routing.allocation.disk.watermark.low=5gb
+      - cluster.routing.allocation.disk.watermark.high=3gb
+      - cluster.routing.allocation.disk.watermark.flood_stage=2gb
+      # Heap = half of mem_limit; leave rest for OS file cache.
+      - "ES_JAVA_OPTS=-Xms2g -Xmx2g"
+    ulimits:
+      nofile: { soft: 65536, hard: 65536 }
+    volumes:
+      - agmind_ragflow_es_data:/usr/share/elasticsearch/data
+    expose:
+      - "9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -u elastic:\"$$ELASTIC_PASSWORD\" http://localhost:9200/_cluster/health | grep -qE '\"status\":\"(yellow|green)\"' || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: 20
+      start_period: 90s
+    networks:
+      - agmind-backend
+
+  ragflow:
+    <<: *security-defaults
+    image: ${RAGFLOW_IMAGE:-ar2r223/ragflow-spark@sha256:bc9a3e329b1927d3e4e905bfdd82e35161b1a7a3112c52772bf10f6f03263bc8}
+    container_name: agmind-ragflow
+    restart: unless-stopped
+    mem_limit: ${RAGFLOW_MEM_LIMIT:-8g}
+    profiles:
+      - ragflow
+    depends_on:
+      ragflow_mysql:
+        condition: service_healthy
+      ragflow_es01:
+        condition: service_healthy
+    ports:
+      # Expose UI for first-time admin signup. RAGFlow UI = nginx :80 inside container.
+      # Default 0.0.0.0 — LAN profile (DGX Spark за NAT, single-tenant), как Open WebUI/Dify.
+      # Race для admin signup закрыта тем что after first signup signup endpoint disabled.
+      # Override `RAGFLOW_BIND_ADDR=127.0.0.1` если deploy в multi-tenant среде.
+      - "${RAGFLOW_BIND_ADDR:-0.0.0.0}:${EXPOSE_RAGFLOW_PORT:-9380}:80"
+    expose:
+      - "9380"   # Main API + /api/v1/dify/retrieval (External KB compatibility) — internal
+      - "9381"   # admin
+      - "9382"   # MCP server
+      - "9384"   # go-http
+    environment:
+      # === Doc engine ===
+      DOC_ENGINE: elasticsearch
+      ES_HOST: ragflow_es01
+      ES_PORT: 9200
+      ELASTIC_PASSWORD: ${RAGFLOW_ES_PASSWORD:-}
+
+      # === MySQL ===
+      MYSQL_HOST: ragflow_mysql
+      MYSQL_PORT: 3306
+      MYSQL_DBNAME: rag_flow
+      MYSQL_PASSWORD: ${RAGFLOW_MYSQL_PASSWORD:-}
+
+      # === Shared MinIO bucket (created by lib/config.sh during install) ===
+      MINIO_HOST: minio
+      MINIO_PORT: 9000
+      MINIO_USER: ${RAGFLOW_MINIO_USER:-ragflow}
+      MINIO_PASSWORD: ${RAGFLOW_MINIO_PASSWORD:-}
+
+      # === Shared Redis, DB=2 (Dify holds 0,1) ===
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DB: 2
+
+      # === GPU/CPU device для DeepDoc OCR/layout ===
+      # DEFAULT cuda — на DGX Spark vLLM работает на peer (LLM_ON_PEER=true), master GPU свободен.
+      # Безопасный откат: RAGFLOW_DEVICE=cpu в .env при OOM (dmesg | grep -i 'out of memory').
+      # Метрика для решения: nvidia-smi --query-compute-apps=used_memory --format=csv (sum >70 GiB → откат).
+      DEVICE: ${RAGFLOW_DEVICE:-cpu}
+      TZ: ${TZ:-UTC}
+      MAX_CONTENT_LENGTH: 134217728   # 128 MB
+
+      SVR_HTTP_PORT: 9380
+      ADMIN_SVR_HTTP_PORT: 9381
+      SVR_MCP_PORT: 9382
+      GO_HTTP_PORT: 9384
+
+      HF_ENDPOINT: ${HF_ENDPOINT:-https://huggingface.co}
+
+      # NVIDIA caps required when DEVICE=cuda (no-op on cpu mode).
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      # service_conf.yaml — pre-rendered by lib/config.sh::_copy_ragflow_templates
+      # (entrypoint.sh не делает env substitution; .template обработка наша).
+      # Mount target = symlink resolved path: /ragflow/conf/service_conf.yaml
+      # → /ragflow/docker/service_conf.yaml (upstream image symlink).
+      - ./ragflow/service_conf.yaml:/ragflow/docker/service_conf.yaml:ro
+      # nginx config — UPSTREAM RAGFlow Dockerfile НЕ COPY этих files в image
+      # (или Hendrik patches убрали COPY). Без mount у nginx остаётся default
+      # welcome page, RAGFlow Web UI не serve. Files взяты с upstream v0.24.0.
+      - ./ragflow/nginx/ragflow.conf:/etc/nginx/conf.d/ragflow.conf:ro
+      - ./ragflow/nginx/proxy.conf:/etc/nginx/proxy.conf:ro
+      - ./ragflow/nginx/empty.conf:/etc/nginx/conf.d/default.conf:ro
+      - agmind_ragflow_logs:/ragflow/logs
+      - agmind_ragflow_history:/ragflow/history_data_agent
+    healthcheck:
+      # nginx :80 — root возвращает 200 если RAGFlow Web UI loaded.
+      # /v1/system/version (port 9380) требует API key → unauth = 401 → -f fails.
+      test: ["CMD-SHELL", "curl -fsS http://localhost/ >/dev/null 2>&1 || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: 20
+      start_period: 180s
+    networks:
+      - agmind-backend
+
   # ==================== Certbot (VPS profile only) ====================
   certbot:
     <<: *security-defaults
@@ -1468,7 +1619,6 @@ networks:
 
 volumes:
   agmind_openwebui_data:
-  agmind_pipelines_data:
   agmind_ollama_data:
   agmind_grafana_data:
   agmind_portainer_data:
@@ -1485,3 +1635,7 @@ volumes:
   agmind_surrealdb_data:
   agmind_dbgpt_data:
   agmind_minio_data:
+  agmind_ragflow_mysql_data:
+  agmind_ragflow_es_data:
+  agmind_ragflow_logs:
+  agmind_ragflow_history:

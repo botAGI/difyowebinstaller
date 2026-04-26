@@ -543,6 +543,33 @@ http {
     #__CRAWL4AI__    }
     #__CRAWL4AI__}
 
+    #__RAGFLOW__# RAGFlow — agmind-rag.local
+    #__RAGFLOW__server {
+    #__RAGFLOW__    listen 80;
+    #__RAGFLOW__    server_name agmind-rag.local;
+    #__RAGFLOW__
+    #__RAGFLOW__    client_max_body_size 500M;  # документы могут быть большие
+    #__RAGFLOW__
+    #__RAGFLOW__    location = /health {
+    #__RAGFLOW__        default_type application/json;
+    #__RAGFLOW__        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+    #__RAGFLOW__        limit_req zone=health burst=5 nodelay;
+    #__RAGFLOW__        alias /etc/nginx/health/health.json;
+    #__RAGFLOW__    }
+    #__RAGFLOW__
+    #__RAGFLOW__    location / {
+    #__RAGFLOW__        set $u_ragflow http://ragflow:80;
+    #__RAGFLOW__        proxy_pass $u_ragflow;
+    #__RAGFLOW__        proxy_http_version 1.1;
+    #__RAGFLOW__        proxy_set_header Host $host;
+    #__RAGFLOW__        proxy_set_header X-Real-IP $remote_addr;
+    #__RAGFLOW__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #__RAGFLOW__        proxy_set_header X-Forwarded-Proto $scheme;
+    #__RAGFLOW__        proxy_read_timeout 600s;  # tasks parsing документов могут долго идти
+    #__RAGFLOW__        proxy_send_timeout 600s;
+    #__RAGFLOW__    }
+    #__RAGFLOW__}
+
     # =============================================
     # Dify Console — agmind-dify.local (port 80)
     # =============================================

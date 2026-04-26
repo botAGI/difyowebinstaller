@@ -85,6 +85,10 @@ _init_wizard_defaults() {
     ENABLE_OPENWEBUI="${ENABLE_OPENWEBUI:-false}"
     ENABLE_DIFY_PREMIUM="${ENABLE_DIFY_PREMIUM:-true}"
     ENABLE_MINIO="${ENABLE_MINIO:-true}"
+    ENABLE_RAGFLOW="${ENABLE_RAGFLOW:-false}"
+    # GPU by default (vLLM на peer → master GPU свободен ~95 GiB).
+    # Откат на cpu — RAGFLOW_DEVICE=cpu в .env при OOM.
+    RAGFLOW_DEVICE="${RAGFLOW_DEVICE:-cuda}"
     NON_INTERACTIVE="${NON_INTERACTIVE:-false}"
 }
 
@@ -1399,6 +1403,14 @@ _wizard_crawl4ai() {
     # Interactive handled by _wizard_optional_services
 }
 
+_wizard_ragflow() {
+    if [[ "${NON_INTERACTIVE:-false}" == "true" ]]; then
+        ENABLE_RAGFLOW="${ENABLE_RAGFLOW:-false}"
+        return
+    fi
+    # Interactive handled by _wizard_optional_services
+}
+
 _wizard_optional_services() {
     # Handle NI mode via individual functions
     if [[ "${NON_INTERACTIVE:-false}" == "true" ]]; then
@@ -1407,6 +1419,7 @@ _wizard_optional_services() {
         _wizard_notebook
         _wizard_dbgpt
         _wizard_crawl4ai
+        _wizard_ragflow
         return 0
     fi
 
@@ -1420,7 +1433,8 @@ _wizard_optional_services() {
         "searxng"  "SearXNG  -- мета-поисковик для агентов (~256 MB RAM)"           "OFF" \
         "notebook" "Open Notebook -- [BROKEN v3.0.1 — не выбирать] SurrealDB auth"  "OFF" \
         "dbgpt"    "DB-GPT   -- AI-агент для анализа данных и SQL (~1 GB RAM)"      "OFF" \
-        "crawl4ai" "Crawl4AI -- веб-краулер с REST API (~2 GB RAM)"                 "OFF")
+        "crawl4ai" "Crawl4AI -- веб-краулер с REST API (~2 GB RAM)"                 "OFF" \
+        "ragflow"  "RAGFlow  -- deep doc parsing + retrieval engine (~13 GB RAM)"   "OFF")
 
     local parsed
     parsed=$(wt_parse "$result")
@@ -1431,6 +1445,7 @@ _wizard_optional_services() {
     ENABLE_NOTEBOOK="false"
     ENABLE_DBGPT="false"
     ENABLE_CRAWL4AI="false"
+    ENABLE_RAGFLOW="false"
 
     local item
     for item in $parsed; do
@@ -1440,6 +1455,7 @@ _wizard_optional_services() {
             notebook) ENABLE_NOTEBOOK="true";;
             dbgpt)    ENABLE_DBGPT="true";;
             crawl4ai) ENABLE_CRAWL4AI="true";;
+            ragflow)  ENABLE_RAGFLOW="true";;
         esac
     done
 }
@@ -1497,6 +1513,7 @@ _wizard_summary() {
     if [[ "${ENABLE_DBGPT:-false}" == "true" ]]; then summary+="DB-GPT:       agmind-dbgpt.local\n"; fi
     if [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]]; then summary+="Crawl4AI:     agmind-crawl.local\n"; fi
     if [[ "${ENABLE_OPENWEBUI:-false}" == "true" ]]; then summary+="Open WebUI:   agmind-chat.local\n"; fi
+    if [[ "${ENABLE_RAGFLOW:-false}" == "true" ]]; then summary+="RAGFlow:      внутренний (Dify plugin: witmeng/ragflow-api)\n"; fi
     if [[ "${ENABLE_DIFY_PREMIUM:-true}" == "true" ]]; then summary+="Dify Premium: включён (патч после запуска)\n"; fi
     summary+="Бэкапы:       ${BACKUP_TARGET} (${BACKUP_SCHEDULE})\n"
 
@@ -1700,6 +1717,7 @@ run_wizard() {
     export ENABLE_LITELLM ENABLE_SEARXNG ENABLE_NOTEBOOK ENABLE_DBGPT ENABLE_CRAWL4AI
     export ENABLE_OPENWEBUI
     export ENABLE_DIFY_PREMIUM
+    export ENABLE_RAGFLOW RAGFLOW_DEVICE
     export ENABLE_MINIO
 }
 

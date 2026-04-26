@@ -101,7 +101,14 @@ get_service_list() {
         # Open WebUI
         local enable_openwebui
         enable_openwebui="$(grep '^ENABLE_OPENWEBUI=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
-        if [[ "$enable_openwebui" == "true" ]]; then services+=(open-webui pipelines); fi
+        if [[ "$enable_openwebui" == "true" ]]; then services+=(open-webui); fi
+
+        # RAGFlow (BACKLOG #999.7) — три контейнера. Service name → container name mapping:
+        # ragflow → agmind-ragflow, ragflow_mysql → agmind-ragflow-mysql, ragflow_es01 → agmind-ragflow-es.
+        # Mapping handled by check_container() через s/_/-/.
+        local enable_ragflow
+        enable_ragflow="$(grep '^ENABLE_RAGFLOW=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+        if [[ "$enable_ragflow" == "true" ]]; then services+=(ragflow_mysql ragflow_es01 ragflow); fi
     else
         services+=(weaviate)
     fi
@@ -120,6 +127,11 @@ check_container() {
     local cname="${name//_/-}"
     if [[ "$cname" == "open-webui" ]]; then cname="openwebui"; fi
     if [[ "$cname" == "open-notebook" ]]; then cname="notebook"; fi
+    # ragflow_es01 (compose service name kept for RAGFlow upstream conventions) →
+    # agmind-ragflow-es (our container_name without "01" suffix). Mapping keeps
+    # service name compatible с RAGFlow defaults и читаемо в docker ps.
+    if [[ "$cname" == "ragflow-es01" ]]; then cname="ragflow-es"; fi
+    if [[ "$cname" == "ragflow-mysql" ]]; then cname="ragflow-mysql"; fi  # explicit no-op для ясности
 
     # Exact name match to avoid confusion with init-containers (BUG-V3-039)
     # e.g. "agmind-redis" must not match "agmind-redis-lock-cleaner"
@@ -813,6 +825,38 @@ report_health() {
     check_vector_health || true
     check_disk_usage
     check_backup_status
+    check_ragflow_gpu_contention
+}
+
+# BACKLOG #999.7 — Watchdog: alert если RAGFLOW_DEVICE=cuda и vLLM ВЕРНУЛСЯ
+# на master (LLM_ON_PEER=false). Это сценарий взрывного OOM:
+# vLLM gemma-4 ~95 GiB + docling 16 GiB + ragflow DeepDoc 5-15 GiB > 121 GiB unified.
+# Полагается на _read_env wrapper из agmind CLI или direct .env read.
+check_ragflow_gpu_contention() {
+    local env_file="${INSTALL_DIR}/docker/.env"
+    [[ -f "$env_file" ]] || return 0
+
+    local ragflow_dev llm_on_peer enable_ragflow
+    enable_ragflow="$(grep '^ENABLE_RAGFLOW=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+    [[ "$enable_ragflow" == "true" ]] || return 0
+
+    ragflow_dev="$(grep '^RAGFLOW_DEVICE=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "cpu")"
+    llm_on_peer="$(grep '^LLM_ON_PEER=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+
+    if [[ "$ragflow_dev" == "cuda" || "$ragflow_dev" == "gpu" ]]; then
+        if [[ "$llm_on_peer" != "true" ]]; then
+            echo -e "${BOLD}RAGFlow GPU watchdog:${NC}"
+            echo -e "  ${RED}[!!]${NC} RAGFLOW_DEVICE=cuda + vLLM на МАСТЕРЕ (LLM_ON_PEER=false) — OOM риск"
+            echo -e "       gemma-4 ~95 GiB + docling 16 GiB + DeepDoc 5-15 GiB > 121 GiB unified"
+            echo -e "       Fix: либо RAGFLOW_DEVICE=cpu в .env + restart ragflow,"
+            echo -e "            либо включи LLM_ON_PEER=true (vLLM на peer Spark)"
+            echo ""
+        else
+            echo -e "${BOLD}RAGFlow GPU watchdog:${NC}"
+            echo -e "  ${GREEN}[OK]${NC} RAGFLOW_DEVICE=cuda + vLLM на peer (master GPU свободен ~95 GiB)"
+            echo ""
+        fi
+    fi
 }
 
 # ============================================================================

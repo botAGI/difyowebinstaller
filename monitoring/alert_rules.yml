@@ -140,3 +140,34 @@ groups:
         annotations:
           summary: "Nginx active connections > 500"
           description: "Active nginx connections at {{ $value }} — traffic spike or worker exhaustion."
+
+  # BACKLOG #999.7 — RAGFlow-specific alerts. ContainerDown/HighMemoryUsage уже покрывают
+  # базовый health через container_* metrics; это RAGFlow-specific сигналы.
+  - name: agmind_ragflow_alerts
+    rules:
+      - alert: RAGFlowAPIDown
+        expr: up{job="ragflow"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RAGFlow API unreachable"
+          description: "Prometheus не может scrape http://agmind-ragflow:9380. Возможно ES/MySQL upstream упал — agmind ragflow status."
+
+      - alert: RAGFlowESYellow
+        expr: elasticsearch_cluster_health_status{color="yellow"} == 1
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RAGFlow ES cluster yellow >30m"
+          description: "ES cluster в yellow — обычно reallocation или один shard unassigned. Single-node setup → green не достижим без primary replica fix. Если >1 час — agmind ragflow es-health."
+
+      - alert: RAGFlowESRed
+        expr: elasticsearch_cluster_health_status{color="red"} == 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RAGFlow ES cluster RED — data loss risk"
+          description: "ES cluster RED. Primary shards unassigned. Поднять немедленно: agmind ragflow es-health, проверить disk watermark + journal."

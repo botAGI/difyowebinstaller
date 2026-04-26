@@ -24,7 +24,7 @@ pin_nvidia_driver_dgx_spark() {
         log_warn "apt-mark not found — cannot pin NVIDIA driver (non-Debian system?)"
         return 0
     fi
-    log_info "DGX Spark detected — pinning NVIDIA driver 580 (CLAUDE.md §8 mandatory)"
+    log_info "DGX Spark detected — pinning NVIDIA driver 580 (590+ breaks vLLM on GB10)"
     local pkgs=()
     # Discover installed nvidia-* packages matching driver/kernel/dkms patterns.
     # Avoid hardcoding exact package list — Ubuntu version may rename slightly.

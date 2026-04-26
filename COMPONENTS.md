@@ -67,3 +67,17 @@ Groups are based on shared configuration, version coupling, or runtime dependenc
 > **Postgres major version upgrade requires migration** (pg_dump / pg_restore).
 > Redis and nginx are backward compatible — safe to update.
 > Vector stores: update only when Dify release notes mention compatibility.
+
+## ragflow-stack (BACKLOG #999.7)
+
+| Component | Version Key | Notes |
+|-----------|-------------|-------|
+| ragflow | RAGFLOW_DIGEST | Pinned by sha256 digest, NOT tag (`dev-slim-arm64` rolling) |
+| ragflow_mysql | RAGFLOW_MYSQL_VERSION | MySQL 8.0.x — minor bumps safe; major (8.4+) untested |
+| ragflow_es01 | RAGFLOW_ES_VERSION | Elasticsearch 9.x — major bump = reindex required |
+
+> Image: `infiniflow/ragflow@sha256:...` — upstream account, НЕ community fork.
+> Update digest via `docker manifest inspect infiniflow/ragflow:dev-slim-arm64 | jq -r .config.digest`.
+> Reuses shared Redis (DB=2) + MinIO (bucket `ragflow-storage`) + LiteLLM/vLLM stack.
+> All three live only on `agmind-backend` network — no external port exposure.
+> Wizard: `_wizard_optional_services` checklist → ragflow.

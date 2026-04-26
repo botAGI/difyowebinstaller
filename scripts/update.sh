@@ -902,7 +902,7 @@ perform_bundle_update() {
     local update_order=(
         "db" "redis"
         "api" "worker" "web" "sandbox" "plugin_daemon"
-        "pipelines" "ollama" "vllm" "tei" "tei-rerank"
+        "ollama" "vllm" "tei" "tei-rerank"
         "nginx" "open-webui"
         "weaviate" "qdrant" "docling"
         "litellm" "searxng" "surrealdb" "open-notebook" "dbgpt" "crawl4ai"
