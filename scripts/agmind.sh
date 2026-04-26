@@ -449,6 +449,89 @@ cmd_restart() {
     echo -e "${GREEN}Restarted${NC}"
 }
 
+# Compare pinned versions in versions.env (template) vs currently-running
+# container images. Read-only — никаких изменений на стек. Полезно ДО запуска
+# `agmind update` или `bash install.sh` чтобы увидеть какие сервисы получат
+# bump. Не предлагает варианты автоматического update — это делает agmind update.
+cmd_upgrade_diff() {
+    # Source of truth для current pinned versions: /opt/agmind/docker/.env
+    # (записан _copy_versions при install). Альтернатива:
+    # /opt/agmind/templates/versions.env (template snapshot). docker/.env
+    # содержит реальный state применённый к compose (после _copy_versions
+    # appends VERSION lines в конец файла).
+    local versions_file="${INSTALL_DIR:-/opt/agmind}/docker/.env"
+    if [[ ! -f "$versions_file" ]]; then
+        echo -e "${RED}.env not found: ${versions_file}${NC}" >&2
+        echo "Run install.sh first or check INSTALL_DIR." >&2
+        exit 1
+    fi
+    # Map version key → container name(s). Только сервисы с docker compose image-tag,
+    # SOPS/MC binary исключены (они контролируются install.sh hooks).
+    local -A KEY_TO_CONTAINER=(
+        [DIFY_VERSION]="agmind-api"
+        [OPENWEBUI_VERSION]="agmind-openwebui"
+        [POSTGRES_VERSION]="agmind-db"
+        [REDIS_VERSION]="agmind-redis"
+        [WEAVIATE_VERSION]="agmind-weaviate"
+        [QDRANT_VERSION]="agmind-qdrant"
+        [SANDBOX_VERSION]="agmind-sandbox"
+        [SQUID_VERSION]="agmind-ssrf-proxy"
+        [NGINX_VERSION]="agmind-nginx"
+        [MINIO_VERSION]="agmind-minio"
+        [PLUGIN_DAEMON_VERSION]="agmind-plugin-daemon"
+        [LITELLM_VERSION]="agmind-litellm"
+        [SEARXNG_VERSION]="agmind-searxng"
+        [SURREALDB_VERSION]="agmind-surrealdb"
+        [OPEN_NOTEBOOK_VERSION]="agmind-notebook"
+        [DBGPT_VERSION]="agmind-dbgpt"
+        [CRAWL4AI_VERSION]="agmind-crawl4ai"
+        [AUTHELIA_VERSION]="agmind-authelia"
+        [GRAFANA_VERSION]="agmind-grafana"
+        [PORTAINER_VERSION]="agmind-portainer"
+        [NODE_EXPORTER_VERSION]="agmind-node-exporter"
+        [CADVISOR_VERSION]="agmind-cadvisor"
+        [REDIS_EXPORTER_VERSION]="agmind-redis-exporter"
+        [POSTGRES_EXPORTER_VERSION]="agmind-postgres-exporter"
+        [NGINX_EXPORTER_VERSION]="agmind-nginx-exporter"
+        [PROMETHEUS_VERSION]="agmind-prometheus"
+        [ALERTMANAGER_VERSION]="agmind-alertmanager"
+        [LOKI_VERSION]="agmind-loki"
+        [ALLOY_VERSION]="agmind-alloy"
+    )
+    echo -e "${BOLD}AGMind version diff — pinned (versions.env) vs live (container)${NC}"
+    echo ""
+    printf "%-28s %-30s %-30s %s\n" "VARIABLE" "PINNED" "LIVE" "STATUS"
+    printf "%-28s %-30s %-30s %s\n" "--------" "------" "----" "------"
+    local key cname pinned live status
+    local out_of_sync=0
+    local not_deployed=0
+    local rows=""
+    for key in "${!KEY_TO_CONTAINER[@]}"; do
+        cname="${KEY_TO_CONTAINER[$key]}"
+        pinned="$(grep "^${key}=" "$versions_file" 2>/dev/null | head -1 | cut -d'=' -f2-)"
+        if [[ -z "$pinned" ]]; then continue; fi
+        live="$(docker inspect -f '{{.Config.Image}}' "$cname" 2>/dev/null | awk -F: '{print $NF}' || true)"
+        if [[ -z "$live" ]]; then
+            status="${YELLOW}NOT DEPLOYED${NC}"
+            not_deployed=$((not_deployed+1))
+        elif [[ "$live" == "$pinned" ]] || [[ "$pinned" == *"$live"* ]] || [[ "$live" == *"$pinned"* ]]; then
+            status="${GREEN}OK${NC}"
+        else
+            status="${YELLOW}DRIFT${NC}"
+            out_of_sync=$((out_of_sync+1))
+        fi
+        rows+="$(printf '%-28s %-30s %-30s %b' "$key" "$pinned" "${live:--}" "$status")"$'\n'
+    done
+    printf '%s' "$rows" | sort
+    echo ""
+    if [[ $out_of_sync -gt 0 ]]; then
+        echo -e "${YELLOW}${out_of_sync} services drift from pinned versions.${NC}"
+        echo "To apply: edit /opt/agmind/docker/.env (or rerun install.sh) + per-service docker compose up -d"
+    else
+        echo -e "${GREEN}All deployed services match pinned versions${NC} (not deployed: ${not_deployed})"
+    fi
+}
+
 # ============================================================================
 # PLUGIN DAEMON ONLINE / OFFLINE TOGGLE
 # Default install: offline (MARKETPLACE_ENABLED=false) — supply-chain safe.
@@ -997,6 +1080,7 @@ Commands:
     --auto                 Skip all confirmation prompts
     --scripts-only         Update scripts/configs only (skip docker pull)
     --release              Pull from legacy 'release' branch (default = 'main' since 2026-04)
+  upgrade [--diff]   Compare pinned versions.env vs live containers (read-only)
   plugins <sub>      Dify plugin daemon marketplace toggle (root for online/offline)
     online               Enable marketplace.dify.ai (allow external plugins)
     offline              Disable marketplace (local .difypkg only — recommended)
@@ -1025,6 +1109,14 @@ case "${1:-help}" in
     backup)         shift; _require_root backup; exec "${SCRIPTS_DIR}/backup.sh" "$@" ;;
     restore)        shift; _require_root restore; exec "${SCRIPTS_DIR}/restore.sh" "$@" ;;
     update)         shift; _require_root update; exec "${SCRIPTS_DIR}/update.sh" "$@" ;;
+    upgrade)        shift
+                    case "${1:-}" in
+                        --diff|diff|""|--help|-h) cmd_upgrade_diff ;;
+                        *) echo "Usage: agmind upgrade [--diff]" >&2
+                           echo "  --diff   Show pinned vs live drift (read-only, default)" >&2
+                           echo "Apply: rerun install.sh OR edit /opt/agmind/docker/.env + docker compose up -d" >&2
+                           exit 1 ;;
+                    esac ;;
     uninstall)      shift; _require_root uninstall; exec "${SCRIPTS_DIR}/uninstall.sh" "$@" ;;
     rotate-secrets) shift; _require_root rotate-secrets; exec "${SCRIPTS_DIR}/rotate_secrets.sh" "$@" ;;
     logs)           shift; exec docker compose -f "$COMPOSE_FILE" logs "$@" ;;
