@@ -534,8 +534,9 @@ cmd_upgrade_diff() {
 
 # ============================================================================
 # PLUGIN DAEMON ONLINE / OFFLINE TOGGLE
-# Default install: offline (MARKETPLACE_ENABLED=false) — supply-chain safe.
-# Admin can flip to online when intentionally installing marketplace plugins.
+# Default install: ONLINE (MARKETPLACE_ENABLED=true) — большинство юзеров
+# ставят плагины из marketplace.dify.ai (включая witmeng/ragflow-api для RAGFlow).
+# Выключить при критичном supply-chain risk: agmind plugins offline.
 # Uses `docker restart` (NOT recreate) to preserve plugin daemon state per
 # CLAUDE.md §8 force-recreate trap (avoids stale Redis/Celery cleanup risk).
 # ============================================================================
@@ -564,7 +565,7 @@ cmd_plugins() {
             # falls back to default with clear UX otherwise.
             local current
             if [[ -r "$ENV_FILE" ]]; then
-                current="$(_read_env MARKETPLACE_ENABLED "false")"
+                current="$(_read_env MARKETPLACE_ENABLED "true")"
             else
                 current="$(sudo -n grep '^MARKETPLACE_ENABLED=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- || echo 'unknown')"
                 [[ -z "$current" ]] && current="unknown"
@@ -572,7 +573,7 @@ cmd_plugins() {
             local mode_label color
             case "$current" in
                 true)    mode_label="ONLINE (marketplace.dify.ai accessible)"; color="$YELLOW" ;;
-                false)   mode_label="OFFLINE (local .difypkg only — recommended)"; color="$GREEN" ;;
+                false)   mode_label="OFFLINE (только локальные .difypkg)"; color="$YELLOW" ;;
                 unknown) mode_label="UNKNOWN (run with sudo to read .env)";       color="$RED" ;;
                 *)       mode_label="UNEXPECTED ($current)";                       color="$RED" ;;
             esac
@@ -1045,15 +1046,11 @@ LTHELP
 
 cmd_ragflow() {
     local sub="${1:-status}"; shift || true
-    if [[ "${ENABLE_RAGFLOW:-false}" != "true" ]]; then
-        # Tolerate missing — don't bail before reading .env (status/logs могут хотеть видеть disabled).
-        local enabled
-        enabled="$(grep '^ENABLE_RAGFLOW=' "${ENV_FILE}" 2>/dev/null | cut -d'=' -f2- || echo "false")"
-        if [[ "$enabled" != "true" ]]; then
-            echo -e "${YELLOW}RAGFlow disabled (ENABLE_RAGFLOW=false).${NC}"
-            echo "Enable: re-run install.sh and select ragflow в чек-листе optional services."
-            [[ "$sub" == "status" || "$sub" == "version" ]] && exit 0 || exit 1
-        fi
+    # Detect by container, not .env (chmod 600 — non-root user читает default=false).
+    if ! docker ps --filter 'name=agmind-ragflow$' --format '{{.Names}}' 2>/dev/null | grep -q '^agmind-ragflow$'; then
+        echo -e "${YELLOW}RAGFlow disabled (контейнер agmind-ragflow не запущен).${NC}"
+        echo "Enable: re-run install.sh and select ragflow в чек-листе optional services."
+        [[ "$sub" == "status" || "$sub" == "version" ]] && exit 0 || exit 1
     fi
 
     case "$sub" in
@@ -1133,6 +1130,49 @@ EOF
     esac
 }
 
+cmd_plugin_daemon() {
+    local sub="${1:-status}"
+    case "$sub" in
+        status)
+            local state
+            state="$(docker inspect -f '{{.State.Status}} ({{.State.Health.Status}})' agmind-plugin-daemon 2>/dev/null || echo 'absent')"
+            echo "agmind-plugin-daemon: $state"
+            ;;
+        stop)
+            _require_root "plugin-daemon stop"
+            cd "$(dirname "$COMPOSE_FILE")"
+            echo -e "${YELLOW}Stopping plugin_daemon...${NC}"
+            docker compose stop plugin_daemon
+            echo -e "${YELLOW}Внимание: Dify плагины (LLM-провайдеры, RAGFlow коннектор и др.) больше не работают.${NC}"
+            ;;
+        start)
+            _require_root "plugin-daemon start"
+            cd "$(dirname "$COMPOSE_FILE")"
+            docker compose start plugin_daemon
+            echo -e "${GREEN}plugin_daemon запущен${NC}"
+            ;;
+        restart)
+            _require_root "plugin-daemon restart"
+            cd "$(dirname "$COMPOSE_FILE")"
+            docker compose restart plugin_daemon
+            ;;
+        logs)
+            docker logs --tail 100 -f agmind-plugin-daemon
+            ;;
+        *)
+            cat >&2 <<EOF
+Usage: agmind plugin-daemon <subcommand>
+  status    State + health (default)
+  stop      Остановить daemon (Dify плагины перестанут работать)
+  start     Запустить daemon
+  restart   Restart
+  logs      Tail logs
+EOF
+            exit 1
+            ;;
+    esac
+}
+
 cmd_help() {
     cat <<'HELP'
 Usage: agmind <command> [options]
@@ -1181,9 +1221,13 @@ Commands:
     --release              Pull from legacy 'release' branch (default = 'main' since 2026-04)
   upgrade [--diff]   Compare pinned versions.env vs live containers (read-only)
   plugins <sub>      Dify plugin daemon marketplace toggle (root for online/offline)
-    online               Enable marketplace.dify.ai (allow external plugins)
-    offline              Disable marketplace (local .difypkg only — recommended)
+    online               Enable marketplace.dify.ai (default — рекомендуется)
+    offline              Disable marketplace (только локальные .difypkg)
     status               Show current marketplace state (no root)
+  plugin-daemon <sub>  Управление контейнером plugin_daemon
+    status               Состояние и health (по умолчанию)
+    stop|start|restart   Управление daemon (root)
+    logs                 Tail логи
   uninstall          Remove AGMind (root)
   rotate-secrets     Rotate passwords and keys (root)
   help               Show this help
@@ -1235,6 +1279,7 @@ case "${1:-help}" in
                         *)               echo "Usage: agmind dify import-workflow <dsl.yaml>" >&2; exit 1 ;;
                     esac ;;
     ragflow)        shift; cmd_ragflow "$@" ;;
+    plugin-daemon)  shift; cmd_plugin_daemon "$@" ;;
     help|--help|-h) cmd_help ;;
     *)              echo -e "${RED}Unknown command: ${1}${NC}" >&2; cmd_help; exit 1 ;;
 esac

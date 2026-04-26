@@ -195,6 +195,7 @@ _S3_SECRET_KEY=""
 _RAGFLOW_MYSQL_PASSWORD=""
 _RAGFLOW_ES_PASSWORD=""
 _RAGFLOW_MINIO_PASSWORD=""
+_PORTAINER_AGENT_SECRET=""
 
 # _restore_secrets_from_backup — restore volume-bound secrets when PG data exists (IREL-03)
 # Returns 0 if any secrets were restored, 1 if nothing restored.
@@ -304,6 +305,28 @@ _generate_secrets() {
     _RAGFLOW_MYSQL_PASSWORD="$(generate_random 32)"
     _RAGFLOW_ES_PASSWORD="$(generate_random 32)"
     _RAGFLOW_MINIO_PASSWORD="$(generate_random 32)"
+
+    # Portainer Agent secret — shared между master Portainer и peer agent.
+    # Persistent в /var/lib/agmind/state чтобы переживать uninstall --keep-models
+    # (иначе peer agent останется со старым secret и master не сможет подключиться).
+    local _portainer_secret_file="${INSTALL_DIR}/.secrets/portainer_agent_secret"
+    local _portainer_secret_preserved="/var/lib/agmind/state/portainer_agent_secret.preserved"
+    mkdir -p "${INSTALL_DIR}/.secrets" 2>/dev/null || true
+    chmod 700 "${INSTALL_DIR}/.secrets" 2>/dev/null || true
+    if [[ ! -s "$_portainer_secret_file" ]] && [[ -s "$_portainer_secret_preserved" ]]; then
+        cp "$_portainer_secret_preserved" "$_portainer_secret_file"
+        chmod 600 "$_portainer_secret_file"
+        rm -f "$_portainer_secret_preserved"
+        log_info "Portainer agent secret restored from /var/lib/agmind/state/ (--keep-models stash)"
+    fi
+    if [[ -s "$_portainer_secret_file" ]]; then
+        _PORTAINER_AGENT_SECRET="$(cat "$_portainer_secret_file")"
+    else
+        _PORTAINER_AGENT_SECRET="$(generate_random 32)"
+        printf '%s' "$_PORTAINER_AGENT_SECRET" > "$_portainer_secret_file"
+        chmod 600 "$_portainer_secret_file"
+        log_info "Portainer agent secret generated and persisted: ${_portainer_secret_file}"
+    fi
 
     _ADMIN_PASSWORD_PLAIN="$(generate_random 16)"
     _ADMIN_PASSWORD_B64="$(echo -n "$_ADMIN_PASSWORD_PLAIN" | base64)"
@@ -455,6 +478,7 @@ _generate_env_file() {
         -e "s|__RAGFLOW_MYSQL_PASSWORD__|${_RAGFLOW_MYSQL_PASSWORD}|g" \
         -e "s|__RAGFLOW_ES_PASSWORD__|${_RAGFLOW_ES_PASSWORD}|g" \
         -e "s|__RAGFLOW_MINIO_PASSWORD__|${_RAGFLOW_MINIO_PASSWORD}|g" \
+        -e "s|__PORTAINER_AGENT_SECRET__|${_PORTAINER_AGENT_SECRET}|g" \
         -e "s|__SEARXNG_SECRET_KEY__|$(escape_sed "${_SEARXNG_SECRET_KEY}")|g" \
         -e "s|__SURREALDB_PASSWORD__|$(escape_sed "${_SURREALDB_PASSWORD}")|g" \
         -e "s|__NOTEBOOK_ENCRYPTION_KEY__|$(escape_sed "${_NOTEBOOK_ENCRYPTION_KEY}")|g" \
@@ -706,6 +730,13 @@ generate_nginx_config() {
         _atomic_sed "$nginx_conf" '/#__OPENWEBUI__/d'
     fi
 
+    # MinIO markers (agmind-storage.local proxy block)
+    if [[ "${ENABLE_MINIO:-false}" == "true" ]]; then
+        _atomic_sed "$nginx_conf" 's|#__MINIO__||g'
+    else
+        _atomic_sed "$nginx_conf" '/#__MINIO__/d'
+    fi
+
     # Authelia markers (strip when disabled — _enable_authelia_nginx handles enabled case)
     if [[ "${ENABLE_AUTHELIA:-false}" != "true" ]]; then
         _atomic_sed "$nginx_conf" '/#__AUTHELIA__/d'
@@ -756,6 +787,7 @@ _register_local_dns() {
     # Build list of names to publish
     local names=("agmind-dify")
     [[ "${ENABLE_OPENWEBUI:-false}" == "true" ]] && names+=("agmind-chat")
+    [[ "${ENABLE_LITELLM:-false}" == "true" ]] && names+=("agmind-litellm")
     [[ "${ENABLE_MINIO:-false}" == "true" ]] && names+=("agmind-storage")
     [[ "${ENABLE_DBGPT:-false}" == "true" ]] && names+=("agmind-dbgpt")
     [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]] && names+=("agmind-notebook")

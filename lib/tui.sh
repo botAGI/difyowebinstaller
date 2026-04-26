@@ -72,6 +72,46 @@ _wt_available() {
 }
 
 # ============================================================================
+# PIP-BOY THEME — thematic glyph based on dialog title keywords
+# Returns a small ASCII tag prepended to whiptail --title.
+# ============================================================================
+
+_wt_glyph() {
+    local t="$1"
+    # nocasematch — bash glob matching становится case-insensitive,
+    # включая Unicode (кириллица: М==м), пока locale поддерживает UTF-8.
+    shopt -s nocasematch
+    local g
+    case "$t" in
+        *ragflow*)                                                                 g="[<R>]" ;;  # retrieval
+        *ollama*|*vllm*|*llm*|*модел*|*эмбедд*|*реранк*|*rerank*|*embed*)          g="[<O>]" ;;  # neural core
+        *монитор*|*grafana*|*portainer*|*loki*)                                    g="[<o>]" ;;  # radar deck
+        *безопасн*|*tls*|*2fa*|*authelia*|*firewall*)                              g="[+++]" ;;  # vault seal
+        *cluster*|*peer*|*кластер*|*spark*)                                        g="[~~~]" ;;  # radio link
+        *бэкап*|*backup*|*restore*|*расписан*)                                     g="[ V ]" ;;  # vault door
+        *уведомл*|*alert*|*telegram*|*notification*)                               g="[!!!]" ;;  # alarm
+        *вектор*|*qdrant*|*weaviate*|*хранилищ*|*minio*)                           g="[ # ]" ;;  # storage
+        *docling*|*документ*|*ocr*|*pdf*)                                          g="[/?\\]" ;; # parser
+        *webui*|*чат*|*chat*|*notebook*)                                           g="[|=|]" ;;  # terminal
+        *поиск*|*search*|*searxng*|*crawl*)                                        g="[<-->]" ;; # antenna
+        *db-gpt*|*sql*|*аналит*)                                                   g="[<*>]" ;;  # data spark
+        *plugin*|*плагин*)                                                         g="[<+>]" ;;  # mod chip
+        *домен*|*nginx*|*сеть*|*network*)                                          g="[<-->]" ;; # comms
+        *доп*|*optional*|*services*|*сервис*)                                      g="[<*>]" ;;  # tinker bench
+        *)                                                                         g="[***]" ;;  # default
+    esac
+    shopt -u nocasematch
+    echo "$g"
+}
+
+# Wrap a raw title in Pip-Boy frame: "[<O>] LLM-провайдер"
+_wt_title() {
+    local raw="$1"
+    local g; g="$(_wt_glyph "$raw")"
+    echo "${g} ${raw}"
+}
+
+# ============================================================================
 # MENU — single selection from numbered items
 # Usage: result=$(wt_menu "Title" "Description" "tag1" "label1" "tag2" "label2" ...)
 # Returns: selected tag via stdout
@@ -107,7 +147,7 @@ wt_menu() {
     if [[ "$list_h" -lt 4 ]]; then list_h=4; fi
 
     local result
-    result=$(whiptail --title "$title" --menu "$desc" \
+    result=$(whiptail --title "$(_wt_title "$title")" --menu "$desc" \
         "$_wt_height" "$_wt_width" "$list_h" \
         "$@" \
         3>&1 1>&2 2>&3) || true
@@ -152,7 +192,7 @@ wt_radio() {
     if [[ "$list_h" -lt 4 ]]; then list_h=4; fi
 
     local result
-    result=$(whiptail --title "$title" --radiolist "$desc" \
+    result=$(whiptail --title "$(_wt_title "$title")" --radiolist "$desc" \
         "$_wt_height" "$_wt_width" "$list_h" \
         "$@" \
         3>&1 1>&2 2>&3) || true
@@ -208,7 +248,7 @@ wt_checklist() {
     if [[ "$list_h" -lt 4 ]]; then list_h=4; fi
 
     local result
-    result=$(whiptail --title "$title" --checklist "$desc" \
+    result=$(whiptail --title "$(_wt_title "$title")" --checklist "$desc" \
         "$_wt_height" "$_wt_width" "$list_h" \
         "$@" \
         3>&1 1>&2 2>&3) || true
@@ -233,7 +273,7 @@ wt_input() {
 
     wt_get_size
     local result
-    result=$(whiptail --title "$title" --inputbox "$prompt" \
+    result=$(whiptail --title "$(_wt_title "$title")" --inputbox "$prompt" \
         $(( _wt_height > 12 ? 10 : 8 )) "$_wt_width" "$default" \
         3>&1 1>&2 2>&3) || true
     echo "${result:-$default}"
@@ -257,7 +297,7 @@ wt_password() {
 
     wt_get_size
     local result
-    result=$(whiptail --title "$title" --passwordbox "$prompt" \
+    result=$(whiptail --title "$(_wt_title "$title")" --passwordbox "$prompt" \
         $(( _wt_height > 12 ? 10 : 8 )) "$_wt_width" \
         3>&1 1>&2 2>&3) || true
     echo "$result"
@@ -288,7 +328,7 @@ wt_yesno() {
     fi
 
     wt_get_size
-    whiptail --title "$title" --yesno "$question" \
+    whiptail --title "$(_wt_title "$title")" --yesno "$question" \
         $(( _wt_height > 12 ? 10 : 8 )) "$_wt_width" \
         ${default_flag:+$default_flag}
 }
@@ -308,7 +348,7 @@ wt_msg() {
     fi
 
     wt_get_size
-    whiptail --title "$title" --msgbox "$msg" \
+    whiptail --title "$(_wt_title "$title")" --msgbox "$msg" \
         "$_wt_height" "$_wt_width"
 }
 
@@ -326,7 +366,7 @@ wt_info() {
     fi
 
     wt_get_size
-    whiptail --title "$title" --infobox "$msg" \
+    whiptail --title "$(_wt_title "$title")" --infobox "$msg" \
         8 "$_wt_width"
 }
 
@@ -346,7 +386,7 @@ wt_gauge() {
     fi
 
     wt_get_size
-    whiptail --title "$title" --gauge "$msg" \
+    whiptail --title "$(_wt_title "$title")" --gauge "$msg" \
         8 "$_wt_width" 0
 }
 
