@@ -1226,7 +1226,7 @@ services:
   # Set ENABLE_PORTAINER=false to disable entirely if not needed.
   portainer:
     <<: *security-defaults
-    image: portainer/portainer-ce:${PORTAINER_VERSION:-2.36.0}
+    image: portainer/portainer-ce:${PORTAINER_VERSION:-2.39.1}
     container_name: agmind-portainer
     restart: unless-stopped
     mem_limit: ${PORTAINER_MEM_LIMIT:-256m}

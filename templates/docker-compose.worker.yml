@@ -89,7 +89,7 @@ services:
   # ============================================================================
   portainer-agent:
     <<: *logging-defaults
-    image: portainer/agent:${PORTAINER_AGENT_VERSION:-2.36.0}
+    image: portainer/agent:${PORTAINER_AGENT_VERSION:-2.39.1}
     container_name: agmind-portainer-agent
     restart: unless-stopped
     environment:
