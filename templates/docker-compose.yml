@@ -1239,6 +1239,13 @@ services:
     # `stat -c %g /var/run/docker.sock` and written to .env (lib/config.sh).
     group_add:
       - "${DOCKER_GID:-988}"
+    # AGENT_SECRET shared с peer agent — без него master подписывает HMAC-запросы
+    # дефолтным/случайным ключом, agent отвергает 403 "Invalid request signature",
+    # backend translates это в misleading "Agent already paired with another
+    # Portainer instance". Без env запроса peer endpoint провалится с этим
+    # сообщением. Persistent в /opt/agmind/.secrets/portainer_agent_secret.
+    environment:
+      AGENT_SECRET: ${PORTAINER_AGENT_SECRET}
     ports:
       - "${PORTAINER_BIND_ADDR:-127.0.0.1}:${PORTAINER_PORT:-9443}:9443"
     read_only: true
