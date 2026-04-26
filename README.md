@@ -459,14 +459,14 @@ sudo agmind uninstall [--keep-models]  # Remove stack
 | Dify Console 502 | `docker restart agmind-nginx` (then verify nginx config uses variable-form `proxy_pass`) |
 | Model not loading | `nvidia-smi` + `docker logs agmind-vllm` — usually OOM or driver mismatch |
 | `agmind-rag.local` unresolved | `agmind mdns-status` — checks for second mDNS responder on UDP/5353 |
-| Indexing stuck after recreate | `redis-cli DEL generate_task_belong:* celery-task-meta-*` (see [`CLAUDE.md`](CLAUDE.md) §8) |
+| Indexing stuck after recreate | `redis-cli DEL generate_task_belong:* celery-task-meta-*` then `docker restart agmind-worker agmind-api` |
 | 502 on every request | full `agmind doctor` — fail2ban / UFW / GPU driver health |
 | Disk full | `docker system prune -a` then `agmind backup` and prune `/var/backups/agmind/` |
 | DR-grade restore | `agmind restore /var/backups/agmind/<latest>/` |
 
 > [!TIP]
-> The institutional memory of every gotcha lives in [`CLAUDE.md`](CLAUDE.md)
-> §8 — *"Learned the hard way"*.
+> Detailed runbooks for known gotchas live in [`docs/`](docs/). Open an
+> issue if you hit something missing — we backfill the runbook.
 
 ---
 
@@ -488,7 +488,7 @@ avahi-resolve -n agmind-dify.local                                          # mu
 curl -sf http://agmind-dify.local/console/api/setup                         # must 200
 ```
 
-Full DoD: see [`CLAUDE.md`](CLAUDE.md) §10.
+All checks must pass before a PR is mergeable.
 
 ---
 
@@ -534,7 +534,6 @@ Docling (5-page arxiv PDF, warm): **6.04s**, 0.32s/page, ~1.6 GiB GPU memory.
   `tests/compose/test_image_tags_exist.sh`.
 - Image tag bumps require `docker manifest inspect <image>:<tag> | grep arm64`
   evidence in the commit message — LLMs hallucinate registry tags.
-- See [`CLAUDE.md`](CLAUDE.md) for the full collaboration playbook.
 
 ---
 
@@ -722,7 +721,7 @@ sudo agmind rotate-secrets
 | Полный диск | `docker system prune -a` |
 | Восстановление | `agmind restore /var/backups/agmind/<latest>/` |
 
-Полный журнал граблей — в [`CLAUDE.md`](CLAUDE.md) §8 *"Learned the hard way"*.
+Подробные runbook'и для известных граблей — в [`docs/`](docs/).
 
 ---
 
@@ -749,7 +748,6 @@ Docling (5 страниц arxiv PDF, warm): **6.04s**, 0.32s/page.
 - Каждый PR обязан проходить [DoD](#-definition-of-done) и
   `tests/compose/test_image_tags_exist.sh`.
 - Bump тега образа = свидетельство `docker manifest inspect <image>:<tag> | grep arm64` в commit message.
-- См. [`CLAUDE.md`](CLAUDE.md).
 
 ---
 
