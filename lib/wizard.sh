@@ -743,21 +743,63 @@ _wizard_llm_model() {
         # vllm + NON_INTERACTIVE: skip interactive menu, fall through to
         # default assignment and VRAM guard below (BFIX-41)
     else
-        # DGX Spark: model is hardcoded to Gemma 4, offer context choice
+        # DGX Spark: спросить — хардкод-Gemma-4 (быстрый default) или общий список моделей.
         if [[ "$LLM_PROVIDER" == "vllm" && "${DETECTED_DGX_SPARK:-false}" == "true" ]]; then
-            local spark_ctx
-            spark_ctx=$(wt_menu "DGX Spark — Gemma 4 контекст" \
-                "Модель: google/gemma-4-26B-A4B-it (MoE, 3.8B active)\nОбраз: vllm/vllm-openai:gemma4-cu130 (GB10 CUDA 13)\n\nВыберите максимальный контекст (fp8 KV-кэш):\n(128 GB unified memory, ~53 GB доступно для KV-кэша)" \
-                "1" "32K   — минимум памяти, макс. concurrency" \
-                "2" "64K   — баланс (рекомендуется)" \
-                "3" "128K  — большие документы, меньше concurrency")
-            spark_ctx="${spark_ctx:-2}"
-            case "$spark_ctx" in
-                1) VLLM_MAX_MODEL_LEN=32768;;
-                2) VLLM_MAX_MODEL_LEN=65536;;
-                3) VLLM_MAX_MODEL_LEN=131072;;
-                *) VLLM_MAX_MODEL_LEN=65536;;
+            local spark_choice
+            spark_choice=$(wt_menu "DGX Spark — выбор модели vLLM" \
+                "Платформа: GB10 (128 GB unified memory). Образ: vllm/vllm-openai:gemma4-cu130\n\nВыбор:" \
+                "1" "Gemma 4 26B-A4B (рекомендуется — NVIDIA playbook, MoE 3.8B active)" \
+                "2" "Другая модель — список Qwen / Llama / Mistral / phi-4" \
+                "3" "Своя HuggingFace модель (org/model-name)")
+            spark_choice="${spark_choice:-1}"
+
+            case "$spark_choice" in
+                2)
+                    # Общий vLLM model picker — фильтрация под Spark уже внутри.
+                    _wizard_vllm_model
+                    ;;
+                3)
+                    local hf_model
+                    hf_model=$(wt_input "Своя модель vLLM" \
+                        "HuggingFace репозиторий (org/model-name).\nПример: meta-llama/Llama-3.1-70B-Instruct" \
+                        "")
+                    if [[ -n "$hf_model" ]]; then
+                        VLLM_MODEL="$hf_model"
+                        VLLM_IMAGE=""  # Используем upstream NGC, не Spark-specific image
+                    else
+                        wt_msg "Пусто" "Поле HF модели пустое — fallback на Gemma 4 26B-A4B"
+                        VLLM_MODEL="google/gemma-4-26B-A4B-it"
+                        VLLM_IMAGE="vllm/vllm-openai:gemma4-cu130"
+                    fi
+                    ;;
+                1|*)
+                    VLLM_MODEL="google/gemma-4-26B-A4B-it"
+                    VLLM_IMAGE="vllm/vllm-openai:gemma4-cu130"
+                    ;;
             esac
+
+            # Контекст — на dual-Spark (vLLM на peer, dedicated GPU) дефолт 128K
+            # без вопроса. На single-Spark (vLLM шарит GPU с docling) — спросить.
+            if [[ "${LLM_ON_PEER:-false}" == "true" ]]; then
+                VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-131072}"
+                log_info "Dual-Spark detected → vLLM on peer (dedicated GPU) → max-model-len=131072 (128K)"
+            elif [[ -z "${VLLM_MAX_MODEL_LEN:-}" ]]; then
+                # _wizard_vllm_model уже спросил контекст — пропускаем повтор.
+                # Это срабатывает только для choice=1 (Gemma 4) и choice=3 (custom HF).
+                local spark_ctx
+                spark_ctx=$(wt_menu "Spark — контекст (max-model-len)" \
+                    "vLLM шарит GPU с docling на single-Spark.\nFp8 KV-кэш экономит память.\n\nВыбор:" \
+                    "1" "32K   — минимум памяти, макс. concurrency" \
+                    "2" "64K   — баланс (рекомендуется)" \
+                    "3" "128K  — большие документы, меньше concurrency")
+                spark_ctx="${spark_ctx:-2}"
+                case "$spark_ctx" in
+                    1) VLLM_MAX_MODEL_LEN=32768;;
+                    2) VLLM_MAX_MODEL_LEN=65536;;
+                    3) VLLM_MAX_MODEL_LEN=131072;;
+                    *) VLLM_MAX_MODEL_LEN=65536;;
+                esac
+            fi
         else
             # Interactive path
             case "$LLM_PROVIDER" in

@@ -543,6 +543,46 @@ http {
     #__CRAWL4AI__    }
     #__CRAWL4AI__}
 
+    #__LITELLM__# LiteLLM — agmind-litellm.local (port 80)
+    #__LITELLM__server {
+    #__LITELLM__    listen 80;
+    #__LITELLM__    server_name agmind-litellm.local;
+    #__LITELLM__
+    #__LITELLM__    location / {
+    #__LITELLM__        set $u_litellm_local http://litellm:4000;
+    #__LITELLM__        proxy_pass $u_litellm_local;
+    #__LITELLM__        proxy_http_version 1.1;
+    #__LITELLM__        proxy_set_header Host $host;
+    #__LITELLM__        proxy_set_header X-Real-IP $remote_addr;
+    #__LITELLM__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #__LITELLM__        proxy_set_header X-Forwarded-Proto $scheme;
+    #__LITELLM__    }
+    #__LITELLM__}
+
+    #__MINIO__# MinIO — agmind-storage.local (port 80 -> minio console 9001)
+    #__MINIO__server {
+    #__MINIO__    listen 80;
+    #__MINIO__    server_name agmind-storage.local;
+    #__MINIO__
+    #__MINIO__    client_max_body_size 5G;  # MinIO uploads
+    #__MINIO__
+    #__MINIO__    # Console UI (port 9001 inside container)
+    #__MINIO__    location / {
+    #__MINIO__        set $u_minio_console http://minio:9001;
+    #__MINIO__        proxy_pass $u_minio_console;
+    #__MINIO__        proxy_http_version 1.1;
+    #__MINIO__        proxy_set_header Host $host;
+    #__MINIO__        proxy_set_header X-Real-IP $remote_addr;
+    #__MINIO__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #__MINIO__        proxy_set_header X-Forwarded-Proto $scheme;
+    #__MINIO__        proxy_set_header Upgrade $http_upgrade;
+    #__MINIO__        proxy_set_header Connection "upgrade";
+    #__MINIO__        proxy_read_timeout 600s;
+    #__MINIO__        proxy_send_timeout 600s;
+    #__MINIO__        chunked_transfer_encoding off;
+    #__MINIO__    }
+    #__MINIO__}
+
     #__RAGFLOW__# RAGFlow — agmind-rag.local
     #__RAGFLOW__server {
     #__RAGFLOW__    listen 80;

@@ -277,6 +277,11 @@ NVIDIA_DRIVER_CAPABILITIES=compute,utility
 NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
 # Prometheus peer scrape target (Plan 02-05)
 NODE_EXPORTER_VERSION=${NODE_EXPORTER_VERSION:-v1.11.1}
+# Portainer agent — registered в master Portainer phase_deploy_peer'ом.
+# AGENT_SECRET shared с master через persistent file
+# (lib/config.sh::_PORTAINER_AGENT_SECRET).
+PORTAINER_AGENT_SECRET=${PORTAINER_AGENT_SECRET:-}
+PORTAINER_AGENT_VERSION=${PORTAINER_AGENT_VERSION:-2.36.0}
 EOF
 }
 
@@ -497,9 +502,13 @@ phase_deploy_peer() {
     _deploy_peer_systemd "$peer_ip" "$peer_user" "$ssh_opts" "$peer_dir" \
         || log_warn "Peer systemd unit install had issues (non-fatal — vLLM restart policy still covers reboot)"
 
-    # 10. Persist success
+    # 10. Persist success — peer Portainer endpoint данные уйдут в credentials.txt
+    # для ручного добавления через UI master Portainer (см. _generate_credentials).
     cluster_status_update "running" 2>/dev/null || true
     log_success "vLLM deployed and healthy on peer ${peer_ip}"
+    log_info "Peer Portainer Agent listens on ${peer_ip}:9001 — добавь руками через UI:"
+    log_info "  https://$(_get_ip):${PORTAINER_PORT:-9443} → Environments → Add → Agent"
+    log_info "  Endpoint данные + AGENT_SECRET записаны в ${INSTALL_DIR}/credentials.txt"
 }
 
 # Install gpu-metrics.sh + cron on peer host so node-exporter textfile collector
@@ -1248,6 +1257,28 @@ _save_credentials() {
                 echo "    2. sudo docker compose restart alertmanager"
                 ;;
         esac
+
+        # Portainer peer endpoint — manual UI add (cluster master + peer setup)
+        local _peer_ip="${PEER_IP:-}"
+        if [[ -z "$_peer_ip" ]] && command -v jq >/dev/null 2>&1 \
+                && [[ -f "${AGMIND_CLUSTER_STATE_FILE:-/var/lib/agmind/state/cluster.json}" ]]; then
+            _peer_ip="$(jq -r '.peer_ip // empty' "${AGMIND_CLUSTER_STATE_FILE:-/var/lib/agmind/state/cluster.json}" 2>/dev/null || true)"
+        fi
+        if [[ -n "$_peer_ip" ]]; then
+            local _agent_secret_file="${INSTALL_DIR}/.secrets/portainer_agent_secret"
+            local _agent_secret="(см. ${_agent_secret_file})"
+            [[ -s "$_agent_secret_file" ]] && _agent_secret="$(cat "$_agent_secret_file")"
+            echo ""
+            echo "=== Portainer Peer Endpoint (ручное добавление через UI master Portainer) ==="
+            echo "  Master Portainer:    https://$(_get_ip):${PORTAINER_PORT:-9443}"
+            echo "  → Environments → Add environment → Agent → Start Wizard:"
+            echo "    Name:              spark-peer"
+            echo "    Environment URL:   ${_peer_ip}:9001"
+            echo "    Public IP:         ${_peer_ip}"
+            echo "    AGENT_SECRET:      ${_agent_secret}"
+            echo "  (SECRET уже выставлен на peer agent — нужен только для проверки соответствия)"
+        fi
+
         echo ""
         echo "# ---"
         echo "# ВНИМАНИЕ: Эти пароли актуальны на момент установки."
@@ -1500,98 +1531,133 @@ _verify_post_install_smoke() {
 
 _show_final_summary() {
     local ip; ip="$(_get_ip)"
-    local url="http://${ip}"
     local owui_pass=""
     if [[ -f "${INSTALL_DIR}/.admin_password" ]]; then owui_pass="$(cat "${INSTALL_DIR}/.admin_password")"; fi
+    local admin_pass="${owui_pass:-см. credentials.txt}"
 
     local container_count
     container_count="$(docker ps --filter "name=agmind-" -q 2>/dev/null | wc -l | tr -d ' ')"
 
+    local sep="  +--------------------------------------------------------------+"
+    hdr() { echo -e "\n  ${BOLD}${CYAN}── $1 ──${NC}"; }
+
     echo ""
     echo -e "${CYAN}${BOLD}"
-    echo "  +--------------------------------------------------+"
-    echo "  |            AGMind — Установка завершена           |"
-    echo "  +--------------------------------------------------+"
+    echo "  +==============================================================+"
+    echo "  |              AGMind — Установка завершена                    |"
+    echo "  +==============================================================+"
     echo -e "${NC}"
-    echo -e "  ${BOLD}Dify App:${NC}        ${GREEN}${url}${NC}"
-    echo -e "  ${BOLD}Dify Console:${NC}    ${GREEN}http://agmind-dify.local${NC}"
-    echo -e "    Login:         admin@agmind.ai"
-    echo -e "    Pass:          ${owui_pass:-см. credentials.txt}"
-    if [[ "${ENABLE_OPENWEBUI:-false}" == "true" ]]; then
-        echo ""
-        echo -e "  ${BOLD}Open WebUI:${NC}      ${GREEN}http://agmind-chat.local${NC}"
-        echo -e "    Login:         admin@agmind.ai"
-        echo -e "    Pass:          ${owui_pass:-см. credentials.txt}"
+
+    # ── 1. ОСНОВНОЙ ВХОД ──
+    hdr "ВХОД"
+    echo -e "  Dify App           ${GREEN}http://agmind-dify.local${NC}      (или http://${ip})"
+    echo -e "  Login              ${BOLD}admin@agmind.ai${NC}"
+    echo -e "  Password           ${BOLD}${admin_pass}${NC}"
+
+    # ── 2. ИНТЕРФЕЙСЫ ──
+    local has_ui=false
+    if [[ "${ENABLE_OPENWEBUI:-false}" == "true" \
+       || "${ENABLE_RAGFLOW:-false}"   == "true" \
+       || "${ENABLE_DBGPT:-false}"     == "true" \
+       || "${ENABLE_NOTEBOOK:-false}"  == "true" \
+       || "${ENABLE_SEARXNG:-false}"   == "true" \
+       || "${ENABLE_CRAWL4AI:-false}"  == "true" ]]; then
+        has_ui=true
     fi
-    echo ""
-    if [[ "${ENABLE_LITELLM:-true}" == "true" ]]; then
-        echo -e "  ${BOLD}LiteLLM UI:${NC}      ${GREEN}http://${ip}:4001/ui/${NC}"
-    fi
-    if [[ "${ENABLE_DBGPT:-false}" == "true" ]]; then
-        echo -e "  ${BOLD}DB-GPT:${NC}          ${GREEN}http://agmind-dbgpt.local${NC}"
-    fi
-    if [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]]; then
-        echo -e "  ${BOLD}Open Notebook:${NC}   ${GREEN}http://agmind-notebook.local${NC}"
-    fi
-    if [[ "${ENABLE_SEARXNG:-false}" == "true" ]]; then
-        echo -e "  ${BOLD}SearXNG:${NC}         ${GREEN}http://agmind-search.local${NC}"
-    fi
-    if [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]]; then
-        echo -e "  ${BOLD}Crawl4AI:${NC}        ${GREEN}http://agmind-crawl.local/docs${NC}"
-    fi
-    if [[ "${ENABLE_MINIO:-false}" == "true" ]]; then
-        echo -e "  ${BOLD}MinIO:${NC}           ${GREEN}http://${ip}:9001${NC}"
-        echo -e "    (credentials in ${INSTALL_DIR}/credentials.txt)"
-    fi
-    if [[ "${ENABLE_RAGFLOW:-false}" == "true" ]]; then
-        echo ""
-        echo -e "  ${BOLD}RAGFlow UI:${NC}      ${GREEN}http://agmind-rag.local${NC} (или http://${ip}:${EXPOSE_RAGFLOW_PORT:-9380})"
-        echo -e "    ${YELLOW}При первом входе:${NC} зарегистрируй admin вручную через UI"
-        echo -e "    ${YELLOW}После регистрации:${NC} Profile → API → API Keys → Create"
-        echo -e "    Прописать в .env: RAGFLOW_API_KEY=<ключ> + RAGFLOW_DATASET_ID=<из URL датасета>"
-        echo -e "    Затем в Dify Marketplace install ${BOLD}witmeng/ragflow-api${NC} плагин"
-        echo -e "    Диагностика: ${CYAN}agmind ragflow status${NC} / ${CYAN}agmind ragflow query <text>${NC}"
-    fi
-    if [[ "${MONITORING_MODE:-}" == "local" ]]; then
-        echo ""
-        echo -e "  ${BOLD}Grafana:${NC}         ${GREEN}http://${ip}:${GRAFANA_PORT:-3001}${NC}"
-        echo -e "    Login:         admin"
-        echo -e "    Pass:          ${GRAFANA_ADMIN_PASSWORD:-admin}"
-        echo ""
-        echo -e "  ${BOLD}Portainer:${NC}       ${GREEN}https://${ip}:${PORTAINER_PORT:-9443}${NC}"
-        echo -e "    (создайте admin при первом входе)"
-        if [[ "${ADMIN_UI_OPEN:-false}" != "true" ]]; then
-            echo ""
-            echo -e "  ${YELLOW}${BOLD}Portainer доступен только через SSH tunnel:${NC}"
-            echo -e "  ${CYAN}ssh -L 9443:127.0.0.1:9443 $(whoami)@${ip}${NC}"
-            echo -e "  Затем откройте: ${GREEN}https://localhost:9443${NC}"
+    if [[ "$has_ui" == "true" ]]; then
+        hdr "ИНТЕРФЕЙСЫ"
+        if [[ "${ENABLE_OPENWEBUI:-false}" == "true" ]]; then
+            echo -e "  Open WebUI         ${GREEN}http://agmind-chat.local${NC}      (тот же admin)"
+        fi
+        if [[ "${ENABLE_RAGFLOW:-false}"   == "true" ]]; then
+            echo -e "  RAGFlow            ${GREEN}http://agmind-rag.local${NC}       (регистрация при первом входе)"
+        fi
+        if [[ "${ENABLE_DBGPT:-false}"     == "true" ]]; then
+            echo -e "  DB-GPT             ${GREEN}http://agmind-dbgpt.local${NC}"
+        fi
+        if [[ "${ENABLE_NOTEBOOK:-false}"  == "true" ]]; then
+            echo -e "  Open Notebook      ${GREEN}http://agmind-notebook.local${NC}"
+        fi
+        if [[ "${ENABLE_SEARXNG:-false}"   == "true" ]]; then
+            echo -e "  SearXNG            ${GREEN}http://agmind-search.local${NC}"
+        fi
+        if [[ "${ENABLE_CRAWL4AI:-false}"  == "true" ]]; then
+            echo -e "  Crawl4AI           ${GREEN}http://agmind-crawl.local/docs${NC}"
         fi
     fi
-    echo ""
+
+    # ── 3. ИНФРАСТРУКТУРА ──
+    if [[ "${ENABLE_LITELLM:-true}" == "true" || "${ENABLE_MINIO:-false}" == "true" ]]; then
+        hdr "ИНФРАСТРУКТУРА"
+        if [[ "${ENABLE_LITELLM:-true}" == "true" ]]; then
+            echo -e "  LiteLLM Gateway    ${GREEN}http://agmind-litellm.local${NC}   (или http://${ip}:${EXPOSE_LITELLM_PORT:-4001}/ui/)"
+        fi
+        if [[ "${ENABLE_MINIO:-false}" == "true" ]]; then
+            echo -e "  MinIO Console      ${GREEN}http://agmind-storage.local${NC}   (creds в credentials.txt)"
+        fi
+    fi
+
+    # ── 4. МОНИТОРИНГ ──
+    if [[ "${MONITORING_MODE:-}" == "local" ]]; then
+        hdr "МОНИТОРИНГ"
+        echo -e "  Grafana            ${GREEN}http://${ip}:${GRAFANA_PORT:-3001}${NC}"
+        echo -e "    Login            ${BOLD}admin${NC}"
+        echo -e "    Password         ${BOLD}${GRAFANA_ADMIN_PASSWORD:-admin}${NC}"
+        echo -e "  Portainer          ${GREEN}https://${ip}:${PORTAINER_PORT:-9443}${NC}   (создать admin при первом входе)"
+        if [[ "${ADMIN_UI_OPEN:-false}" != "true" ]]; then
+            echo -e "    ${YELLOW}LAN-only:${NC} SSH tunnel: ${CYAN}ssh -L 9443:127.0.0.1:9443 $(whoami)@${ip}${NC}"
+        fi
+    fi
+
+    # ── 5. УПРАВЛЕНИЕ ──
+    hdr "УПРАВЛЕНИЕ"
+    echo -e "  Plugin daemon      ${GREEN}running${NC}    (нужен для Dify плагинов, в т.ч. ragflow-api)"
+    echo -e "    Toggle           ${CYAN}agmind plugin-daemon status|stop|start${NC}"
+    echo -e "    Marketplace      ${CYAN}agmind plugins online|offline|status${NC}    (default: online)"
+    echo -e "  ${YELLOW}!${NC} При stop plugin-daemon перестают работать ВСЕ Dify плагины"
+
+    # ── 6. RAGFLOW (если включён) — отдельная секция, нужны ручные шаги ──
+    if [[ "${ENABLE_RAGFLOW:-false}" == "true" ]]; then
+        hdr "RAGFLOW INTEGRATION (ручная настройка)"
+        echo -e "  1) Открой http://agmind-rag.local — зарегистрируй admin"
+        echo -e "  2) Profile → API → API Keys → Create — скопируй ключ"
+        echo -e "  3) Создай dataset → скопируй ID из URL"
+        echo -e "  4) В .env: ${BOLD}RAGFLOW_API_KEY=...${NC} + ${BOLD}RAGFLOW_DATASET_ID=...${NC}"
+        echo -e "  5) В Dify Marketplace установи плагин ${BOLD}witmeng/ragflow-api${NC}"
+        echo -e "  Диагностика: ${CYAN}agmind ragflow status${NC} | ${CYAN}agmind ragflow query <text>${NC}"
+    fi
+
+    # ── 7. СОСТОЯНИЕ ──
+    hdr "СОСТОЯНИЕ"
+    echo -e "  Профиль            ${DEPLOY_PROFILE:-lan}"
+    echo -e "  LLM                ${LLM_PROVIDER:-vllm} ${VLLM_MODEL:-${LLM_MODEL:-}}"
+    echo -e "  Эмбеддинги         ${EMBED_PROVIDER:-vllm} ${EMBEDDING_MODEL:-bge-m3}"
+    echo -e "  Контейнеры         ${container_count} запущено"
+
     # Service verification results (populated by verify_services)
     if [[ ${#VERIFY_RESULTS[@]} -gt 0 ]]; then
-        echo -e "  ${BOLD}Проверка сервисов:${NC}"
+        echo -e "  Service health:"
         for entry in "${VERIFY_RESULTS[@]}"; do
             IFS='|' read -r name url status <<< "$entry"
             if [[ "$status" == "OK" ]]; then
                 echo -e "    ${GREEN}[OK]${NC}   ${name}"
             else
-                echo -e "    ${RED}[FAIL]${NC} ${name} — проверьте: agmind logs"
+                echo -e "    ${RED}[FAIL]${NC} ${name} — agmind logs ${name}"
             fi
         done
-        echo ""
     fi
-    echo -e "  ${BOLD}Профиль:${NC}         ${DEPLOY_PROFILE:-lan}"
-    echo -e "  ${BOLD}LLM:${NC}             ${LLM_PROVIDER:-ollama} ${LLM_MODEL:-}${VLLM_MODEL:+ (${VLLM_MODEL})}"
-    echo -e "  ${BOLD}Эмбеддинги:${NC}      ${EMBED_PROVIDER:-ollama} ${EMBEDDING_MODEL:-bge-m3}"
-    echo -e "  ${BOLD}Контейнеры:${NC}      ${container_count} запущено"
+
+    # ── 8. ФАЙЛЫ И КОМАНДЫ ──
+    hdr "ФАЙЛЫ И КОМАНДЫ"
+    echo -e "  Credentials        nano ${INSTALL_DIR}/credentials.txt"
+    echo -e "  Логи установки     ${INSTALL_DIR}/install.log"
+    echo -e "  Документация       ${INSTALL_DIR}/docs/"
+    echo -e "  CLI                ${CYAN}agmind status${NC} | ${CYAN}agmind doctor${NC} | ${CYAN}agmind health${NC}"
+    echo -e "  Backup             ${CYAN}sudo agmind backup${NC}"
+    echo -e "  Update             ${CYAN}sudo agmind update${NC}"
+
     echo ""
-    echo -e "  ${BOLD}Credentials:${NC}     nano ${INSTALL_DIR}/credentials.txt"
-    echo -e "  ${BOLD}Логи:${NC}            ${INSTALL_DIR}/install.log"
-    echo -e "  ${BOLD}CLI:${NC}             agmind status | agmind health"
-    echo -e "  ${BOLD}Документация:${NC}    ${INSTALL_DIR}/docs/  (citations, alerts, docling)"
-    echo ""
-    echo -e "  +--------------------------------------------------+"
+    echo -e "${CYAN}${BOLD}${sep}${NC}"
     echo ""
 }
 
