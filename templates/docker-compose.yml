@@ -1477,7 +1477,7 @@ services:
 
   ragflow:
     <<: *security-defaults
-    image: ${RAGFLOW_IMAGE:-ar2r223/ragflow-spark@sha256:bc9a3e329b1927d3e4e905bfdd82e35161b1a7a3112c52772bf10f6f03263bc8}
+    image: ${RAGFLOW_IMAGE:-ar2r223/ragflow-spark@sha256:ddc27080cb2a555343866c96a2c36f456cf90eababee8ac8e9642f2701dbad6d}
     container_name: agmind-ragflow
     restart: unless-stopped
     mem_limit: ${RAGFLOW_MEM_LIMIT:-8g}
