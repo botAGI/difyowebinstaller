@@ -265,12 +265,21 @@ check_dockerhub_latest() {
     local suffix=""
     if [[ "$current" == *-alpine* ]]; then suffix="-alpine"; fi
 
-    # Build Docker Hub URL
+    # Build Docker Hub URL.
+    # name= filter — для variant-suffix'ов (alpine/distroless) Docker Hub возвращает
+    # 50 latest БЕЗ alpine-вариантов (они "медленнее обновляются" в last_updated).
+    # Без фильтра скрипт ловит "could not fetch" для nginx/redis/postgres-alpine.
+    local name_filter=""
+    if [[ -n "$suffix" ]]; then
+        # strip leading dash: "-alpine" → "alpine"
+        name_filter="&name=${suffix#-}"
+    fi
+
     local url
     if [[ "$repo" == */* ]]; then
-        url="https://hub.docker.com/v2/repositories/${repo}/tags?page_size=50&ordering=last_updated"
+        url="https://hub.docker.com/v2/repositories/${repo}/tags?page_size=100&ordering=last_updated${name_filter}"
     else
-        url="https://hub.docker.com/v2/repositories/library/${repo}/tags?page_size=50&ordering=last_updated"
+        url="https://hub.docker.com/v2/repositories/library/${repo}/tags?page_size=100&ordering=last_updated${name_filter}"
     fi
 
     curl -sf --max-time 15 "$url" \
@@ -280,7 +289,8 @@ import sys, json, re
 data = json.load(sys.stdin)
 suffix = '${suffix}'
 current = '${current}'
-skip = {'rc', 'beta', 'alpha', 'dev', 'test', 'latest', 'slim', 'bullseye', 'bookworm', 'jammy', 'noble', 'cicd', 'fips'}
+skip = {'rc', 'beta', 'alpha', 'dev', 'test', 'latest', 'slim', 'bullseye', 'bookworm', 'jammy', 'noble', 'cicd', 'fips',
+        'ppc64le', 'amd64', 's390x', 'arm32v7', 'i386', 'windowsservercore', 'nanoserver', 'linux-'}
 
 # MinIO/MC style timestamp tags: RELEASE.YYYY-MM-DDTHH-MM-SSZ exactly.
 # Strict regex: НЕ ловить '-cpuv1', '-cicd', '-fips' и прочие variant-suffixes
@@ -515,8 +525,10 @@ check_component() {
     fi
 
     if [[ -n "$docker_image" ]]; then
-        verify_arm64_manifest "$docker_image" "$report_latest"
-        local arm_rc=$?
+        # set -e защита: verify_arm64_manifest exit'ит non-zero под set -e убивает скрипт.
+        # `|| arm_rc=$?` ловит exit код без падения.
+        local arm_rc=0
+        verify_arm64_manifest "$docker_image" "$report_latest" || arm_rc=$?
         case $arm_rc in
             0)
                 # arm64 confirmed — proceed with normal classification
