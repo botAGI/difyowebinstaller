@@ -143,10 +143,11 @@ sudo NON_INTERACTIVE=true \
 
 ### RAGFlow Integration
 
-- **RAGFlow v0.24.0** — deep document parsing + retrieval, image
-  `ar2r223/ragflow-spark:v0.24.0` (built from
-  `HendrikSchoettle/ragflow-dgx-spark` — ONNX Runtime 1.21.1 GPU wheel for
-  SM_121, multilingual OCR, file metadata in ES chunks).
+- **RAGFlow v0.24.1-spark** — deep document parsing + retrieval, image
+  `ar2r223/ragflow-spark:v0.24.1-spark` (cherry-picked TitleChunker /
+  TokenChunker / 7 ingestion templates from upstream main + multilingual OCR
+  Latin/Cyrillic/Chinese, file metadata in ES chunks, AVIF, Russian VLM
+  prompts for image describe).
 - **Dify ↔ RAGFlow** via `witmeng/ragflow-api` plugin from Dify Marketplace
   (8K+ installs).
 - **Storage:** MySQL + Elasticsearch 9.x + MinIO (S3-compatible).
@@ -514,15 +515,16 @@ Docling (5-page arxiv PDF, warm): **6.04s**, 0.32s/page, ~1.6 GiB GPU memory.
 
 ## 🗺 Roadmap & Status
 
-- **v3.0.1** _(current)_ — mDNS hardening, dual-Spark cluster, master/worker
-  wizard, NAT-on-demand peer, Portainer peer agent.
-- **2026-04-26** — RAGFlow v0.24.0 integrated via DockerHub
-  `ar2r223/ragflow-spark`.
+- **v3.0.2** _(current)_ — RAGFlow upgrade to `v0.24.1-spark` (TitleChunker /
+  TokenChunker + 7 ingestion templates + Russian VLM prompts), Pipeline
+  framework patches.
+- **v3.0.1** — mDNS hardening, dual-Spark cluster, master/worker wizard,
+  NAT-on-demand peer, Portainer peer agent.
+- **2026-04-26** — RAGFlow integrated via DockerHub `ar2r223/ragflow-spark`.
 - **2026-04-25** — Yellow-zone version bumps (7/8 components arm64
   re-verified). x86_64 path retired.
 - **Next** — TUI in `agmind update` (toggle new tools introduced in updates),
-  AGmind workspace plugin (waifu fork), pipeline templates stash,
-  AGmind Lawyer / Engineer / Medical product lines (see `.planning/`).
+  AGmind workspace plugin (waifu fork), pipeline templates stash.
 
 ---
 
