@@ -70,13 +70,17 @@ groups:
   - name: agmind_host_memory_alerts
     rules:
       - alert: HostMemoryLow
-        expr: (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 < 10
+        # Absolute threshold (4 GiB) вместо процентного 10%.
+        # Причина: на GB10 unified memory vLLM по дизайну держит 80-110 GiB как
+        # VRAM (steady state), процентный порог даёт false-positive на peer Spark
+        # с активной gemma-4-26B. Real OOM imminent ловим когда <4 GiB available.
+        expr: node_memory_MemAvailable_bytes < 4 * 1024 * 1024 * 1024
         for: 3m
         labels:
           severity: critical
         annotations:
-          summary: "Host RAM below 10% free"
-          description: "Host has only {{ $value | humanize }}% RAM available. OOM imminent on DGX Spark unified memory."
+          summary: "Host RAM below 4 GiB free"
+          description: "Host {{ $labels.instance }} has only {{ $value | humanize1024 }}B RAM available. OOM imminent — даже на DGX Spark unified memory это критично."
 
       - alert: HostSwapHigh
         expr: ((node_memory_SwapTotal_bytes - node_memory_SwapFree_bytes) / node_memory_SwapTotal_bytes) * 100 > 90 and node_memory_SwapTotal_bytes > 0
@@ -143,16 +147,19 @@ groups:
 
   # BACKLOG #999.7 — RAGFlow-specific alerts. ContainerDown/HighMemoryUsage уже покрывают
   # базовый health через container_* metrics; это RAGFlow-specific сигналы.
+  # RAGFlow API сам не имеет /metrics endpoint — health через container_* (Docker) +
+  # ES exporter (heap, queries, cluster health). Если ES exporter down — это сигнал
+  # что либо exporter упал, либо ES упал (exporter не может auth'иться).
   - name: agmind_ragflow_alerts
     rules:
-      - alert: RAGFlowAPIDown
-        expr: up{job="ragflow"} == 0
+      - alert: RAGFlowESDown
+        expr: up{job="ragflow-es"} == 0
         for: 5m
         labels:
           severity: critical
         annotations:
-          summary: "RAGFlow API unreachable"
-          description: "Prometheus не может scrape http://agmind-ragflow:9380. Возможно ES/MySQL upstream упал — agmind ragflow status."
+          summary: "RAGFlow Elasticsearch metrics unreachable"
+          description: "Prometheus не может scrape ragflow-es-exporter:9114. Либо exporter упал, либо ES upstream упал — agmind ragflow es-health."
 
       - alert: RAGFlowESYellow
         expr: elasticsearch_cluster_health_status{color="yellow"} == 1
