@@ -30,7 +30,8 @@ sudo /opt/agmind/scripts/update.sh --auto
 
 ## Version Compatibility
 
-Always check [COMPATIBILITY.md](https://github.com/agmind/agmind-installer/blob/main/COMPATIBILITY.md) before upgrading.
+All component versions are pinned in `templates/versions.env`. Run
+`bash tests/compose/test_image_tags_exist.sh` to validate arm64 manifests.
 
 ### Known Constraints
 
