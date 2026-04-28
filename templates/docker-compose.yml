@@ -1481,6 +1481,34 @@ services:
     networks:
       - agmind-backend
 
+  # ==================== RAGFlow ES Prometheus exporter (ragflow profile) ====================
+  # Sidecar для метрик Elasticsearch: heap, indices, cluster health, query latency.
+  # Distroless image — нет shell, healthcheck via Prometheus `up{job="ragflow-es"}`.
+  ragflow_es_exporter:
+    <<: *security-defaults
+    image: quay.io/prometheuscommunity/elasticsearch-exporter:${ELASTICSEARCH_EXPORTER_VERSION:-v1.9.0}
+    container_name: agmind-ragflow-es-exporter
+    restart: unless-stopped
+    mem_limit: ${ES_EXPORTER_MEM_LIMIT:-128m}
+    profiles:
+      - ragflow
+    environment:
+      - ES_USERNAME=elastic
+      - ES_PASSWORD=${RAGFLOW_ES_PASSWORD:-}
+    command:
+      - '--es.uri=http://ragflow_es01:9200'
+      - '--es.all'
+      - '--es.indices'
+      - '--es.indices_settings'
+      - '--es.shards'
+    expose:
+      - "9114"
+    depends_on:
+      ragflow_es01:
+        condition: service_healthy
+    networks:
+      - agmind-backend
+
   ragflow:
     <<: *security-defaults
     image: ${RAGFLOW_IMAGE:-ar2r223/ragflow-spark@sha256:4a0eff2da9bf1ca95d20c4345e2217397a6f40e3e9665105db9d68b4998d6dbe}
