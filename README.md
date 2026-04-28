@@ -155,14 +155,14 @@ sudo NON_INTERACTIVE=true \
 
 ### Monitoring & Ops
 
-- **Prometheus + Grafana** — 5 dashboards (overview, containers, GPU master,
-  GPU worker, logs). Custom textfile collector for `agmind_gpu_*` metrics
-  (NVML returns N/A on GB10 unified memory — `dcgm-exporter` does **not**
-  work).
+- **Prometheus + Grafana** — 10 dashboards (overview, containers, GPU master,
+  GPU worker, peer-worker, logs, alerts, audit, RAG, RAGFlow). Custom textfile
+  collector for `agmind_gpu_*` metrics (NVML returns N/A on GB10 unified
+  memory — `dcgm-exporter` does **not** work).
 - **Loki + Grafana Alloy** (Promtail → Alloy migration, 2026-04). Searchable
   container logs.
 - **Alertmanager** — Telegram / webhook channels.
-- **Portainer 2.36.0** — visual container management (master + auto-deployed
+- **Portainer 2.39.1** — visual container management (master + auto-deployed
   agent on peer Spark).
 - **fail2ban + UFW** — bruteforce protection, LAN-only firewall by default.
 
@@ -219,7 +219,7 @@ sudo NON_INTERACTIVE=true \
        dual-Spark   → peer 192.168.100.2:8000, dedicated GPU, 128K default
 
   ─── Monitoring (always on) ────────────────────────────────────────────────
-   Prometheus :9090 → Grafana :3001 (5 dashboards)
+   Prometheus :9090 → Grafana :3001 (10 dashboards)
    Loki + Grafana Alloy (Promtail migrated 2026-04)
    Alertmanager → Telegram / Webhook
    Portainer :9443 — master + auto-deployed agent on peer:9001
@@ -522,7 +522,7 @@ Docling (5-page arxiv PDF, warm): **6.04s**, 0.32s/page, ~1.6 GiB GPU memory.
 - **2026-04-25** — Yellow-zone version bumps (7/8 components arm64
   re-verified). x86_64 path retired.
 - **Next** — TUI in `agmind update` (toggle new tools introduced in updates),
-  AGmind workspace plugin (waifu fork), pipeline templates stash.
+  native AGmind chat plugin for Dify (file upload → KB, slash commands).
 
 ---
 
