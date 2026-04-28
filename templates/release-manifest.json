@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "version": "v2.4.0",
-  "release_date": "2026-04-09",
+  "version": "v3.0.2",
+  "release_date": "2026-04-28",
   "min_installer_version": "1.0.0",
   "images": {
     "dify-api": {
@@ -27,7 +27,7 @@
     "open-webui": {
       "registry": "ghcr.io",
       "image": "open-webui/open-webui",
-      "tag": "v0.8.12",
+      "tag": "v0.9.2",
       "digest": "",
       "platforms": [
         "linux/amd64",
@@ -37,7 +37,7 @@
     "ollama": {
       "registry": "docker.io",
       "image": "ollama/ollama",
-      "tag": "0.6.2",
+      "tag": "0.21.2",
       "digest": "",
       "platforms": [
         "linux/amd64",
@@ -47,7 +47,7 @@
     "postgres": {
       "registry": "docker.io",
       "image": "postgres",
-      "tag": "15-alpine",
+      "tag": "16-alpine3.23",
       "digest": "",
       "platforms": [
         "linux/amd64",
@@ -57,7 +57,7 @@
     "redis": {
       "registry": "docker.io",
       "image": "redis",
-      "tag": "6-alpine",
+      "tag": "7.4.8-alpine",
       "digest": "",
       "platforms": [
         "linux/amd64",
@@ -67,7 +67,7 @@
     "weaviate": {
       "registry": "docker.io",
       "image": "semitechnologies/weaviate",
-      "tag": "1.27.0",
+      "tag": "1.37.2",
       "digest": "",
       "platforms": [
         "linux/amd64",
@@ -106,7 +106,7 @@
     "nginx": {
       "registry": "docker.io",
       "image": "nginx",
-      "tag": "1.27.3-alpine",
+      "tag": "1.30.0-alpine",
       "digest": "",
       "platforms": [
         "linux/amd64",
@@ -145,7 +145,7 @@
     "authelia": {
       "registry": "docker.io",
       "image": "authelia/authelia",
-      "tag": "4.38",
+      "tag": "4.39.19",
       "digest": "",
       "platforms": [
         "linux/amd64",
@@ -155,7 +155,7 @@
     "grafana": {
       "registry": "docker.io",
       "image": "grafana/grafana",
-      "tag": "12.4.1",
+      "tag": "12.4.3",
       "digest": "",
       "platforms": [
         "linux/amd64",
@@ -165,7 +165,7 @@
     "portainer": {
       "registry": "docker.io",
       "image": "portainer/portainer-ce",
-      "tag": "2.21.4",
+      "tag": "2.39.1",
       "digest": "",
       "platforms": [
         "linux/amd64",
@@ -175,7 +175,7 @@
     "node-exporter": {
       "registry": "docker.io",
       "image": "prom/node-exporter",
-      "tag": "v1.8.2",
+      "tag": "v1.11.1",
       "digest": "",
       "platforms": [
         "linux/amd64",
@@ -205,7 +205,7 @@
     "loki": {
       "registry": "docker.io",
       "image": "grafana/loki",
-      "tag": "3.3.2",
+      "tag": "3.6.10",
       "digest": "",
       "platforms": [
         "linux/amd64",
@@ -225,7 +225,7 @@
     "alertmanager": {
       "registry": "docker.io",
       "image": "prom/alertmanager",
-      "tag": "v0.27.0",
+      "tag": "v0.32.0",
       "digest": "",
       "platforms": [
         "linux/amd64",
@@ -235,7 +235,7 @@
     "vllm": {
       "registry": "docker.io",
       "image": "vllm/vllm-openai",
-      "tag": "v0.18.1",
+      "tag": "v0.19.0",
       "digest": "",
       "platforms": [
         "linux/amd64"
