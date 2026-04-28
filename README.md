@@ -241,15 +241,13 @@ sudo NON_INTERACTIVE=true \
 ```
 agmind/
 ├── install.sh                   # Main orchestrator (11 phases)
-├── lib/                         # 15 modules: wizard, config, compose, health, security, detect, …
+├── lib/                         # 16 modules: wizard, config, compose, health, security, detect, …
 ├── scripts/                     # Day-2 CLI: agmind, update, backup, restore, mdns-status, docling-bench, gpu-metrics
 ├── templates/                   # docker-compose.yml, docker-compose.worker.yml, nginx.conf, env templates, versions.env
 ├── monitoring/                  # Prometheus, Grafana dashboards, Loki, Alloy, Alertmanager
-├── pipelines/                   # Universal Auto-Router DSL (Dify workflows + docling-serve)
-├── dify-workflows/              # KB / workflow templates stash
-├── plugins/                     # Forked / patched Dify plugins
+├── tests/                       # unit + integration + compose manifest tests (run via tests/run_all.sh)
 ├── docs/                        # Detailed documentation
-└── branding/                    # Logo + theme (architecture.svg outdated, see ASCII above)
+└── branding/                    # Logo + theme
 ```
 
 ### Docker Networks

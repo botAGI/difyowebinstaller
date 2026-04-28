@@ -17,6 +17,7 @@ __pycache__/
 .planning/
 /dify-workflows/
 /workflows/
+_data_staging/
 CLAUDE.md
 SPEC.md
 references/

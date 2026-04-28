@@ -155,8 +155,7 @@ manifest=$(jq -n \
             weaviate_min_version: "1.27.0",
             docker_min_version: "24.0",
             compose_min_version: "2.20"
-        },
-        changelog_url: "https://github.com/botAGI/AGmind/blob/main/CHANGELOG.md"
+        }
     }')
 
 echo "$manifest" > "$MANIFEST_FILE"

@@ -69,4 +69,5 @@ See [Quickstart Guide](installation/quickstart) for detailed instructions.
 
 ## Version Compatibility
 
-See [COMPATIBILITY.md](https://github.com/agmind/agmind-installer/blob/main/COMPATIBILITY.md) for the tested component version matrix.
+All component versions are pinned in `templates/versions.env` with verified
+arm64 manifests. Run `bash tests/compose/test_image_tags_exist.sh` to validate.
