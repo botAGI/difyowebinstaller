@@ -805,9 +805,15 @@ services:
     # Docling is now standalone (agmind-docling) — plugin_daemon handles only
     # lightweight python plugins (openai_api_compatible, etc.).
     mem_limit: ${PLUGIN_DAEMON_MEM_LIMIT:-4g}
+    # Docker embedded DNS (127.0.0.11) дропает большие DNS ответы для CDN
+    # (kunlunaq.com / xethub HF LFS) — см. CLAUDE.md §8 "Docker embedded DNS".
+    # Hardcoded IP — workaround. CDN ротирует IP каждые недели, обновлять снапшотом
+    # `dig +short A <host>`. Last verified 2026-04-28.
+    # TODO: structural fix — `dns: [1.1.1.1, 8.8.8.8]` для plugin_daemon, тогда
+    # extra_hosts не нужен (большие ответы пройдут через upstream resolver).
     extra_hosts:
       - "cdn-lfs-cn-1.modelscope.cn:163.181.225.49"
-      - "huggingface.co:3.174.113.115"
+      - "huggingface.co:52.222.136.92"
       - "cas-bridge.xethub.hf.co:3.164.68.28"
     environment:
       <<: *shared-env
