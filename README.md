@@ -67,9 +67,9 @@ private AI stack on DGX Spark hardware — no vendor lock-in, no cloud egress.
 |-----------|----------|-------|
 | **Platform** | NVIDIA DGX Spark (GB10) or equivalent aarch64 + Blackwell | x86_64 path removed 2026-04-25 |
 | **OS** | DGX OS 7.5.0 (Ubuntu 24.04 LTS arm64) | NVIDIA driver 580.142 — **do not upgrade past 580.x** |
-| **CPU** | 20-core Grace (ARM Neoverse V2) | — |
-| **Memory** | 128 GB LPDDR5X unified (CPU+GPU shared) | AGMind budgets 121 → 85 GiB for containers; 35 GiB reserved for kernel/swap |
-| **GPU** | Blackwell SM_121 (60 SM, 4096 CUDA cores) | MIG **not available** on GB10. FP8 broken in FlashInfer — use `VLLM_ATTENTION_BACKEND=TRITON_ATTN` |
+| **CPU** | 20-core ARM (10× Cortex-X925 + 10× Cortex-A725, MediaTek-co-developed) | Compute capability `sm_121` exposed via SoC architecture |
+| **Memory** | 128 GB LPDDR5X unified (CPU+GPU shared), 273 GB/s bandwidth | AGMind budgets 121 → 85 GiB for containers; 35 GiB reserved for kernel/swap |
+| **GPU** | Blackwell, 48 SM / 6144 CUDA cores, 5th-gen Tensor Cores with FP4 | MIG **not available** on GB10. FP8 broken in FlashInfer — use `VLLM_ATTENTION_BACKEND=TRITON_ATTN` |
 | **Disk** | 100 GB+ free on `/` | gemma-4 weights ~52 GB, container images ~30 GB |
 | **Network** | Ethernet for LAN; optional QSFP 200G DAC for dual-Spark | mDNS via avahi requires UDP/5353 free |
 | **Docker** | 29.0+ with NVIDIA Container Toolkit | install.sh installs both |
@@ -585,9 +585,9 @@ sudo bash install.sh
 |----------|-----------|-----------|
 | Платформа | NVIDIA DGX Spark (GB10) | x86_64 удалён 2026-04-25 |
 | ОС | DGX OS 7.5.0 (Ubuntu 24.04 LTS arm64) | Driver 580.142 — **не обновлять выше 580.x** |
-| CPU | 20-ядерный Grace (ARM Neoverse V2) | — |
-| RAM | 128 GB LPDDR5X unified | AGMind резервирует 121 → 85 GiB |
-| GPU | Blackwell SM_121 (60 SM) | MIG недоступен; FP8 FlashInfer сломан |
+| CPU | 20-ядерный ARM (10× Cortex-X925 + 10× Cortex-A725, MediaTek) | Compute capability `sm_121` |
+| RAM | 128 GB LPDDR5X unified, 273 GB/s | AGMind резервирует 121 → 85 GiB |
+| GPU | Blackwell, 48 SM / 6144 CUDA, 5th-gen Tensor Cores с FP4 | MIG недоступен; FP8 FlashInfer сломан |
 | Диск | 100 GB+ свободно | gemma-4 ~52 GB, образы ~30 GB |
 | Сеть | Ethernet (LAN) + опционально QSFP 200G DAC | mDNS требует UDP/5353 |
 | Docker | 29.0+ с NVIDIA Container Toolkit | install.sh ставит сам |
