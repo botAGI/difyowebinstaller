@@ -13,6 +13,8 @@
 [![Dual Spark](https://img.shields.io/badge/cluster-dual--Spark-purple)](#)
 [![Containers](https://img.shields.io/badge/containers-30%2B-orange)](#)
 
+**Website:** [prem.agmind.dev](https://prem.agmind.dev/)
+
 [Quick Start](#-quick-start) · [Architecture](#-architecture) · [Cluster](#-cluster-dual-spark) · [Operations](#-operations) · [Troubleshooting](#-troubleshooting) · [🇷🇺 Русский](#-русская-документация)
 
 </div>
@@ -549,6 +551,8 @@ Copyright © 2024–2026 AGMind Contributors.
 
 <details>
 <summary><strong>Развернуть полный перевод (click to expand)</strong></summary>
+
+**Сайт:** [prem.agmind.dev](https://prem.agmind.dev/)
 
 ## 📖 Обзор
 
