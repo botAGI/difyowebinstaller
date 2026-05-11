@@ -123,7 +123,26 @@ case "${MOCK_DOCKER_FIXTURE:-healthy}" in
                 printf 'Server Version: 29.0.3\nRuntimes: nvidia runc\n'
                 ;;
             version)
-                echo "Docker version 29.0.3, build abc123"
+                # Handle --format flag same as healthy fixture so docker_version check passes
+                if [[ "${2:-}" == "--format" ]]; then
+                    echo "29.0.3"
+                else
+                    echo "Docker version 29.0.3, build abc123"
+                fi
+                ;;
+            compose)
+                case "${2:-}" in
+                    version)
+                        if [[ "${3:-}" == "--short" ]]; then
+                            echo "v2.27.0"
+                        else
+                            echo "Docker Compose version v2.27.0"
+                        fi
+                        ;;
+                    *)
+                        exit 0
+                        ;;
+                esac
                 ;;
             *)
                 exit 0
