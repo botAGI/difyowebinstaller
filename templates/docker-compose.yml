@@ -634,12 +634,16 @@ services:
     networks:
       - agmind-backend
 
-  # ==================== Milvus (optional 3rd vector store, profile=milvus) ====================
-  # Activated by VECTOR_STORE=milvus в wizard. Reuses agmind-minio для object storage
-  # (auto-pulled через build_compose_profiles в lib/compose.sh, как RAGFlow).
-  # arm64 verified 2026-05-11. Standalone mode: ~6-12 GiB RAM на 1-10M chunks.
-  # Use cases: коллекции >50M chunks, multilingual built-in BM25 (CJK+RU),
-  # клиент уже на Milvus. RAGFlow несовместим (PR #6367 closed) → Dify-only.
+  # ==================== Milvus (EXPERIMENTAL — optional 3rd vector store) ====================
+  # ⚠️ НЕ ГОТОВ К ИСПОЛЬЗОВАНИЮ: blocks определены, но lib/compose.sh::build_compose_profiles
+  # пока НЕ имеет ветки VECTOR_STORE=milvus (auto-pull minio), и в wizard опции нет.
+  # `COMPOSE_PROFILES=milvus docker compose up` упадёт — нужен `COMPOSE_PROFILES=milvus,minio`.
+  # Полная интеграция (build_compose_profiles + wizard + config.sh password gen + health
+  # + backup) — в backlog. Пока эти блоки = заготовка, на fresh install не активируются.
+  # arm64 verified 2026-05-11 (milvusdb/milvus:v2.6.15, quay.io/coreos/etcd:v3.5.25).
+  # Standalone mode: ~6-12 GiB RAM на 1-10M chunks. Use cases когда дойдут руки:
+  # коллекции >50M chunks, multilingual built-in BM25 (CJK+RU), клиент уже на Milvus.
+  # RAGFlow несовместим (PR #6367 closed) → Dify-only.
   milvus-etcd:
     <<: *security-defaults
     image: quay.io/coreos/etcd:${MILVUS_ETCD_VERSION:-v3.5.25}
@@ -1086,12 +1090,15 @@ services:
       - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
       - ./monitoring/peer-offline.yml:/etc/prometheus/peer-offline.yml:ro
       - agmind_prometheus_data:/prometheus
-    # Prometheus image — distroless, нет /bin/sh + wget. CMD-SHELL healthcheck
-    # выдавал «stat /bin/sh: no such file or directory» → контейнер unhealthy
-    # навечно (CLAUDE.md §8 «Distroless exporters»). Disabled — мониторинг
-    # через self-scrape `up{job="prometheus"}`.
+    # prom/prometheus = busybox-based (НЕ distroless) — есть /bin/sh + wget,
+    # CMD-SHELL healthcheck работает. grafana.depends_on.prometheus использует
+    # condition: service_healthy → этот healthcheck обязателен.
     healthcheck:
-      test: ["NONE"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 15s
     networks:
       - agmind-backend
 
@@ -1106,10 +1113,13 @@ services:
       - monitoring
     volumes:
       - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
-    # Distroless image — см. §8. Healthcheck disabled, мониторинг через
-    # `up{job="alertmanager"}` в Prometheus.
+    # prom/alertmanager = busybox-based (НЕ distroless) — CMD-SHELL wget работает.
     healthcheck:
-      test: ["NONE"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9093/-/healthy || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 10s
     networks:
       - agmind-backend
 
@@ -1268,10 +1278,14 @@ services:
       DATA_SOURCE_NAME: "postgresql://${DB_USERNAME:-postgres}:${DB_PASSWORD:-}@db:5432/${DB_DATABASE:-dify}?sslmode=disable"
     expose:
       - "9187"
-    # Distroless image — см. §8. Healthcheck disabled, мониторинг через
-    # `up{job="postgres-exporter"}` в Prometheus.
+    # prometheuscommunity/postgres-exporter = busybox-based (НЕ distroless) —
+    # CMD-SHELL wget работает.
     healthcheck:
-      test: ["NONE"]
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:9187/metrics || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     networks:
       - agmind-backend
 

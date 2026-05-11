@@ -4,20 +4,25 @@
 # `-1: stat /bin/sh: no such file or directory` → контейнер навечно unhealthy
 # даже если сервис работает.
 #
-# Известные distroless образы в нашем стеке (по §8):
-#   - grafana/loki — distroless, healthcheck нельзя
-#   - oliver006/redis_exporter — distroless
-#   - nginx/nginx-prometheus-exporter — distroless
-#   - prometheuscommunity/postgres-exporter — distroless
-#   - prometheus/alertmanager — distroless
-#   - prom/prometheus — distroless
-#   - grafana/alloy — distroless
+# DISTROLESS образы в нашем стеке (verified `docker run --entrypoint sh X -c echo`):
+#   - grafana/loki — distroless ✅ (нет /bin/sh)
+#   - oliver006/redis_exporter — distroless ✅
+#   - nginx/nginx-prometheus-exporter — distroless ✅
+#   - grafana/alloy — distroless ✅
 #
-# Если для distroless image определён CMD-SHELL healthcheck → FAIL.
+# НЕ distroless (busybox-based, есть /bin/sh + wget — CMD-SHELL работает):
+#   - prom/prometheus — busybox ✅ может CMD-SHELL
+#   - prom/alertmanager — busybox ✅
+#   - prometheuscommunity/postgres-exporter — busybox ✅
+#   (verified 2026-05-11 после ложного срабатывания: эти 3 ОШИБОЧНО считались
+#    distroless, их рабочие healthcheck'и были заменены на ["NONE"] и сломали
+#    grafana.depends_on.prometheus: service_healthy — откачено.)
+#
+# Если для DISTROLESS image определён CMD-SHELL healthcheck → FAIL.
 # Допустимые альтернативы для distroless:
-#   - test: ["NONE"] (отключить)
+#   - test: ["NONE"] (отключить — но тогда depends_on на них только service_started)
 #   - test: ["CMD", "/binary", "--health-flag"] (если binary поддерживает)
-#   - не указывать healthcheck вообще, мониторинг через Prometheus up{}.
+#   - не указывать healthcheck, мониторинг через Prometheus up{}.
 #
 # Exit: 0 = pass, 1 = fail, 77 = skip.
 
@@ -36,14 +41,13 @@ echo "## test_distroless_no_healthcheck"
 fail=0
 pass=0
 
-# Список image-prefix'ов которые ИЗВЕСТНО distroless (по CLAUDE.md §8).
+# Image-prefix'ы которые verified-distroless (нет /bin/sh).
+# НЕ включать prom/prometheus, prom/alertmanager, prometheuscommunity/postgres-exporter —
+# они busybox-based, CMD-SHELL у них работает (см. шапку файла).
 DISTROLESS_PATTERNS=(
     "grafana/loki"
     "oliver006/redis_exporter"
     "nginx/nginx-prometheus-exporter"
-    "prometheuscommunity/postgres-exporter"
-    "prom/alertmanager"
-    "prom/prometheus"
     "grafana/alloy"
 )
 
