@@ -89,7 +89,7 @@ services:
   # ============================================================================
   portainer-agent:
     <<: *logging-defaults
-    image: portainer/agent:${PORTAINER_AGENT_VERSION:-2.39.2}
+    image: portainer/agent:${PORTAINER_AGENT_VERSION:-2.41.1}
     container_name: agmind-portainer-agent
     restart: unless-stopped
     # §8: каждый long-running контейнер ДОЛЖЕН иметь mem_limit (121 GiB unified

@@ -1247,7 +1247,7 @@ services:
   # Phase 38: exposes redis_* metrics for RedisConnectionError alert.
   redis-exporter:
     <<: *security-defaults
-    image: oliver006/redis_exporter:${REDIS_EXPORTER_VERSION:-v1.82.0}
+    image: oliver006/redis_exporter:${REDIS_EXPORTER_VERSION:-v1.83.0}
     container_name: agmind-redis-exporter
     restart: unless-stopped
     mem_limit: ${REDIS_EXPORTER_MEM_LIMIT:-64m}
@@ -1354,7 +1354,7 @@ services:
   # Set ENABLE_PORTAINER=false to disable entirely if not needed.
   portainer:
     <<: *security-defaults
-    image: portainer/portainer-ce:${PORTAINER_VERSION:-2.39.2}
+    image: portainer/portainer-ce:${PORTAINER_VERSION:-2.41.1}
     container_name: agmind-portainer
     restart: unless-stopped
     mem_limit: ${PORTAINER_MEM_LIMIT:-256m}
@@ -1567,7 +1567,7 @@ services:
 
   ragflow_es01:
     <<: *security-defaults
-    image: docker.io/elasticsearch:${RAGFLOW_ES_VERSION:-9.0.2}
+    image: docker.io/elasticsearch:${RAGFLOW_ES_VERSION:-9.4.0}
     container_name: agmind-ragflow-es
     restart: unless-stopped
     mem_limit: ${RAGFLOW_ES_MEM_LIMIT:-4g}
