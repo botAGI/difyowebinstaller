@@ -7,7 +7,6 @@
 **Private RAG platform for NVIDIA DGX Spark — one command, production-ready**
 
 [![Tests](https://github.com/botAGI/AGmind/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/botAGI/AGmind/actions/workflows/test.yml)
-[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/botAGI/AGmind/badge)](https://securityscorecards.dev/viewer/?uri=github.com/botAGI/AGmind)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Bash 5+](https://img.shields.io/badge/bash-5%2B-green)](#)
 [![aarch64](https://img.shields.io/badge/arch-aarch64-blue)](#)
