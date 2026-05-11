@@ -710,12 +710,27 @@ doctor_check_resources() {
 # doctor_check_ports — port conflicts (80/443) + exposed admin ports
 # ----------------------------------------------------------------------------
 doctor_check_ports() {
+    # WHY: ss -tlnp without root omits process names → can't grep 'nginx|docker'.
+    # Instead: first check via docker ps whether AGmind container owns the port
+    # (agmind-nginx publishes 80/443). Fall back to ss process-name grep (works with root).
+    local _agmind_ports=""
+    if [[ "$_DOCTOR_DOCKER_DOWN" -ne 1 ]]; then
+        _agmind_ports="$(docker ps --format '{{.Ports}}' 2>/dev/null || true)"
+    fi
     for port in 80 443; do
-        local pp
+        local pp owned_by_agmind=0
         pp="$(ss -tlnp 2>/dev/null | grep ":${port} " | head -1 || true)"
+        # Check 1: docker ps output contains 0.0.0.0:<port>->  (AGmind nginx)
+        if echo "$_agmind_ports" | grep -qE "0\.0\.0\.0:${port}->|:::${port}->|\[::\]:${port}->"; then
+            owned_by_agmind=1
+        fi
+        # Check 2: ss shows process name (works when running as root)
+        if [[ $owned_by_agmind -eq 0 ]] && echo "$pp" | grep -q "agmind\|nginx\|docker"; then
+            owned_by_agmind=1
+        fi
         if [[ -z "$pp" ]]; then
             _registry_add "port_${port}" "ports" "OK" "Port ${port}: свободен"
-        elif echo "$pp" | grep -q "agmind\|nginx\|docker"; then
+        elif [[ $owned_by_agmind -eq 1 ]]; then
             _registry_add "port_${port}" "ports" "OK" "Port ${port}: используется AGmind/nginx"
         else
             _registry_add "port_${port}" "ports" "FAIL" \
