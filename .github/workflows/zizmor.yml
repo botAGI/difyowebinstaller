@@ -1,0 +1,41 @@
+# zizmor — static analysis для GitHub Actions workflows.
+# ~24 audit rules: template injection (${{ github.event.* }} в run:), mutable
+# tag pinning (то что мы делаем вручную — zizmor проверяет на каждом PR),
+# excessive permissions, known-vulnerable actions, dangerous triggers
+# (pull_request_target / workflow_run), self-hosted runner exposure, etc.
+#
+# Заменяет ручной SHA-pin audit (где можно нагаллюцинировать). Результаты в
+# GitHub Security tab → Code scanning alerts (SARIF upload).
+#
+# Spec: https://github.com/zizmorcore/zizmor   docs: https://docs.zizmor.sh
+
+name: zizmor (GHA security)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 5 * * 1'   # weekly Monday 05:00 UTC — catches new audit rules
+
+permissions: {}
+
+jobs:
+  zizmor:
+    name: zizmor static analysis
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write   # SARIF upload to Code Scanning
+    steps:
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Run zizmor
+        uses: zizmorcore/zizmor-action@b1d7e1fb5de872772f31590499237e7cce841e8e # v0.5.3
+        # default: scans .github/workflows/, uploads SARIF, fails on high-severity.
+        # online mode (fetches advisory DB) — needs network egress (audit above).

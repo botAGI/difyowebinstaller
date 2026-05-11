@@ -1755,6 +1755,7 @@ services:
   # Phase 40: manual-run only. `agmind loadtest <scenario>` wraps this.
   # Scenarios live in /scripts, results dumped to /results (host-mounted).
   k6:
+    <<: *logging-defaults
     image: grafana/k6:${K6_VERSION:-0.55.2}
     container_name: agmind-k6
     restart: "no"
