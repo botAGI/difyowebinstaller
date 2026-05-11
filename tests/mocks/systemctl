@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 # Mock for systemctl — keyed by MOCK_SYSTEMCTL_FIXTURE env var.
-# Handles: is-active
+# Handles: is-active, restart (and any other subcommand)
 # Fixtures: active | inactive | failed | missing
+# Appends invoked argv to MOCK_SYSTEMCTL_CALLLOG for --fix assertions.
 set -euo pipefail
+
+# Call-log: always record invocation so tests can assert restart was/wasn't called.
+printf '%s\n' "systemctl $*" >> "${MOCK_SYSTEMCTL_CALLLOG:-/dev/null}"
+
 if [[ "${1:-}" == "is-active" ]]; then
     case "${MOCK_SYSTEMCTL_FIXTURE:-active}" in
         active)   echo "active";   exit 0 ;;
@@ -15,4 +20,5 @@ if [[ "${1:-}" == "is-active" ]]; then
             ;;
     esac
 fi
+# restart / stop / start / enable etc — succeed silently (call logged above)
 exit 0
