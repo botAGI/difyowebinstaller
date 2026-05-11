@@ -65,15 +65,23 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Run unit tests
         run: |
-          errors=0
+          # rc=77 = SKIP (test self-disabled — missing optional dep, not-on-CI
+          # resources like pipelines/ which is intentionally out of git, root, etc).
+          # Same convention as tests/run_all.sh. Don't treat SKIP as FAIL.
+          errors=0 passed=0 skipped=0
           for t in tests/unit/*.sh; do
             [[ -x "$t" ]] || chmod +x "$t"
             echo "==> $t"
-            if ! bash "$t"; then
-              echo "FAIL: $t"
-              errors=$((errors + 1))
-            fi
+            bash "$t"; rc=$?
+            case $rc in
+              0)  passed=$((passed+1)) ;;
+              77) echo "SKIP: $t (rc=77)"; skipped=$((skipped+1)) ;;
+              *)  echo "FAIL: $t (rc=$rc)"; errors=$((errors+1)) ;;
+            esac
           done
+          echo "================================"
+          echo "  PASS: ${passed}   SKIP: ${skipped}   FAIL: ${errors}"
+          echo "================================"
           exit $errors
 
   image-tags:
