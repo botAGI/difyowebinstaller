@@ -94,11 +94,26 @@ declare -A NAME_TO_SERVICES=(
     [minio]="minio"
 )
 
-# Components sharing the same Docker image (restart all when one updates)
-# shellcheck disable=SC2034  # sourced global
+# WHY: Expanded from single [dify]= entry in Phase 2 (agmind status). Additive —
+# Phase 9 refines into 8 named profiles; keep additive, don't remove keys.
+#
+# Service grouping for `agmind status` table headers + disabled-detection.
+# Keys = group label; values = space-separated SHORT service names (the names
+# `agmind status` rows by; container = "agmind-${name//_/-}").
+# shellcheck disable=SC2034  # sourced globals used by lib/status.sh, scripts/update.sh
 declare -A SERVICE_GROUPS=(
-    [dify]="dify-api dify-worker dify-web sandbox plugin-daemon"
+    [core]="db redis nginx ssrf_proxy"
+    [dify]="api worker web sandbox plugin-daemon"
+    [llm]="vllm vllm-embed vllm-rerank tei tei-rerank ollama litellm docling"
+    [rag]="weaviate qdrant"
+    [observability]="prometheus alertmanager loki alloy node-exporter cadvisor redis-exporter postgres-exporter nginx-exporter grafana portainer"
+    [ragflow]="ragflow ragflow_mysql ragflow_es01"
+    [optional]="searxng minio authelia open-webui surrealdb open-notebook dbgpt crawl4ai"
 )
+
+# Group display order for `agmind status` table (assoc arrays have no guaranteed order).
+# shellcheck disable=SC2034  # sourced global used by lib/status.sh
+SERVICE_GROUP_ORDER="core dify llm rag ragflow observability optional"
 
 # All known compose profiles (for compose down --remove-orphans)
 # shellcheck disable=SC2034  # sourced global used by compose.sh _compose_down_all
