@@ -463,14 +463,88 @@ assert 'hostname' in d, 'missing hostname'
 ) && pass "not_installed_skip: INSTALL_DIR absent → exit 0 with not-installed message" \
   || fail "not_installed_skip: expected graceful exit 0 with not-installed message"
 
-# ── Case 12: wrapper_dispatch — DEFERRED TO PLAN 02-03 ───────────────────────
-# TODO 02-03: scripts/agmind.sh cmd_status → status_run wiring.
-# Plan 02-03 will promote this to a real assertion once cmd_status thin-wrapper is wired.
+# ── Case 12: wrapper_dispatch (02-03) ────────────────────────────────────────
+# Prove that `bash scripts/agmind.sh status [flags]` routes through cmd_status
+# → status_run in lib/status.sh. Uses a fake runtime root so agmind.sh can find
+# its required runtime files (health.sh etc.) via AGMIND_DIR.
+# Approach: symlink repo lib/*.sh into $WRAP_DIR/scripts/ (mirrors _copy_runtime_files),
+# write a fake docker/.env, then run the real scripts/agmind.sh with AGMIND_DIR=$WRAP_DIR.
 (
-    echo "  [SKIP] wrapper_dispatch (deferred to Plan 02-03 — cmd_status thin-wrapper not wired yet)"
+    set +e
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "  [SKIP] wrapper_dispatch (no python3 for JSON validation)"
+        exit 0
+    fi
+    # Build fake runtime root: AGMIND_DIR layout after install
+    WRAP_DIR="$(mktemp -d)"
+    # shellcheck disable=SC2064  # intentional immediate-expansion for rm
+    trap "rm -rf '$WRAP_DIR'" EXIT
+    mkdir -p "${WRAP_DIR}/scripts" "${WRAP_DIR}/docker"
+
+    # Symlink lib/*.sh into scripts/ under the same basenames.
+    # WHY: scripts/agmind.sh sources "${SCRIPTS_DIR}/health.sh" which is the
+    # runtime copy of lib/health.sh. For dev-mode tests we symlink lib/ → scripts/.
+    for _lib in common.sh detect.sh service-map.sh health.sh doctor.sh status.sh; do
+        ln -sf "${REPO_ROOT}/lib/${_lib}" "${WRAP_DIR}/scripts/${_lib}"
+    done
+
+    # Write a realistic .env (same vars as _make_env but with weaviate+vllm active)
+    cat > "${WRAP_DIR}/docker/.env" <<'ENVEOF'
+VECTOR_STORE=weaviate
+LLM_PROVIDER=vllm
+LLM_ON_PEER=false
+EMBED_PROVIDER=vllm-embed
+MONITORING_MODE=none
+ENABLE_LITELLM=false
+ENABLE_RAGFLOW=false
+ENABLE_OPENWEBUI=false
+ENABLE_SEARXNG=false
+ENABLE_NOTEBOOK=false
+REDIS_PASSWORD=mock_pw_not_real
+ETL_TYPE=docling
+ENVEOF
+
+    # Sub-test A: agmind status --json → valid JSON with .services array
+    out_json="$(
+        set +e
+        export PATH="${MOCK_DIR}:${PATH}"
+        export RED='' GREEN='' YELLOW='' CYAN='' BOLD='' NC=''
+        export MOCK_DOCKER_FIXTURE=healthy
+        export MOCK_DOCKER_PS_FIXTURE=multi_state
+        export AGMIND_DIR="${WRAP_DIR}"
+        export INSTALL_DIR="${WRAP_DIR}"
+        export ENV_FILE="${WRAP_DIR}/docker/.env"
+        bash "${REPO_ROOT}/scripts/agmind.sh" status --json 2>&1
+    )"
+    j="$(printf '%s\n' "${out_json}" | grep '^{' | tail -1)"
+    [[ -n "$j" ]] \
+        || { echo "FAIL: wrapper_dispatch --json: no JSON in output; out=${out_json}" >&2; exit 1; }
+    printf '%s' "$j" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+assert isinstance(d.get('services'), list), 'services not a list'
+" 2>&1 || { echo "FAIL: wrapper_dispatch --json: invalid JSON: ${j}" >&2; exit 1; }
+
+    # Sub-test B: agmind status --service nonexistent-svc-xyz → exit 1 (unknown service)
+    out_svc="$(
+        set +e
+        export PATH="${MOCK_DIR}:${PATH}"
+        export RED='' GREEN='' YELLOW='' CYAN='' BOLD='' NC=''
+        export MOCK_DOCKER_FIXTURE=healthy
+        export MOCK_DOCKER_INSPECT_FIXTURE=missing
+        export AGMIND_DIR="${WRAP_DIR}"
+        export INSTALL_DIR="${WRAP_DIR}"
+        export ENV_FILE="${WRAP_DIR}/docker/.env"
+        bash "${REPO_ROOT}/scripts/agmind.sh" status --service nonexistent-svc-xyz 2>&1
+        echo "RC=$?"
+    )"
+    rc_svc="$(printf '%s\n' "${out_svc}" | grep -oE 'RC=[0-9]+' | tail -1 | cut -d= -f2)"
+    [[ "$rc_svc" -eq 1 ]] \
+        || { echo "FAIL: wrapper_dispatch --service nonexistent: rc=${rc_svc} want 1; out=${out_svc}" >&2; exit 1; }
+
     exit 0
-) && pass "wrapper_dispatch: SKIP (deferred to 02-03)" \
-  || fail "wrapper_dispatch: unexpected failure"
+) && pass "wrapper_dispatch: cmd_status → status_run wired; --json valid JSON; unknown --service exits 1" \
+  || fail "wrapper_dispatch: agmind.sh cmd_status dispatch not routing to status_run correctly"
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
