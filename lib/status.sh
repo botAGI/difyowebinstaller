@@ -161,19 +161,34 @@ _status_resolve_container() {
 # Algorithm: Pattern 2 from 02-RESEARCH.md (12 steps).
 #
 # CRITICAL ordering: init-container check BEFORE active-profile check.
-# WHY: a known-init container not in the active set must resolve to "done", not "disabled".
-# 02-02's test init_container_done catches this if wrong.
+# WHY: a known-init container (redis-lock-cleaner/k6/milvus-init) must resolve to "done"
+# when it has exited — even if it is not in the active-service set from get_service_list.
+# If we check "disabled" first, init-containers that ran and exited (Exited(0)) would
+# incorrectly show "disabled" instead of "done". The fix: query docker ps first for
+# known-init containers, skip the disabled gate for them.
+# This was the 02-01 ordering bug caught by 02-02 test init_container_done.
 _status_docker_state() {
     local svc="$1"
     local container
     container="$(_status_resolve_container "$svc")"
 
-    # Step 2: DISABLED — profile is OFF → state=disabled (gray). No docker probe needed.
+    # Step 2a: INIT CONTAINER pre-check — for known-init containers, query docker FIRST.
+    # WHY: init-containers exit cleanly (restart:"no") → STATE "done" regardless of whether
+    # their profile is "active". We must not let the disabled-check (step 2b) shadow "done".
+    # CLAUDE.md §8 init-containers rule. Ref: 02-02 test init_container_done.
+    if _status_is_init_container "$svc"; then
+        local raw_init_status
+        raw_init_status="$(docker ps -a --filter "name=^${container}$" --format '{{.Status}}' 2>/dev/null | head -1)"
+        if echo "$raw_init_status" | grep -qi "exited\|exit"; then
+            echo "done"
+            return 0
+        fi
+        # If still running (hasn't exited yet) — fall through to normal state detection below.
+        # Don't skip the rest: an init container that is still "Up" should show its real state.
+    fi
+
+    # Step 2b: DISABLED — profile is OFF → state=disabled (gray). No docker probe needed.
     # WHY SC3: disabled profiles must NOT show as FAIL/red. CLAUDE.md §6.
-    # EXCEPTION: init-containers checked for done-state below (step 5), before this gate
-    # can trigger "disabled". But init-containers that are truly disabled (profile not active
-    # AND they haven't run) → disabled is correct. The research says: check disabled FIRST,
-    # THEN init-container. We follow the algorithm verbatim.
     if ! _status_is_active_service "$svc"; then
         echo "disabled"
         return 0
@@ -190,9 +205,9 @@ _status_docker_state() {
         return 0
     fi
 
-    # Step 5: INIT CONTAINER — expected to exit cleanly.
+    # Step 5: INIT CONTAINER (running) — expected to exit cleanly.
     # WHY: redis-lock-cleaner/k6/milvus-init have restart:"no" → exit 0 = STATE "done".
-    # CLAUDE.md §8 init-containers rule.
+    # CLAUDE.md §8 init-containers rule. (Exited case handled in step 2a above.)
     if _status_is_init_container "$svc"; then
         if echo "$raw_status" | grep -qi "exited\|exit"; then
             echo "done"
