@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Mock sleep — records call, never actually sleeps. For `agmind status --watch` interval-parse test.
+# Usage: MOCK_SLEEP_CALLLOG=/tmp/sleep.log tests/mocks/sleep 5
+printf 'sleep %s\n' "$*" >> "${MOCK_SLEEP_CALLLOG:-/dev/null}"
+exit 0
