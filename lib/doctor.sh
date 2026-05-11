@@ -1092,24 +1092,484 @@ doctor_check_peer() {
 }
 
 # ============================================================================
-# FIX + BUNDLE (--fix body stub until 01-03, --bundle stub until 01-03)
+# FIX HELPERS — idempotent, non-destructive only (D-08)
 # ============================================================================
 
-# _registry_fix_all [--dry-run] — iterate fixable=true records, apply fix_cmd.
-# WHY D-08: only idempotent, non-destructive fixes: sysctl, mDNS restart, driver pin.
-# Body stub: plan 01-03 fills the --fix implementation.
-_registry_fix_all() {
-    local dry_run=false
-    [[ "${1:-}" == "--dry-run" ]] && dry_run=true
-    log_warn "agmind doctor --fix не реализован (Phase 1 plan 01-03)"
-    return 1
+# _doctor_fix_mapcount — reproduce install.sh::_ensure_es_sysctl logic.
+# WHY: ES bootstrap fails if vm.max_map_count < 262144 (CLAUDE.md §8 vm.max_map_count).
+# Idempotent: TRUNCATE (not append) so a repeat run overwrites, not duplicates (D-08).
+# RESEARCH Pitfall 6: must use > not >> on /etc/sysctl.d/99-agmind-es.conf.
+_doctor_fix_mapcount() {
+    local current
+    current="$(sysctl -n vm.max_map_count 2>/dev/null || echo 0)"
+    current="${current//[^0-9]/}"
+    if [[ "${current:-0}" -ge 262144 ]] 2>/dev/null; then
+        log_info "fix: vm.max_map_count=${current} уже ≥262144 — пропущено"
+        return 0
+    fi
+    log_info "fix: vm.max_map_count — записываем /etc/sysctl.d/99-agmind-es.conf и применяем sysctl -w"
+    # TRUNCATE (>) not append — idempotent per RESEARCH Pitfall 6
+    echo "vm.max_map_count=262144" > /etc/sysctl.d/99-agmind-es.conf \
+        || { log_warn "fix: не удалось записать /etc/sysctl.d/99-agmind-es.conf"; return 1; }
+    sysctl -w vm.max_map_count=262144 >/dev/null 2>&1 \
+        || { log_warn "fix: sysctl -w vm.max_map_count=262144 не удался"; return 1; }
+    return 0
 }
 
-# _doctor_bundle — create sanitized support archive.
-# WHY D-13/D-14/D-15: tar.gz with whitelist + post-collection scrub + self-test gate.
+# _doctor_fix_mdns — restart avahi-daemon then agmind-mdns.service.
+# WHY: dead mDNS while avahi is alive = agmind-mdns.service failed (CLAUDE.md §8).
+# Idempotent: systemctl restart is always safe to re-run.
+_doctor_fix_mdns() {
+    if ! command -v systemctl >/dev/null 2>&1; then
+        log_warn "fix: systemctl не найден — mDNS restart невозможен"
+        return 1
+    fi
+    log_info "fix: mDNS — перезапускаем avahi-daemon"
+    systemctl restart avahi-daemon 2>/dev/null || true
+    log_info "fix: mDNS — перезапускаем agmind-mdns.service"
+    systemctl restart agmind-mdns.service 2>/dev/null \
+        || { log_warn "fix: agmind-mdns.service restart не удался"; return 1; }
+    return 0
+}
+
+# _doctor_fix_driver_pin — apply apt-mark hold on installed nvidia-* packages.
+# WHY: apt-mark hold so unattended-upgrades won't pull 590+ (CLAUDE.md §8 Driver 580 HOLD).
+# Idempotent: apt-mark hold is safe to repeat; already-held packages stay held.
+_doctor_fix_driver_pin() {
+    if ! command -v apt-mark >/dev/null 2>&1; then
+        log_warn "fix: apt-mark не найден — driver pin невозможен"
+        return 1
+    fi
+    # Prefer calling pin_nvidia_driver_dgx_spark if available (defined in lib/security.sh)
+    if declare -F pin_nvidia_driver_dgx_spark >/dev/null 2>&1; then
+        DETECTED_DGX_SPARK=true pin_nvidia_driver_dgx_spark
+        return $?
+    fi
+    # Fallback: inline equivalent of pin_nvidia_driver_dgx_spark
+    local pkgs=()
+    while IFS= read -r pkg; do
+        [[ -n "$pkg" ]] && pkgs+=("$pkg")
+    done < <(dpkg -l 2>/dev/null | awk '/^ii  nvidia-(driver|dkms|kernel)/ {print $2}')
+    if [[ ${#pkgs[@]} -eq 0 ]]; then
+        log_warn "fix: нет установленных nvidia-driver пакетов — pin отложен"
+        return 0
+    fi
+    apt-mark hold "${pkgs[@]}" >/dev/null 2>&1 \
+        || { log_warn "fix: apt-mark hold не удался"; return 1; }
+    log_info "fix: driver pin выставлен: ${pkgs[*]}"
+    return 0
+}
+
+# _doctor_dispatch_fix <token> — maps a fix_cmd token to the actual fix helper.
+# WHY D-09/D-13: only 3 idempotent auto-fixes; everything else is print-only.
+_doctor_dispatch_fix() {
+    case "${1:-}" in
+        _ensure_es_sysctl|_doctor_fix_mapcount)
+            _doctor_fix_mapcount ;;
+        _doctor_fix_mdns)
+            _doctor_fix_mdns ;;
+        pin_nvidia_driver_dgx_spark|_doctor_fix_driver_pin)
+            _doctor_fix_driver_pin ;;
+        *)
+            log_warn "fix: нет обработчика для '${1}' — пропускаем"
+            return 1
+            ;;
+    esac
+}
+
+# ============================================================================
+# _registry_fix_all — iterate fixable=true records; apply or preview each fix.
+# WHY D-08: root-only (gate BEFORE any side effect), non-interactive (no prompts),
+#   only the 3 idempotent/non-destructive fixes from D-08 are auto-applied;
+#   everything else prints the manual command only (D-09).
+# Signature: _registry_fix_all [dry_run_bool]
+#   dry_run_bool = "true" → print plan, zero side effects, return 0 (D-10, SC4).
+# Exit: _registry_fix_all always returns 0 — caller (doctor_run) re-derives
+#   DOCTOR_ERRORS after re-running checks and uses that for the final exit code.
+# ============================================================================
+_registry_fix_all() {
+    local dry_run="${1:-false}"
+
+    # Root gate FIRST — before any side effect (D-10, T-01-12).
+    # --dry-run is allowed without root since it performs no side effects (D-10).
+    if [[ "$dry_run" != "true" && "$EUID" -ne 0 ]]; then
+        log_error "agmind doctor --fix требует root — запустите: sudo agmind doctor --fix"
+        return 2
+    fi
+
+    local fixed=0 manual=0 fixable_would=0
+    local entry id category sev msg fix_hint fixable fix_cmd
+
+    for entry in "${DOCTOR_REGISTRY[@]+"${DOCTOR_REGISTRY[@]}"}"; do
+        IFS=$'\x1f' read -r id category sev msg fix_hint fixable fix_cmd <<< "$entry"
+        # Only process WARN and FAIL records
+        [[ "$sev" == "WARN" || "$sev" == "FAIL" ]] || continue
+
+        if [[ "$fixable" == "true" && -n "$fix_cmd" ]]; then
+            if [[ "$dry_run" == "true" ]]; then
+                log_info "fix (dry-run): ${id} — would run ${fix_cmd} (${msg})"
+                fixable_would=$((fixable_would + 1))
+            else
+                log_info "fix: ${id} — запускаем ${fix_cmd}"
+                set +e
+                _doctor_dispatch_fix "$fix_cmd"
+                local _fix_rc=$?
+                set -e
+                if [[ $_fix_rc -eq 0 ]]; then
+                    fixed=$((fixed + 1))
+                else
+                    log_warn "fix: ${fix_cmd} завершился с ошибкой для ${id}"
+                fi
+            fi
+        else
+            # Non-fixable: print the manual command (D-09)
+            manual=$((manual + 1))
+            if [[ -n "$fix_hint" ]]; then
+                log_info "manual: ${id} — ${fix_hint}"
+            else
+                log_info "manual: ${id} — требует ручного вмешательства"
+            fi
+        fi
+    done
+
+    if [[ "$dry_run" == "true" ]]; then
+        log_info "fix (dry-run): ${fixable_would} было бы исправлено автоматически, ${manual} требуют ручного действия"
+        return 0
+    fi
+
+    log_info "fix: ${fixed} исправлено, ${manual} требуют ручного действия"
+    return 0
+}
+
+# ============================================================================
+# SANITIZE HELPER (shared by --bundle, also useful standalone)
+# ============================================================================
+
+# _sanitize_text — scrub secret-like values from text (file or stdin).
+# WHY D-14.2: docker compose config / .env / docker inspect / journalctl may contain
+#   credentials — scrub before writing to the bundle (T-01-09, SC3).
+# Accepts a filename OR '-' for stdin (sed reads stdin on '-').
+# Four rules: KV-style secrets, Authorization header, Bearer tokens, known weak defaults.
+_sanitize_text() {
+    # Rule 1: KV-style secrets — match variable names ENDING in sensitive keywords.
+    # WHY no \b prefix: composite names like DB_PASSWORD have _ before PASSWORD
+    #   which is a word character, so \b before PASSWORD never fires. Instead,
+    #   match [A-Za-z0-9_]* prefix so DB_PASSWORD, REDIS_SECRET etc all match.
+    # Rule 2: Authorization header value
+    # Rule 3: Bearer token (OAuth/JWT)
+    # Rule 4: Known weak AGmind default values (belt-and-suspenders)
+    sed -E \
+        -e 's/([A-Za-z0-9_]*(PASSWORD|SECRET|TOKEN|API_?KEY|AUTH_KEY|WEBHOOK_SECRET))([[:space:]]*[=:][[:space:]]*)[^[:space:]"'"'"']{4,}/\1\3<redacted>/gI' \
+        -e 's/(_KEY)([[:space:]]*[=:][[:space:]]*)[^[:space:]"'"'"']{4,}/\1\2<redacted>/gI' \
+        -e 's/(Authorization:[[:space:]]*).{4,}/\1<redacted>/gI' \
+        -e 's/(Bearer[[:space:]]+)[A-Za-z0-9._~+\/-]{8,}/Bearer <redacted>/gI' \
+        -e 's/\b(difyai123456|QaHbTe77|changeme|admin123)\b/<redacted_default>/gI' \
+        "$@"
+}
+
+# ============================================================================
+# BUNDLE — _doctor_bundle [dry_run_bool]
+# WHY D-13/D-14/D-15: collect a WHITELIST of debug artifacts into a mktemp staging
+#   dir, scrub all text with _sanitize_text, enforce the BLACKLIST, run a final
+#   self-test grep gate BEFORE tar that aborts on any secret-like hit, then
+#   tar czf + chmod 600 + validate_path the output (T-01-09 to T-01-15, SC3).
+# ============================================================================
 _doctor_bundle() {
-    log_error "agmind doctor --bundle не реализован (Phase 1 plan 01-03)"
-    return 2
+    local dry_run="${1:-false}"
+    local ts
+    ts="$(date +%Y%m%d-%H%M%S)"
+    local bdir="support-bundle-${ts}"
+
+    # Dry-run: print what would be collected, create nothing.
+    if [[ "$dry_run" == "true" ]]; then
+        log_info "bundle (dry-run): would collect into ${INSTALL_DIR}/${bdir}.tar.gz:"
+        log_info "  install.log, versions.env, .env (sanitized), docker compose config (sanitized),"
+        log_info "  doctor.json, docker ps -a, docker images, docker system df,"
+        log_info "  docker inspect agmind-* (sanitized), nvidia-smi -q, journalctl tails,"
+        log_info "  OS/kernel facts, cluster.json, .install_phase"
+        log_info "bundle (dry-run): создание архива пропущено"
+        return 0
+    fi
+
+    # AGmind must be installed
+    if [[ ! -d "${INSTALL_DIR}" ]]; then
+        log_error "bundle: AGmind не установлен — ${INSTALL_DIR} не найден"
+        return 2
+    fi
+
+    # Create staging directory with guaranteed cleanup on any return path.
+    local staging
+    staging="$(mktemp -d)" || { log_error "bundle: mktemp -d не удался"; return 2; }
+    # shellcheck disable=SC2064  # intentional: expand $staging at trap-definition time
+    trap "rm -rf '${staging}'" RETURN
+
+    mkdir -p "${staging}/${bdir}/system" \
+             "${staging}/${bdir}/logs" \
+             "${staging}/${bdir}/diagnostics"
+
+    # Disable -e for the collection phase — many sub-commands legitimately fail
+    # (journalctl unit not found, nvidia-smi absent, etc.)
+    set +e
+
+    # ── meta.json ──────────────────────────────────────────────────────────────
+    local _hostname _agmind_ver
+    _hostname="$(hostname 2>/dev/null || echo unknown)"
+    _agmind_ver="$(cat "${INSTALL_DIR}/RELEASE" 2>/dev/null \
+               || cat "$(git rev-parse --show-toplevel 2>/dev/null)/RELEASE" 2>/dev/null \
+               || echo unknown)"
+    printf '{"timestamp":"%s","hostname":"%s","agmind_version":"%s"}\n' \
+        "$ts" "$_hostname" "$_agmind_ver" \
+        > "${staging}/${bdir}/meta.json"
+
+    # ── versions.env ───────────────────────────────────────────────────────────
+    # WHY: no secrets in versions.env — copy as-is (pinned image:tag list)
+    local _venv=""
+    if [[ -f "${INSTALL_DIR}/docker/versions.env" ]]; then
+        _venv="${INSTALL_DIR}/docker/versions.env"
+    elif [[ -f "$(git rev-parse --show-toplevel 2>/dev/null)/core/versions.env" ]]; then
+        _venv="$(git rev-parse --show-toplevel 2>/dev/null)/core/versions.env"
+    elif [[ -f "$(git rev-parse --show-toplevel 2>/dev/null)/versions.env" ]]; then
+        _venv="$(git rev-parse --show-toplevel 2>/dev/null)/versions.env"
+    fi
+    if [[ -n "$_venv" && -f "$_venv" ]]; then
+        cp "$_venv" "${staging}/${bdir}/versions.env"
+    else
+        printf '(file not found: versions.env)\n' > "${staging}/${bdir}/versions.env"
+    fi
+
+    # ── env.sanitized ──────────────────────────────────────────────────────────
+    # WHY T-01-09: .env contains all stack passwords — MUST be sanitized before bundle
+    if [[ -f "${ENV_FILE}" ]]; then
+        _sanitize_text "${ENV_FILE}" > "${staging}/${bdir}/env.sanitized" 2>/dev/null \
+            || printf '(sanitize failed for env)\n' > "${staging}/${bdir}/env.sanitized"
+    else
+        printf '(file not found: %s)\n' "${ENV_FILE}" > "${staging}/${bdir}/env.sanitized"
+    fi
+
+    # ── compose.sanitized ─────────────────────────────────────────────────────
+    # WHY T-01-09: docker compose config EXPANDS .env → has real secrets (RESEARCH Pitfall 1)
+    if [[ -f "${COMPOSE_FILE}" ]]; then
+        docker compose -f "${COMPOSE_FILE}" config 2>/dev/null \
+            | _sanitize_text - > "${staging}/${bdir}/compose.sanitized" 2>/dev/null \
+            || printf '(docker compose config failed)\n' > "${staging}/${bdir}/compose.sanitized"
+    else
+        printf '(COMPOSE_FILE not found: %s)\n' "${COMPOSE_FILE}" \
+            > "${staging}/${bdir}/compose.sanitized"
+    fi
+
+    # ── doctor.json ────────────────────────────────────────────────────────────
+    # WHY: run_diagnostics in a clean subshell — do not recurse the live registry
+    local _repo_root
+    _repo_root="$(git rev-parse --show-toplevel 2>/dev/null || echo "${INSTALL_DIR}")"
+    (
+        export PATH="${PATH}"
+        # shellcheck source=/dev/null
+        source "${_repo_root}/lib/common.sh"  2>/dev/null || true
+        # shellcheck source=/dev/null
+        source "${_repo_root}/lib/detect.sh"  2>/dev/null || true
+        # shellcheck source=/dev/null
+        source "${_repo_root}/lib/health.sh"  2>/dev/null || true
+        # shellcheck source=/dev/null
+        source "${_repo_root}/lib/doctor.sh"  2>/dev/null || true
+        doctor_run --json 2>/dev/null
+    ) > "${staging}/${bdir}/doctor.json" 2>/dev/null \
+        || printf '{"error":"doctor_run failed"}\n' > "${staging}/${bdir}/doctor.json"
+
+    # ── docker-ps.txt ─────────────────────────────────────────────────────────
+    docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' \
+        > "${staging}/${bdir}/docker-ps.txt" 2>/dev/null \
+        || printf '(docker ps -a failed)\n' > "${staging}/${bdir}/docker-ps.txt"
+
+    # ── docker-images.txt ─────────────────────────────────────────────────────
+    docker images > "${staging}/${bdir}/docker-images.txt" 2>/dev/null \
+        || printf '(docker images failed)\n' > "${staging}/${bdir}/docker-images.txt"
+
+    # ── docker-df.txt ─────────────────────────────────────────────────────────
+    docker system df -v > "${staging}/${bdir}/docker-df.txt" 2>/dev/null \
+        || printf '(docker system df -v failed)\n' > "${staging}/${bdir}/docker-df.txt"
+
+    # ── docker-inspect.txt ────────────────────────────────────────────────────
+    # WHY T-01-09: docker inspect env sections contain secrets — MUST sanitize
+    {
+        local _c
+        for _c in $(docker ps -a --format '{{.Names}}' 2>/dev/null \
+                    | grep '^agmind-' || true); do
+            docker inspect "$_c" 2>/dev/null || true
+        done
+    } | _sanitize_text - > "${staging}/${bdir}/docker-inspect.txt" 2>/dev/null \
+        || printf '(docker inspect failed)\n' > "${staging}/${bdir}/docker-inspect.txt"
+
+    # ── nvidia-smi.txt ────────────────────────────────────────────────────────
+    if command -v nvidia-smi >/dev/null 2>&1; then
+        nvidia-smi -q > "${staging}/${bdir}/nvidia-smi.txt" 2>/dev/null \
+            || printf '(nvidia-smi -q failed)\n' > "${staging}/${bdir}/nvidia-smi.txt"
+    else
+        printf '(nvidia-smi not installed)\n' > "${staging}/${bdir}/nvidia-smi.txt"
+    fi
+
+    # ── system/* ──────────────────────────────────────────────────────────────
+    uname -a > "${staging}/${bdir}/system/uname.txt" 2>/dev/null \
+        || printf '(uname -a failed)\n' > "${staging}/${bdir}/system/uname.txt"
+
+    cat /etc/os-release > "${staging}/${bdir}/system/os-release.txt" 2>/dev/null \
+        || printf '(os-release not found)\n' > "${staging}/${bdir}/system/os-release.txt"
+
+    { free -h; echo; grep -E 'MemTotal|MemAvailable|Swap' /proc/meminfo; } \
+        > "${staging}/${bdir}/system/meminfo.txt" 2>/dev/null \
+        || printf '(meminfo failed)\n' > "${staging}/${bdir}/system/meminfo.txt"
+
+    sysctl -a 2>/dev/null | grep -E 'max_map_count|swappiness|vm\.' \
+        > "${staging}/${bdir}/system/sysctl.txt" 2>/dev/null \
+        || printf '(sysctl -a failed)\n' > "${staging}/${bdir}/system/sysctl.txt"
+
+    df -h > "${staging}/${bdir}/system/df.txt" 2>/dev/null \
+        || printf '(df -h failed)\n' > "${staging}/${bdir}/system/df.txt"
+
+    local _cluster_file="${AGMIND_CLUSTER_STATE_FILE:-/var/lib/agmind/state/cluster.json}"
+    if [[ -f "$_cluster_file" ]]; then
+        cp "$_cluster_file" "${staging}/${bdir}/system/cluster.json"
+    else
+        printf '(file not found: %s)\n' "$_cluster_file" \
+            > "${staging}/${bdir}/system/cluster.json"
+    fi
+
+    # ── logs/* ────────────────────────────────────────────────────────────────
+    # WHY T-01-09: install.log may contain secrets leaked via env expansions — sanitize
+    if [[ -f "${INSTALL_DIR}/install.log" ]]; then
+        _sanitize_text "${INSTALL_DIR}/install.log" \
+            > "${staging}/${bdir}/logs/install.log.sanitized" 2>/dev/null \
+            || printf '(install.log sanitize failed)\n' \
+               > "${staging}/${bdir}/logs/install.log.sanitized"
+    else
+        printf '(file not found: %s/install.log)\n' "${INSTALL_DIR}" \
+            > "${staging}/${bdir}/logs/install.log.sanitized"
+    fi
+
+    journalctl -u agmind-stack --no-pager -n 500 \
+        > "${staging}/${bdir}/logs/agmind-stack.log" 2>/dev/null \
+        || printf '(journalctl -u agmind-stack failed or unit not found)\n' \
+           > "${staging}/${bdir}/logs/agmind-stack.log"
+
+    journalctl -u agmind-mdns --no-pager -n 100 \
+        > "${staging}/${bdir}/logs/agmind-mdns.log" 2>/dev/null \
+        || printf '(journalctl -u agmind-mdns failed or unit not found)\n' \
+           > "${staging}/${bdir}/logs/agmind-mdns.log"
+
+    journalctl -u avahi-daemon --no-pager -n 50 \
+        > "${staging}/${bdir}/logs/avahi-daemon.log" 2>/dev/null \
+        || printf '(journalctl -u avahi-daemon failed or unit not found)\n' \
+           > "${staging}/${bdir}/logs/avahi-daemon.log"
+
+    # ── diagnostics/* ─────────────────────────────────────────────────────────
+    # Capture derived facts from run_diagnostics in a subshell
+    if declare -F run_diagnostics >/dev/null 2>&1; then
+        ( run_diagnostics ) > "${staging}/${bdir}/diagnostics/run_diagnostics.txt" 2>&1 \
+            || printf '(run_diagnostics failed)\n' \
+               > "${staging}/${bdir}/diagnostics/run_diagnostics.txt"
+    else
+        printf '(run_diagnostics not available — lib/detect.sh not sourced)\n' \
+            > "${staging}/${bdir}/diagnostics/run_diagnostics.txt"
+    fi
+
+    if [[ -f "${INSTALL_DIR}/.install_phase" ]]; then
+        cat "${INSTALL_DIR}/.install_phase" \
+            > "${staging}/${bdir}/diagnostics/install_phase.txt" 2>/dev/null \
+            || printf '(read failed)\n' \
+               > "${staging}/${bdir}/diagnostics/install_phase.txt"
+    else
+        printf '(file not found: %s/.install_phase)\n' "${INSTALL_DIR}" \
+            > "${staging}/${bdir}/diagnostics/install_phase.txt"
+    fi
+
+    # ── README.txt ────────────────────────────────────────────────────────────
+    cat > "${staging}/${bdir}/README.txt" <<BUNDLE_README
+AGmind Support Bundle — ${ts}
+Hostname: ${_hostname}
+AGmind version: ${_agmind_ver}
+
+Contents (sanitized — credentials removed):
+  meta.json              — bundle metadata
+  versions.env           — pinned image:tag list (no secrets)
+  env.sanitized          — .env with all secrets redacted
+  compose.sanitized      — docker compose config with secrets redacted
+  doctor.json            — agmind doctor --json output
+  docker-ps.txt          — docker ps -a
+  docker-images.txt      — docker images
+  docker-df.txt          — docker system df -v
+  docker-inspect.txt     — docker inspect agmind-* (secrets redacted)
+  nvidia-smi.txt         — nvidia-smi -q (if available)
+  system/                — uname, OS release, meminfo, sysctl, df, cluster.json
+  logs/                  — install.log (sanitized), journalctl tails
+  diagnostics/           — run_diagnostics output, .install_phase
+  BUNDLE_MANIFEST.txt    — sha256 checksums of all files
+
+ВАЖНО: содержимое очищено от credentials, но ПРОВЕРЬТЕ перед отправкой.
+Команда проверки: tar tzf <bundle.tar.gz> (просмотр файлов)
+BUNDLE_README
+
+    # ── BUNDLE_MANIFEST.txt (written last, before self-test) ──────────────────
+    find "${staging}/${bdir}" -type f -exec sha256sum {} \; \
+        | sed "s|${staging}/||" \
+        > "${staging}/${bdir}/BUNDLE_MANIFEST.txt" 2>/dev/null \
+        || printf '(manifest generation failed)\n' \
+           > "${staging}/${bdir}/BUNDLE_MANIFEST.txt"
+
+    # ── DEFENSIVE BLACKLIST CHECK ──────────────────────────────────────────────
+    # WHY T-01-10: belt-and-suspenders — whitelist approach shouldn't produce these,
+    #   but check anyway (D-14.1).
+    local _bl_hits
+    _bl_hits="$(find "$staging" -type f \
+        \( -name 'credentials.txt' \
+        -o -name '.admin_password' \
+        -o -name '*.key' \
+        -o -name '*.pem' \
+        -o -name '*.p12' \
+        -o -name 'age.key' \) 2>/dev/null | head -5 || true)"
+    if [[ -n "$_bl_hits" ]]; then
+        log_error "ABORT: blacklisted файл обнаружен в staging: ${_bl_hits}"
+        # rm -rf handled by trap
+        return 2
+    fi
+
+    # ── FINAL SELF-TEST GATE (D-14.3 — HARD GATE, run BEFORE tar) ─────────────
+    # WHY T-01-09: abort BEFORE creating the tar if any secret survived sanitization.
+    # Print only FILE names, NEVER the matching lines or values (CLAUDE.md §5).
+    if grep -rEiq \
+        '(password|secret|token|bearer|api[_-]?key)[[:space:]]*[=:][[:space:]]*[a-zA-Z0-9]{8,}' \
+        "${staging}/" 2>/dev/null; then
+        local _hit_files
+        _hit_files="$(grep -rEil \
+            '(password|secret|token|bearer|api[_-]?key)[[:space:]]*[=:][[:space:]]*[a-zA-Z0-9]{8,}' \
+            "${staging}/" 2>/dev/null | head -3 || true)"
+        log_error "ABORT: возможные credentials выжили после санитизации: ${_hit_files}"
+        log_error "Tar НЕ создан. Проверьте _sanitize_text и повторите."
+        # rm -rf handled by trap
+        return 2
+    fi
+
+    # ── FINISH — create archive ────────────────────────────────────────────────
+    set -e
+    local out="${INSTALL_DIR}/${bdir}.tar.gz"
+
+    # Validate output path (T-01-11: path traversal guard)
+    validate_path "$out" >/dev/null 2>&1 || {
+        log_error "bundle: path rejected by validate_path: ${out}"
+        return 2
+    }
+
+    tar czf "$out" -C "$staging" "${bdir}/" 2>/dev/null || {
+        log_error "bundle: tar czf не удался"
+        return 2
+    }
+
+    # WHY T-01-14: chmod 600 immediately after tar — no world-readable bundle
+    chmod 600 "$out"
+
+    # rm -rf staging handled by trap on RETURN
+
+    log_success "support bundle: ${out} ($(du -h "$out" 2>/dev/null | cut -f1))"
+    log_info "проверьте содержимое перед отправкой: tar tzf ${out}"
+    return 0
 }
 
 # ============================================================================
@@ -1148,9 +1608,9 @@ doctor_run() {
     # Reset registry for idempotent invocations (Pitfall 4 from RESEARCH.md)
     _registry_reset
 
-    # Bundle shortcut — delegates to _doctor_bundle (01-03 fills body)
+    # Bundle shortcut — delegates to _doctor_bundle (01-03 body implemented)
     if [[ "$do_bundle" == "true" ]]; then
-        _doctor_bundle
+        _doctor_bundle "$dry_run"
         return $?
     fi
 
@@ -1203,12 +1663,41 @@ doctor_run() {
         doctor_check_peer
     fi
 
-    # Auto-fix pass — stub until 01-03
+    # Auto-fix pass (D-08/D-09/D-10): implemented in 01-03
     if [[ "$do_fix" == "true" ]]; then
-        if [[ "$dry_run" == "true" ]]; then
-            _registry_fix_all --dry-run || true
-        else
-            _registry_fix_all || true
+        local _fix_rc=0
+        _registry_fix_all "$dry_run" || _fix_rc=$?
+        # Root gate returns 2 — propagate immediately (no checks to re-run)
+        if [[ $_fix_rc -eq 2 && "$dry_run" != "true" ]]; then
+            return 2
+        fi
+        # After a real fix pass, re-run all checks so registry reflects the new state
+        # (sysctl/systemctl changes are now visible). Dry-run: no re-run needed.
+        if [[ "$dry_run" != "true" ]]; then
+            _registry_reset
+            if [[ "$mode" == "preflight" ]]; then
+                doctor_check_arch_driver
+                doctor_check_docker
+                doctor_check_kernel
+                doctor_check_dns_mdns
+                doctor_check_gpu
+                doctor_check_resources
+                doctor_check_ports
+            else
+                doctor_check_arch_driver
+                doctor_check_docker
+                doctor_check_kernel
+                doctor_check_dns_mdns
+                doctor_check_gpu
+                doctor_check_resources
+                doctor_check_ports
+                doctor_check_images
+                doctor_check_models
+                doctor_check_services
+                doctor_check_security_exposure
+                doctor_check_install_state
+                doctor_check_peer
+            fi
         fi
     fi
 

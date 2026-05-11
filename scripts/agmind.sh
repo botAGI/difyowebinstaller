@@ -930,7 +930,12 @@ Usage: agmind <command> [options]
 
 Commands:
   status [--json]    Show stack status (services, GPU, models, endpoints)
-  doctor [--peer] [--json]   Run system diagnostics (--peer = only peer section)
+  doctor [--peer] [--json] [--fix [--dry-run]] [--bundle]   Run system diagnostics
+    --peer              Only the peer-node section
+    --json              Machine-readable JSON output
+    --fix               Auto-fix idempotent issues (vm.max_map_count, mDNS, driver pin) — requires root, non-interactive
+    --fix --dry-run     Show what --fix would do, change nothing
+    --bundle            Create a sanitized support-bundle-<ts>.tar.gz (no secrets) for remote debug
   health [--peer] [--json]   Alias for doctor (deprecated)
   logs [-f] [svc]    Show container logs
   stop               Stop all containers
