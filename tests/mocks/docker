@@ -2,6 +2,13 @@
 # Mock for docker — keyed by MOCK_DOCKER_FIXTURE env var.
 # Fixtures: healthy | no_daemon | gpu_caps_missing
 # Appends invoked argv to MOCK_DOCKER_CALLLOG for --fix/--dry-run assertions.
+#
+# Phase 2 additions (additive — existing fixtures intact):
+#   MOCK_DOCKER_PS_FIXTURE: multi_state | init_exited | restart_loop (+ existing running|unhealthy|none|empty)
+#   MOCK_DOCKER_INSPECT_FIXTURE: ok (default) | restart_loop | missing
+#   MOCK_DOCKER_HEALTH_FIXTURE: default | unhealthy_worker | starting_vllm | distroless_loki
+#   MOCK_DOCKER_STATS_FIXTURE: ok (default) | unavailable
+#   docker stats / docker logs branches added
 set -euo pipefail
 
 # Call-log: always record invocation so tests can assert docker was/wasn't called.
@@ -39,20 +46,103 @@ case "${MOCK_DOCKER_FIXTURE:-healthy}" in
                 printf 'Server Version: 29.0.3\nRuntimes: io.containerd.runc.v2 nvidia runc\nDefault Runtime: runc\n'
                 ;;
             ps)
-                case "${MOCK_DOCKER_PS_FIXTURE:-running}" in
-                    running)
-                        printf 'agmind-api\nagmind-vllm\nagmind-docling\nagmind-nginx\n'
-                        ;;
-                    unhealthy)
-                        printf 'agmind-api\nagmind-vllm\nagmind-docling\nagmind-nginx\nagmind-worker\t(unhealthy)\n'
-                        ;;
-                    none|empty)
-                        : # nothing
-                        ;;
-                    *)
-                        printf 'agmind-api\nagmind-vllm\nagmind-docling\nagmind-nginx\n'
-                        ;;
-                esac
+                # Detect filtered status query:
+                # lib/status.sh calls: docker ps -a --filter "name=^agmind-X$" --format '{{.Status}}'
+                # We detect by scanning argv for both a name=^agmind-...$ filter AND '{{.Status}}' format.
+                _ps_has_filter=0
+                _ps_has_status_fmt=0
+                _ps_filter_name=""
+                for _ps_arg in "$@"; do
+                    case "$_ps_arg" in
+                        --filter) : ;;
+                        name=\^agmind-*\$)
+                            _ps_has_filter=1
+                            # Extract short name: strip "name=^agmind-" prefix and "$" suffix
+                            _ps_filter_name="${_ps_arg#name=^agmind-}"
+                            _ps_filter_name="${_ps_filter_name%\$}"
+                            ;;
+                        '{{.Status}}') _ps_has_status_fmt=1 ;;
+                    esac
+                done
+
+                if [[ "$_ps_has_filter" -eq 1 && "$_ps_has_status_fmt" -eq 1 ]]; then
+                    # Filtered status query — return per-container status string
+                    case "${MOCK_DOCKER_PS_FIXTURE:-running}" in
+                        running)
+                            echo "Up 3 hours (healthy)"
+                            ;;
+                        multi_state)
+                            # Different status per container
+                            case "$_ps_filter_name" in
+                                api)            echo "Up 2 hours (healthy)" ;;
+                                worker)         echo "Up 5 minutes (unhealthy)" ;;
+                                nginx)          echo "Up 1 hour (healthy)" ;;
+                                loki)           echo "Up 30 minutes" ;;
+                                alloy)          echo "Up 1 hour" ;;
+                                redis-exporter) echo "Up 1 hour" ;;
+                                nginx-exporter) echo "Up 1 hour" ;;
+                                vllm)           echo "Up 7 minutes (health: starting)" ;;
+                                db)             echo "Up 4 hours (healthy)" ;;
+                                redis)          echo "Up 4 hours (healthy)" ;;
+                                grafana)        : ;;  # empty = disabled/profile off
+                                prometheus)     : ;;
+                                alertmanager)   : ;;
+                                portainer)      : ;;
+                                *)              echo "Up 1 hour (healthy)" ;;
+                            esac
+                            ;;
+                        init_exited)
+                            case "$_ps_filter_name" in
+                                redis-lock-cleaner) echo "Exited (0) 2 hours ago" ;;
+                                k6)                 echo "Exited (0) 1 day ago" ;;
+                                *)                  echo "Up 1 hour (healthy)" ;;
+                            esac
+                            ;;
+                        restart_loop)
+                            case "$_ps_filter_name" in
+                                vllm) echo "Up 2 seconds" ;;
+                                *)    echo "Up 1 hour (healthy)" ;;
+                            esac
+                            ;;
+                        unhealthy)
+                            case "$_ps_filter_name" in
+                                worker) echo "Up 5 minutes (unhealthy)" ;;
+                                *)      echo "Up 1 hour (healthy)" ;;
+                            esac
+                            ;;
+                        none|empty)
+                            : # nothing
+                            ;;
+                        *)
+                            echo "Up 1 hour (healthy)"
+                            ;;
+                    esac
+                else
+                    # Bare docker ps (no name filter) — keep original name-list behavior for test_doctor.sh
+                    case "${MOCK_DOCKER_PS_FIXTURE:-running}" in
+                        running)
+                            printf 'agmind-api\nagmind-vllm\nagmind-docling\nagmind-nginx\n'
+                            ;;
+                        unhealthy)
+                            printf 'agmind-api\nagmind-vllm\nagmind-docling\nagmind-nginx\nagmind-worker\t(unhealthy)\n'
+                            ;;
+                        multi_state)
+                            printf 'agmind-api\nagmind-worker\nagmind-nginx\nagmind-loki\nagmind-vllm\nagmind-db\nagmind-redis\n'
+                            ;;
+                        init_exited)
+                            printf 'agmind-api\nagmind-redis-lock-cleaner\nagmind-k6\n'
+                            ;;
+                        restart_loop)
+                            printf 'agmind-vllm\n'
+                            ;;
+                        none|empty)
+                            : # nothing
+                            ;;
+                        *)
+                            printf 'agmind-api\nagmind-vllm\nagmind-docling\nagmind-nginx\n'
+                            ;;
+                    esac
+                fi
                 ;;
             exec)
                 # docker exec <container> <cmd> — dispatch on MOCK_DOCKER_EXEC_FIXTURE
@@ -75,7 +165,118 @@ case "${MOCK_DOCKER_FIXTURE:-healthy}" in
                 esac
                 ;;
             inspect)
-                echo '[{"RestartCount":0,"Mounts":[],"Config":{"Env":["NVIDIA_DRIVER_CAPABILITIES=compute,utility"]}}]'
+                # docker inspect <container> [--format '<template>']
+                # lib/status.sh uses these --format strings:
+                #   '{{.RestartCount}}'
+                #   '{{if .State.Health}}{{.State.Health.Status}}{{end}}'
+                #   'Image: ... Status: ... StartedAt: ... RestartCount: ...'
+                #   '{{if .State.Health}}Last health: {{(index .State.Health.Log 0).Output}}{{end}}'
+                #   '{{.State.Pid}}'
+                #   '{{range .Config.Cmd}}{{.}} {{end}}'
+                # lib/doctor.sh uses bare inspect (no --format) for GPU env → raw JSON
+                #
+                # Detect which format was requested by scanning argv
+                _insp_fmt=""
+                _insp_container=""
+                _insp_scanning_fmt=0
+                for _insp_a in "$@"; do
+                    if [[ "$_insp_scanning_fmt" -eq 1 ]]; then
+                        _insp_fmt="$_insp_a"
+                        _insp_scanning_fmt=0
+                    elif [[ "$_insp_a" == "--format" ]]; then
+                        _insp_scanning_fmt=1
+                    elif [[ "$_insp_a" != "inspect" ]]; then
+                        _insp_container="$_insp_a"
+                    fi
+                done
+
+                # Extract short container name (strip "agmind-" prefix)
+                _insp_cname="${_insp_container#agmind-}"
+
+                if [[ -z "$_insp_fmt" ]]; then
+                    # Bare docker inspect (no --format) — existence check + GPU env JSON
+                    # MOCK_DOCKER_INSPECT_FIXTURE=missing → exit 1 (container not found)
+                    if [[ "${MOCK_DOCKER_INSPECT_FIXTURE:-ok}" == "missing" ]]; then
+                        echo "Error: No such object: ${_insp_container}" >&2
+                        exit 1
+                    fi
+                    # Default: raw JSON satisfying doctor.sh inspect (RestartCount + GPU env)
+                    echo '[{"RestartCount":0,"Mounts":[],"Config":{"Env":["NVIDIA_DRIVER_CAPABILITIES=compute,utility"]}}]'
+                elif [[ "$_insp_fmt" == *"RestartCount"* && "$_insp_fmt" != *"Image"* && "$_insp_fmt" != *"Status"* ]]; then
+                    # '{{.RestartCount}}' — single-field query
+                    case "${MOCK_DOCKER_INSPECT_FIXTURE:-ok}" in
+                        restart_loop) echo "47" ;;
+                        *)            echo "0" ;;
+                    esac
+                elif [[ "$_insp_fmt" == *"State.Health"* && "$_insp_fmt" != *"Log"* && "$_insp_fmt" != *"Last health"* ]]; then
+                    # '{{if .State.Health}}{{.State.Health.Status}}{{end}}'
+                    # Distroless containers (no healthcheck) → empty string
+                    # MOCK_DOCKER_HEALTH_FIXTURE overrides per-container behavior
+                    case "${MOCK_DOCKER_HEALTH_FIXTURE:-default}" in
+                        unhealthy_worker)
+                            case "$_insp_cname" in
+                                worker)                                    echo "unhealthy" ;;
+                                loki|alloy|redis-exporter|nginx-exporter) : ;;  # distroless
+                                *)                                         echo "healthy" ;;
+                            esac
+                            ;;
+                        starting_vllm)
+                            case "$_insp_cname" in
+                                vllm)                                      echo "starting" ;;
+                                loki|alloy|redis-exporter|nginx-exporter) : ;;
+                                *)                                         echo "healthy" ;;
+                            esac
+                            ;;
+                        distroless_loki)
+                            case "$_insp_cname" in
+                                loki)  : ;;  # empty = no healthcheck
+                                *)     echo "healthy" ;;
+                            esac
+                            ;;
+                        *)
+                            # Default: distroless services get empty; everything else healthy
+                            case "$_insp_cname" in
+                                loki|alloy|redis-exporter|nginx-exporter) : ;;  # distroless
+                                *)                                         echo "healthy" ;;
+                            esac
+                            ;;
+                    esac
+                elif [[ "$_insp_fmt" == *"State.Pid"* ]]; then
+                    # '{{.State.Pid}}'
+                    echo "12345"
+                elif [[ "$_insp_fmt" == *"Config.Cmd"* ]]; then
+                    # '{{range .Config.Cmd}}{{.}} {{end}}' — vLLM compose args
+                    echo "--enforce-eager gpu_memory_utilization 0.6"
+                elif [[ "$_insp_fmt" == *"Last health"* ]] || [[ "$_insp_fmt" == *"State.Health"* && "$_insp_fmt" == *"Log"* ]]; then
+                    # '{{if .State.Health}}Last health: {{(index .State.Health.Log 0).Output}}{{end}}'
+                    echo "Last health: OK"
+                elif [[ "$_insp_fmt" == *"Image"* && "$_insp_fmt" == *"Status"* ]]; then
+                    # Multi-field detail template: Image / Status / StartedAt / RestartCount
+                    _insp_rc_val="0"
+                    if [[ "${MOCK_DOCKER_INSPECT_FIXTURE:-ok}" == "restart_loop" ]]; then
+                        _insp_rc_val="47"
+                    fi
+                    printf 'Image: vllm/vllm-openai:gemma4-cu130\nStatus: running\nStartedAt: 2026-05-11T08:00:00Z\nRestartCount: %s\n' "$_insp_rc_val"
+                else
+                    # Fallback for any other --format
+                    echo "unknown-format-response"
+                fi
+                ;;
+            stats)
+                # docker stats --no-stream --format 'CPU: {{.CPUPerc}}   MEM: {{.MemUsage}}' <container>
+                # Used by _status_service_detail for resource info.
+                case "${MOCK_DOCKER_STATS_FIXTURE:-ok}" in
+                    ok)          echo "CPU: 12.3%   MEM: 1.6GiB / 96GiB" ;;
+                    unavailable) exit 1 ;;
+                    *)           echo "CPU: 12.3%   MEM: 1.6GiB / 96GiB" ;;
+                esac
+                ;;
+            logs)
+                # docker logs --tail 30 <container>
+                # Used by _status_service_detail for log tail.
+                echo "INFO: server started"
+                echo "INFO: model loaded successfully"
+                echo "INFO: accepting connections on :8000"
                 ;;
             image)
                 if [[ "${2:-}" == "inspect" ]]; then
