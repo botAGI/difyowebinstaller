@@ -274,9 +274,171 @@ print('OK: %d checks, status=%s' % (len(d['checks']), d['status']))
 ) && pass "json_valid: --json is valid JSON with checks/status/errors/warnings and bool fixable" \
   || fail "json_valid: --json failed validation"
 
-# ── fix_dry_run / fix_apply: stubs (plan 01-03) ──────────────────────────────
-# TODO: Case fix_dry_run — --fix --dry-run → MOCK_SYSCTL_CALLLOG empty (nothing written)
-# TODO: Case fix_apply  — --fix → MOCK_SYSCTL_CALLLOG contains "sysctl -w ..."
+# ── SC4: fix_dry_run — --fix --dry-run → exit 0, no side effects in mock logs ─
+# WHY SC4: --fix --dry-run must produce ZERO side effects (no sysctl -w, no apt-mark hold,
+#   no systemctl restart). D-10 + T-01-12 requirement.
+# NOTE: the root-AND-apply path (real sysctl -w / systemctl restart / apt-mark hold +
+#   idempotent re-run) is verified on live spark-3eac in plan 01-04 — see
+#   01-VALIDATION.md § Manual-Only Verifications.
+(
+    set +eu
+    _calllog_sysctl="$(mktemp)"
+    _calllog_apt="$(mktemp)"
+    _calllog_systemctl="$(mktemp)"
+    trap 'rm -f "$_calllog_sysctl" "$_calllog_apt" "$_calllog_systemctl"' EXIT
+    export MOCK_SYSCTL_CALLLOG="$_calllog_sysctl"
+    export MOCK_APTMARK_CALLLOG="$_calllog_apt"
+    export MOCK_SYSTEMCTL_CALLLOG="$_calllog_systemctl"
+    export MOCK_SYSCTL_FIXTURE=low
+    export MOCK_NVIDIA_SMI_FIXTURE=dgx_spark
+    export MOCK_DOCKER_FIXTURE=healthy
+    export MOCK_SS_FIXTURE=clean
+    export MOCK_APTMARK_FIXTURE=none
+    export INSTALL_DIR=/tmp/doctor-fix-dryrun-$$
+    out="$(_run_doctor --fix --dry-run 2>&1)"
+    rc="$(_rc_of "$out")"
+    # dry-run exits 0 on WARN or less (the fix suppresses --fix error propagation)
+    # Actually doctor_run returns based on WARN count after re-run (not run with dry-run)
+    # In dry-run: no re-run happens, so WARN from mapcount_low makes it exit 1 — allowed
+    # Key assertion: NO sysctl -w in calllog
+    # Use grep|wc -l (not grep -c) — grep -c exits 1 on no-match, causing || echo 0
+    # to fire and producing "0\n0" (two tokens) which breaks arithmetic [[ ]].
+    sysctl_w_calls="$(grep -- '-w' "$_calllog_sysctl" 2>/dev/null | wc -l)"
+    apt_hold_calls="$(grep -- 'hold' "$_calllog_apt" 2>/dev/null | wc -l)"
+    # apt-mark showhold is written by doctor_check_arch_driver; "showhold" contains "hold".
+    # We only care about "apt-mark hold <pkg>" (the actual hold command, not showhold query).
+    apt_hold_applied="$(grep -- ' hold ' "$_calllog_apt" 2>/dev/null | wc -l)"
+    systemctl_restart_calls="$(grep -- 'restart' "$_calllog_systemctl" 2>/dev/null | wc -l)"
+    # Also assert dry-run mentions appear in output
+    [[ "${sysctl_w_calls}" -eq 0 ]] || { echo "FAIL: sysctl -w called ${sysctl_w_calls} times in dry-run" >&2; exit 1; }
+    [[ "${apt_hold_applied}" -eq 0 ]] || { echo "FAIL: apt-mark hold applied ${apt_hold_applied} times in dry-run (apt_hold_calls=${apt_hold_calls})" >&2; exit 1; }
+    [[ "${systemctl_restart_calls}" -eq 0 ]] || { echo "FAIL: systemctl restart called ${systemctl_restart_calls} times in dry-run" >&2; exit 1; }
+    echo "$out" | grep -qi 'dry-run' || { echo "FAIL: no dry-run mention in output; out=${out}" >&2; exit 1; }
+    exit 0
+) && pass "fix_dry_run: no sysctl -w / apt-mark hold / systemctl restart calls in dry-run" \
+  || fail "fix_dry_run: side effect detected in mock call-logs during --fix --dry-run"
+
+# ── SC2: fix_requires_root — non-root → _registry_fix_all returns 2, no side effects ─
+# WHY SC2: root gate fires BEFORE any side effect (D-10, T-01-12).
+(
+    set +eu
+    _calllog_sysctl="$(mktemp)"
+    _calllog_apt="$(mktemp)"
+    _calllog_systemctl="$(mktemp)"
+    trap 'rm -f "$_calllog_sysctl" "$_calllog_apt" "$_calllog_systemctl"' EXIT
+    export MOCK_SYSCTL_CALLLOG="$_calllog_sysctl"
+    export MOCK_APTMARK_CALLLOG="$_calllog_apt"
+    export MOCK_SYSTEMCTL_CALLLOG="$_calllog_systemctl"
+    export MOCK_SYSCTL_FIXTURE=low
+    # When running as root (CI may run as root), this test is not meaningful — skip.
+    if [[ "$EUID" -eq 0 ]]; then
+        echo "  [SKIP] fix_requires_root (test runner is root — gate cannot be tested without privilege drop)"
+        exit 0
+    fi
+    # Non-root: source lib/doctor.sh and call _registry_fix_all false directly
+    # NOTE: 2>&1 must be INSIDE $() so that log_error (stderr) is captured in result.
+    result="$(
+        {
+            set +e
+            export PATH="${MOCK_DIR}:${PATH}"
+            source "${REPO_ROOT}/lib/common.sh" 2>/dev/null || true
+            source "${REPO_ROOT}/lib/doctor.sh"
+            # Populate registry with a fixable entry
+            _registry_add "vm_max_map_count" "kernel-params" "WARN" "low" \
+                "sudo agmind doctor --fix" true "_ensure_es_sysctl"
+            _registry_fix_all false
+            echo "RC=$?"
+        } 2>&1
+    )"
+    fix_rc="$(grep -oE 'RC=[0-9]+' <<< "$result" | tail -1 | cut -d= -f2)"
+    # Use grep|wc -l to avoid grep -c exit-1 / || echo 0 double-value issue
+    sysctl_w_calls="$(grep -- '-w' "$_calllog_sysctl" 2>/dev/null | wc -l)"
+    apt_hold_applied="$(grep -- ' hold ' "$_calllog_apt" 2>/dev/null | wc -l)"
+    [[ "${fix_rc:-99}" -eq 2 ]] || { echo "FAIL: _registry_fix_all false returned RC=${fix_rc} (want 2); out=${result}" >&2; exit 1; }
+    [[ "${sysctl_w_calls}" -eq 0 ]] || { echo "FAIL: sysctl -w called before root gate fired" >&2; exit 1; }
+    [[ "${apt_hold_applied}" -eq 0 ]] || { echo "FAIL: apt-mark hold called before root gate fired" >&2; exit 1; }
+    echo "$result" | grep -qi 'root\|EUID\|требует\|requires' \
+        || { echo "FAIL: no root-error message in output; out=${result}" >&2; exit 1; }
+    exit 0
+) && pass "fix_requires_root: non-root returns RC=2 with no side effects (or SKIP if runner is root)" \
+  || fail "fix_requires_root: root gate did not fire or side effects detected"
+
+# ── SC2: fix_static_asserts — idempotency + non-interactive (static grep) ─────
+# WHY SC2: _doctor_fix_mapcount must TRUNCATE (>) not append (>>) so repeat runs are safe.
+#   All 3 fix helpers must not contain read/whiptail (non-interactive D-10).
+#   NOTE: the live idempotent-run test (run --fix twice, second is no-op) is in 01-04
+#   manual verification — see 01-VALIDATION.md § Manual-Only Verifications.
+(
+    set +eu
+    # Assert truncate (>) not append (>>) in _doctor_fix_mapcount
+    grep -q '> /etc/sysctl.d/99-agmind-es.conf' "${REPO_ROOT}/lib/doctor.sh" \
+        || { echo "FAIL: > /etc/sysctl.d/99-agmind-es.conf not found (truncate missing)" >&2; exit 1; }
+    grep -q '>> /etc/sysctl.d/99-agmind-es.conf' "${REPO_ROOT}/lib/doctor.sh" \
+        && { echo "FAIL: >> /etc/sysctl.d/99-agmind-es.conf found (must use truncate, not append)" >&2; exit 1; } || true
+    exit 0
+) && pass "fix_idempotent: _doctor_fix_mapcount uses truncate (>) not append (>>)" \
+  || fail "fix_idempotent: _doctor_fix_mapcount uses append (>>) — not idempotent"
+
+(
+    set +eu
+    # Assert no interactive prompts (read/whiptail) in fix helper bodies
+    # Extract lines between _doctor_fix_mapcount and _doctor_fix_mdns / _doctor_fix_driver_pin
+    # Also check the raw fix helper sections (grep result used implicitly via bad_lines below)
+    in_fix_block=0
+    bad_lines=""
+    while IFS= read -r line; do
+        case "$line" in
+            *_doctor_fix_mapcount*|*_doctor_fix_mdns*|*_doctor_fix_driver_pin*)
+                in_fix_block=1 ;;
+            "}")
+                in_fix_block=0 ;;
+        esac
+        if [[ $in_fix_block -eq 1 ]]; then
+            if echo "$line" | grep -qE '^\s+read [^-]|^\s+whiptail'; then
+                bad_lines="${bad_lines}${line}\n"
+            fi
+        fi
+    done < "${REPO_ROOT}/lib/doctor.sh"
+    [[ -z "$bad_lines" ]] \
+        || { printf 'FAIL: interactive prompts in fix helpers:\n%b' "$bad_lines" >&2; exit 1; }
+    exit 0
+) && pass "fix_non_interactive: no read/whiptail prompts in fix helper bodies" \
+  || fail "fix_non_interactive: interactive prompt found in fix helper"
+
+# ── SC4: fix_apply_dryonly — _registry_fix_all true → exit 0, logs empty ──────
+# WHY SC4: direct function call variant of fix_dry_run for belt-and-suspenders.
+# NOTE: the root-AND-apply path (real sysctl -w / systemctl restart / apt-mark hold +
+#   idempotent re-run) is verified on live spark-3eac in plan 01-04 — see
+#   01-VALIDATION.md § Manual-Only Verifications.
+(
+    set +eu
+    _calllog_sysctl="$(mktemp)"
+    _calllog_apt="$(mktemp)"
+    trap 'rm -f "$_calllog_sysctl" "$_calllog_apt"' EXIT
+    export MOCK_SYSCTL_CALLLOG="$_calllog_sysctl"
+    export MOCK_APTMARK_CALLLOG="$_calllog_apt"
+    export MOCK_SYSCTL_FIXTURE=low
+    result="$(
+        set +e
+        export PATH="${MOCK_DIR}:${PATH}"
+        source "${REPO_ROOT}/lib/common.sh" 2>/dev/null || true
+        source "${REPO_ROOT}/lib/doctor.sh"
+        # Populate registry with a fixable entry
+        _registry_add "vm_max_map_count" "kernel-params" "WARN" "low" \
+            "sudo agmind doctor --fix" true "_ensure_es_sysctl"
+        _registry_fix_all true   # dry_run=true
+        echo "RC=$?"
+    ) 2>&1"
+    fix_rc="$(grep -oE 'RC=[0-9]+' <<< "$result" | tail -1 | cut -d= -f2)"
+    # Use grep|wc -l to avoid grep -c exit-1 / || echo 0 double-value issue
+    sysctl_w_calls="$(grep -- '-w' "$_calllog_sysctl" 2>/dev/null | wc -l)"
+    apt_hold_applied="$(grep -- ' hold ' "$_calllog_apt" 2>/dev/null | wc -l)"
+    [[ "${fix_rc:-99}" -eq 0 ]] || { echo "FAIL: _registry_fix_all true returned RC=${fix_rc} (want 0)" >&2; exit 1; }
+    [[ "${sysctl_w_calls}" -eq 0 ]] || { echo "FAIL: sysctl -w called in dry-run" >&2; exit 1; }
+    [[ "${apt_hold_applied}" -eq 0 ]] || { echo "FAIL: apt-mark hold called in dry-run" >&2; exit 1; }
+    exit 0
+) && pass "fix_apply_dryonly: _registry_fix_all true → RC=0, sysctl/apt call-logs empty" \
+  || fail "fix_apply_dryonly: side effects or wrong RC from _registry_fix_all true"
 
 echo ""
 echo "=== Summary: ${PASS} passed, ${FAIL} failed ==="
