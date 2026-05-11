@@ -159,263 +159,14 @@ cmd_status() {
 # ============================================================================
 
 cmd_doctor() {
-    local errors=0 warnings=0 checks=() output_json=false
-    [[ "${1:-}" == "--json" ]] && output_json=true
-
-    _check() {
-        local sev="$1" label="$2" msg="${3:-}" fix="${4:-}"
-        if [[ "$output_json" == "true" ]]; then
-            local m; m="$(echo "$msg" | sed 's/"/\\"/g')"
-            local f; f="$(echo "$fix" | sed 's/"/\\"/g')"
-            checks+=("{\"severity\":\"${sev}\",\"label\":\"${label}\",\"message\":\"${m}\",\"fix\":\"${f}\"}")
-        else
-            case "$sev" in
-                OK)   echo -e "  ${GREEN}[OK]${NC}   ${label}" ;;
-                WARN) echo -e "  ${YELLOW}[WARN]${NC} ${label} — ${msg}"; [[ -n "$fix" ]] && echo -e "         ${CYAN}-> ${fix}${NC}" ;;
-                FAIL) echo -e "  ${RED}[FAIL]${NC} ${label} — ${msg}"; [[ -n "$fix" ]] && echo -e "         ${CYAN}-> ${fix}${NC}" ;;
-                SKIP) echo -e "  ${CYAN}[SKIP]${NC} ${label} — ${msg}" ;;
-            esac
-        fi
-        case "$sev" in WARN) warnings=$((warnings+1));; FAIL) errors=$((errors+1));; esac
-    }
-
-    # Docker
-    [[ "$output_json" != "true" ]] && echo -e "\n${BOLD}Docker + Compose:${NC}"
-    if ! command -v docker &>/dev/null; then
-        _check FAIL "Docker" "not installed" "curl -fsSL https://get.docker.com | sh"
-    else
-        local dv; dv="$(docker version --format '{{.Server.Version}}' 2>/dev/null || echo "0")"
-        local dm="${dv%%.*}"
-        if [[ "$dm" -ge 24 ]] 2>/dev/null; then _check OK "Docker v${dv}"
-        elif [[ "$dm" -ge 20 ]] 2>/dev/null; then _check WARN "Docker v${dv}" "24.0+ recommended"
-        else _check FAIL "Docker v${dv}" "24.0+ required"; fi
-    fi
-    if docker compose version &>/dev/null; then
-        local cv; cv="$(docker compose version --short 2>/dev/null | sed 's/^v//')"
-        local cmaj; cmaj="$(echo "$cv" | cut -d. -f1)"
-        local cmin; cmin="$(echo "$cv" | cut -d. -f2)"
-        if [[ "${cmaj:-0}" -ge 3 ]] 2>/dev/null; then _check OK "Compose v${cv}"
-        elif [[ "${cmaj:-0}" -eq 2 && "${cmin:-0}" -ge 20 ]] 2>/dev/null; then _check OK "Compose v${cv}"
-        else _check WARN "Compose v${cv}" "2.20+ recommended"; fi
-    elif command -v docker &>/dev/null; then
-        _check FAIL "Docker Compose" "not installed"
-    fi
-
-    # DNS
-    [[ "$output_json" != "true" ]] && echo -e "\n${BOLD}DNS + Network:${NC}"
-    if host registry.ollama.ai &>/dev/null 2>&1 || nslookup registry.ollama.ai &>/dev/null 2>&1; then
-        _check OK "DNS (registry.ollama.ai)"
-    else _check WARN "DNS" "Cannot resolve registry.ollama.ai"; fi
-    if curl -sf --max-time 5 https://registry-1.docker.io/v2/ &>/dev/null; then _check OK "Docker Hub"
-    else _check WARN "Docker Hub" "Unreachable"; fi
-
-    # GPU
-    [[ "$output_json" != "true" ]] && echo -e "\n${BOLD}GPU:${NC}"
-    local lp ep; lp="$(_read_env LLM_PROVIDER "unknown")"; ep="$(_read_env EMBED_PROVIDER "unknown")"
-    if [[ "$lp" == "external" && "$ep" == "external" ]]; then _check SKIP "GPU" "External provider"
-    elif command -v nvidia-smi &>/dev/null; then
-        _check OK "NVIDIA GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)"
-        if docker info 2>/dev/null | grep -qi "nvidia"; then _check OK "NVIDIA Container Toolkit"
-        else _check WARN "NVIDIA Container Toolkit" "Docker nvidia runtime not configured"; fi
-    elif command -v rocm-smi &>/dev/null; then _check OK "AMD GPU (ROCm)"
-    else _check WARN "GPU" "nvidia-smi not found"; fi
-
-    # Resources
-    [[ "$output_json" != "true" ]] && echo -e "\n${BOLD}Resources:${NC}"
-    local free_gb disk_total disk_pct
-    free_gb="$(df -BG / 2>/dev/null | tail -1 | awk '{print $4}' | tr -d 'G' || echo "0")"
-    disk_total="$(df -BG / 2>/dev/null | tail -1 | awk '{print $2}' | tr -d 'G' || echo "0")"
-    disk_pct="$(df / 2>/dev/null | tail -1 | awk '{print $5}' | tr -d '%' || echo "0")"
-    if [[ "${free_gb:-0}" -ge 20 ]] 2>/dev/null; then _check OK "Disk: ${free_gb}GB free (${disk_pct}% used of ${disk_total}GB)"
-    elif [[ "${free_gb:-0}" -ge 10 ]] 2>/dev/null; then _check WARN "Disk: ${free_gb}GB free (${disk_pct}% used)" "20GB+ recommended" "docker system prune"
-    else _check FAIL "Disk: ${free_gb}GB free (${disk_pct}% used)" "Мало места" "docker system prune -af"; fi
-
-    local ram_gb ram_used ram_pct
-    ram_gb="$(LANG=C free -g 2>/dev/null | awk '/^Mem:/{print $2}' || echo "0")"
-    ram_used="$(LANG=C free -g 2>/dev/null | awk '/^Mem:/{print $3}' || echo "0")"
-    if [[ "${ram_gb:-0}" -gt 0 ]] 2>/dev/null; then
-        ram_pct=$(( (ram_used * 100) / ram_gb ))
-    else
-        ram_pct=0
-    fi
-    if [[ "${ram_gb:-0}" -ge 8 ]] 2>/dev/null; then _check OK "RAM: ${ram_gb}GB total (${ram_pct}% used)"
-    elif [[ "${ram_gb:-0}" -ge 4 ]] 2>/dev/null; then _check WARN "RAM: ${ram_gb}GB (${ram_pct}% used)" "8GB+ recommended"
-    else _check FAIL "RAM: ${ram_gb}GB (${ram_pct}% used)" "Минимум 4GB"; fi
-
-    for port in 80 443; do
-        local pp; pp="$(ss -tlnp 2>/dev/null | grep ":${port} " | head -1 || true)"
-        if [[ -z "$pp" ]]; then _check OK "Port ${port} (free)"
-        elif echo "$pp" | grep -q "agmind\|nginx\|docker"; then _check OK "Port ${port} (AGMind)"
-        else _check FAIL "Port ${port}" "In use by another process"; fi
-    done
-
-    # Docker disk usage summary
-    local docker_disk
-    docker_disk="$(docker system df --format 'table {{.Type}}\t{{.Size}}\t{{.Reclaimable}}' 2>/dev/null || true)"
-    if [[ -n "$docker_disk" ]]; then
-        [[ "$output_json" != "true" ]] && echo -e "\n${BOLD}Docker Disk:${NC}"
-        while IFS= read -r line; do
-            [[ "$output_json" != "true" ]] && echo "  $line"
-        done <<< "$docker_disk"
-    fi
-
-    # Container Health
-    if [[ -f "${AGMIND_DIR}/.agmind_installed" ]]; then
-        [[ "$output_json" != "true" ]] && echo -e "\n${BOLD}Container Health:${NC}"
-
-        # Unhealthy containers
-        local unhealthy
-        unhealthy="$(docker ps --filter "name=agmind-" --filter "health=unhealthy" --format '{{.Names}}' 2>/dev/null || true)"
-        if [[ -n "$unhealthy" ]]; then
-            while IFS= read -r c; do
-                _check FAIL "Unhealthy: ${c}" "Контейнер нездоров" "docker logs --tail 20 ${c}"
-            done <<< "$unhealthy"
-        else
-            _check OK "Нет unhealthy контейнеров"
-        fi
-
-        # Exited containers
-        local exited
-        exited="$(docker ps -a --filter "name=agmind-" --filter "status=exited" --format '{{.Names}}' 2>/dev/null || true)"
-        if [[ -n "$exited" ]]; then
-            while IFS= read -r c; do
-                # Skip init-containers (expected to exit)
-                [[ "$c" == *"lock-cleaner"* ]] && continue
-                _check WARN "Exited: ${c}" "Контейнер остановлен" "docker start ${c}"
-            done <<< "$exited"
-        fi
-
-        # High restart count (>3)
-        local restarts
-        restarts="$(docker ps --filter "name=agmind-" --format '{{.Names}}\t{{.Status}}' 2>/dev/null || true)"
-        if [[ -n "$restarts" ]]; then
-            while IFS=$'\t' read -r cname _cstatus; do
-                local rcount
-                rcount="$(docker inspect --format '{{.RestartCount}}' "$cname" 2>/dev/null || echo "0")"
-                if [[ "${rcount:-0}" -gt 3 ]] 2>/dev/null; then
-                    _check WARN "Restarts: ${cname}" "${rcount} перезапусков" "docker logs --tail 30 ${cname}"
-                fi
-            done <<< "$restarts"
-        fi
-
-        # LiteLLM
-        if docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'agmind-litellm'; then
-            if docker exec agmind-litellm curl -sf --max-time 5 http://localhost:4000/health >/dev/null 2>&1; then
-                _check OK "LiteLLM Gateway" "healthy (port 4000)"
-            else
-                _check WARN "LiteLLM Gateway" "Container running but health check failed" "docker compose restart agmind-litellm"
-            fi
-        fi
-    fi
-
-    # HTTP Endpoints
-    if [[ -f "${AGMIND_DIR}/.agmind_installed" ]]; then
-        [[ "$output_json" != "true" ]] && echo -e "\n${BOLD}HTTP Endpoints:${NC}"
-        verify_services >/dev/null 2>&1 || true
-        if [[ ${#VERIFY_RESULTS[@]} -gt 0 ]]; then
-            for entry in "${VERIFY_RESULTS[@]}"; do
-                IFS='|' read -r name url status <<< "$entry"
-                if [[ "$status" == "OK" ]]; then
-                    _check OK "${name} (${url})"
-                else
-                    local hint=""
-                    case "$name" in
-                        vLLM)           hint="agmind logs vllm" ;;
-                        Ollama)         hint="agmind logs ollama" ;;
-                        TEI)            hint="agmind logs tei" ;;
-                        "Dify Console") hint="agmind logs api" ;;
-                        "Open WebUI")   hint="agmind logs open-webui" ;;
-                        Weaviate)       hint="agmind logs weaviate" ;;
-                        Qdrant)         hint="agmind logs qdrant" ;;
-                        *)              hint="Проверьте логи сервиса" ;;
-                    esac
-                    _check FAIL "${name} (${url})" "Сервис не отвечает" "$hint"
-                fi
-            done
-        fi
-
-        # .env Completeness
-        if [[ -f "$ENV_FILE" ]]; then
-            if [[ ! -r "$ENV_FILE" ]]; then
-                [[ "$output_json" != "true" ]] && echo -e "\n${BOLD}.env Completeness:${NC}"
-                _check SKIP ".env" "Нет прав чтения" "Запустите: sudo agmind doctor"
-            else
-                [[ "$output_json" != "true" ]] && echo -e "\n${BOLD}.env Completeness:${NC}"
-                # Required vars — must always be set
-                local required_vars=(LLM_PROVIDER EMBED_PROVIDER SECRET_KEY DB_PASSWORD REDIS_PASSWORD INIT_PASSWORD)
-                # Optional vars — WARN if missing (normal on some profiles)
-                local optional_vars=(DOMAIN DEPLOY_PROFILE)
-                local env_ok=0 env_missing=0
-                for var in "${required_vars[@]}"; do
-                    local val
-                    val="$(_read_env "$var" "")"
-                    if [[ -n "$val" ]]; then
-                        env_ok=$((env_ok + 1))
-                    else
-                        _check FAIL ".env: ${var}" "Не задан" "Проверьте ${ENV_FILE}"
-                        env_missing=$((env_missing + 1))
-                    fi
-                done
-                for var in "${optional_vars[@]}"; do
-                    local val
-                    val="$(_read_env "$var" "")"
-                    if [[ -n "$val" ]]; then
-                        env_ok=$((env_ok + 1))
-                    else
-                        _check WARN ".env: ${var}" "Не задан (опционально для LAN)"
-                    fi
-                done
-                if [[ $env_missing -eq 0 ]]; then
-                    _check OK ".env: все ${env_ok} обязательных переменных заданы"
-                fi
-            fi
-        fi
-    fi
-
-    # Post-install
-    if [[ -f "${AGMIND_DIR}/.agmind_installed" ]]; then
-        [[ "$output_json" != "true" ]] && echo -e "\n${BOLD}Post-Install:${NC}"
-        [[ -f "$ENV_FILE" ]] && _check OK ".env exists" || _check FAIL ".env" "Not found"
-        local rest; rest="$(docker ps --filter "name=agmind-" --filter "status=restarting" --format '{{.Names}}' 2>/dev/null || true)"
-        [[ -z "$rest" ]] && _check OK "No restart loops" || _check FAIL "Restart loop" "$rest"
-    fi
-
-    # --peer shorthand: show only peer section then exit
-    if [[ "${1:-}" == "--peer" ]]; then
-        [[ "$output_json" != "true" ]] && echo -e "\n${BOLD}Peer Node:${NC}"
-        _doctor_peer
-        if [[ "$output_json" != "true" ]]; then
-            echo ""
-            if [[ $errors -gt 0 ]]; then
-                echo -e "${RED}${errors} error(s), ${warnings} warning(s)${NC}" >&2
-                return 2
-            elif [[ $warnings -gt 0 ]]; then
-                echo -e "${YELLOW}${warnings} warning(s)${NC}"
-                return 1
-            else
-                echo -e "${GREEN}All checks passed${NC}"
-            fi
-        fi
-        return 0
-    fi
-
-    # Full doctor — always include peer section if cluster.json may exist
-    [[ "$output_json" != "true" ]] && echo -e "\n${BOLD}Peer Node:${NC}"
-    _doctor_peer
-
-    # Output
-    if [[ "$output_json" == "true" ]]; then
-        local cj; cj="$(printf '%s,' "${checks[@]}" | sed 's/,$//')"
-        local ov="ok"; [[ $warnings -gt 0 ]] && ov="warnings"; [[ $errors -gt 0 ]] && ov="failures"
-        echo "{\"status\":\"${ov}\",\"errors\":${errors},\"warnings\":${warnings},\"checks\":[${cj}]}"
-    else
-        echo ""
-        if [[ $errors -gt 0 ]]; then echo -e "${RED}${errors} error(s), ${warnings} warning(s)${NC}"
-        elif [[ $warnings -gt 0 ]]; then echo -e "${YELLOW}${warnings} warning(s)${NC}"
-        else echo -e "${GREEN}All checks passed${NC}"; fi
-    fi
-
-    if [[ $errors -gt 0 ]]; then return 2; elif [[ $warnings -gt 0 ]]; then return 1; else return 0; fi
+    # Thin wrapper. Logic lives in lib/doctor.sh::doctor_run.
+    # Runtime copy: scripts/doctor.sh (created by _copy_runtime_files from lib/doctor.sh).
+    # Fallback to repo lib/doctor.sh for dev mode.
+    # shellcheck source=/dev/null
+    source "${SCRIPTS_DIR}/doctor.sh" 2>/dev/null \
+        || source "${AGMIND_DIR}/lib/doctor.sh" 2>/dev/null \
+        || { echo -e "${RED}doctor module missing — reinstall AGmind${NC}" >&2; return 1; }
+    doctor_run "$@"
 }
 
 # ============================================================================
@@ -1180,7 +931,7 @@ Usage: agmind <command> [options]
 Commands:
   status [--json]    Show stack status (services, GPU, models, endpoints)
   doctor [--peer] [--json]   Run system diagnostics (--peer = only peer section)
-  health [--peer] [--json]   Alias for doctor
+  health [--peer] [--json]   Alias for doctor (deprecated)
   logs [-f] [svc]    Show container logs
   stop               Stop all containers
   start              Start containers
@@ -1243,8 +994,8 @@ HELP
 
 case "${1:-help}" in
     status)         shift; cmd_status "${1:-}" ;;
-    doctor)         shift; cmd_doctor "${1:-}" ;;
-    health)         shift; cmd_doctor "${1:-}" ;;   # alias: agmind health [--peer] [--json]
+    doctor)         shift; cmd_doctor "$@" ;;
+    health)         shift; cmd_doctor "$@" ;;   # deprecated alias: agmind health [--peer] [--json]
     stop)           cmd_stop ;;
     start)          cmd_start ;;
     restart)        cmd_restart ;;
