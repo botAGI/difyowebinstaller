@@ -7,7 +7,8 @@
 set -euo pipefail
 trap 'echo "ERROR at line $LINENO: $BASH_COMMAND" >&2' ERR
 
-VERSION="3.0.0"
+VERSION="3.0.2"   # keep in sync with RELEASE / README / templates/release-manifest.json
+TOTAL_PHASES=11   # number of install phases (see main() phase table) — used in failure message
 INSTALLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="/opt/agmind"
 TEMPLATE_DIR="${INSTALLER_DIR}/templates"
@@ -66,7 +67,7 @@ _cleanup_on_failure() {
     log_error "Installation aborted (code: ${rc})."
     if [[ -f "${INSTALL_DIR}/.install_phase" ]]; then
         local p; p="$(cat "${INSTALL_DIR}/.install_phase" 2>/dev/null)"
-        log_warn "Failed at phase ${p}/9. Re-run: sudo bash install.sh"
+        log_warn "Failed at phase ${p}/${TOTAL_PHASES}. Re-run: sudo bash install.sh"
     fi
 }
 
@@ -1738,7 +1739,7 @@ main() {
     fi
 
     # Phase table
-    local t=11
+    local t="$TOTAL_PHASES"
     if [[ $start -le 1  ]]; then run_phase 1  $t "Diagnostics"   phase_diagnostics; fi
     if [[ "${DRY_RUN:-false}" == "true" ]]; then
         preflight_checks || true

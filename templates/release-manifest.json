@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "version": "v3.0.2",
-  "release_date": "2026-04-28",
+  "release_date": "2026-05-11",
   "min_installer_version": "1.0.0",
   "images": {
     "dify-api": {
@@ -27,7 +27,7 @@
     "open-webui": {
       "registry": "ghcr.io",
       "image": "open-webui/open-webui",
-      "tag": "v0.9.2",
+      "tag": "v0.9.5",
       "digest": "",
       "platforms": [
         "linux/amd64",
@@ -77,7 +77,7 @@
     "qdrant": {
       "registry": "docker.io",
       "image": "qdrant/qdrant",
-      "tag": "v1.8.3",
+      "tag": "v1.17.1",
       "digest": "",
       "platforms": [
         "linux/amd64",
@@ -165,7 +165,7 @@
     "portainer": {
       "registry": "docker.io",
       "image": "portainer/portainer-ce",
-      "tag": "2.39.1",
+      "tag": "2.41.1",
       "digest": "",
       "platforms": [
         "linux/amd64",
@@ -215,7 +215,7 @@
     "alloy": {
       "registry": "docker.io",
       "image": "grafana/alloy",
-      "tag": "v1.16.0",
+      "tag": "v1.16.1",
       "digest": "",
       "platforms": [
         "linux/amd64",
@@ -225,7 +225,7 @@
     "alertmanager": {
       "registry": "docker.io",
       "image": "prom/alertmanager",
-      "tag": "v0.32.0",
+      "tag": "v0.32.1",
       "digest": "",
       "platforms": [
         "linux/amd64",
