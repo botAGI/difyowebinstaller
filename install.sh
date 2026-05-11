@@ -1277,11 +1277,14 @@ _show_final_summary() {
 # --- Main ---
 main() {
     # Parse args
+    local resume_from="" skip_optional=false
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --non-interactive) NON_INTERACTIVE=true;;
             --force-restart) FORCE_RESTART=true;;
             --dry-run) DRY_RUN=true;;
+            --resume-from) shift; resume_from="${1:-}";;
+            --skip-optional) skip_optional=true;;
             --mode=*)
                 AGMIND_MODE_OVERRIDE="${1#*=}"
                 case "$AGMIND_MODE_OVERRIDE" in
@@ -1290,7 +1293,7 @@ main() {
                 esac
                 export AGMIND_MODE_OVERRIDE
                 ;;
-            --help|-h) echo "Usage: sudo bash install.sh [--non-interactive] [--force-restart] [--dry-run] [--mode=single|master|worker]"; exit 0;;
+            --help|-h) echo "Usage: sudo bash install.sh [--non-interactive] [--force-restart] [--dry-run] [--resume-from <N|name>] [--skip-optional] [--mode=single|master|worker]"; exit 0;;
         esac; shift
     done
 
@@ -1321,52 +1324,44 @@ main() {
 
     show_banner
 
-    # Checkpoint resume
+    # Checkpoint resume — derive 1-based start from .install_phase file (fallback when --resume-from absent)
     local start=1
     if [[ "$FORCE_RESTART" == "true" ]]; then rm -f "${INSTALL_DIR}/.install_phase"; fi
-    if [[ -f "${INSTALL_DIR}/.install_phase" ]]; then
+    if [[ -z "$resume_from" && -f "${INSTALL_DIR}/.install_phase" ]]; then
         local saved; saved="$(cat "${INSTALL_DIR}/.install_phase" 2>/dev/null)"
         if [[ "$saved" =~ ^([1-9]|1[01])$ ]]; then
             if [[ "$NON_INTERACTIVE" == "true" ]]; then start="$saved"
-            else read -rp "Resume from phase ${saved}/11? (yes/no/restart): " r
+            else read -rp "Resume from phase ${saved}/$(phases_count)? (yes/no/restart): " r
                 case "$r" in yes|y) start="$saved";; restart) rm -f "${INSTALL_DIR}/.install_phase";; *) exit 0;; esac
             fi
         fi
     fi
-    # On resume past wizard: load existing .env
-    if [[ $start -gt 2 && -f "${INSTALL_DIR}/docker/.env" ]]; then
+
+    # Resolve 0-based phase start index for the engine
+    local start_idx
+    if [[ -n "$resume_from" ]]; then
+        start_idx="$(phases_name_to_idx "$resume_from")" || { log_error "Invalid --resume-from: '${resume_from}' (use 1-$(phases_count) or a phase name)"; exit 1; }
+    else
+        start_idx=$(( start - 1 ))   # `start` (1-based, from .install_phase prompt; default 1) → 0-based
+    fi
+
+    # On resume past wizard (idx>1 i.e. phases 1+2 already done): reload existing .env
+    if [[ $start_idx -gt 1 && -f "${INSTALL_DIR}/docker/.env" ]]; then
         set +u; source "${INSTALL_DIR}/docker/.env"; set -u
     fi
 
-    # On resume: always re-run diagnostics to populate DETECTED_* vars (BFIX-42)
-    # Only run_diagnostics (lightweight detection, no prompts) -- NOT phase_diagnostics
-    # which would re-run preflight_checks and may prompt the user.
-    # || true: detection may partially fail (e.g. no nvidia-smi) but sets safe defaults.
-    if [[ $start -gt 1 ]]; then
+    # On any resume: re-run lightweight diagnostics to repopulate DETECTED_* vars (BFIX-42)
+    # Only run_diagnostics (not phase_diagnostics which prompts) — may partially fail; safe.
+    if [[ $start_idx -gt 0 ]]; then
         log_info "Resume: re-running system diagnostics..."
         run_diagnostics || true
     fi
 
-    # Phase table
-    local t="$TOTAL_PHASES"
-    if [[ $start -le 1  ]]; then run_phase 1  $t "Diagnostics"   phase_diagnostics; fi
-    if [[ "${DRY_RUN:-false}" == "true" ]]; then
-        preflight_checks || true
-        preflight_rc=$?
-        log_info "Dry-run complete — exiting without starting containers"
-        exit "$preflight_rc"
-    fi
-    if [[ $start -le 2  ]]; then run_phase 2  $t "Wizard"        phase_wizard; fi
-    if [[ $start -le 3  ]]; then run_phase 3  $t "Docker"        phase_docker; fi
-    if [[ $start -le 4  ]]; then run_phase 4  $t "Configuration" phase_config; fi
-    if [[ $start -le 5  ]]; then run_phase 5  $t "Pull"   phase_pull; fi   # inactivity timeout inside _pull_with_progress
-    if [[ $start -le 6  ]]; then run_phase_with_timeout 6  $t "Start"  phase_start  "$TIMEOUT_START"; fi
-    # Phase 7 — deploy vLLM to peer when AGMIND_MODE=master. Skips otherwise (single/worker).
-    if [[ $start -le 7  ]]; then run_phase 7  $t "Deploy Peer"   phase_deploy_peer; fi
-    if [[ $start -le 8  ]]; then run_phase 8  $t "Health"        phase_health; fi   # inactivity timeout inside wait_healthy
-    if [[ $start -le 9  ]]; then run_phase 9  $t "Models"        phase_models_graceful; fi  # graceful: non-fatal on timeout
-    if [[ $start -le 10 ]]; then run_phase 10 $t "Backups"       phase_backups; fi
-    if [[ $start -le 11 ]]; then run_phase 11 $t "Complete"      phase_complete; fi
+    # Run the phase engine (lib/phases.sh) — replaces the old hardcoded phase table
+    local engine_flags=()
+    [[ "${DRY_RUN:-false}" == "true" ]] && engine_flags+=(--dry-run)
+    [[ "$skip_optional" == "true" ]] && engine_flags+=(--skip-optional)
+    phases_run_all "$start_idx" "${engine_flags[@]}"
 
     rm -f "${INSTALL_DIR}/.install_phase"
 }
