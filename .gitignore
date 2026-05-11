@@ -18,6 +18,7 @@ __pycache__/
 /dify-workflows/
 /workflows/
 _data_staging/
+_food_staging/
 CLAUDE.md
 SPEC.md
 references/

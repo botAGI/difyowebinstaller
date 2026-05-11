@@ -96,6 +96,13 @@ x-shared-env: &shared-env
   QDRANT_HOST: ${QDRANT_HOST:-qdrant}
   QDRANT_PORT: ${QDRANT_PORT:-6333}
   QDRANT_API_KEY: ${QDRANT_API_KEY:-}
+  MILVUS_URI: ${MILVUS_URI:-http://milvus:19530}
+  MILVUS_TOKEN: ${MILVUS_TOKEN:-}
+  MILVUS_USER: ${MILVUS_USER:-root}
+  MILVUS_PASSWORD: ${MILVUS_PASSWORD:-}
+  MILVUS_DATABASE: ${MILVUS_DATABASE:-agmind}
+  MILVUS_ENABLE_HYBRID_SEARCH: ${MILVUS_ENABLE_HYBRID_SEARCH:-true}
+  MILVUS_ANALYZER_PARAMS: ${MILVUS_ANALYZER_PARAMS:-}
   # --- Mail (disabled) ---
   MAIL_TYPE: ${MAIL_TYPE:-}
   MAIL_DEFAULT_SEND_FROM: ${MAIL_DEFAULT_SEND_FROM:-}
@@ -236,7 +243,7 @@ services:
   open-webui:
     <<: *security-defaults
     # WARNING: open-webui version pinned for white-label compatibility
-    image: ghcr.io/open-webui/open-webui:${OPENWEBUI_VERSION:-v0.8.12}
+    image: ghcr.io/open-webui/open-webui:${OPENWEBUI_VERSION:-v0.9.5}
     container_name: agmind-openwebui
     restart: unless-stopped
     mem_limit: ${OPENWEBUI_MEM_LIMIT:-2g}
@@ -277,7 +284,7 @@ services:
   # ==================== Ollama ====================
   ollama:
     <<: *logging-defaults
-    image: ollama/ollama:${OLLAMA_VERSION:-0.6.2}
+    image: ollama/ollama:${OLLAMA_VERSION:-0.21.2}
     container_name: agmind-ollama
     restart: unless-stopped
     mem_limit: ${OLLAMA_MEM_LIMIT:-8g}
@@ -309,19 +316,27 @@ services:
       - agmind-backend
 
   # ==================== vLLM (vllm profile) ====================
+  # NOTE: На штатном AGmind (LLM_ON_PEER=true) этот блок НЕ активируется —
+  # vLLM работает на peer Spark через docker-compose.worker.yml. Этот блок
+  # для legacy single-node deploys или dev машин.
+  # §8 dgx-spark defaults aligned with worker.yml: gpu_memory_utilization=0.60
+  # (не 0.85 — на shared GPU 0.85 вызывает CUBLAS crash + docling OOM),
+  # mem_limit=96g (не 16g — gemma-4 26B требует минимум 96g).
   vllm:
     <<: *logging-defaults
     image: ${VLLM_IMAGE:-vllm/vllm-openai:${VLLM_VERSION:-v0.19.0}${VLLM_CUDA_SUFFIX:-}}
     container_name: agmind-vllm
     restart: unless-stopped
-    mem_limit: ${VLLM_MEM_LIMIT:-16g}
+    mem_limit: ${VLLM_MEM_LIMIT:-96g}
     mem_swappiness: 0
     profiles:
       - vllm
     environment:
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
       - CUDA_VISIBLE_DEVICES=${VLLM_CUDA_DEVICE:-0}
-    command: ${VLLM_CMD_PREFIX:-} --model ${VLLM_MODEL:-QuantTrio/Qwen3.5-27B-AWQ} --host 0.0.0.0 --port 8000 --gpu-memory-utilization ${VLLM_GPU_MEM_UTIL:-0.85} --max-model-len ${VLLM_MAX_MODEL_LEN:-32768} ${VLLM_EXTRA_ARGS:+${VLLM_EXTRA_ARGS}} --trust-remote-code
+      # §8: NVML/libcuda требуют этот env. Без него torch.cuda.is_available=False.
+      - NVIDIA_DRIVER_CAPABILITIES=${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
+    command: ${VLLM_CMD_PREFIX:-} --model ${VLLM_MODEL:-QuantTrio/Qwen3.5-27B-AWQ} --host 0.0.0.0 --port 8000 --gpu-memory-utilization ${VLLM_GPU_MEM_UTIL:-0.60} --max-model-len ${VLLM_MAX_MODEL_LEN:-32768} ${VLLM_EXTRA_ARGS:+${VLLM_EXTRA_ARGS}} --trust-remote-code
     volumes:
       - agmind_vllm_cache:/root/.cache/huggingface
     ipc: host
@@ -493,7 +508,7 @@ services:
   # ==================== PostgreSQL ====================
   db:
     <<: *security-defaults
-    image: postgres:${POSTGRES_VERSION:-16-alpine}
+    image: postgres:${POSTGRES_VERSION:-16-alpine3.23}
     container_name: agmind-db
     restart: always
     mem_limit: ${DB_MEM_LIMIT:-4g}
@@ -535,7 +550,7 @@ services:
   # ==================== Redis ====================
   redis:
     <<: *security-defaults
-    image: redis:${REDIS_VERSION:-7.4.1-alpine}
+    image: redis:${REDIS_VERSION:-7.4.8-alpine}
     container_name: agmind-redis
     restart: always
     mem_limit: ${REDIS_MEM_LIMIT:-1g}
@@ -563,7 +578,7 @@ services:
   # ==================== Weaviate ====================
   weaviate:
     <<: *security-defaults
-    image: semitechnologies/weaviate:${WEAVIATE_VERSION:-1.27.0}
+    image: semitechnologies/weaviate:${WEAVIATE_VERSION:-1.37.2}
     container_name: agmind-weaviate
     restart: always
     mem_limit: ${WEAVIATE_MEM_LIMIT:-4g}
@@ -600,7 +615,7 @@ services:
   # ==================== Qdrant (alternative vector store) ====================
   qdrant:
     <<: *security-defaults
-    image: qdrant/qdrant:${QDRANT_VERSION:-v1.8.3}
+    image: qdrant/qdrant:${QDRANT_VERSION:-v1.17.1}
     container_name: agmind-qdrant
     restart: always
     mem_limit: ${QDRANT_MEM_LIMIT:-2g}
@@ -616,6 +631,102 @@ services:
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
       start_period: 15s
+    networks:
+      - agmind-backend
+
+  # ==================== Milvus (optional 3rd vector store, profile=milvus) ====================
+  # Activated by VECTOR_STORE=milvus в wizard. Reuses agmind-minio для object storage
+  # (auto-pulled через build_compose_profiles в lib/compose.sh, как RAGFlow).
+  # arm64 verified 2026-05-11. Standalone mode: ~6-12 GiB RAM на 1-10M chunks.
+  # Use cases: коллекции >50M chunks, multilingual built-in BM25 (CJK+RU),
+  # клиент уже на Milvus. RAGFlow несовместим (PR #6367 closed) → Dify-only.
+  milvus-etcd:
+    <<: *security-defaults
+    image: quay.io/coreos/etcd:${MILVUS_ETCD_VERSION:-v3.5.25}
+    container_name: agmind-milvus-etcd
+    restart: always
+    mem_limit: ${MILVUS_ETCD_MEM_LIMIT:-1g}
+    profiles:
+      - milvus
+    environment:
+      ETCD_AUTO_COMPACTION_MODE: revision
+      ETCD_AUTO_COMPACTION_RETENTION: "1000"
+      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
+      ETCD_SNAPSHOT_COUNT: "50000"
+    command:
+      - etcd
+      - -advertise-client-urls=http://milvus-etcd:2379
+      - -listen-client-urls=http://0.0.0.0:2379
+      - --data-dir=/etcd
+    volumes:
+      - ./volumes/milvus/etcd:/etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 10s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 30s
+    networks:
+      - agmind-backend
+
+  milvus-init:
+    # One-shot: create milvus bucket в существующем MinIO до старта milvus-standalone.
+    # Идемпотентно — `mc mb --ignore-existing` не падает если bucket уже есть.
+    image: minio/mc:${MC_VERSION:-RELEASE.2025-08-13T08-35-41Z}
+    container_name: agmind-milvus-init
+    profiles:
+      - milvus
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        mc alias set local http://minio:9000 "${MINIO_ROOT_USER}" "${MINIO_ROOT_PASSWORD}"
+        mc mb --ignore-existing local/milvus-bucket
+        echo "milvus-bucket ready"
+    networks:
+      - agmind-backend
+
+  milvus:
+    # security_opt seccomp:unconfined обязателен для Milvus standalone — иначе
+    # некоторые syscalls (memfd_create для mmap) блочатся seccomp default profile.
+    image: milvusdb/milvus:${MILVUS_VERSION:-v2.6.15}
+    container_name: agmind-milvus
+    restart: always
+    mem_limit: ${MILVUS_MEM_LIMIT:-16g}
+    profiles:
+      - milvus
+    security_opt:
+      - seccomp:unconfined
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_ENDPOINTS: milvus-etcd:2379
+      MINIO_ADDRESS: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET_NAME: milvus-bucket
+      MINIO_REGION: us-east-1
+      COMMON_STORAGETYPE: minio
+    volumes:
+      - ./volumes/milvus/data:/var/lib/milvus
+    ports:
+      # gRPC bound to 127.0.0.1 — внутрисетевой доступ через docker network agmind-backend.
+      - "${MILVUS_BIND_ADDR:-127.0.0.1}:${MILVUS_GRPC_PORT:-19530}:19530"
+      - "${MILVUS_BIND_ADDR:-127.0.0.1}:${MILVUS_METRICS_PORT:-9091}:9091"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9091/healthz || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: 20s
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: 90s
+    depends_on:
+      milvus-etcd:
+        condition: service_healthy
+      milvus-init:
+        condition: service_completed_successfully
     networks:
       - agmind-backend
 
@@ -681,7 +792,7 @@ services:
   # ==================== LiteLLM (AI Gateway) ====================
   litellm:
     <<: *security-defaults
-    image: ghcr.io/berriai/litellm:${LITELLM_VERSION:-v1.82.3-stable.patch.2}
+    image: ghcr.io/berriai/litellm:${LITELLM_VERSION:-v1.83.14-stable.patch.3}
     container_name: agmind-litellm
     restart: unless-stopped
     mem_limit: ${LITELLM_MEM_LIMIT:-1g}
@@ -772,7 +883,7 @@ services:
 
   # ==================== Redis Lock Cleaner (init-container) ====================
   redis-lock-cleaner:
-    image: redis:${REDIS_VERSION:-7.4.1-alpine}
+    image: redis:${REDIS_VERSION:-7.4.8-alpine}
     container_name: agmind-redis-lock-cleaner
     restart: "no"
     mem_limit: 64m
@@ -870,7 +981,7 @@ services:
   # ==================== Nginx ====================
   nginx:
     <<: *security-defaults
-    image: nginx:${NGINX_VERSION:-1.29.8-alpine}
+    image: nginx:${NGINX_VERSION:-1.30.0-alpine}
     container_name: agmind-nginx
     restart: always
     mem_limit: ${NGINX_MEM_LIMIT:-256m}
@@ -928,7 +1039,7 @@ services:
   # ==================== MinIO (Object Storage) ====================
   minio:
     <<: *security-defaults
-    image: minio/minio:${MINIO_VERSION:-RELEASE.2024-11-07T00-52-20Z}
+    image: minio/minio:${MINIO_VERSION:-RELEASE.2025-09-07T16-13-09Z}
     container_name: agmind-minio
     restart: always
     mem_limit: ${MINIO_MEM_LIMIT:-2g}
@@ -973,20 +1084,21 @@ services:
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      - ./monitoring/peer-offline.yml:/etc/prometheus/peer-offline.yml:ro
       - agmind_prometheus_data:/prometheus
+    # Prometheus image — distroless, нет /bin/sh + wget. CMD-SHELL healthcheck
+    # выдавал «stat /bin/sh: no such file or directory» → контейнер unhealthy
+    # навечно (CLAUDE.md §8 «Distroless exporters»). Disabled — мониторинг
+    # через self-scrape `up{job="prometheus"}`.
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy || exit 1"]
-      interval: ${HEALTHCHECK_INTERVAL:-30s}
-      timeout: 10s
-      retries: ${HEALTHCHECK_RETRIES:-5}
-      start_period: 15s
+      test: ["NONE"]
     networks:
       - agmind-backend
 
   # ==================== Alertmanager (monitoring profile) ====================
   alertmanager:
     <<: *security-defaults
-    image: prom/alertmanager:${ALERTMANAGER_VERSION:-v0.32.0}
+    image: prom/alertmanager:${ALERTMANAGER_VERSION:-v0.32.1}
     container_name: agmind-alertmanager
     restart: unless-stopped
     mem_limit: ${ALERTMANAGER_MEM_LIMIT:-256m}
@@ -994,12 +1106,10 @@ services:
       - monitoring
     volumes:
       - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    # Distroless image — см. §8. Healthcheck disabled, мониторинг через
+    # `up{job="alertmanager"}` в Prometheus.
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:9093/-/healthy || exit 1"]
-      interval: ${HEALTHCHECK_INTERVAL:-30s}
-      timeout: 10s
-      retries: ${HEALTHCHECK_RETRIES:-5}
-      start_period: 10s
+      test: ["NONE"]
     networks:
       - agmind-backend
 
@@ -1029,7 +1139,7 @@ services:
   # Reads docker container logs → forwards to Loki. arm64-verified.
   alloy:
     <<: *security-defaults
-    image: grafana/alloy:${ALLOY_VERSION:-v1.16.0}
+    image: grafana/alloy:${ALLOY_VERSION:-v1.16.1}
     container_name: agmind-alloy
     restart: unless-stopped
     mem_limit: ${ALLOY_MEM_LIMIT:-256m}
@@ -1090,7 +1200,7 @@ services:
   # See: https://github.com/google/cadvisor/issues/3749
   cadvisor:
     <<: *logging-defaults
-    image: gcr.io/cadvisor/cadvisor:${CADVISOR_VERSION:-v0.52.1}
+    image: gcr.io/cadvisor/cadvisor:${CADVISOR_VERSION:-v0.55.1}
     container_name: agmind-cadvisor
     restart: unless-stopped
     mem_limit: ${CADVISOR_MEM_LIMIT:-512m}
@@ -1127,7 +1237,7 @@ services:
   # Phase 38: exposes redis_* metrics for RedisConnectionError alert.
   redis-exporter:
     <<: *security-defaults
-    image: oliver006/redis_exporter:${REDIS_EXPORTER_VERSION:-v1.69.0}
+    image: oliver006/redis_exporter:${REDIS_EXPORTER_VERSION:-v1.82.0}
     container_name: agmind-redis-exporter
     restart: unless-stopped
     mem_limit: ${REDIS_EXPORTER_MEM_LIMIT:-64m}
@@ -1148,7 +1258,7 @@ services:
   # Phase 38: exposes pg_* metrics for PostgresConnectionSaturation alert.
   postgres-exporter:
     <<: *security-defaults
-    image: prometheuscommunity/postgres-exporter:${POSTGRES_EXPORTER_VERSION:-v0.17.1}
+    image: prometheuscommunity/postgres-exporter:${POSTGRES_EXPORTER_VERSION:-v0.19.1}
     container_name: agmind-postgres-exporter
     restart: unless-stopped
     mem_limit: ${POSTGRES_EXPORTER_MEM_LIMIT:-128m}
@@ -1158,12 +1268,10 @@ services:
       DATA_SOURCE_NAME: "postgresql://${DB_USERNAME:-postgres}:${DB_PASSWORD:-}@db:5432/${DB_DATABASE:-dify}?sslmode=disable"
     expose:
       - "9187"
+    # Distroless image — см. §8. Healthcheck disabled, мониторинг через
+    # `up{job="postgres-exporter"}` в Prometheus.
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:9187/metrics || exit 1"]
-      interval: ${HEALTHCHECK_INTERVAL:-30s}
-      timeout: 5s
-      retries: 3
-      start_period: 15s
+      test: ["NONE"]
     networks:
       - agmind-backend
 
@@ -1172,7 +1280,7 @@ services:
   # stub_status location in nginx.conf restricted to 172.18.0.0/16 (backend net).
   nginx-exporter:
     <<: *security-defaults
-    image: nginx/nginx-prometheus-exporter:${NGINX_EXPORTER_VERSION:-1.4.2}
+    image: nginx/nginx-prometheus-exporter:${NGINX_EXPORTER_VERSION:-1.5.1}
     container_name: agmind-nginx-exporter
     restart: unless-stopped
     mem_limit: ${NGINX_EXPORTER_MEM_LIMIT:-64m}
@@ -1191,7 +1299,7 @@ services:
   # ==================== Grafana (monitoring profile) ====================
   grafana:
     <<: *security-defaults
-    image: grafana/grafana:${GRAFANA_VERSION:-12.4.2}
+    image: grafana/grafana:${GRAFANA_VERSION:-12.4.3}
     container_name: agmind-grafana
     restart: unless-stopped
     mem_limit: ${GRAFANA_MEM_LIMIT:-512m}
@@ -1232,7 +1340,7 @@ services:
   # Set ENABLE_PORTAINER=false to disable entirely if not needed.
   portainer:
     <<: *security-defaults
-    image: portainer/portainer-ce:${PORTAINER_VERSION:-2.39.1}
+    image: portainer/portainer-ce:${PORTAINER_VERSION:-2.39.2}
     container_name: agmind-portainer
     restart: unless-stopped
     mem_limit: ${PORTAINER_MEM_LIMIT:-256m}
@@ -1271,7 +1379,7 @@ services:
   # ==================== Authelia (authelia profile) ====================
   authelia:
     <<: *security-defaults
-    image: authelia/authelia:${AUTHELIA_VERSION:-4.38}
+    image: authelia/authelia:${AUTHELIA_VERSION:-4.39.19}
     container_name: agmind-authelia
     profiles: ["authelia"]
     restart: always
@@ -1292,7 +1400,7 @@ services:
   # ==================== SearXNG (Search Engine) ====================
   searxng:
     <<: *security-defaults
-    image: docker.io/searxng/searxng:${SEARXNG_VERSION:-2026.4.7-08ef7a63d}
+    image: docker.io/searxng/searxng:${SEARXNG_VERSION:-2026.5.10-df1f24fb7}
     container_name: agmind-searxng
     restart: unless-stopped
     mem_limit: ${SEARXNG_MEM_LIMIT:-256m}
@@ -1312,7 +1420,7 @@ services:
   # ==================== SurrealDB (for Open Notebook) ====================
   surrealdb:
     <<: *security-defaults
-    image: docker.io/surrealdb/surrealdb:${SURREALDB_VERSION:-v2.2.1}
+    image: docker.io/surrealdb/surrealdb:${SURREALDB_VERSION:-v2.6.5}
     container_name: agmind-surrealdb
     user: "0:0"
     restart: unless-stopped
@@ -1334,7 +1442,7 @@ services:
   # ==================== Open Notebook (Research Assistant) ====================
   open-notebook:
     <<: *security-defaults
-    image: docker.io/lfnovo/open_notebook:${OPEN_NOTEBOOK_VERSION:-v1-latest}
+    image: docker.io/lfnovo/open_notebook:${OPEN_NOTEBOOK_VERSION:-1.8.5}
     container_name: agmind-notebook
     restart: unless-stopped
     mem_limit: ${OPEN_NOTEBOOK_MEM_LIMIT:-512m}

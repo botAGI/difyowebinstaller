@@ -543,6 +543,7 @@ _append_provider_vars() {
         # Canonical cluster placement flags — set by cluster_mode_save (lib/cluster_mode.sh).
         # Single source of truth for "vllm runs on peer" decision in downstream modules.
         echo "LLM_ON_PEER=${LLM_ON_PEER:-false}"
+        if [[ -n "${AGMIND_MODE:-}" ]]; then echo "AGMIND_MODE=${AGMIND_MODE}"; fi
         if [[ -n "${PEER_IP:-}" ]]; then echo "PEER_IP=${PEER_IP}"; fi
 
         # DGX Spark / vLLM embed/rerank vars (written regardless of LLM provider)
@@ -1488,7 +1489,7 @@ _copy_monitoring_files() {
     mkdir -p "$dest"
 
     # Core config files
-    local mon_files=("prometheus.yml" "alert_rules.yml" "alertmanager.yml" "loki-config.yml" "alloy-config.river")
+    local mon_files=("prometheus.yml" "alert_rules.yml" "peer-offline.yml" "alertmanager.yml" "loki-config.yml" "alloy-config.river")
     for f in "${mon_files[@]}"; do
         if [[ -f "${installer_root}/monitoring/${f}" ]]; then
             safe_write_file "${dest}/${f}"
@@ -1534,7 +1535,15 @@ _copy_monitoring_files() {
 # ============================================================================
 
 _configure_peer_monitoring() {
-    local mode="${AGMIND_MODE:-single}"
+    local state_file="${AGMIND_CLUSTER_STATE_FILE:-/var/lib/agmind/state/cluster.json}"
+    local mode="${AGMIND_MODE:-}"
+    # Fallback to cluster.json when env not exported (e.g. standalone reload after
+    # _generate_env_file already ran — cluster_mode_save persists mode there but
+    # AGMIND_MODE only lives in install.sh shell scope until written to .env).
+    if [[ -z "$mode" ]] && [[ -f "$state_file" ]] && command -v jq >/dev/null 2>&1; then
+        mode="$(jq -r '.mode // empty' "$state_file" 2>/dev/null || true)"
+    fi
+    mode="${mode:-single}"
     if [[ "$mode" != "master" ]]; then
         log_info "Cluster mode=${mode} — peer monitoring scrape skipped"
         return 0
@@ -1554,7 +1563,6 @@ _configure_peer_monitoring() {
     fi
 
     local peer_ip="${PEER_IP:-}"
-    local state_file="${AGMIND_CLUSTER_STATE_FILE:-/var/lib/agmind/state/cluster.json}"
     if [[ -z "$peer_ip" ]] && [[ -f "$state_file" ]] && command -v jq >/dev/null 2>&1; then
         peer_ip="$(jq -r '.peer_ip // empty' "$state_file" 2>/dev/null || true)"
     fi

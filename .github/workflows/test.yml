@@ -1,21 +1,38 @@
 name: Tests
 
+# Security baseline (CLAUDE.md §8 + 2026 Trivy/tj-actions/Nx supply chain attacks):
+#  - All third-party actions pinned to full commit SHA (mutable tags = атакователь
+#    force-push'ит зловред под тем же tag-ом, наш CI автоматом подтягивает).
+#  - step-security/harden-runner с egress audit на каждом job — outbound network
+#    policy + alert если action попытается слать данные на левый сервер.
+#  - Renovate/Dependabot открывают auto-PR на bump SHA когда выходит новая stable.
+#
+# Format: ACTION@SHA  # vX.Y.Z (human-readable suffix — не используется runner'ом,
+# только для review, чтобы видеть что-за-version pinned).
+
 on:
   push:
     branches: [main, develop]
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   syntax:
     name: Bash Syntax Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - name: Bash syntax check (lib + scripts)
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Bash syntax check (lib + scripts + tests)
         run: |
           errors=0
-          for f in lib/*.sh scripts/*.sh install.sh; do
+          for f in lib/*.sh scripts/*.sh install.sh tests/run_all.sh tests/unit/*.sh tests/integration/*.sh tests/compose/*.sh; do
+            [[ -f "$f" ]] || continue
             if ! bash -n "$f"; then
               echo "FAIL: $f"
               errors=$((errors + 1))
@@ -23,13 +40,75 @@ jobs:
           done
           exit $errors
 
+  shellcheck:
+    name: ShellCheck (warnings as errors)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: ShellCheck lib + scripts + install.sh
+        run: shellcheck -S warning lib/*.sh scripts/*.sh install.sh
+      - name: ShellCheck tests
+        run: shellcheck -S warning tests/run_all.sh tests/unit/*.sh tests/integration/*.sh tests/mocks/* tests/compose/*.sh
+
+  unit-tests:
+    name: Unit Tests (with mocks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Run unit tests
+        run: |
+          errors=0
+          for t in tests/unit/*.sh; do
+            [[ -x "$t" ]] || chmod +x "$t"
+            echo "==> $t"
+            if ! bash "$t"; then
+              echo "FAIL: $t"
+              errors=$((errors + 1))
+            fi
+          done
+          exit $errors
+
+  image-tags:
+    name: Image tag existence (registry check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        with:
+          # registries требуют outbound — audit, не block
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Verify all pinned image:tag exist in registry
+        env:
+          # CI runs on amd64 — пропускаем arm64 manifest gate, оставляем только
+          # existence check. arm64 проверяем вручную при bump (см. CLAUDE.md §8).
+          SKIP_PLATFORM_CHECK: "1"
+        run: |
+          bash tests/compose/test_image_tags_exist.sh templates/docker-compose.yml
+          if [[ -f templates/docker-compose.worker.yml ]]; then
+            bash tests/compose/test_image_tags_exist.sh templates/docker-compose.worker.yml
+          fi
+
   trivy:
     name: Trivy Security Scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Run Trivy config scan
-        uses: aquasecurity/trivy-action@master
+        # CRITICAL: до 2026-05-11 был @master — verified compromise window 2026-03-19
+        # (75 of 77 tags force-pushed to credential-stealing malware). Now pinned to
+        # full SHA; Dependabot/Renovate откроют PR с новым SHA когда выйдет stable.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: 'config'
           scan-ref: '.'
