@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Mock for apt-mark — keyed by MOCK_APTMARK_FIXTURE env var.
+# Fixtures: none | held
+# Appends invoked argv to MOCK_APTMARK_CALLLOG for --fix assertions.
+set -euo pipefail
+
+# Call-log: always record invocation for test assertions.
+printf '%s\n' "apt-mark $*" >> "${MOCK_APTMARK_CALLLOG:-/dev/null}"
+
+case "${1:-}" in
+    showhold)
+        case "${MOCK_APTMARK_FIXTURE:-none}" in
+            held)
+                # Driver is pinned — no upgrade risk
+                printf 'nvidia-driver-580-open\nnvidia-dkms-580-open\n'
+                ;;
+            none)
+                # No holds set — doctor should WARN + suggest --fix
+                : # print nothing
+                ;;
+            *)
+                echo "mock apt-mark: unknown MOCK_APTMARK_FIXTURE=${MOCK_APTMARK_FIXTURE:-(unset)}" >&2
+                exit 2
+                ;;
+        esac
+        ;;
+    hold)
+        # Idempotent hold — always succeeds (--fix will call this)
+        exit 0
+        ;;
+    *)
+        exit 0
+        ;;
+esac
