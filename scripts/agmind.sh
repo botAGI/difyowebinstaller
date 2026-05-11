@@ -71,87 +71,18 @@ _get_ip() {
 # STATUS
 # ============================================================================
 
-_status_dashboard() {
-    echo -e "\n${BOLD}${CYAN}=========================================${NC}"
-    echo -e "${BOLD}${CYAN}  AGMind Status${NC}"
-    echo -e "${BOLD}${CYAN}=========================================${NC}\n"
-
-    echo -e "${BOLD}Services:${NC}"
-    check_all || true
-    echo ""
-
-    echo -e "${BOLD}GPU:${NC}"
-    check_gpu_status
-
-    local llm_prov; llm_prov="$(_read_env LLM_PROVIDER "ollama")"
-    if [[ "$llm_prov" == "ollama" ]]; then
-        echo -e "${BOLD}Models:${NC}"
-        check_ollama_models || true
-    fi
-
-    echo -e "${BOLD}Endpoints:${NC}"
-    local domain; domain="$(_read_env DOMAIN "")"
-    [[ -z "$domain" ]] && domain="$(_get_ip)"
-    echo "  Dify App:     http://${domain}"
-    echo "  Dify Console: http://agmind-dify.local"
-    [[ "$(_read_env ENABLE_OPENWEBUI "false")" == "true" ]] && echo "  Open WebUI:   http://agmind-chat.local"
-    [[ "$(_read_env ENABLE_LITELLM "true")" == "true" ]] && echo "  LiteLLM UI:   http://${domain}:4001/ui/"
-    if [[ "$(_read_env ADMIN_UI_OPEN "false")" == "true" ]]; then
-        local ip; ip="$(_get_ip)"
-        echo "  Portainer:    https://${ip}:9443"
-        echo "  Grafana:      http://${ip}:3001"
-    fi
-    echo ""
-
-    echo -e "${BOLD}Backup:${NC}"
-    check_backup_status
-
-    echo -e "${BOLD}Credentials:${NC}"
-    echo "  ${AGMIND_DIR}/credentials.txt"
-    echo ""
-}
-
-_status_json() {
-    local services_arr; read -ra services_arr <<< "$(get_service_list)"
-    local total=${#services_arr[@]} running=0 details="" sep=""
-
-    for svc in "${services_arr[@]}"; do
-        local st; st="$(docker compose -f "$COMPOSE_FILE" ps --format '{{.Status}}' "$svc" 2>/dev/null || echo "")"
-        local state="stopped"
-        if echo "$st" | grep -qi "up\|healthy"; then state="running"; running=$((running+1)); fi
-        details="${details}${sep}\"${svc}\":\"${state}\""; sep=","
-    done
-
-    local overall="unhealthy"
-    [[ $running -gt 0 ]] && overall="degraded"
-    [[ $running -eq $total ]] && overall="healthy"
-
-    local gpu_type="none" gpu_util="0"
-    if command -v nvidia-smi &>/dev/null; then
-        gpu_type="nvidia"
-        gpu_util="$(nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader 2>/dev/null | head -1 | xargs || echo "0")"
-        gpu_util="${gpu_util//\[N\/A\]/0}"
-        gpu_util="${gpu_util//[^0-9.]/}"
-        gpu_util="${gpu_util:-0}"
-    elif command -v rocm-smi &>/dev/null; then
-        gpu_type="amd"
-    fi
-
-    local domain; domain="$(_read_env DOMAIN "")"; [[ -z "$domain" ]] && domain="$(_get_ip)"
-
-    cat <<ENDJSON
-{
-  "status": "${overall}",
-  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "services": {"total": ${total}, "running": ${running}, "details": {${details}}},
-  "gpu": {"type": "${gpu_type}", "utilization": "${gpu_util}"},
-  "endpoints": {"webui": "http://${domain}", "dify": "http://${domain}:3000"}
-}
-ENDJSON
-}
-
 cmd_status() {
-    if [[ "${1:-}" == "--json" ]]; then _status_json; else _status_dashboard; fi
+    # Thin wrapper. Logic lives in lib/status.sh::status_run (Phase 2).
+    # Runtime copy: scripts/status.sh (created by _copy_runtime_files from lib/status.sh).
+    # Fallback to repo lib/status.sh for dev mode. lib/doctor.sh is sourced first
+    # because lib/status.sh reuses _check / _doctor_peer for the peer-node row.
+    # shellcheck source=/dev/null
+    source "${SCRIPTS_DIR}/doctor.sh" 2>/dev/null || source "${AGMIND_DIR}/lib/doctor.sh" 2>/dev/null || true
+    # shellcheck source=/dev/null
+    source "${SCRIPTS_DIR}/status.sh" 2>/dev/null \
+        || source "${AGMIND_DIR}/lib/status.sh" 2>/dev/null \
+        || { echo -e "${RED}status module missing — reinstall AGmind${NC}" >&2; return 1; }
+    status_run "$@"
 }
 
 # ============================================================================
@@ -929,7 +860,11 @@ cmd_help() {
 Usage: agmind <command> [options]
 
 Commands:
-  status [--json]    Show stack status (services, GPU, models, endpoints)
+  status [--json] [--watch [N]] [--service <name>]   Show stack overview table
+    (no args)           4-col table: SERVICE | STATE | URL | NOTES, grouped, colored
+    --json              Machine-readable JSON (services array + overall + gpu + endpoints)
+    --watch [N]         Live refresh every N seconds (default 2; no flicker; Ctrl-C to exit)
+    --service <name>    Details for one service (model/RestartCount/GPU mem/logs); exit 0=healthy 1=not
   doctor [--peer] [--json] [--fix [--dry-run]] [--bundle]   Run system diagnostics
     --peer              Only the peer-node section
     --json              Machine-readable JSON output
@@ -998,7 +933,7 @@ HELP
 # ============================================================================
 
 case "${1:-help}" in
-    status)         shift; cmd_status "${1:-}" ;;
+    status)         shift; cmd_status "$@" ;;
     doctor)         shift; cmd_doctor "$@" ;;
     health)         shift; cmd_doctor "$@" ;;   # deprecated alias: agmind health [--peer] [--json]
     stop)           cmd_stop ;;
