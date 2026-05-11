@@ -1,0 +1,76 @@
+# Pre-commit hooks — local guard ДО `git commit`.
+# Setup один раз на машине разработчика:
+#   pip install pre-commit && pre-commit install
+#
+# Затем каждый commit автоматически прогоняет всё ниже за <1 секунду.
+# Поймает 80% мусора до push (синтаксис bash, secrets в diff, broken YAML,
+# trailing whitespace, etc) — не надо ждать 2 минуты CI чтобы исправлять очевидное.
+#
+# Совпадает с тем что прогоняется в CI (.github/workflows/test.yml) —
+# pre-commit это просто "shift left" — те же проверки, но локально.
+
+repos:
+  # --- Standard pre-commit hooks (бесплатные win'ы) ---
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '\.md$'  # markdown часто использует trailing-whitespace для line break
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: ['--unsafe']  # docker-compose уses !reset/!override custom tags
+        exclude: '^\.gitlab-ci\.yml$'  # not used
+      - id: check-added-large-files
+        args: ['--maxkb=1024']  # 1MB cap — fixtures могут быть до этого размера
+      - id: check-merge-conflict
+      - id: check-executable-has-shebang
+      - id: check-shebang-scripts-are-executable
+      - id: detect-private-key
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+      - id: check-case-conflict
+
+  # --- Bash quality (соответствует tests/run_all.sh shellcheck gate) ---
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+        args: ['-S', 'warning']
+        # tests/mocks/ — exec'и без shebang (mock binaries), shellcheck not applicable
+        exclude: '^tests/mocks/'
+
+  # --- YAML stylistic + structural ---
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.37.1
+    hooks:
+      - id: yamllint
+        args:
+          - '-d'
+          - |
+            {extends: default, rules: {
+              line-length: {max: 200, level: warning},
+              indentation: {indent-sequences: consistent},
+              comments: {min-spaces-from-content: 1},
+              comments-indentation: disable,
+              truthy: {check-keys: false},
+              document-start: disable,
+              brackets: disable
+            }}
+
+  # --- Secrets scanning (предотвращает credential leak в commit) ---
+  # gitleaks: дёшево, быстро, MIT. Если ловит false-positive — добавить в .gitleaksignore.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
+    hooks:
+      - id: gitleaks
+
+  # --- Markdown sanity (для README + docs/) ---
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.45.0
+    hooks:
+      - id: markdownlint
+        args:
+          - '--disable=MD013'  # line length — RU тексты длинные, не enforcement
+          - '--disable=MD033'  # inline HTML — мы используем для badge layout
+          - '--disable=MD041'  # first line h1 — не везде нужно
+        exclude: '^(\.github|node_modules|\.planning)'

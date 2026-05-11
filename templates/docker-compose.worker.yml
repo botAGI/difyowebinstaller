@@ -89,9 +89,13 @@ services:
   # ============================================================================
   portainer-agent:
     <<: *logging-defaults
-    image: portainer/agent:${PORTAINER_AGENT_VERSION:-2.39.1}
+    image: portainer/agent:${PORTAINER_AGENT_VERSION:-2.39.2}
     container_name: agmind-portainer-agent
     restart: unless-stopped
+    # §8: каждый long-running контейнер ДОЛЖЕН иметь mem_limit (121 GiB unified
+    # memory budget). Portainer agent typical RSS ~30-50 MB (Go binary, idle).
+    # Хедрум ×5 на peak.
+    mem_limit: ${PORTAINER_AGENT_MEM_LIMIT:-256m}
     environment:
       - AGENT_SECRET=${PORTAINER_AGENT_SECRET}
       - AGENT_PORT=9001
@@ -113,6 +117,8 @@ services:
     image: prom/node-exporter:${NODE_EXPORTER_VERSION:-v1.11.1}
     container_name: agmind-node-exporter
     restart: unless-stopped
+    # §8: typical RSS ~10-30 MB. 128m headroom comfortable.
+    mem_limit: ${NODE_EXPORTER_MEM_LIMIT:-128m}
     pid: host
     command:
       - '--path.procfs=/host/proc'
