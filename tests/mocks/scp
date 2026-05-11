@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Mock scp — records invocation + exits with MOCK_SCP_EXIT (default 0).
+# Mirrors tests/mocks/ssh; used by tests/unit/test_phase_deploy_peer.sh (peer_deploy).
+set -euo pipefail
+[[ "${MOCK_DEBUG:-0}" == "1" ]] && echo "mock-scp $*" >&2
+printf '%s\n' "scp $*" >> "${MOCK_SCP_CALLLOG:-/dev/null}"
+exit "${MOCK_SCP_EXIT:-0}"
