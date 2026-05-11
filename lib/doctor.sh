@@ -33,6 +33,24 @@ CYAN="${CYAN:-\033[0;36m}"
 BOLD="${BOLD:-\033[1m}"
 NC="${NC:-\033[0m}"
 
+# validate_path shim — whitelist-check for safe output paths (T-01-11).
+# Guard: only define if not provided by common.sh.
+# WHY: common.sh is NOT sourced in the agmind.sh → doctor.sh path (health.sh uses fallbacks);
+#      without this shim, _doctor_bundle calls validate_path which doesn't exist → bundle FAIL.
+command -v validate_path >/dev/null 2>&1 || validate_path() {
+    local input="${1:-}"
+    [[ -z "$input" ]] && { log_error "validate_path: empty path"; return 1; }
+    local resolved
+    resolved="$(realpath "$input" 2>/dev/null)" || { log_error "validate_path: cannot resolve: ${input}"; return 1; }
+    local allowed=false
+    local prefix
+    for prefix in /tmp /home /root /etc/ssl /opt /var/backups; do
+        if [[ "$resolved" == "${prefix}"/* || "$resolved" == "$prefix" ]]; then allowed=true; break; fi
+    done
+    [[ "$allowed" != "true" ]] && { log_error "validate_path: rejected: ${resolved}"; return 1; }
+    printf '%s' "$resolved"
+}
+
 # _check shim — maps OK|WARN|FAIL|SKIP to colored output lines.
 # Signature mirrors scripts/agmind.sh::cmd_doctor inline _check (lines 165-179).
 # Guard: only define if not already defined by a calling script.
