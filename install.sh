@@ -284,7 +284,7 @@ PORTAINER_AGENT_SECRET=${PORTAINER_AGENT_SECRET:-}
 # §8: master Portainer и peer agent версии ОБЯЗАНЫ совпадать (TLS handshake EOF
 # при protocol drift между minor'ами). Fallback синхронизирован с
 # templates/versions.env (PORTAINER_VERSION) и templates/env.lan.template.
-PORTAINER_AGENT_VERSION=${PORTAINER_AGENT_VERSION:-2.39.2}
+PORTAINER_AGENT_VERSION=${PORTAINER_AGENT_VERSION:-2.41.1}
 EOF
 }
 
