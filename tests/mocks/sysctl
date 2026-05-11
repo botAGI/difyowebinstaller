@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Mock for sysctl — keyed by MOCK_SYSCTL_FIXTURE env var.
+# Fixtures: ok (vm.max_map_count=262144) | low (vm.max_map_count=65530)
+# Appends invoked argv to MOCK_SYSCTL_CALLLOG so -w calls are visible to tests.
+set -euo pipefail
+
+# Call-log: always record invocation for test assertions.
+printf '%s\n' "sysctl $*" >> "${MOCK_SYSCTL_CALLLOG:-/dev/null}"
+
+# Determine fixture value
+case "${MOCK_SYSCTL_FIXTURE:-ok}" in
+    ok)  _mmc_value=262144 ;;
+    low) _mmc_value=65530  ;;
+    *)
+        echo "mock sysctl: unknown MOCK_SYSCTL_FIXTURE=${MOCK_SYSCTL_FIXTURE:-(unset)}" >&2
+        exit 2
+        ;;
+esac
+
+case "${1:-}" in
+    -n)
+        # sysctl -n <key> — return raw value
+        case "${2:-}" in
+            vm.max_map_count)
+                echo "${_mmc_value}"
+                ;;
+            *)
+                echo "0"
+                ;;
+        esac
+        ;;
+    -a)
+        # sysctl -a — print all relevant keys
+        printf 'vm.max_map_count = %s\nvm.swappiness = 60\n' "${_mmc_value}"
+        ;;
+    -w)
+        # sysctl -w key=value — idempotent write, always succeeds (call logged above)
+        exit 0
+        ;;
+    *)
+        exit 0
+        ;;
+esac

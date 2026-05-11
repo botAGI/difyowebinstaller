@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+# Mock for docker — keyed by MOCK_DOCKER_FIXTURE env var.
+# Fixtures: healthy | no_daemon | gpu_caps_missing
+# Appends invoked argv to MOCK_DOCKER_CALLLOG for --fix/--dry-run assertions.
+set -euo pipefail
+
+# Call-log: always record invocation so tests can assert docker was/wasn't called.
+printf '%s\n' "docker $*" >> "${MOCK_DOCKER_CALLLOG:-/dev/null}"
+
+case "${MOCK_DOCKER_FIXTURE:-healthy}" in
+    healthy)
+        case "${1:-}" in
+            version)
+                if [[ "${2:-}" == "--format" ]]; then
+                    echo "29.0.3"
+                else
+                    echo "Docker version 29.0.3, build abc123"
+                fi
+                ;;
+            compose)
+                case "${2:-}" in
+                    version)
+                        if [[ "${3:-}" == "--short" ]]; then
+                            echo "v2.27.0"
+                        else
+                            echo "Docker Compose version v2.27.0"
+                        fi
+                        ;;
+                    config)
+                        # Intentional fake secret line for bundle sanitizer test (T-01-02)
+                        printf 'services:\n  example:\n    image: agmind/example:1.0\n    environment:\n      DB_PASSWORD: notreal_pw_in_mock_only\n'
+                        ;;
+                    *)
+                        exit 0
+                        ;;
+                esac
+                ;;
+            info)
+                printf 'Server Version: 29.0.3\nRuntimes: io.containerd.runc.v2 nvidia runc\nDefault Runtime: runc\n'
+                ;;
+            ps)
+                case "${MOCK_DOCKER_PS_FIXTURE:-running}" in
+                    running)
+                        printf 'agmind-api\nagmind-vllm\nagmind-docling\nagmind-nginx\n'
+                        ;;
+                    unhealthy)
+                        printf 'agmind-api\nagmind-vllm\nagmind-docling\nagmind-nginx\nagmind-worker\t(unhealthy)\n'
+                        ;;
+                    none|empty)
+                        : # nothing
+                        ;;
+                    *)
+                        printf 'agmind-api\nagmind-vllm\nagmind-docling\nagmind-nginx\n'
+                        ;;
+                esac
+                ;;
+            exec)
+                # docker exec <container> <cmd> — dispatch on MOCK_DOCKER_EXEC_FIXTURE
+                case "${MOCK_DOCKER_EXEC_FIXTURE:-gpu_ok}" in
+                    gpu_ok)
+                        echo "GPU 0: Grace Blackwell Superchip GB10 (UUID: GPU-0)"
+                        ;;
+                    gpu_fail)
+                        exit 1
+                        ;;
+                    torch_false)
+                        echo "False"
+                        ;;
+                    torch_true)
+                        echo "True"
+                        ;;
+                    *)
+                        echo "GPU 0: Grace Blackwell Superchip GB10 (UUID: GPU-0)"
+                        ;;
+                esac
+                ;;
+            inspect)
+                echo '[{"RestartCount":0,"Mounts":[],"Config":{"Env":["NVIDIA_DRIVER_CAPABILITIES=compute,utility"]}}]'
+                ;;
+            image)
+                if [[ "${2:-}" == "inspect" ]]; then
+                    echo '[{"Id":"sha256:abc123"}]'
+                else
+                    exit 0
+                fi
+                ;;
+            images)
+                printf 'REPOSITORY              TAG    IMAGE ID\nagmind/example          1.0    abc123\n'
+                ;;
+            system)
+                if [[ "${2:-}" == "df" ]]; then
+                    printf 'TYPE      TOTAL  ACTIVE  SIZE    RECLAIMABLE\nImages    10     8       12GB    2GB\n'
+                else
+                    exit 0
+                fi
+                ;;
+            *)
+                exit 0
+                ;;
+        esac
+        ;;
+    no_daemon)
+        echo "Cannot connect to the Docker daemon at unix:///var/run/docker.sock" >&2
+        exit 1
+        ;;
+    gpu_caps_missing)
+        case "${1:-}" in
+            inspect)
+                echo '[{"RestartCount":0,"Mounts":[],"Config":{"Env":["NVIDIA_DRIVER_CAPABILITIES=graphics"]}}]'
+                ;;
+            exec)
+                case "${MOCK_DOCKER_EXEC_FIXTURE:-torch_false}" in
+                    torch_false) echo "False" ;;
+                    gpu_fail)    exit 1 ;;
+                    gpu_ok)      echo "GPU 0: Grace Blackwell Superchip GB10 (UUID: GPU-0)" ;;
+                    *)           echo "False" ;;
+                esac
+                ;;
+            ps)
+                printf 'agmind-vllm\n'
+                ;;
+            info)
+                printf 'Server Version: 29.0.3\nRuntimes: nvidia runc\n'
+                ;;
+            version)
+                echo "Docker version 29.0.3, build abc123"
+                ;;
+            *)
+                exit 0
+                ;;
+        esac
+        ;;
+    *)
+        echo "mock docker: unknown MOCK_DOCKER_FIXTURE=${MOCK_DOCKER_FIXTURE:-(unset)}" >&2
+        exit 2
+        ;;
+esac

@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Mock for nvidia-smi — keyed by MOCK_NVIDIA_SMI_FIXTURE env var.
+# Fixtures: dgx_spark | driver_590 | no_gpu | not_installed
+set -euo pipefail
+case "${MOCK_NVIDIA_SMI_FIXTURE:-dgx_spark}" in
+    dgx_spark)
+        case "${1:-}" in
+            --query-gpu=driver_version,*|--query-gpu=driver_version)
+                # DGX Spark golden driver — 580.x (CLAUDE.md §8 Driver 580 HOLD)
+                echo "580.142"
+                ;;
+            --query-gpu=name,*|--query-gpu=name)
+                echo "Grace Blackwell Superchip GB10"
+                ;;
+            -L)
+                echo "GPU 0: Grace Blackwell Superchip GB10 (UUID: GPU-00000000)"
+                ;;
+            --query-gpu=memory.used,*|--query-gpu=memory.used)
+                # GB10 unified memory — NVML NOT_SUPPORTED (CLAUDE.md §8)
+                echo "[N/A]"
+                ;;
+            -q)
+                cat <<'EOF'
+==============NVSMI LOG==============
+Driver Version                        : 580.142
+CUDA Version                          : 13.0
+Attached GPUs                         : 1
+GPU 00000000:00:00.0
+    Product Name                      : Grace Blackwell Superchip GB10
+    Driver Model                      : N/A
+EOF
+                ;;
+            *)
+                exit 0
+                ;;
+        esac
+        ;;
+    driver_590)
+        case "${1:-}" in
+            --query-gpu=driver_version,*|--query-gpu=driver_version)
+                # Driver 590+ — triggers FAIL in doctor_check_arch_driver
+                echo "590.48.01"
+                ;;
+            *)
+                exit 0
+                ;;
+        esac
+        ;;
+    no_gpu)
+        # No GPU present — exit 1 for all invocations
+        exit 1
+        ;;
+    not_installed)
+        # Binary not found — exit 127 (command not found convention)
+        exit 127
+        ;;
+    *)
+        echo "mock nvidia-smi: unknown MOCK_NVIDIA_SMI_FIXTURE=${MOCK_NVIDIA_SMI_FIXTURE:-(unset)}" >&2
+        exit 2
+        ;;
+esac
