@@ -28,6 +28,7 @@ build_compose_profiles() {
         profiles="${profiles:+$profiles,}docling"
     fi
     if [[ "${MONITORING_MODE:-none}" == "local" ]]; then profiles="${profiles:+$profiles,}monitoring"; fi
+    if [[ "${ENABLE_PORTAINER:-true}" != "false" ]]; then profiles="${profiles:+$profiles,}portainer"; fi
     if [[ "${ENABLE_AUTHELIA:-false}" == "true" ]]; then profiles="${profiles:+$profiles,}authelia"; fi
 
     if [[ "${LLM_PROVIDER:-}" == "ollama" || "${EMBED_PROVIDER:-}" == "ollama" ]]; then
