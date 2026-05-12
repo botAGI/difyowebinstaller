@@ -37,6 +37,10 @@ mkdir -p "${INSTALL_FIXTURE}/docker" "${INSTALL_FIXTURE}/scripts" \
 cp "${REPO_ROOT}/scripts/"*.sh "${INSTALL_FIXTURE}/scripts/"
 cp "${REPO_ROOT}/lib/"*.sh     "${INSTALL_FIXTURE}/lib/"
 
+# Copy docs/troubleshooting.md so cmd_troubleshoot can find it via AGMIND_DIR
+mkdir -p "${INSTALL_FIXTURE}/docs"
+cp "${REPO_ROOT}/docs/troubleshooting.md" "${INSTALL_FIXTURE}/docs/"
+
 for _lib in common.sh detect.sh service-map.sh health.sh doctor.sh status.sh \
             config.sh restore.sh peer.sh phases.sh creds.sh; do
     [[ -f "${REPO_ROOT}/lib/${_lib}" ]] \
