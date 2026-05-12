@@ -101,6 +101,175 @@ cmd_doctor() {
 }
 
 # ============================================================================
+# OPEN
+# ============================================================================
+
+cmd_open() {
+    # Thin wrapper: source status.sh lazily (provides _status_service_url).
+    # Headless (SSH / no display / non-TTY) → print URL; desktop → launch opener + echo URL.
+    # shellcheck source=/dev/null
+    source "${SCRIPTS_DIR}/status.sh" 2>/dev/null \
+        || source "${AGMIND_DIR}/lib/status.sh" 2>/dev/null \
+        || { echo -e "${RED}status module missing — reinstall AGmind${NC}" >&2; return 2; }
+
+    # No-arg / --list → print all openable services
+    if [[ -z "${1:-}" || "${1:-}" == "--list" || "${1:-}" == "-l" ]]; then
+        echo "Openable services:"
+        local _s _u _label
+        for _s in api open-webui grafana portainer ragflow minio litellm notebook; do
+            _u="$(_status_service_url "$_s")"
+            [[ "$_u" == "—" ]] && continue
+            case "$_s" in
+                api)       _label="dify" ;;
+                open-webui) _label="chat" ;;
+                *)         _label="$_s" ;;
+            esac
+            printf '  %-14s %s\n' "$_label" "$_u"
+        done
+        return 0
+    fi
+
+    # Synonym resolve → canonical name for _status_service_url
+    local arg="$1" svc
+    case "$arg" in
+        dify|agmind-dify)                             svc="api" ;;
+        chat|webui|openwebui|open-webui|agmind-chat)  svc="open-webui" ;;
+        storage|minio|agmind-storage)                 svc="minio" ;;
+        notebook|open-notebook|agmind-notebook)       svc="notebook" ;;
+        agmind-*)                                     svc="${arg#agmind-}" ;;
+        *)                                            svc="$arg" ;;
+    esac
+
+    local url; url="$(_status_service_url "$svc")"
+    if [[ "$url" == "—" ]]; then
+        echo "Unknown or internal-only service: '${arg}'" >&2
+        echo "Available: dify chat grafana portainer ragflow minio litellm notebook" >&2
+        return 1
+    fi
+
+    # Deployment-state warning (non-fatal — URL is valid once the service is up)
+    local st; st="$(_status_docker_state "$svc" 2>/dev/null || echo "unknown")"
+    case "$st" in
+        disabled|not-installed|exited)
+            echo "note: ${svc} is ${st} — start it with 'sudo bash install.sh'" >&2 ;;
+    esac
+
+    # Headless detection (D-03): any condition → headless
+    if [[ -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" ]] \
+        || [[ -n "${SSH_CONNECTION:-}" || -n "${SSH_TTY:-}" ]] \
+        || [[ ! -t 1 ]]; then
+        printf '%s\n' "$url"
+        return 0
+    fi
+
+    # Desktop: try an opener (background, suppress noise), then always echo URL (pipeable)
+    if grep -qi microsoft /proc/version 2>/dev/null && command -v wslview >/dev/null 2>&1; then
+        wslview "$url" 2>/dev/null &
+    elif [[ "$(uname)" == "Darwin" ]] && command -v open >/dev/null 2>&1; then
+        open "$url" 2>/dev/null &
+    elif command -v xdg-open >/dev/null 2>&1; then
+        xdg-open "$url" 2>/dev/null &
+    fi
+    printf '%s\n' "$url"
+}
+
+# ============================================================================
+# ENDPOINTS
+# ============================================================================
+
+cmd_endpoints() {
+    # Thin wrapper: source status.sh lazily (provides _status_service_url + _status_docker_state).
+    # Prints SERVICE | URL | STATE table; --json for machine-readable output.
+    # Exit 0 always (display command).
+    # shellcheck source=/dev/null
+    source "${SCRIPTS_DIR}/status.sh" 2>/dev/null \
+        || source "${AGMIND_DIR}/lib/status.sh" 2>/dev/null \
+        || { echo -e "${RED}status module missing — reinstall AGmind${NC}" >&2; return 0; }
+
+    local json_mode=0
+    [[ "${1:-}" == "--json" ]] && json_mode=1
+
+    # Not installed → graceful message (D-05)
+    if ! _status_installed 2>/dev/null; then
+        if [[ "$json_mode" -eq 1 ]]; then
+            printf '{"installed":false,"endpoints":[]}\n'
+        else
+            echo "AGmind not installed — run: sudo bash install.sh" >&2
+        fi
+        return 0
+    fi
+
+    # Build rows: label<TAB>url<TAB>state for each public service
+    local _s _u _st _label
+    local -a _rows=()
+    for _s in api open-webui grafana portainer ragflow minio litellm notebook; do
+        _u="$(_status_service_url "$_s")"
+        [[ "$_u" == "—" ]] && continue
+        _st="$(_status_docker_state "$_s" 2>/dev/null || echo "not-installed")"
+        case "$_s" in
+            api)       _label="dify" ;;
+            open-webui) _label="chat" ;;
+            *)         _label="$_s" ;;
+        esac
+        _rows+=("${_label}"$'\t'"${_u}"$'\t'"${_st}")
+    done
+
+    if [[ "$json_mode" -eq 1 ]]; then
+        # Use python3 for safe JSON (same pattern as _status_render_json)
+        printf '%s\n' "${_rows[@]}" | python3 -c '
+import json, sys, subprocess, datetime, re
+eps = []
+for line in sys.stdin:
+    line = line.rstrip("\n")
+    if not line:
+        continue
+    parts = line.split("\t")
+    if len(parts) < 3:
+        continue
+    svc, url, state = parts[0], parts[1], parts[2]
+    port = ""
+    m = re.search(r":(\d+)(?:/|$)", url.split("//", 1)[-1])
+    if m:
+        port = m.group(1)
+    eps.append({"service": svc, "url": url, "port": port, "state": state})
+host = subprocess.run(["hostname"], capture_output=True, text=True).stdout.strip()
+print(json.dumps({
+    "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
+    "hostname": host,
+    "installed": True,
+    "endpoints": eps
+}))
+'
+        return 0
+    fi
+
+    # Human table
+    printf '%-14s  %-44s  %s\n' "SERVICE" "URL" "STATE"
+    local _r _svc _url _st2 _col
+    for _r in "${_rows[@]}"; do
+        IFS=$'\t' read -r _svc _url _st2 <<< "$_r"
+        _col="$(_status_state_color "$_st2" 2>/dev/null || true)"
+        printf '%-14s  %-44s  %b%s%b\n' "$_svc" "$_url" "${_col}" "$_st2" "${NC}"
+    done
+    return 0
+}
+
+# ============================================================================
+# CREDS SHOW  (stub — full implementation in Plan 03-03 via lib/creds.sh)
+# ============================================================================
+
+cmd_creds_show() {
+    # Root gate (SC2 / D-06): credentials files are chmod 600 root-owned.
+    if [[ "$(id -u)" -ne 0 ]]; then
+        echo -e "${RED}credentials are root-only — run: sudo agmind creds show${NC}" >&2
+        return 1
+    fi
+    # Full implementation (masked display, --show, --json) lands in Plan 03-03.
+    echo "creds show: not yet implemented — coming in Plan 03-03" >&2
+    return 1
+}
+
+# ============================================================================
 # STOP / START / RESTART
 # ============================================================================
 
@@ -931,6 +1100,12 @@ Commands:
     status               Состояние и health (по умолчанию)
     stop|start|restart   Управление daemon (root)
     logs                 Tail логи
+  open [<svc>|--list]   Open a service URL in the browser (headless/SSH → prints the URL, one line, pipeable)
+                        Services: dify chat grafana portainer ragflow minio litellm notebook
+                        Bare or --list: print all openable services and their URLs
+  endpoints [--json]    List all public service URLs (SERVICE | URL | STATE); --json = machine-readable; always exit 0
+  creds show [--show] [--json]   Show stack credentials (root-only; masked unless --show)
+  creds rotate [args]   Rotate passwords and keys — wraps rotate_secrets.sh (root)
   uninstall          Remove AGMind (root)
   rotate-secrets     Rotate passwords and keys (root)
   help               Show this help
@@ -1049,6 +1224,31 @@ case "${1:-help}" in
                     esac ;;
     ragflow)        shift; cmd_ragflow "$@" ;;
     plugin-daemon)  shift; cmd_plugin_daemon "$@" ;;
+    open)           shift; cmd_open "$@" ;;
+    endpoints)      shift; cmd_endpoints "$@" ;;
+    creds)
+        shift
+        case "${1:-show}" in
+            show)
+                shift
+                cmd_creds_show "$@"
+                ;;
+            rotate)
+                shift
+                _require_root "creds rotate"
+                exec "${SCRIPTS_DIR}/rotate_secrets.sh" "$@"
+                ;;
+            ""|--help|-h)
+                echo "Usage: agmind creds {show [--show] [--json] | rotate [args]}" >&2
+                exit 1
+                ;;
+            *)
+                echo -e "${RED}Unknown creds subcommand: ${1}${NC}" >&2
+                echo "Usage: agmind creds {show|rotate}" >&2
+                exit 1
+                ;;
+        esac
+        ;;
     help|--help|-h) cmd_help ;;
     *)              echo -e "${RED}Unknown command: ${1}${NC}" >&2; cmd_help; exit 1 ;;
 esac
