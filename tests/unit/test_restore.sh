@@ -287,10 +287,10 @@ with open(path, 'r+b') as f:
     mkdir -p "$INSTALL_DIR" "$BACKUP_BASE"
     fix_dir="${TMP_ROOT}/tc8_fix"
     _mk_fixture "$fix_dir"
-    # Add a standalone-MinIO artifact: it lives in SERVICE_GROUPS[optional], NOT dify.
-    # restore_artifact_map must classify minio-data.tar.gz as 'optional' so it does
-    # NOT leak into `--service dify` scope. (Regression caught by live UAT 2026-05-12.)
-    _t8="$(mktemp)"; printf 'standalone minio data\n' > "$_t8"
+    # Add minio-data.tar.gz: scripts/backup.sh creates this ONLY when STORAGE_TYPE=s3
+    # (it IS Dify's S3 storage backend in that case — see backup.sh "# 3. Dify storage").
+    # So when present, it belongs to `--service dify` scope. Verified by live UAT 2026-05-12.
+    _t8="$(mktemp)"; printf 'dify s3 storage data\n' > "$_t8"
     tar czf "${fix_dir}/minio-data.tar.gz" -C "$(dirname "$_t8")" "$(basename "$_t8")"; rm -f "$_t8"
     ( cd "$fix_dir" && sha256sum ./*.gz ./*.backup 2>/dev/null > sha256sums.txt || true )
     echo "minio-data.tar.gz" >> "${fix_dir}/MANIFEST.txt"
@@ -315,9 +315,10 @@ with open(path, 'r+b') as f:
     echo "$plan_section" | grep -q "weaviate.tar.gz"        && { echo "  weaviate.tar.gz incorrectly in dify scope" >&2; false; exit; }
     echo "$plan_section" | grep -q "qdrant.tar.gz"          && { echo "  qdrant.tar.gz incorrectly in dify scope" >&2; false; exit; }
     echo "$plan_section" | grep -q "openwebui.tar.gz"       && { echo "  openwebui.tar.gz incorrectly in dify scope" >&2; false; exit; }
-    echo "$plan_section" | grep -q "minio-data.tar.gz"      && { echo "  minio-data.tar.gz incorrectly in dify scope (it's SERVICE_GROUPS[optional])" >&2; false; exit; }
-    true  # ensure exit 0 when all "should-not-match" checks pass (last cmd is && which exits 1 on no-match)
-) && pass "TC8 selective_scope_dify: --service dify lists dify_db+stop section, excludes weaviate/qdrant/openwebui" \
+    # 6. minio-data.tar.gz IS in dify scope (it's Dify's S3 storage when STORAGE_TYPE=s3)
+    echo "$plan_section" | grep -q "minio-data.tar.gz"      || { echo "  minio-data.tar.gz missing from dify scope (it's Dify's S3 storage)" >&2; false; exit; }
+    true  # ensure exit 0 when all "should-not-match" checks pass (mixed && / || above)
+) && pass "TC8 selective_scope_dify: --service dify lists dify_db + minio-data (S3 storage) + stop section, excludes weaviate/qdrant/openwebui" \
   || fail "TC8 selective_scope_dify: plan missing expected content or contains out-of-scope artifacts"
 
 # ── TC9: selective_scope_rag ──────────────────────────────────────────────────
