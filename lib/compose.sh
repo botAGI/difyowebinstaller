@@ -316,6 +316,13 @@ validate_images_exist() {
 # ============================================================================
 
 compose_pull() {
+    # WHY: when airgapped, all images are already loaded locally via bundle_install.
+    # Reaching public registries is not allowed (T-07-14). Return 0 immediately.
+    if [[ "${AGMIND_AIRGAPPED:-false}" == "true" ]]; then
+        log_info "airgapped: skipping docker pull — verifying local images only"
+        return 0
+    fi
+
     local docker_dir="${INSTALL_DIR}/docker"
     cd "$docker_dir"
 

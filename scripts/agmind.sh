@@ -290,6 +290,32 @@ cmd_security() {
 }
 
 # ============================================================================
+# BUNDLE (offline transfer — large/slow, separate from `agmind backup`)
+# WHY separate from backup: bundle carries Docker images + model volumes + repo
+# for a FRESH air-gapped install; backup is for DR on an already-running stack.
+# ============================================================================
+
+cmd_bundle() {
+    # Lazy-source doctor.sh first (bundle.sh reuses _sanitize_text from it).
+    # shellcheck source=/dev/null
+    source "${SCRIPTS_DIR}/doctor.sh" 2>/dev/null || source "${AGMIND_DIR}/lib/doctor.sh" 2>/dev/null || true
+    # shellcheck source=/dev/null
+    source "${SCRIPTS_DIR}/bundle.sh" 2>/dev/null \
+        || source "${AGMIND_DIR}/lib/bundle.sh" 2>/dev/null \
+        || { echo -e "${RED}bundle module missing — reinstall AGmind${NC}" >&2; return 1; }
+    local sub="${1:-}"
+    shift || true
+    case "$sub" in
+        create)  bundle_create "$@" ;;
+        install) bundle_install "$@" ;;
+        *)
+            echo "Usage: agmind bundle create [--out <path>] | agmind bundle install <bundle.tar.gz>" >&2
+            return 1
+            ;;
+    esac
+}
+
+# ============================================================================
 # STOP / START / RESTART
 # ============================================================================
 
@@ -1125,6 +1151,8 @@ Commands:
                         Bare or --list: print all openable services and their URLs
   endpoints [--json]    List all public service URLs (SERVICE | URL | STATE); --json = machine-readable; always exit 0
   security audit [--json]   Scan exposed ports / privileged containers / docker.sock consumers / weak secrets / bad file perms (report-only)
+  bundle create [--out <p>]   Build an offline transfer bundle (images + models + repo, NO secrets) — large/slow, NOT a backup
+  bundle install <tar>        (root) Load a bundle on an air-gapped box, then run AGMIND_AIRGAPPED=true install
   creds show [--show] [--json]   Show stack credentials (root-only; masked unless --show)
   creds rotate [args]   Rotate passwords and keys — wraps rotate_secrets.sh (root)
   uninstall          Remove AGMind (root)
@@ -1269,6 +1297,13 @@ case "${1:-help}" in
                 echo "Usage: agmind creds {show|rotate}" >&2
                 exit 1
                 ;;
+        esac
+        ;;
+    bundle)
+        shift
+        case "${1:-}" in
+            install) _require_root "bundle install"; cmd_bundle "$@" ;;
+            *)       cmd_bundle "$@" ;;
         esac
         ;;
     help|--help|-h) cmd_help ;;

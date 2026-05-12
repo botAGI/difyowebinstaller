@@ -60,17 +60,18 @@ source "${REPO_ROOT}/lib/phases.sh"
 CALLLOG="${WORK}/calllog.default"
 
 _mk_stubs() {
-    phase_diagnostics()     { echo "Diagnostics"   >> "$CALLLOG"; }
-    phase_wizard()          { echo "Wizard"        >> "$CALLLOG"; }
-    phase_docker()          { echo "Docker"        >> "$CALLLOG"; }
-    phase_config()          { echo "Configuration" >> "$CALLLOG"; }
-    phase_pull()            { echo "Pull"          >> "$CALLLOG"; }
-    phase_start()           { echo "Start"         >> "$CALLLOG"; }
-    peer_deploy()           { echo "Deploy Peer"   >> "$CALLLOG"; }
-    phase_health()          { echo "Health"        >> "$CALLLOG"; }
-    phase_models_graceful() { echo "Models"        >> "$CALLLOG"; }
-    phase_backups()         { echo "Backups"       >> "$CALLLOG"; }
-    phase_complete()        { echo "Complete"      >> "$CALLLOG"; }
+    phase_diagnostics()          { echo "Diagnostics"         >> "$CALLLOG"; }
+    phase_airgapped_preflight()  { echo "Airgapped Preflight" >> "$CALLLOG"; }
+    phase_wizard()               { echo "Wizard"              >> "$CALLLOG"; }
+    phase_docker()               { echo "Docker"              >> "$CALLLOG"; }
+    phase_config()               { echo "Configuration"       >> "$CALLLOG"; }
+    phase_pull()                 { echo "Pull"                >> "$CALLLOG"; }
+    phase_start()                { echo "Start"               >> "$CALLLOG"; }
+    peer_deploy()                { echo "Deploy Peer"         >> "$CALLLOG"; }
+    phase_health()               { echo "Health"              >> "$CALLLOG"; }
+    phase_models_graceful()      { echo "Models"              >> "$CALLLOG"; }
+    phase_backups()              { echo "Backups"             >> "$CALLLOG"; }
+    phase_complete()             { echo "Complete"            >> "$CALLLOG"; }
 }
 
 # ============================================================================
@@ -79,8 +80,8 @@ _mk_stubs() {
 echo ""
 echo "--- count ---"
 got="$(phases_count)"
-[[ "$got" == "11" ]] && pass "count: phases_count == 11" \
-    || fail "count: expected 11, got '$got'"
+[[ "$got" == "12" ]] && pass "count: phases_count == 12" \
+    || fail "count: expected 12, got '$got'"
 
 # ============================================================================
 # CASE 2: parity — verify all 11 records match the expected parity table
@@ -105,17 +106,18 @@ _check_parity() {
     fi
 }
 
-_check_parity 0  "Diagnostics"   "phase_diagnostics"      "0"    "preflight"
-_check_parity 1  "Wizard"        "phase_wizard"           "0"    ""
-_check_parity 2  "Docker"        "phase_docker"           "0"    ""
-_check_parity 3  "Configuration" "phase_config"           "0"    ""
-_check_parity 4  "Pull"          "phase_pull"             "0"    ""
-_check_parity 5  "Start"         "phase_start"            "300"  ""
-_check_parity 6  "Deploy Peer"   "peer_deploy"            "1800" "optional,master-only"
-_check_parity 7  "Health"        "phase_health"           "0"    ""
-_check_parity 8  "Models"        "phase_models_graceful"  "0"    "graceful"
-_check_parity 9  "Backups"       "phase_backups"          "0"    ""
-_check_parity 10 "Complete"      "phase_complete"         "0"    ""
+_check_parity 0  "Diagnostics"          "phase_diagnostics"         "0"    "preflight"
+_check_parity 1  "Airgapped Preflight"  "phase_airgapped_preflight" "0"    "preflight"
+_check_parity 2  "Wizard"               "phase_wizard"              "0"    ""
+_check_parity 3  "Docker"               "phase_docker"              "0"    ""
+_check_parity 4  "Configuration"        "phase_config"              "0"    ""
+_check_parity 5  "Pull"                 "phase_pull"                "0"    ""
+_check_parity 6  "Start"                "phase_start"               "300"  ""
+_check_parity 7  "Deploy Peer"          "peer_deploy"               "1800" "optional,master-only"
+_check_parity 8  "Health"               "phase_health"              "0"    ""
+_check_parity 9  "Models"               "phase_models_graceful"     "0"    "graceful"
+_check_parity 10 "Backups"              "phase_backups"             "0"    ""
+_check_parity 11 "Complete"             "phase_complete"            "0"    ""
 
 # ============================================================================
 # CASE 3: iteration_order — phases_run_all 0 calls all 11 in order
@@ -130,10 +132,10 @@ CALLLOG="$(mktemp)"
     set +eu
     phases_run_all 0 >/dev/null 2>&1
 )
-EXPECTED_ORDER="$(printf 'Diagnostics\nWizard\nDocker\nConfiguration\nPull\nStart\nDeploy Peer\nHealth\nModels\nBackups\nComplete\n')"
+EXPECTED_ORDER="$(printf 'Diagnostics\nAirgapped Preflight\nWizard\nDocker\nConfiguration\nPull\nStart\nDeploy Peer\nHealth\nModels\nBackups\nComplete\n')"
 ACTUAL_ORDER="$(cat "$CALLLOG")"
 if [[ "$EXPECTED_ORDER" == "$ACTUAL_ORDER" ]]; then
-    pass "iteration_order: all 11 phases called in correct order"
+    pass "iteration_order: all 12 phases called in correct order"
 else
     fail "iteration_order: expected order differs"
     echo "    expected: $(echo "$EXPECTED_ORDER" | tr '\n' ',')" >&2
@@ -148,24 +150,24 @@ echo ""
 echo "--- name_to_idx ---"
 
 got="$(phases_name_to_idx Health)"
-[[ "$got" == "7" ]] && pass "name_to_idx: 'Health' -> 7" \
-    || fail "name_to_idx: 'Health' expected 7, got '$got'"
+[[ "$got" == "8" ]] && pass "name_to_idx: 'Health' -> 8" \
+    || fail "name_to_idx: 'Health' expected 8, got '$got'"
 
 got="$(phases_name_to_idx "Deploy Peer")"
-[[ "$got" == "6" ]] && pass "name_to_idx: 'Deploy Peer' -> 6" \
-    || fail "name_to_idx: 'Deploy Peer' expected 6, got '$got'"
+[[ "$got" == "7" ]] && pass "name_to_idx: 'Deploy Peer' -> 7" \
+    || fail "name_to_idx: 'Deploy Peer' expected 7, got '$got'"
 
-got="$(phases_name_to_idx 8)"
-[[ "$got" == "7" ]] && pass "name_to_idx: 1-based 8 -> 7" \
-    || fail "name_to_idx: 1-based 8 expected 7, got '$got'"
+got="$(phases_name_to_idx 9)"
+[[ "$got" == "8" ]] && pass "name_to_idx: 1-based 9 -> 8" \
+    || fail "name_to_idx: 1-based 9 expected 8, got '$got'"
 
 got="$(phases_name_to_idx 1)"
 [[ "$got" == "0" ]] && pass "name_to_idx: 1-based 1 -> 0" \
     || fail "name_to_idx: 1-based 1 expected 0, got '$got'"
 
-got="$(phases_name_to_idx 11)"
-[[ "$got" == "10" ]] && pass "name_to_idx: 1-based 11 -> 10" \
-    || fail "name_to_idx: 1-based 11 expected 10, got '$got'"
+got="$(phases_name_to_idx 12)"
+[[ "$got" == "11" ]] && pass "name_to_idx: 1-based 12 -> 11" \
+    || fail "name_to_idx: 1-based 12 expected 11, got '$got'"
 
 # Out-of-range numeric
 OOR_OUT="$(
@@ -200,7 +202,7 @@ _mk_stubs
 CALLLOG="$(mktemp)"
 (
     set +eu
-    phases_run_all 6 >/dev/null 2>&1
+    phases_run_all 7 >/dev/null 2>&1
 )
 FIRST_CALLED="$(head -1 "$CALLLOG" 2>/dev/null || echo "")"
 LINE_COUNT="$(grep -c . "$CALLLOG" 2>/dev/null || echo 0)"
@@ -247,9 +249,9 @@ grep -q "Complete" "$CALLLOG" 2>/dev/null && \
     pass "skip_optional: Complete still called" || \
     fail "skip_optional: Complete should still run"
 
-[[ "$LINE_COUNT" == "10" ]] && \
-    pass "skip_optional: 10 phases called (11 minus 1 optional)" || \
-    fail "skip_optional: expected 10 phases called, got $LINE_COUNT"
+[[ "$LINE_COUNT" == "11" ]] && \
+    pass "skip_optional: 11 phases called (12 minus 1 optional)" || \
+    fail "skip_optional: expected 11 phases called, got $LINE_COUNT"
 
 rm -f "$CALLLOG"
 
@@ -277,11 +279,11 @@ else
     fail "dry_run: expected exit 0, got rc=$DR_RC"
 fi
 
-# Only Diagnostics (preflight) should appear in calllog
+# Only preflight phases (Diagnostics + Airgapped Preflight) should appear in calllog
 DR_LINE_COUNT="$(grep -c . "$CALLLOG" 2>/dev/null || echo 0)"
-[[ "$DR_LINE_COUNT" == "1" ]] && \
-    pass "dry_run: only 1 phase called (Diagnostics/preflight)" || \
-    fail "dry_run: expected 1 phase called, got $DR_LINE_COUNT"
+[[ "$DR_LINE_COUNT" == "2" ]] && \
+    pass "dry_run: only 2 preflight phases called (Diagnostics + Airgapped Preflight)" || \
+    fail "dry_run: expected 2 phases called, got $DR_LINE_COUNT"
 
 grep -q "Diagnostics" "$CALLLOG" 2>/dev/null && \
     pass "dry_run: Diagnostics (preflight) was called" || \
@@ -378,9 +380,9 @@ else
 fi
 
 JSONL_LINES="$(grep -c . "$JSONL" 2>/dev/null || echo 0)"
-[[ "$JSONL_LINES" == "11" ]] && \
-    pass "jsonl_emit: 11 lines in jsonl (one per phase)" || \
-    fail "jsonl_emit: expected 11 lines, got $JSONL_LINES"
+[[ "$JSONL_LINES" == "12" ]] && \
+    pass "jsonl_emit: 12 lines in jsonl (one per phase)" || \
+    fail "jsonl_emit: expected 12 lines, got $JSONL_LINES"
 
 # Validate every line parses as JSON
 if python3 -c '
@@ -420,11 +422,11 @@ fi
     phases_run_all 0 >/dev/null 2>&1
 )
 JSONL_LINES2="$(grep -c . "$JSONL" 2>/dev/null || echo 0)"
-[[ "$JSONL_LINES2" == "11" ]] && \
-    pass "jsonl_emit: second fresh run truncates — still 11 lines (not 22)" || \
-    fail "jsonl_emit: expected 11 lines after second run, got $JSONL_LINES2"
+[[ "$JSONL_LINES2" == "12" ]] && \
+    pass "jsonl_emit: second fresh run truncates — still 12 lines (not 24)" || \
+    fail "jsonl_emit: expected 12 lines after second run, got $JSONL_LINES2"
 
-# Resume append: fresh run (11 lines) + resume from idx 6 (5 more) = 16 lines
+# Resume append: fresh run (12 lines) + resume from idx 7 (Deploy Peer, 5 more) = 17 lines
 : > "$JSONL"
 (
     set +eu
@@ -432,12 +434,12 @@ JSONL_LINES2="$(grep -c . "$JSONL" 2>/dev/null || echo 0)"
 )
 (
     set +eu
-    phases_run_all 6 >/dev/null 2>&1
+    phases_run_all 7 >/dev/null 2>&1
 )
 JSONL_LINES3="$(grep -c . "$JSONL" 2>/dev/null || echo 0)"
-[[ "$JSONL_LINES3" == "16" ]] && \
-    pass "jsonl_emit: resume append — 11 + 5 = 16 lines" || \
-    fail "jsonl_emit: expected 16 lines after resume append, got $JSONL_LINES3"
+[[ "$JSONL_LINES3" == "17" ]] && \
+    pass "jsonl_emit: resume append — 12 + 5 = 17 lines" || \
+    fail "jsonl_emit: expected 17 lines after resume append, got $JSONL_LINES3"
 
 rm -f "$CALLLOG"
 

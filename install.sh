@@ -12,6 +12,11 @@ TOTAL_PHASES=0   # sentinel — overwritten by phases_count() after sourcing lib
 INSTALLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
 TEMPLATE_DIR="${INSTALLER_DIR}/templates"
+# Airgapped mode: when true, install.sh never touches the public internet (D-07).
+# Forces SKIP_IMAGE_VALIDATION=true so the pull phase no-ops cleanly.
+AGMIND_AIRGAPPED="${AGMIND_AIRGAPPED:-false}"
+export AGMIND_AIRGAPPED
+[[ "${AGMIND_AIRGAPPED}" == "true" ]] && export SKIP_IMAGE_VALIDATION=true
 
 # Verify running from project directory
 if [[ ! -f "${INSTALLER_DIR}/lib/common.sh" ]]; then
@@ -40,8 +45,21 @@ source "${INSTALLER_DIR}/lib/authelia.sh"
 source "${INSTALLER_DIR}/lib/openwebui.sh"
 # shellcheck source=lib/doctor.sh
 source "${INSTALLER_DIR}/lib/doctor.sh"
+# shellcheck source=lib/airgapped.sh
+source "${INSTALLER_DIR}/lib/airgapped.sh"
+# shellcheck source=lib/bundle.sh
+source "${INSTALLER_DIR}/lib/bundle.sh"
 # shellcheck source=lib/phases.sh
 source "${INSTALLER_DIR}/lib/phases.sh"
+
+# Fallback shim: if lib/airgapped.sh failed to source for any reason,
+# define a minimal airgapped_guard so the callers below don't error out.
+command -v airgapped_guard >/dev/null 2>&1 \
+    || airgapped_guard() {
+        [[ "${AGMIND_AIRGAPPED:-false}" == "true" ]] \
+            && { echo "[WARN] airgapped: skipping ${1:-op}" >&2; return 0; }
+        return 1
+    }
 
 # --- Global defaults ---
 NON_INTERACTIVE="${NON_INTERACTIVE:-false}"
@@ -357,7 +375,18 @@ _ensure_es_sysctl() {
 phase_wizard()      { run_wizard; }
 phase_docker()      { setup_docker; }
 phase_config()      { ensure_bind_mount_files; export INSTALL_DIR; generate_config "$DEPLOY_PROFILE" "$TEMPLATE_DIR"; enable_gpu_compose; setup_security; if [[ "$ENABLE_AUTHELIA" == "true" ]]; then configure_authelia "$TEMPLATE_DIR"; fi; _copy_runtime_files; }
-phase_pull()        { compose_pull; }
+phase_pull()        {
+    # WHY: when airgapped, images are already loaded locally via bundle_install.
+    # Calling compose_pull would reach public registries — blocked by airgapped_guard.
+    airgapped_guard "docker compose pull" && return 0
+    compose_pull
+}
+# phase_airgapped_preflight — registered in lib/phases.sh with preflight flag (runs even in
+# --dry-run). No-op when AGMIND_AIRGAPPED=false so normal installs are unaffected.
+phase_airgapped_preflight() {
+    [[ "${AGMIND_AIRGAPPED:-false}" == "true" ]] || return 0
+    airgapped_preflight
+}
 phase_start()       { compose_start; create_openwebui_admin; }
 phase_health()      { wait_healthy "$TIMEOUT_HEALTH" "$TIMEOUT_GPU_HEALTH"; _obtain_letsencrypt_cert; }
 phase_models()      { download_models; }
@@ -487,8 +516,10 @@ _copy_runtime_files() {
     # lib/ → scripts/ copy: different subdirs, always safe even in self-install
     cp "${INSTALLER_DIR}/lib/health.sh"    "${INSTALL_DIR}/scripts/health.sh"    2>/dev/null || true
     cp "${INSTALLER_DIR}/lib/detect.sh"   "${INSTALL_DIR}/scripts/detect.sh"   2>/dev/null || true
-    cp "${INSTALLER_DIR}/lib/creds.sh"    "${INSTALL_DIR}/scripts/creds.sh"    2>/dev/null || true
-    cp "${INSTALLER_DIR}/lib/security.sh" "${INSTALL_DIR}/scripts/security.sh" 2>/dev/null || true
+    cp "${INSTALLER_DIR}/lib/creds.sh"      "${INSTALL_DIR}/scripts/creds.sh"      2>/dev/null || true
+    cp "${INSTALLER_DIR}/lib/security.sh"  "${INSTALL_DIR}/scripts/security.sh"  2>/dev/null || true
+    cp "${INSTALLER_DIR}/lib/airgapped.sh" "${INSTALL_DIR}/scripts/airgapped.sh" 2>/dev/null || true
+    cp "${INSTALLER_DIR}/lib/bundle.sh"    "${INSTALL_DIR}/scripts/bundle.sh"    2>/dev/null || true
     chmod +x "${INSTALL_DIR}/scripts/"*.sh 2>/dev/null || true
 }
 
