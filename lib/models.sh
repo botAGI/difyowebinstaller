@@ -7,6 +7,17 @@
 #          DEPLOY_PROFILE
 set -euo pipefail
 
+# ============================================================================
+# FALLBACK SHIM — active when sourced without lib/airgapped.sh
+# ============================================================================
+command -v airgapped_guard >/dev/null 2>&1 || \
+    airgapped_guard() {
+        [[ "${AGMIND_AIRGAPPED:-false}" == "true" ]] && {
+            echo "[WARN] airgapped: skipping $1" >&2; return 0
+        }
+        return 1
+    }
+
 INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
 
 # Approximate model download sizes for operator feedback

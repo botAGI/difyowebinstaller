@@ -6,6 +6,17 @@
 set -euo pipefail
 
 # ============================================================================
+# FALLBACK SHIM — active when sourced without lib/airgapped.sh
+# ============================================================================
+command -v airgapped_guard >/dev/null 2>&1 || \
+    airgapped_guard() {
+        [[ "${AGMIND_AIRGAPPED:-false}" == "true" ]] && {
+            echo "[WARN] airgapped: skipping $1" >&2; return 0
+        }
+        return 1
+    }
+
+# ============================================================================
 # DOCKER INSTALLATION
 # ============================================================================
 
@@ -52,6 +63,12 @@ install_docker() {
 
 _install_docker_debian() {
     export DEBIAN_FRONTEND=noninteractive
+
+    # In airgapped mode Docker must already be installed; skip all public network ops.
+    if airgapped_guard "apt-get install docker-ce"; then
+        log_warn "airgapped: Docker installation via apt skipped — Docker must be pre-installed"
+        return 0
+    fi
 
     # Remove old versions
     apt-get remove -y docker docker-engine docker.io containerd runc 2>/dev/null || true
@@ -145,6 +162,12 @@ install_nvidia_toolkit() {
     if dpkg -l nvidia-container-toolkit &>/dev/null 2>&1 || \
        rpm -q nvidia-container-toolkit &>/dev/null 2>&1; then
         log_success "NVIDIA Container Toolkit already installed"
+        return 0
+    fi
+
+    # In airgapped mode toolkit must already be installed; skip all public network ops.
+    if airgapped_guard "apt/yum install nvidia-container-toolkit"; then
+        log_warn "airgapped: NVIDIA Container Toolkit installation skipped — must be pre-installed"
         return 0
     fi
 
