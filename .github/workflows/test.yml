@@ -1,6 +1,6 @@
 name: Tests
 
-# Security baseline (CLAUDE.md §8 + 2026 Trivy/tj-actions/Nx supply chain attacks):
+# Security baseline (supply-chain hardening + 2026 Trivy / tj-actions / Nx attacks):
 #  - All third-party actions pinned to full commit SHA (mutable tags = атакователь
 #    force-push'ит зловред под тем же tag-ом, наш CI автоматом подтягивает).
 #  - step-security/harden-runner с egress audit на каждом job — outbound network
@@ -101,7 +101,7 @@ jobs:
       - name: Verify all pinned image:tag exist in registry
         env:
           # CI runs on amd64 — пропускаем arm64 manifest gate, оставляем только
-          # existence check. arm64 проверяем вручную при bump (см. CLAUDE.md §8).
+          # existence check. arm64 проверяем вручную при bump (см. docs/adr/0009-cadvisor-minio-arm64-holds.md).
           SKIP_PLATFORM_CHECK: "1"
         run: |
           bash tests/compose/test_image_tags_exist.sh templates/docker-compose.yml

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Image tag existence gate — runs `docker manifest inspect` on every image
-# in a compose file. Prevents LLM hallucinations (CLAUDE.md §8: MinIO RELEASE
+# in a compose file. Prevents LLM hallucinations (see docs/adr/0009-cadvisor-minio-arm64-holds.md — invented MinIO RELEASE
 # timestamp tag case). Verifies arm64 manifest support for DGX Spark.
 #
 # Usage:

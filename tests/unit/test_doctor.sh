@@ -115,7 +115,7 @@ _strip_rc() { grep '^{' <<< "$1" | tail -1; }
   || fail "happy_path: want exit 0 and no [FAIL]"
 
 # ── SC2: driver_590 — NVIDIA driver ≥590 → FAIL with 580 downgrade advice ────
-# WHY SC2: driver 590+ breaks DGX Spark GB10 (CLAUDE.md §8 Driver 580 HOLD).
+# WHY SC2: driver 590+ breaks DGX Spark GB10 (see docs/adr/0005-driver-580-hold.md).
 (
     set +eu
     export MOCK_NVIDIA_SMI_FIXTURE=driver_590
@@ -133,7 +133,7 @@ _strip_rc() { grep '^{' <<< "$1" | tail -1; }
   || fail "driver_590: want exit 2 and [FAIL] with 590+580"
 
 # ── SC2: mdns_dead — failed systemctl + avahi-resolve timeout → WARN dns-mdns ─
-# WHY SC2: dead mDNS = agmind-mdns.service failed while avahi is alive (CLAUDE.md §8).
+# WHY SC2: dead mDNS = agmind-mdns.service failed while avahi is alive.
 # Mock limitation: systemctl mock returns same fixture for all is-active args —
 # both avahi-daemon and agmind-mdns.service get "failed"; doctor reports the
 # agmind-mdns path and emits WARN/FAIL for dns-mdns.
@@ -165,7 +165,7 @@ assert mdns, 'no fixable dns-mdns check found; checks=%r' % [(c['id'],c['severit
   || fail "mdns_dead: want exit ≥1 and fixable dns-mdns record"
 
 # ── SC2: foreign_5353 — non-avahi on :5353 → FAIL dns-mdns with NoMachine hint ─
-# WHY SC2: second mDNS responder breaks avahi and all agmind-*.local aliases (CLAUDE.md §8).
+# WHY SC2: second mDNS responder breaks avahi and all agmind-*.local aliases.
 (
     set +eu
     export MOCK_SS_FIXTURE=foreign_nx
@@ -185,7 +185,7 @@ assert mdns, 'no fixable dns-mdns check found; checks=%r' % [(c['id'],c['severit
   || fail "foreign_5353: want exit 2 and [FAIL] with NoMachine hint"
 
 # ── SC2: missing_loadtest — absent loadtest dir → WARN install-state ─────────
-# WHY SC2: missing scripts/loadtest = _copy_runtime_files whitelist regression (CLAUDE.md §8).
+# WHY SC2: missing scripts/loadtest = _copy_runtime_files whitelist regression.
 tmpinst="$(mktemp -d)"
 echo "11" > "${tmpinst}/.install_phase"
 (
@@ -206,7 +206,7 @@ echo "11" > "${tmpinst}/.install_phase"
 rm -rf "$tmpinst"
 
 # ── SC2: gpu_caps_missing — NVIDIA_DRIVER_CAPABILITIES absent → FAIL gpu ──────
-# WHY SC2: without compute,utility caps GPU is invisible to CUDA (CLAUDE.md §8).
+# WHY SC2: without compute,utility caps GPU is invisible to CUDA.
 # MOCK strategy: exec fixture=gpu_fail → nvidia-smi -L inside container exits 1 →
 #   doctor inspects env → finds only "graphics" (no "compute") → FAIL.
 (
@@ -230,7 +230,7 @@ rm -rf "$tmpinst"
   || fail "gpu_caps_missing: want exit 2 and [FAIL] with NVIDIA_DRIVER_CAPABILITIES"
 
 # ── SC2: mapcount_low — vm.max_map_count < 262144 → WARN kernel-params fixable ─
-# WHY SC2: ES bootstrap hard-fails if vm.max_map_count < 262144 (CLAUDE.md §8).
+# WHY SC2: ES bootstrap hard-fails if vm.max_map_count < 262144.
 (
     set +eu
     export MOCK_SYSCTL_FIXTURE=low

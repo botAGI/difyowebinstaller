@@ -6,7 +6,7 @@ case "${MOCK_NVIDIA_SMI_FIXTURE:-dgx_spark}" in
     dgx_spark)
         case "${1:-}" in
             --query-gpu=driver_version,*|--query-gpu=driver_version)
-                # DGX Spark golden driver — 580.x (CLAUDE.md §8 Driver 580 HOLD)
+                # DGX Spark golden driver — 580.x (see docs/adr/0005-driver-580-hold.md)
                 echo "580.142"
                 ;;
             --query-gpu=name,*|--query-gpu=name)
@@ -16,7 +16,7 @@ case "${MOCK_NVIDIA_SMI_FIXTURE:-dgx_spark}" in
                 echo "GPU 0: Grace Blackwell Superchip GB10 (UUID: GPU-00000000)"
                 ;;
             --query-gpu=memory.used,*|--query-gpu=memory.used)
-                # GB10 unified memory — NVML NOT_SUPPORTED (CLAUDE.md §8)
+                # GB10 unified memory — NVML returns NOT_SUPPORTED for VRAM queries
                 echo "[N/A]"
                 ;;
             -q)

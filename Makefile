@@ -11,7 +11,7 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | \
 	  awk 'BEGIN{FS=":.*##"}{printf "  \033[36m%-18s\033[0m %s\n",$$1,$$2}'
 
-lint: ## shellcheck -S warning lib/*.sh scripts/*.sh install.sh (CLAUDE.md §10)
+lint: ## shellcheck -S warning lib/*.sh scripts/*.sh install.sh (repo Definition of Done gate)
 	shellcheck -S warning lib/*.sh scripts/*.sh install.sh
 
 test: ## Run full local regression suite (tests/run_all.sh)
@@ -30,7 +30,7 @@ test-integration: ## Run only integration tests (tests/integration/test_*.sh)
 compose-config: ## Validate docker-compose YAML schema
 	docker compose -f templates/docker-compose.yml config -q
 
-manifest-check: ## Verify every image:tag has an arm64 manifest (CLAUDE.md §10)
+manifest-check: ## Verify every image:tag has an arm64 manifest (repo Definition of Done gate)
 	bash tests/compose/test_image_tags_exist.sh templates/docker-compose.yml
 
 image-check: manifest-check ## Alias for manifest-check

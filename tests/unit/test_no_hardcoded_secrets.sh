@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test_no_hardcoded_secrets.sh — CLAUDE.md §5: никогда не хардкодить credentials
+# test_no_hardcoded_secrets.sh — never hardcode credentials (IP / passwords / tokens / keys)
 # (IP, пароли, токены, ключи) в код / дефолтные конфиги / templates / публичные файлы.
 #
 # Ловит:
