@@ -545,6 +545,9 @@ _append_provider_vars() {
         echo "LLM_ON_PEER=${LLM_ON_PEER:-false}"
         if [[ -n "${AGMIND_MODE:-}" ]]; then echo "AGMIND_MODE=${AGMIND_MODE}"; fi
         if [[ -n "${PEER_IP:-}" ]]; then echo "PEER_IP=${PEER_IP}"; fi
+        # Phase 9: named deployment profile (read by `agmind profiles` / `agmind estimate`
+        # and by build_compose_profiles on resume). "custom" if the granular wizard flow was used.
+        echo "DEPLOY_PROFILE=${DEPLOY_PROFILE:-custom}"
 
         # DGX Spark / vLLM embed/rerank vars (written regardless of LLM provider)
         if [[ -n "${VLLM_IMAGE:-}" ]]; then echo "VLLM_IMAGE=${VLLM_IMAGE}"; fi
