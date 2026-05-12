@@ -1,0 +1,113 @@
+# tests/fixtures/estimate/docker-compose.yml — deterministic fixture for test_estimate.sh
+# Concrete mem_limit values (NO ${VAR:-x} shell-var placeholders — must be parseable as literals).
+#
+# Fixture mem-math summary:
+#   Always-on (no profiles: tag): api(2g) + worker(2g) + db(4g) + redis(1g) + nginx(256m)
+#     = 9.25 GiB
+#
+#   Profile sets (raw compose profile → services + their mem_limit):
+#     vllm      → vllm(96g)
+#     litellm   → litellm(1g)
+#     weaviate  → weaviate(4g)
+#     qdrant    → qdrant(2g)
+#     docling   → docling(8g)
+#     vllm-embed → vllm-embed(3g)
+#     monitoring → prometheus(1g) + grafana(512m) = 1.5g
+#     portainer  → portainer(256m)
+#     authelia   → authelia(256m)
+#
+#   Named profile sums (from NAMED_PROFILE_EXPANSION in lib/service-map.sh):
+#     core:          always-on(9.25) + vllm(96) + litellm(1) = 106.25 GiB
+#     core+LLM_ON_PEER: always-on(9.25) + litellm(1) = 10.25 GiB  (vllm excluded)
+#     rag:           always-on(9.25) + vllm(96) + litellm(1) + weaviate(4) + docling(8) + vllm-embed(3) = 121.25 GiB
+#     rag+LLM_ON_PEER:  always-on(9.25) + litellm(1) + weaviate(4) + docling(8) + vllm-embed(3) = 25.25 GiB
+#     observability: always-on(9.25) + prometheus(1) + grafana(0.5) + portainer(0.25) = ~11 GiB
+
+services:
+  # === ALWAYS-ON (no profiles tag) ===
+  api:
+    image: example/api
+    mem_limit: 2g
+
+  worker:
+    image: example/worker
+    mem_limit: 2g
+
+  db:
+    image: example/db
+    mem_limit: 4g
+
+  redis:
+    image: example/redis
+    mem_limit: 1g
+
+  nginx:
+    image: example/nginx
+    mem_limit: 256m
+
+  # === PROFILE-GATED SERVICES ===
+
+  vllm:
+    image: example/vllm
+    mem_limit: 96g
+    profiles: ["vllm"]
+    environment:
+      - VLLM_GPU_MEM_UTIL=0.60
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+
+  litellm:
+    image: example/litellm
+    mem_limit: 1g
+    profiles: ["litellm"]
+
+  weaviate:
+    image: example/weaviate
+    mem_limit: 4g
+    profiles: ["weaviate"]
+
+  qdrant:
+    image: example/qdrant
+    mem_limit: 2g
+    profiles: ["qdrant"]
+
+  docling:
+    image: example/docling
+    mem_limit: 8g
+    profiles: ["docling"]
+    environment:
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+
+  vllm-embed:
+    image: example/vllm-embed
+    mem_limit: 3g
+    profiles: ["vllm-embed"]
+
+  prometheus:
+    image: example/prometheus
+    mem_limit: 1g
+    profiles: ["monitoring"]
+
+  grafana:
+    image: example/grafana
+    mem_limit: 512m
+    profiles: ["monitoring"]
+
+  portainer:
+    image: example/portainer
+    mem_limit: 256m
+    profiles: ["portainer"]
+
+  authelia:
+    image: example/authelia
+    mem_limit: 256m
+    profiles: ["authelia"]
