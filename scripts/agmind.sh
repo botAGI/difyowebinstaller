@@ -255,18 +255,16 @@ print(json.dumps({
 }
 
 # ============================================================================
-# CREDS SHOW  (stub — full implementation in Plan 03-03 via lib/creds.sh)
+# CREDS SHOW  (thin wrapper — logic in lib/creds.sh::creds_show)
 # ============================================================================
 
 cmd_creds_show() {
-    # Root gate (SC2 / D-06): credentials files are chmod 600 root-owned.
-    if [[ "$(id -u)" -ne 0 ]]; then
-        echo -e "${RED}credentials are root-only — run: sudo agmind creds show${NC}" >&2
-        return 1
-    fi
-    # Full implementation (masked display, --show, --json) lands in Plan 03-03.
-    echo "creds show: not yet implemented — coming in Plan 03-03" >&2
-    return 1
+    # Lazy-source creds.sh (runtime copy in scripts/; dev fallback to lib/).
+    # shellcheck source=/dev/null
+    source "${SCRIPTS_DIR}/creds.sh" 2>/dev/null \
+        || source "${AGMIND_DIR}/lib/creds.sh" 2>/dev/null \
+        || { echo -e "${RED}creds module missing — reinstall AGmind${NC}" >&2; return 2; }
+    creds_show "$@"
 }
 
 # ============================================================================
