@@ -367,14 +367,41 @@ bash tests/compose/test_image_tags_exist.sh   # CI test
 
 ## 🛠 Operations
 
+> `agmind <cmd>` is installed to `PATH`. Run `agmind help` for the full list.
+
 ### Status & Diagnostics
 
 ```bash
-agmind status [--json]               # Services, GPU, models, endpoints
-agmind doctor [--peer]               # System diagnostics
+agmind status [--json] [--watch] [--service <name>]   # Stack overview table
+agmind doctor [--peer] [--json] [--fix [--dry-run]] [--bundle]   # System diagnostics
 agmind health                        # Alias for doctor
 agmind logs [-f] <service>           # Tail container logs
 agmind mdns-status                   # Verify avahi publishing for *.local
+agmind troubleshoot <topic>          # Print the matching docs/troubleshooting.md section
+agmind security audit [--json]       # Read-only scan: exposed ports / privileged / docker.sock / weak secrets
+agmind config validate [--json]      # Static check: .env / versions↔manifest / compose schema
+agmind config diff                   # Pinned-vs-target update preview (read-only)
+```
+
+### Access & Credentials
+
+```bash
+agmind open <svc>|--list             # Open a service URL (headless/SSH → prints the URL, pipeable)
+agmind endpoints [--json]            # List all public service URLs (SERVICE | URL | STATE)
+sudo agmind creds show [--show] [--json]   # Show stack credentials (root; masked unless --show)
+sudo agmind creds rotate             # Regenerate passwords / keys (wraps rotate_secrets.sh)
+```
+
+### Profiles & Sizing
+
+```bash
+agmind profiles [--json]             # The 8 named deployment profiles + the active one
+agmind estimate [<profile>] [--json] # RAM / disk / GPU-mem estimate for a profile vs available
+
+# Install controls (install.sh):
+sudo bash install.sh --profile rag          # Pick a named profile non-interactively
+sudo bash install.sh --dry-run              # Print the phase plan, change nothing
+sudo bash install.sh --resume-from <phase>  # Re-run from a given install phase
 ```
 
 ### Lifecycle
@@ -415,19 +442,22 @@ agmind plugins online                # Enable marketplace.dify.ai (default)
 agmind plugins offline               # Local .difypkg only (supply-chain hardened)
 ```
 
-### Performance
+### Performance & Demo
 
 ```bash
 agmind loadtest list                 # k6 scenarios
 agmind loadtest chat --vus 8         # Concurrent chat load test
 agmind docling bench <pdf>           # Cold/warm/per-page timing for any PDF
+agmind demo install|ingest|ask       # ~5-min RAG demo: sample workflow + KB + bundled doc → answer with citations
 ```
 
 ### Backup & Restore
 
 ```bash
-sudo agmind backup                   # PostgreSQL + Redis + volumes
-sudo agmind restore <path>           # Restore from backup
+sudo agmind backup create [--include-models]   # PostgreSQL + Redis + volumes (+ vLLM cache)
+agmind backup list                             # DATE / SIZE / STATUS
+agmind backup verify [latest|<dir>] [--json]   # Integrity check; exit 0 = valid, 1 = corrupt/incomplete
+sudo agmind restore [latest|<dir>] [--dry-run] [--service <name>]   # Restore (--dry-run prints the plan)
 sudo agmind rotate-secrets           # Regenerate passwords/keys
 sudo agmind uninstall [--keep-models]  # Remove stack
 ```
@@ -444,10 +474,12 @@ sudo agmind uninstall [--keep-models]  # Remove stack
 │   ├── nginx/nginx.conf             # Reverse proxy
 │   └── volumes/                     # Postgres, Redis, vectors, models, MinIO
 ├── credentials.txt                  # All passwords (chmod 600)
-├── scripts/                         # CLI + utilities (mirrored from repo)
+├── scripts/                         # Day-2 CLI + lib modules mirrored here (doctor/status/config/restore/security/…)
 ├── templates/                       # init SQL, env templates
 ├── monitoring/                      # Prometheus rules, Grafana dashboards
-├── docs/                            # Citations, alerts, docling, RAGFlow
+├── docs/                            # architecture/ · adr/ · compatibility & decision matrices · troubleshooting · operations
+├── .install-phases.jsonl            # Per-phase install record (durations / errors)
+├── install-report.json              # Machine-readable install summary
 └── install.log                      # Full install transcript
 ```
 
@@ -516,9 +548,19 @@ Docling (5-page arxiv PDF, warm): **6.04s**, 0.32s/page, ~1.6 GiB GPU memory.
 
 ## 🗺 Roadmap & Status
 
-- **v3.0.2** _(current)_ — RAGFlow upgrade to `v0.24.1-spark` (TitleChunker /
-  TokenChunker + 7 ingestion templates + Russian VLM prompts), Pipeline
-  framework patches.
+- **v3.1** _(current)_ — Day-2 UX + hardening + docs (9 phases): `agmind doctor`
+  (preflight/health + `--fix` + sanitized `--bundle`), `agmind status`
+  (overview table + `--json`/`--watch`), `agmind open`/`endpoints`/`creds`,
+  `agmind config validate`/`diff` + `install --dry-run`/`--resume-from` +
+  `install-report.json`, `agmind backup verify`/`restore --dry-run`, installer
+  refactored into a phase engine (`lib/phases.sh`) + peer module, security
+  hardening (docker-socket-proxy, airgapped mode, `agmind security audit`),
+  onboarding docs (`docs/architecture/` Mermaid diagrams, compatibility &
+  decision matrices, `docs/troubleshooting.md` + `agmind troubleshoot`,
+  `docs/adr/` ADR-0001…0009, `Makefile`, `agmind demo`), profiles UX (named
+  deployment profiles in the wizard, `agmind profiles`, `agmind estimate`).
+- **v3.0.2** — RAGFlow upgrade to `v0.24.1-spark` (TitleChunker / TokenChunker +
+  7 ingestion templates + Russian VLM prompts), Pipeline framework patches.
 - **v3.0.1** — mDNS hardening, dual-Spark cluster, master/worker wizard,
   NAT-on-demand peer, Portainer peer agent.
 - **2026-04-26** — RAGFlow integrated via DockerHub `ar2r223/ragflow-spark`.
@@ -556,10 +598,15 @@ agmind troubleshoot memory     # OOM / unified memory → §10
 
 - Work on `main` only — no feature branches, no merge commits. PRs are cut
   from `main` on demand.
+- Use the `Makefile` task runner: `make lint` (shellcheck), `make test`
+  (unit + integration), `make compose-config`, `make manifest-check`,
+  `make release-check`. `make` with no target prints the list.
 - Every PR must pass [Definition of Done](#-definition-of-done) and
-  `tests/compose/test_image_tags_exist.sh`.
+  `make manifest-check` (a.k.a. `tests/compose/test_image_tags_exist.sh`).
 - Image tag bumps require `docker manifest inspect <image>:<tag> | grep arm64`
   evidence in the commit message — LLMs hallucinate registry tags.
+- Architectural decisions go in [`docs/adr/`](docs/adr/) as MADR-lite records;
+  reference them from code comments instead of internal notes.
 
 ---
 
