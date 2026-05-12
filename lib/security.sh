@@ -91,6 +91,7 @@ configure_fail2ban() {
 
     # Install if missing
     if ! command -v fail2ban-server &>/dev/null; then
+        airgapped_guard "apt-get install fail2ban" && { log_warn "airgapped: fail2ban not installed — run manually on the peer"; return 0; }
         if command -v apt-get &>/dev/null; then
             apt-get install -y fail2ban >/dev/null 2>&1
         elif command -v dnf &>/dev/null; then
@@ -239,6 +240,7 @@ encrypt_secrets() {
 
     # Install age if missing
     if ! command -v age &>/dev/null; then
+        airgapped_guard "apt-get install age" && { log_warn "airgapped: age not installed — install manually: https://github.com/FiloSottile/age"; return 0; }
         if command -v apt-get &>/dev/null; then
             apt-get install -y age >/dev/null 2>&1
         else
@@ -268,6 +270,7 @@ encrypt_secrets() {
             return 1
         fi
 
+        airgapped_guard "curl sops binary" && { log_warn "airgapped: sops not installed — provide sops binary at /usr/local/bin/sops manually"; return 0; }
         if ! curl -sSL --fail "$sops_url" -o /usr/local/bin/sops; then
             log_error "Failed to download sops from ${sops_url}"
             rm -f /usr/local/bin/sops
@@ -378,6 +381,15 @@ command -v log_info    >/dev/null 2>&1 || log_info()    { echo "  -> $*"; }
 command -v log_warn    >/dev/null 2>&1 || log_warn()    { echo "  ! $*" >&2; }
 command -v log_error   >/dev/null 2>&1 || log_error()   { echo "  ✗ $*" >&2; }
 command -v log_success >/dev/null 2>&1 || log_success() { echo "  ✓ $*"; }
+# airgapped_guard shim — no-op passthrough when lib/airgapped.sh not sourced.
+# Returns 0 (skip) when AGMIND_AIRGAPPED=true; returns 1 (proceed) otherwise.
+command -v airgapped_guard >/dev/null 2>&1 || airgapped_guard() {
+    local _op="${1:-op}"; shift || true
+    if [[ "${AGMIND_AIRGAPPED:-false}" == "true" ]]; then
+        log_warn "airgapped: skipping ${_op} (AGMIND_AIRGAPPED=true)"; return 0
+    fi
+    return 1
+}
 
 # _SEC_SEP — ASCII Unit Separator, same pattern as DOCTOR_REGISTRY (not in normal messages)
 _SEC_SEP=$'\x1f'
