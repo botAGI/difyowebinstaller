@@ -46,3 +46,7 @@ logs/
 *.bak
 *.tmp
 .vscode/
+
+# Allow test fixtures that have the same names as runtime-generated files
+!tests/fixtures/creds/credentials.txt
+!tests/fixtures/creds/.admin_password

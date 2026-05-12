@@ -30,7 +30,8 @@ pass=0
 cd "$REPO_ROOT" || { echo "SKIP: cannot cd to repo root"; exit 77; }
 
 # --- Check 1: .env / credentials / keys tracked in git ---
-tracked_secrets="$(git ls-files 2>/dev/null | grep -E '(^|/)\.env$|(^|/)\.env\.|credentials\.txt$|\.pem$|^.*_rsa$|id_ed25519$|\.p12$|\.pfx$' || true)"
+# tests/fixtures/ intentionally tracks fake-value credential files for unit tests — exclude.
+tracked_secrets="$(git ls-files 2>/dev/null | grep -E '(^|/)\.env$|(^|/)\.env\.|credentials\.txt$|\.pem$|^.*_rsa$|id_ed25519$|\.p12$|\.pfx$' | grep -v '^tests/fixtures/' || true)"
 if [[ -z "$tracked_secrets" ]]; then
     echo "  PASS: no .env/credentials/private-key files tracked in git"
     pass=$((pass+1))
