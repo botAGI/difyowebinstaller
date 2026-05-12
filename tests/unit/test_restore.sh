@@ -236,9 +236,10 @@ with open(path, 'r+b') as f:
   || fail "TC6 dry_run_read_only: fixture was mutated or mutating docker calls issued"
 
 # ── TC7: dry_run_plan_sections ────────────────────────────────────────────────
-# restore_plan --dry-run output should contain section headers.
-# Against stub: output is "не реализовано" — sections absent (RED until Plan 02).
-# Wave-0 assertion: stub returns non-empty output and doesn't crash.
+# restore_plan --dry-run output must contain all four section headers:
+#   PostgreSQL / Volumes / Config / Будет остановлено
+# and the fixture's known artifacts (dify_db.sql.gz, weaviate.tar.gz).
+# Plan 03: REAL assertions (was stub-only at Wave-0).
 (
     set +e
     export PATH="${MOCK_DIR}:${PATH}"
@@ -249,13 +250,35 @@ with open(path, 'r+b') as f:
     _mk_fixture "$fix_dir"
     # shellcheck source=/dev/null
     source "${REPO_ROOT}/lib/restore.sh"
+    # Re-null colors: lib/restore.sh's fallback shims use ${VAR:-ANSI} which
+    # triggers even on empty-string (bash :- treats empty as unset), overriding
+    # the test's exported empty vars. Must re-zero AFTER sourcing.
+    RED=''; GREEN=''; YELLOW=''; CYAN=''; BOLD=''; NC=''
     out="$(restore_plan "$fix_dir" --dry-run 2>&1 || true)"
-    [[ -n "$out" ]]
-) && pass "TC7 dry_run_plan_sections: stub returned output (plan sections pending Plan 02 — RED for real assertion)" \
-  || fail "TC7 dry_run_plan_sections: stub returned no output at all"
+    rc=$?
+    # Assertions:
+    # 1. restore_verify passed → exit 0
+    [[ "$rc" -eq 0 ]] || { echo "  rc=$rc" >&2; false; exit; }
+    # 2. All four section headers present
+    echo "$out" | grep -q "PostgreSQL:"        || { echo "  missing PostgreSQL section" >&2; false; exit; }
+    echo "$out" | grep -qE "Volumes|каталоги"  || { echo "  missing Volumes section" >&2; false; exit; }
+    echo "$out" | grep -q "Config:"            || { echo "  missing Config section" >&2; false; exit; }
+    echo "$out" | grep -q "остановлено"        || { echo "  missing Будет остановлено section" >&2; false; exit; }
+    # 3. Known artifacts listed
+    echo "$out" | grep -q "dify_db.sql.gz"     || { echo "  dify_db.sql.gz missing from plan" >&2; false; exit; }
+    echo "$out" | grep -q "weaviate.tar.gz"    || { echo "  weaviate.tar.gz missing from plan" >&2; false; exit; }
+    # 4. Dry-run trailer present
+    echo "$out" | grep -q "Изменений не внесено (dry-run)" || { echo "  dry-run trailer missing" >&2; false; exit; }
+) && pass "TC7 dry_run_plan_sections: all 4 section headers + known artifacts + dry-run trailer present" \
+  || fail "TC7 dry_run_plan_sections: missing section header, artifact, or dry-run trailer"
 
 # ── TC8: selective_scope_dify ─────────────────────────────────────────────────
-# restore_plan <fixture> --service dify --dry-run → stub exits non-zero (RED until Plan 02).
+# restore_plan <fixture> --service dify --dry-run:
+#   - exits 0 (verify passes on fixture)
+#   - PostgreSQL section lists dify_db.sql.gz
+#   - Будет остановлено section lists "api worker web sandbox plugin_daemon"
+#   - Volumes section does NOT include weaviate / qdrant / openwebui
+# Plan 03: REAL assertions (was stub-check at Wave-0).
 (
     set +e
     export PATH="${MOCK_DIR}:${PATH}"
@@ -266,14 +289,37 @@ with open(path, 'r+b') as f:
     _mk_fixture "$fix_dir"
     # shellcheck source=/dev/null
     source "${REPO_ROOT}/lib/restore.sh"
-    restore_plan "$fix_dir" --service dify --dry-run 2>/dev/null
-    stub_rc=$?
-    [[ "$stub_rc" -ne 0 ]]
-) && pass "TC8 selective_scope_dify: stub exits non-zero for --service dify (RED, Plan 02 implements)" \
-  || fail "TC8 selective_scope_dify: unexpected result"
+    # Re-null colors after source (lib's ${VAR:-ANSI} fallback triggers on empty strings)
+    RED=''; GREEN=''; YELLOW=''; CYAN=''; BOLD=''; NC=''
+    out="$(restore_plan "$fix_dir" --service dify --dry-run 2>&1)"
+    rc=$?
+    # Extract only the plan section (after "=== План") to avoid false matches in
+    # restore_verify output (which mentions dify_db.sql.gz in sql_sanity messages).
+    plan_section="$(echo "$out" | awk '/=== План/,0')"
+    # 1. exits 0
+    [[ "$rc" -eq 0 ]] || { echo "  rc=$rc" >&2; false; exit; }
+    # 2. dify DB listed in PostgreSQL section of the plan
+    echo "$plan_section" | grep -q "dify_db.sql.gz"        || { echo "  dify_db.sql.gz not in plan" >&2; false; exit; }
+    # 3. Dify app containers listed in stop section
+    echo "$plan_section" | grep -q "api worker web sandbox" || { echo "  dify containers not in stop section" >&2; false; exit; }
+    # 4. postgres note present
+    echo "$plan_section" | grep -q "postgres НЕ останавливается" || { echo "  postgres note missing" >&2; false; exit; }
+    # 5. weaviate/qdrant/openwebui NOT in the plan (out-of-scope for --service dify)
+    echo "$plan_section" | grep -q "weaviate.tar.gz"        && { echo "  weaviate.tar.gz incorrectly in dify scope" >&2; false; exit; }
+    echo "$plan_section" | grep -q "qdrant.tar.gz"          && { echo "  qdrant.tar.gz incorrectly in dify scope" >&2; false; exit; }
+    echo "$plan_section" | grep -q "openwebui.tar.gz"       && { echo "  openwebui.tar.gz incorrectly in dify scope" >&2; false; exit; }
+    true  # ensure exit 0 when all "should-not-match" checks pass (last cmd is && which exits 1 on no-match)
+) && pass "TC8 selective_scope_dify: --service dify lists dify_db+stop section, excludes weaviate/qdrant/openwebui" \
+  || fail "TC8 selective_scope_dify: plan missing expected content or contains out-of-scope artifacts"
 
 # ── TC9: selective_scope_rag ──────────────────────────────────────────────────
-# restore_plan <fixture> --service rag --dry-run → stub exits non-zero (RED until Plan 02).
+# Fixture has weaviate.tar.gz (NOT qdrant.tar.gz).
+# restore_plan <fixture> --service rag --dry-run:
+#   - exits 0
+#   - Volumes section lists weaviate.tar.gz
+#   - Volumes section does NOT include qdrant, dify, openwebui artifacts
+#   - Будет остановлено = "weaviate" (the vector store present in fixture)
+# Plan 03: REAL assertions (was stub-check at Wave-0).
 (
     set +e
     export PATH="${MOCK_DIR}:${PATH}"
@@ -282,17 +328,39 @@ with open(path, 'r+b') as f:
     mkdir -p "$INSTALL_DIR" "$BACKUP_BASE"
     fix_dir="${TMP_ROOT}/tc9_fix"
     _mk_fixture "$fix_dir"
+    # Confirm: fixture has weaviate but not qdrant
+    [[ -f "${fix_dir}/weaviate.tar.gz" ]]   || { echo "  fixture missing weaviate.tar.gz" >&2; false; exit; }
+    [[ ! -f "${fix_dir}/qdrant.tar.gz" ]]   || { echo "  fixture unexpectedly has qdrant.tar.gz" >&2; false; exit; }
     # shellcheck source=/dev/null
     source "${REPO_ROOT}/lib/restore.sh"
-    restore_plan "$fix_dir" --service rag --dry-run 2>/dev/null
-    stub_rc=$?
-    [[ "$stub_rc" -ne 0 ]]
-) && pass "TC9 selective_scope_rag: stub exits non-zero for --service rag (RED, Plan 02 implements)" \
-  || fail "TC9 selective_scope_rag: unexpected result"
+    # Re-null colors after source (lib's ${VAR:-ANSI} fallback triggers on empty strings)
+    RED=''; GREEN=''; YELLOW=''; CYAN=''; BOLD=''; NC=''
+    out="$(restore_plan "$fix_dir" --service rag --dry-run 2>&1)"
+    rc=$?
+    # Extract only the plan section (after "=== План") to avoid false matches in
+    # restore_verify output (which mentions dify_db.sql.gz in sql_sanity messages).
+    plan_section="$(echo "$out" | awk '/=== План/,0')"
+    # 1. exits 0
+    [[ "$rc" -eq 0 ]] || { echo "  rc=$rc" >&2; false; exit; }
+    # 2. weaviate listed in volumes (plan section only)
+    echo "$plan_section" | grep -q "weaviate.tar.gz"   || { echo "  weaviate.tar.gz not in plan" >&2; false; exit; }
+    # 3. weaviate container in stop section
+    echo "$plan_section" | grep -q "weaviate"          || { echo "  weaviate container not in stop section" >&2; false; exit; }
+    # 4. qdrant NOT listed (not in fixture)
+    echo "$plan_section" | grep -q "qdrant.tar.gz"     && { echo "  qdrant.tar.gz incorrectly listed (not in fixture)" >&2; false; exit; }
+    # 5. dify / openwebui artifacts NOT in the plan section
+    echo "$plan_section" | grep -q "dify_db.sql.gz"    && { echo "  dify_db.sql.gz incorrectly in rag scope" >&2; false; exit; }
+    echo "$plan_section" | grep -q "openwebui.tar.gz"  && { echo "  openwebui.tar.gz incorrectly in rag scope" >&2; false; exit; }
+    true  # ensure exit 0 when all "should-not-match" checks pass (last cmd is && which exits 1 on no-match)
+) && pass "TC9 selective_scope_rag: --service rag lists only weaviate (present in fixture), excludes qdrant/dify/openwebui" \
+  || fail "TC9 selective_scope_rag: plan missing weaviate or contains out-of-scope artifacts"
 
 # ── TC10: unknown_service_exit1 ───────────────────────────────────────────────
-# restore_plan <fixture> --service bogus --dry-run → exit non-zero.
-# Both stub and future implementation exit non-zero for bogus --service.
+# restore_plan <fixture> --service bogus --dry-run:
+#   - exits 1
+#   - stderr/combined output mentions "bogus" and lists valid service names
+#     (dify, rag, ragflow, openwebui, ollama, config)
+# Plan 03: REAL assertion (exit 1 also held for stub — add valid-name list check).
 (
     set +e
     export PATH="${MOCK_DIR}:${PATH}"
@@ -303,11 +371,20 @@ with open(path, 'r+b') as f:
     _mk_fixture "$fix_dir"
     # shellcheck source=/dev/null
     source "${REPO_ROOT}/lib/restore.sh"
-    restore_plan "$fix_dir" --service bogus --dry-run 2>/dev/null
-    stub_rc=$?
-    [[ "$stub_rc" -ne 0 ]]
-) && pass "TC10 unknown_service_exit1: --service bogus exits non-zero (consistent with future impl)" \
-  || fail "TC10 unknown_service_exit1: unexpected result"
+    # No need to re-null colors here — error is printed before any colored output
+    out="$(restore_plan "$fix_dir" --service bogus --dry-run 2>&1)"
+    rc=$?
+    # 1. exits 1
+    [[ "$rc" -ne 0 ]]                                   || { echo "  expected exit 1, got $rc" >&2; false; exit; }
+    # 2. output mentions the invalid service name
+    echo "$out" | grep -qi "bogus"                      || { echo "  output doesn't mention 'bogus'" >&2; false; exit; }
+    # 3. output lists at least 4 of the 6 valid names
+    echo "$out" | grep -q "dify"                        || { echo "  valid name 'dify' missing from output" >&2; false; exit; }
+    echo "$out" | grep -q "rag"                         || { echo "  valid name 'rag' missing from output" >&2; false; exit; }
+    echo "$out" | grep -q "openwebui"                   || { echo "  valid name 'openwebui' missing from output" >&2; false; exit; }
+    echo "$out" | grep -q "config"                      || { echo "  valid name 'config' missing from output" >&2; false; exit; }
+) && pass "TC10 unknown_service_exit1: --service bogus exits 1, output mentions bogus + lists valid names" \
+  || fail "TC10 unknown_service_exit1: wrong exit code or missing service names in output"
 
 # ── TC11: latest_resolver ─────────────────────────────────────────────────────
 # _resolve_backup_dir latest → returns path ending /2026-05-12_0300 (lexicographic newest).
