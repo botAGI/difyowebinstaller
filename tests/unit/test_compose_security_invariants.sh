@@ -131,5 +131,140 @@ PY
 done
 
 echo ""
+
+# ============================================================================
+# SC1 Hardening assertions (07-02): docker-socket-proxy, no-new-privileges,
+# read_only exporters, Portainer profile gate, alloy-config.river routing.
+# These run only on templates/docker-compose.yml (the main compose file).
+# ============================================================================
+MAIN_COMPOSE="${REPO_ROOT}/templates/docker-compose.yml"
+ALLOY_CONFIG="${REPO_ROOT}/monitoring/alloy-config.river"
+
+if [[ -f "${MAIN_COMPOSE}" ]]; then
+    sc1_result="$(python3 - "${MAIN_COMPOSE}" <<'PY'
+import sys, yaml
+
+data = yaml.safe_load(open(sys.argv[1])) or {}
+services = data.get('services', {}) if isinstance(data, dict) else {}
+violations = []
+
+# SC1-5: docker-socket-proxy exists with read-only env-allowlist
+proxy = services.get('docker-socket-proxy')
+if proxy is None:
+    violations.append("SC1-5_MISSING: docker-socket-proxy service not found")
+else:
+    env = proxy.get('environment', {}) or {}
+    # environment can be dict {KEY: val} or list ["KEY=val"]
+    if isinstance(env, list):
+        env_dict = {}
+        for item in env:
+            if '=' in str(item):
+                k, v = str(item).split('=', 1)
+                env_dict[k.strip()] = v.strip()
+            else:
+                env_dict[str(item).strip()] = ''
+        env = env_dict
+    containers_val = env.get('CONTAINERS', env.get('CONTAINERS', None))
+    post_val = env.get('POST', None)
+    exec_val = env.get('EXEC', None)
+    build_val = env.get('BUILD', None)
+    if not (str(containers_val) in ('1', 'True', 'true')):
+        violations.append(f"SC1-5_PROXY_ALLOWLIST: docker-socket-proxy CONTAINERS should be 1, got {containers_val!r}")
+    if str(post_val) not in ('0', 'False', 'false'):
+        violations.append(f"SC1-5_PROXY_ALLOWLIST: docker-socket-proxy POST should be 0, got {post_val!r}")
+    if str(exec_val) not in ('0', 'False', 'false'):
+        violations.append(f"SC1-5_PROXY_ALLOWLIST: docker-socket-proxy EXEC should be 0, got {exec_val!r}")
+    if str(build_val) not in ('0', 'False', 'false'):
+        violations.append(f"SC1-5_PROXY_ALLOWLIST: docker-socket-proxy BUILD should be 0, got {build_val!r}")
+
+# SC1-6: alloy and cadvisor do NOT have /var/run/docker.sock in volumes
+for svc_name in ('alloy', 'cadvisor'):
+    svc = services.get(svc_name, {}) or {}
+    vols = svc.get('volumes', []) or []
+    raw_sock = [v for v in vols if '/var/run/docker.sock' in str(v)]
+    if raw_sock:
+        violations.append(f"SC1-6_RAW_SOCK: {svc_name} still has /var/run/docker.sock mount: {raw_sock}")
+
+# SC1-7: only portainer has raw rw docker.sock (proxy has :ro, which is ok)
+for name, svc in services.items():
+    if not isinstance(svc, dict):
+        continue
+    vols = svc.get('volumes', []) or []
+    for v in vols:
+        vs = str(v)
+        if '/var/run/docker.sock' in vs:
+            # proxy's :ro mount is allowed; portainer's rw mount is expected
+            if name == 'docker-socket-proxy' and vs.endswith(':ro'):
+                pass  # ok — read-only proxy mount
+            elif name == 'portainer' and not vs.endswith(':ro'):
+                pass  # ok — portainer rw mount is documented and accepted
+            elif vs.endswith(':ro'):
+                violations.append(f"SC1-7_UNEXPECTED_RO_SOCK: {name} has unexpected raw :ro docker.sock mount")
+            else:
+                violations.append(f"SC1-7_UNEXPECTED_RW_SOCK: {name} has unexpected rw docker.sock mount (only portainer allowed)")
+
+# SC1-8: portainer is in profile 'portainer' not 'monitoring'
+portainer_svc = services.get('portainer', {}) or {}
+portainer_profiles = portainer_svc.get('profiles', []) or []
+if portainer_profiles != ['portainer']:
+    violations.append(f"SC1-8_PORTAINER_PROFILE: expected ['portainer'], got {portainer_profiles}")
+
+# SC1-9: no-new-privileges:true on all except cadvisor/sandbox
+NNP_EXCEPTIONS = {'cadvisor', 'sandbox'}
+missing_nnp = []
+for name, svc in services.items():
+    if not isinstance(svc, dict):
+        continue
+    if name in NNP_EXCEPTIONS:
+        continue
+    sec_opt = svc.get('security_opt', []) or []
+    if 'no-new-privileges:true' not in str(sec_opt):
+        missing_nnp.append(name)
+if missing_nnp:
+    violations.append(f"SC1-9_MISSING_NNP: these services lack no-new-privileges:true: {sorted(missing_nnp)}")
+# Assert exceptions do NOT have it
+for exc in NNP_EXCEPTIONS:
+    if exc in services:
+        exc_opt = services[exc].get('security_opt', []) or []
+        if 'no-new-privileges:true' in str(exc_opt):
+            violations.append(f"SC1-9_EXCEPTION_HAS_NNP: {exc} should NOT have no-new-privileges:true")
+
+# SC1-10: read_only:true on the 3 distroless exporters
+READ_ONLY_REQUIRED = {'redis-exporter', 'postgres-exporter', 'nginx-exporter'}
+for name in READ_ONLY_REQUIRED:
+    svc = services.get(name, {}) or {}
+    if svc.get('read_only') is not True:
+        violations.append(f"SC1-10_MISSING_READONLY: {name} should have read_only: true")
+
+print('\n'.join(violations))
+PY
+)"
+
+    if [[ -z "$sc1_result" ]]; then
+        echo "  PASS: SC1 hardening — socket-proxy allowlist, no raw sock on cadvisor/alloy, only-portainer-rw, portainer profile, broad no-new-privileges, read_only exporters"
+        pass=$((pass+1))
+    else
+        echo "  FAIL: SC1 hardening violations:"
+        echo "$sc1_result" | head -20 | sed 's/^/        /'
+        fail=$((fail+1))
+    fi
+fi
+
+# SC1-alloy-config: alloy-config.river must use docker-socket-proxy TCP, not raw unix socket
+if [[ -f "${ALLOY_CONFIG}" ]]; then
+    unix_count="$(grep -c 'unix:///var/run/docker.sock' "${ALLOY_CONFIG}" 2>/dev/null)" || unix_count=0
+    proxy_count="$(grep -c 'tcp://docker-socket-proxy:2375' "${ALLOY_CONFIG}" 2>/dev/null)" || proxy_count=0
+    unix_count="${unix_count%%[^0-9]*}"
+    proxy_count="${proxy_count%%[^0-9]*}"
+    if [[ "${unix_count:-0}" -eq 0 && "${proxy_count:-0}" -eq 2 ]]; then
+        echo "  PASS: monitoring/alloy-config.river — both docker hosts routed through docker-socket-proxy (no raw unix socket)"
+        pass=$((pass+1))
+    else
+        echo "  FAIL: monitoring/alloy-config.river — expected 0 unix socket refs and 2 proxy refs, got unix=${unix_count} proxy=${proxy_count}"
+        fail=$((fail+1))
+    fi
+fi
+
+echo ""
 echo "=== Summary: ${pass} passed, ${fail} failed ==="
 [[ $fail -eq 0 ]]
