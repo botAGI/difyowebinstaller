@@ -9,6 +9,13 @@
 #   MOCK_DOCKER_HEALTH_FIXTURE: default | unhealthy_worker | starting_vllm | distroless_loki
 #   MOCK_DOCKER_STATS_FIXTURE: ok (default) | unavailable
 #   docker stats / docker logs branches added
+#
+# Phase 5 additions (additive — existing fixtures intact):
+#   MOCK_DOCKER_VOLUME_FIXTURE: empty (default) | with_openwebui | with_ollama | full
+#   MOCK_DOCKER_COMPOSE_STOP_FIXTURE: ok (default) | fail
+#   MOCK_DOCKER_COMPOSE_UP_FIXTURE: ok (default) | fail
+#   MOCK_DOCKER_EXEC_PSQL_FIXTURE: ok (default) | fail
+#   docker volume ls / compose stop|up|down|start / exec psql|pg_isready branches added
 set -euo pipefail
 
 # Call-log: always record invocation so tests can assert docker was/wasn't called.
@@ -37,10 +44,47 @@ case "${MOCK_DOCKER_FIXTURE:-healthy}" in
                         # Intentional fake secret line for bundle sanitizer test (T-01-02)
                         printf 'services:\n  example:\n    image: agmind/example:1.0\n    environment:\n      DB_PASSWORD: notreal_pw_in_mock_only\n'
                         ;;
+                    stop)
+                        # docker compose stop <names> — selective restore (Phase 5)
+                        case "${MOCK_DOCKER_COMPOSE_STOP_FIXTURE:-ok}" in
+                            ok)   exit 0 ;;
+                            fail) exit 1 ;;
+                            *)    exit 0 ;;
+                        esac
+                        ;;
+                    up)
+                        # docker compose up -d <names> — selective restore start (Phase 5)
+                        case "${MOCK_DOCKER_COMPOSE_UP_FIXTURE:-ok}" in
+                            ok)   exit 0 ;;
+                            fail) exit 1 ;;
+                            *)    exit 0 ;;
+                        esac
+                        ;;
+                    down)
+                        # full compose down — used by restore_apply non-selective path (Phase 5)
+                        exit 0
+                        ;;
+                    start)
+                        # docker compose start <names> (Phase 5)
+                        exit 0
+                        ;;
                     *)
                         exit 0
                         ;;
                 esac
+                ;;
+            volume)
+                # docker volume ls [-q] — keyed by MOCK_DOCKER_VOLUME_FIXTURE (Phase 5)
+                if [[ "${2:-}" == "ls" ]]; then
+                    case "${MOCK_DOCKER_VOLUME_FIXTURE:-empty}" in
+                        empty)          : ;;  # no volumes
+                        with_openwebui) printf 'agmind_openwebui_data\n' ;;
+                        with_ollama)    printf 'agmind_ollama_data\n' ;;
+                        full)           printf 'agmind_openwebui_data\nagmind_ollama_data\nagmind_weaviate\n' ;;
+                        *)              : ;;
+                    esac
+                fi
+                exit 0
                 ;;
             info)
                 printf 'Server Version: 29.0.3\nRuntimes: io.containerd.runc.v2 nvidia runc\nDefault Runtime: runc\n'
@@ -145,7 +189,19 @@ case "${MOCK_DOCKER_FIXTURE:-healthy}" in
                 fi
                 ;;
             exec)
-                # docker exec <container> <cmd> — dispatch on MOCK_DOCKER_EXEC_FIXTURE
+                # Detect a postgres exec (psql / pg_isready / pg_dump) — DB restore/verify path (Phase 5)
+                _exec_is_pg=0
+                for _e in "$@"; do
+                    case "$_e" in psql|pg_isready|pg_dump) _exec_is_pg=1 ;; esac
+                done
+                if [[ "$_exec_is_pg" -eq 1 ]]; then
+                    case "${MOCK_DOCKER_EXEC_PSQL_FIXTURE:-ok}" in
+                        ok)   exit 0 ;;
+                        fail) exit 1 ;;
+                        *)    exit 0 ;;
+                    esac
+                fi
+                # docker exec <container> <cmd> — dispatch on MOCK_DOCKER_EXEC_FIXTURE (GPU path)
                 case "${MOCK_DOCKER_EXEC_FIXTURE:-gpu_ok}" in
                     gpu_ok)
                         echo "GPU 0: Grace Blackwell Superchip GB10 (UUID: GPU-0)"
