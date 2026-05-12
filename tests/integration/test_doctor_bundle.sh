@@ -75,7 +75,7 @@ if [[ -z "$secret_hits" ]]; then
     pass "no credentials found in bundle (SC3 — sanitizer clean)"
 else
     fail "credentials found in bundle (SC3 FAIL — sanitizer incomplete)"
-    # Print hit count and files only, NOT values (CLAUDE.md §5)
+    # Print hit count and files only, NOT values (no secrets in test output)
     echo "$secret_hits" | wc -l | xargs -I{} echo "  {} potential credential line(s)" >&2
     echo "$secret_hits" | grep -oE '^[^:]+' | sort -u | head -5 >&2
 fi

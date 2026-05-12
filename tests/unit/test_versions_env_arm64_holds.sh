@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# test_versions_env_arm64_holds.sh — Regression gate для CLAUDE.md §8 правил.
+# test_versions_env_arm64_holds.sh — Regression gate for arm64-manifest hold rules.
 # Каждое правило ниже было выработано через реальный факап в проде. Если кто-то
 # (включая будущего меня) bumpит версию мимо hold'а — этот тест должен падать
 # красным в CI ДО того как изменение долетит до prod.
 #
-# Источники правил: CLAUDE.md §8 «Learned the hard way».
+# Sources: docs/adr/0009-cadvisor-minio-arm64-holds.md + project institutional rules.
 #
 # Exit: 0 = all PASS, 1 = any FAIL, 77 = skip (env file missing).
 

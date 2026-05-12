@@ -79,7 +79,7 @@ graph TB
 ```
 
 > **Note:** Qdrant (`--profile qdrant`) — альтернатива Weaviate; Milvus — EXPERIMENTAL, не входит ни в один
-> named-профиль. Ollama скрыт из wizard-меню (default = vLLM, см. CLAUDE.md §6).
+> named-профиль. Ollama скрыт из wizard-меню (default и единственный выбор = vLLM).
 > Peer-узел работает только при `AGMIND_MODE=master` и содержит только: `agmind-vllm`, `node-exporter`, `portainer-agent`.
 
 ## Deployment Profiles

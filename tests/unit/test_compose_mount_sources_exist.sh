@@ -6,7 +6,7 @@
 #   - init-dify-plugin-db.sql не копировался в /opt/agmind/templates/ →
 #     mount fail при recreate agmind-db (memory: project_init_dify_plugin_db_copy_bug)
 #   - scripts/loadtest/*.js не попадали в whitelist копирования →
-#     `agmind loadtest` пустой (CLAUDE.md §8 «install.sh whitelist scripts=()»)
+#     `agmind loadtest` пустой (install.sh _copy_runtime_files whitelist regression)
 #
 # Тест проверяет: для каждого `- ./path:/container/path` в compose,
 # исходный `./path` существует относительно templates/ ИЛИ относительно repo root

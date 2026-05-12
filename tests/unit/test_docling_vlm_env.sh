@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test_docling_vlm_env.sh — Docling-serve standalone env из CLAUDE.md §8.
+# test_docling_vlm_env.sh — Docling-serve standalone env regression gate (see docs/adr/0006-docling-standalone-not-plugin.md).
 #
 # Прецеденты:
 #

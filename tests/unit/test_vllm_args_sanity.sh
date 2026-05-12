@@ -38,7 +38,7 @@ mapfile -t compose_files < <(find "${REPO_ROOT}/templates" -maxdepth 2 -name "do
 for f in "${compose_files[@]}"; do
     relpath="${f#${REPO_ROOT}/}"
 
-    # GPU util limit зависит от топологии (CLAUDE.md §8):
+    # GPU util limit зависит от топологии (single-node shared GPU ≤0.60, dedicated peer ≤0.70):
     #   worker.yml — peer Spark, dedicated GPU → ≤0.70 (CUBLAS hard limit GB10)
     #   docker-compose.yml — single-node, shared GPU w/ docling → ≤0.60
     if [[ "$relpath" == *"worker"* ]]; then
@@ -75,7 +75,7 @@ for name, svc in services.items():
     else:
         cmd_str = str(cmd)
 
-    # Check 1: gpu_memory_utilization ≤ topology limit (CLAUDE.md §8)
+    # Check 1: gpu_memory_utilization ≤ topology limit
     # Pattern: --gpu-memory-utilization <value> или ${VAR:-X.XX}
     gpu_util_match = re.search(r'--gpu-memory-utilization\s+(\S+)', cmd_str)
     if gpu_util_match:
@@ -117,7 +117,7 @@ for name, svc in services.items():
             unit = m.group(2).lower()
             mb = num * 1024 if unit == 'g' else num
             if mb < 96 * 1024:
-                violations.append(f"{name}: mem_limit={mem} < 96g (CLAUDE.md §8 minimum)")
+                violations.append(f"{name}: mem_limit={mem} < 96g (DGX Spark unified-memory minimum)")
 
 print(f"CHECKED={checked}")
 for v in violations:

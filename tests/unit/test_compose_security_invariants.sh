@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # test_compose_security_invariants.sh — security-инварианты docker-compose.
 #
-# Проверяет (CLAUDE.md §5 + security hardening):
+# Проверяет (secrets hygiene + security hardening):
 #   1. Нет `privileged: true` (полный доступ к хосту — никогда не нужен в нашем стеке).
 #   2. Нет опасных `cap_add` (SYS_ADMIN, SYS_PTRACE, NET_ADMIN, SYS_MODULE и т.п.)
 #      — в стеке нет легитимных кейсов.

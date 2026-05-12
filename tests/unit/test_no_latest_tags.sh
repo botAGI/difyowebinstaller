@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test_no_latest_tags.sh — CLAUDE.md §6 правило:
+# test_no_latest_tags.sh — repo rule:
 #
 # > Все Docker-образы привязаны к конкретным версиям через `versions.env`.
 # > Запрещено использовать `:latest` или нестабильные тэги.

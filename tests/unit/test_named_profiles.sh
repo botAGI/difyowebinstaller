@@ -211,7 +211,7 @@ echo "=== Case 2: full_no_xor_conflict_no_milvus ==="
     [[ ",${full_val}," != *",reranker,"*    ]] || { echo "  FAIL: full contains reranker (XOR: should use vllm-rerank)"; local_fail=$((local_fail+1)); }
     # No milvus (EXPERIMENTAL — excluded from full)
     [[ ",${full_val}," != *",milvus,"* ]] || { echo "  FAIL: full contains milvus (EXPERIMENTAL — must be excluded)"; local_fail=$((local_fail+1)); }
-    # No ollama (hidden — CLAUDE.md §6)
+    # No ollama (hidden from wizard — default = vLLM)
     [[ ",${full_val}," != *",ollama,"* ]] || { echo "  FAIL: full contains ollama (hidden — must be excluded)"; local_fail=$((local_fail+1)); }
     [[ $local_fail -eq 0 ]] && echo "  PASS: full profile has no XOR conflicts, no milvus, no ollama"
     exit "$local_fail"

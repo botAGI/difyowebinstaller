@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test_dify_env_safety.sh — Dify-specific env vars из CLAUDE.md §8.
+# test_dify_env_safety.sh — Dify-specific env vars regression gate (HTTP_REQUEST_NODE_MAX_TEXT_SIZE, PLUGIN_DAEMON_TIMEOUT, etc).
 #
 # Прецеденты которые этот тест ловит до prod:
 #
