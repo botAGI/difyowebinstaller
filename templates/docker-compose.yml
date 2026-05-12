@@ -605,7 +605,7 @@ services:
   # ==================== Weaviate ====================
   weaviate:
     <<: *security-defaults
-    image: semitechnologies/weaviate:${WEAVIATE_VERSION:-1.37.2}
+    image: semitechnologies/weaviate:${WEAVIATE_VERSION:-1.37.3}
     container_name: agmind-weaviate
     security_opt:
       - no-new-privileges:true
@@ -644,7 +644,7 @@ services:
   # ==================== Qdrant (alternative vector store) ====================
   qdrant:
     <<: *security-defaults
-    image: qdrant/qdrant:${QDRANT_VERSION:-v1.17.1}
+    image: qdrant/qdrant:${QDRANT_VERSION:-v1.18.0}
     container_name: agmind-qdrant
     security_opt:
       - no-new-privileges:true
@@ -904,7 +904,7 @@ services:
   # ==================== SSRF Proxy ====================
   ssrf_proxy:
     <<: *security-defaults
-    image: ubuntu/squid:${SQUID_VERSION:-6.6-24.04_edge}
+    image: ubuntu/squid:${SQUID_VERSION:-7.2-26.04_edge}
     container_name: agmind-ssrf-proxy
     security_opt:
       - no-new-privileges:true
@@ -1443,7 +1443,7 @@ services:
   # ==================== Grafana (monitoring profile) ====================
   grafana:
     <<: *security-defaults
-    image: grafana/grafana:${GRAFANA_VERSION:-12.4.3}
+    image: grafana/grafana:${GRAFANA_VERSION:-13.0.1}
     container_name: agmind-grafana
     security_opt:
       - no-new-privileges:true
@@ -1889,7 +1889,7 @@ services:
   # ==================== Certbot (VPS profile only) ====================
   certbot:
     <<: *security-defaults
-    image: certbot/certbot:${CERTBOT_VERSION:-v3.1.0}
+    image: certbot/certbot:${CERTBOT_VERSION:-v5.6.0}
     container_name: agmind-certbot
     security_opt:
       - no-new-privileges:true
@@ -1914,7 +1914,7 @@ services:
   # Scenarios live in /scripts, results dumped to /results (host-mounted).
   k6:
     <<: *logging-defaults
-    image: grafana/k6:${K6_VERSION:-0.55.2}
+    image: grafana/k6:${K6_VERSION:-2.0.0}
     container_name: agmind-k6
     security_opt:
       - no-new-privileges:true
