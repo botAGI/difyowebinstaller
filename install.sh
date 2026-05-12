@@ -518,8 +518,10 @@ _copy_runtime_files() {
     cp "${INSTALLER_DIR}/lib/detect.sh"   "${INSTALL_DIR}/scripts/detect.sh"   2>/dev/null || true
     cp "${INSTALLER_DIR}/lib/creds.sh"      "${INSTALL_DIR}/scripts/creds.sh"      2>/dev/null || true
     cp "${INSTALLER_DIR}/lib/security.sh"  "${INSTALL_DIR}/scripts/security.sh"  2>/dev/null || true
-    cp "${INSTALLER_DIR}/lib/airgapped.sh" "${INSTALL_DIR}/scripts/airgapped.sh" 2>/dev/null || true
+    cp "${INSTALLER_DIR}/lib/airgapped.sh"  "${INSTALL_DIR}/scripts/airgapped.sh"  2>/dev/null || true
     cp "${INSTALLER_DIR}/lib/bundle.sh"    "${INSTALL_DIR}/scripts/bundle.sh"    2>/dev/null || true
+    cp "${INSTALLER_DIR}/lib/service-map.sh" "${INSTALL_DIR}/scripts/service-map.sh" 2>/dev/null || true
+    cp "${INSTALLER_DIR}/lib/estimate.sh"  "${INSTALL_DIR}/scripts/estimate.sh"  2>/dev/null || true
     chmod +x "${INSTALL_DIR}/scripts/"*.sh 2>/dev/null || true
 }
 
@@ -1459,7 +1461,8 @@ main() {
                 esac
                 export AGMIND_MODE_OVERRIDE
                 ;;
-            --help|-h) echo "Usage: sudo bash install.sh [--non-interactive] [--force-restart] [--dry-run] [--resume-from <N|name>] [--skip-optional] [--mode=single|master|worker]"; exit 0;;
+            --profile) shift; DEPLOY_PROFILE="${1:-}"; export DEPLOY_PROFILE ;;
+            --help|-h) echo "Usage: sudo bash install.sh [--non-interactive] [--force-restart] [--dry-run] [--resume-from <N|name>] [--skip-optional] [--mode=single|master|worker] [--profile <name>]"; exit 0;;
         esac; shift
     done
 
