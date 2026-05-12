@@ -16,6 +16,14 @@
 #   MOCK_DOCKER_COMPOSE_UP_FIXTURE: ok (default) | fail
 #   MOCK_DOCKER_EXEC_PSQL_FIXTURE: ok (default) | fail
 #   docker volume ls / compose stop|up|down|start / exec psql|pg_isready branches added
+#
+# Phase 4 additions (additive — existing fixtures intact):
+#   MOCK_DOCKER_INFO_EXIT: when set to non-zero, `docker info` exits with that code (simulate daemon down)
+#   MOCK_DOCKER_PS_FIXTURE: two_running — `docker ps -a --format {{.Names}} {{.State}}` new form
+#   MOCK_DOCKER_HEALTH_FIXTURE: unhealthy_vllm — for `docker inspect --format {{.State.Health.Status}}`
+#   MOCK_DOCKER_COMPOSE_CONFIG_EXIT: exit code for `docker compose ... config -q` (default 0)
+#   MOCK_DOCKER_COMPOSE_CONFIG_OUTPUT: stderr output when config -q exits non-zero
+#   MOCK_DOCKER_COMPOSE_CONFIG_RENDERED_FILE: file path to cat for `docker compose ... config` (no -q)
 set -euo pipefail
 
 # Call-log: always record invocation so tests can assert docker was/wasn't called.
@@ -41,8 +49,31 @@ case "${MOCK_DOCKER_FIXTURE:-healthy}" in
                         fi
                         ;;
                     config)
-                        # Intentional fake secret line for bundle sanitizer test (T-01-02)
-                        printf 'services:\n  example:\n    image: agmind/example:1.0\n    environment:\n      DB_PASSWORD: notreal_pw_in_mock_only\n'
+                        # Phase 4: detect -q flag in remaining args
+                        _cfg_q=0
+                        for _cfg_a in "$@"; do
+                            [[ "$_cfg_a" == "-q" ]] && _cfg_q=1
+                        done
+                        if [[ "$_cfg_q" -eq 1 ]]; then
+                            # docker compose ... config -q
+                            # MOCK_DOCKER_COMPOSE_CONFIG_EXIT: exit code (default 0)
+                            # MOCK_DOCKER_COMPOSE_CONFIG_OUTPUT: stderr on non-zero exit
+                            _cfg_exit="${MOCK_DOCKER_COMPOSE_CONFIG_EXIT:-0}"
+                            if [[ "$_cfg_exit" != "0" ]]; then
+                                echo "${MOCK_DOCKER_COMPOSE_CONFIG_OUTPUT:-compose config error}" >&2
+                                exit "${_cfg_exit}"
+                            fi
+                            exit 0
+                        else
+                            # docker compose ... config (no -q) — render effective config
+                            # MOCK_DOCKER_COMPOSE_CONFIG_RENDERED_FILE: path to cat (default: fake content)
+                            if [[ -n "${MOCK_DOCKER_COMPOSE_CONFIG_RENDERED_FILE:-}" && -f "${MOCK_DOCKER_COMPOSE_CONFIG_RENDERED_FILE}" ]]; then
+                                cat "${MOCK_DOCKER_COMPOSE_CONFIG_RENDERED_FILE}"
+                            else
+                                # Intentional fake secret line for bundle sanitizer test (T-01-02)
+                                printf 'services:\n  example:\n    image: agmind/example:1.0\n    environment:\n      DB_PASSWORD: notreal_pw_in_mock_only\n'
+                            fi
+                        fi
                         ;;
                     stop)
                         # docker compose stop <names> — selective restore (Phase 5)
@@ -87,6 +118,11 @@ case "${MOCK_DOCKER_FIXTURE:-healthy}" in
                 exit 0
                 ;;
             info)
+                # Phase 4: MOCK_DOCKER_INFO_EXIT — simulate docker daemon down
+                if [[ -n "${MOCK_DOCKER_INFO_EXIT:-}" && "${MOCK_DOCKER_INFO_EXIT}" != "0" ]]; then
+                    echo "Cannot connect to the Docker daemon at unix:///var/run/docker.sock" >&2
+                    exit "${MOCK_DOCKER_INFO_EXIT}"
+                fi
                 printf 'Server Version: 29.0.3\nRuntimes: io.containerd.runc.v2 nvidia runc\nDefault Runtime: runc\n'
                 ;;
             ps)
@@ -163,29 +199,62 @@ case "${MOCK_DOCKER_FIXTURE:-healthy}" in
                     esac
                 else
                     # Bare docker ps (no name filter) — keep original name-list behavior for test_doctor.sh
-                    case "${MOCK_DOCKER_PS_FIXTURE:-running}" in
-                        running)
-                            printf 'agmind-api\nagmind-vllm\nagmind-docling\nagmind-nginx\n'
-                            ;;
-                        unhealthy)
-                            printf 'agmind-api\nagmind-vllm\nagmind-docling\nagmind-nginx\nagmind-worker\t(unhealthy)\n'
-                            ;;
-                        multi_state)
-                            printf 'agmind-api\nagmind-worker\nagmind-nginx\nagmind-loki\nagmind-vllm\nagmind-db\nagmind-redis\n'
-                            ;;
-                        init_exited)
-                            printf 'agmind-api\nagmind-redis-lock-cleaner\nagmind-k6\n'
-                            ;;
-                        restart_loop)
-                            printf 'agmind-vllm\n'
-                            ;;
-                        none|empty)
-                            : # nothing
-                            ;;
-                        *)
-                            printf 'agmind-api\nagmind-vllm\nagmind-docling\nagmind-nginx\n'
-                            ;;
-                    esac
+                    # Phase 4: also handle `docker ps -a --format '...'` with {{.Names}} and {{.State}}
+                    # for install_report services[] query. Detect by format arg containing both fields.
+                    _ps_has_names_state_fmt=0
+                    for _ps_arg in "$@"; do
+                        if [[ "$_ps_arg" == *".Names"* && "$_ps_arg" == *".State"* ]]; then
+                            _ps_has_names_state_fmt=1
+                        fi
+                    done
+                    if [[ "$_ps_has_names_state_fmt" -eq 1 ]]; then
+                        # Format request containing both .Names and .State — install_report use case
+                        case "${MOCK_DOCKER_PS_FIXTURE:-running}" in
+                            two_running)
+                                printf '{"name":"agmind-api","status":"running"}\n'
+                                printf '{"name":"agmind-vllm","status":"running"}\n'
+                                ;;
+                            running|multi_state)
+                                printf '{"name":"agmind-api","status":"running"}\n'
+                                printf '{"name":"agmind-vllm","status":"running"}\n'
+                                printf '{"name":"agmind-nginx","status":"running"}\n'
+                                ;;
+                            none|empty)
+                                : # nothing — services will be []
+                                ;;
+                            *)
+                                printf '{"name":"agmind-api","status":"running"}\n'
+                                printf '{"name":"agmind-vllm","status":"running"}\n'
+                                ;;
+                        esac
+                    else
+                        case "${MOCK_DOCKER_PS_FIXTURE:-running}" in
+                            running)
+                                printf 'agmind-api\nagmind-vllm\nagmind-docling\nagmind-nginx\n'
+                                ;;
+                            unhealthy)
+                                printf 'agmind-api\nagmind-vllm\nagmind-docling\nagmind-nginx\nagmind-worker\t(unhealthy)\n'
+                                ;;
+                            multi_state)
+                                printf 'agmind-api\nagmind-worker\nagmind-nginx\nagmind-loki\nagmind-vllm\nagmind-db\nagmind-redis\n'
+                                ;;
+                            init_exited)
+                                printf 'agmind-api\nagmind-redis-lock-cleaner\nagmind-k6\n'
+                                ;;
+                            restart_loop)
+                                printf 'agmind-vllm\n'
+                                ;;
+                            two_running)
+                                printf 'agmind-api\nagmind-vllm\n'
+                                ;;
+                            none|empty)
+                                : # nothing
+                                ;;
+                            *)
+                                printf 'agmind-api\nagmind-vllm\nagmind-docling\nagmind-nginx\n'
+                                ;;
+                        esac
+                    fi
                 fi
                 ;;
             exec)
@@ -266,6 +335,7 @@ case "${MOCK_DOCKER_FIXTURE:-healthy}" in
                     esac
                 elif [[ "$_insp_fmt" == *"State.Health"* && "$_insp_fmt" != *"Log"* && "$_insp_fmt" != *"Last health"* ]]; then
                     # '{{if .State.Health}}{{.State.Health.Status}}{{end}}'
+                    # OR '{{.State.Health.Status}}' (Phase 4 simple form)
                     # Distroless containers (no healthcheck) → empty string
                     # MOCK_DOCKER_HEALTH_FIXTURE overrides per-container behavior
                     case "${MOCK_DOCKER_HEALTH_FIXTURE:-default}" in
@@ -287,6 +357,14 @@ case "${MOCK_DOCKER_FIXTURE:-healthy}" in
                             case "$_insp_cname" in
                                 loki)  : ;;  # empty = no healthcheck
                                 *)     echo "healthy" ;;
+                            esac
+                            ;;
+                        unhealthy_vllm)
+                            # Phase 4: unhealthy_vllm — agmind-vllm is unhealthy, rest healthy
+                            case "$_insp_cname" in
+                                vllm)                                      echo "unhealthy" ;;
+                                loki|alloy|redis-exporter|nginx-exporter) : ;;  # distroless
+                                *)                                         echo "healthy" ;;
                             esac
                             ;;
                         *)

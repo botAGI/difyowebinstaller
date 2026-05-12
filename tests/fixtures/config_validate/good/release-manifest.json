@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "v3.0.2",
+  "release_date": "2026-05-12",
+  "min_installer_version": "1.0.0",
+  "images": {
+    "dify-api": {
+      "registry": "docker.io",
+      "image": "langgenius/dify-api",
+      "tag": "1.13.3",
+      "digest": "",
+      "platforms": ["linux/amd64", "linux/arm64"]
+    },
+    "weaviate": {
+      "registry": "docker.io",
+      "image": "semitechnologies/weaviate",
+      "tag": "1.27.0",
+      "digest": "",
+      "platforms": ["linux/amd64", "linux/arm64"]
+    },
+    "redis": {
+      "registry": "docker.io",
+      "image": "redis",
+      "tag": "7.4.1-alpine",
+      "digest": "",
+      "platforms": ["linux/amd64", "linux/arm64"]
+    }
+  },
+  "compatibility": {
+    "docker_min_version": "24.0",
+    "compose_min_version": "2.20"
+  }
+}
