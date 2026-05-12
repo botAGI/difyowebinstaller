@@ -126,7 +126,8 @@ jobs:
         run: |
           set +e
           rel="$(tr -d '[:space:]' < RELEASE)"
-          inst="v$(grep -oE 'VERSION="[0-9.]+"' install.sh | head -1 | grep -oE '[0-9.]+')"
+          # Accepts both literal  VERSION="3.0.2"  and override form  VERSION="${VERSION:-3.0.2}"
+          inst="v$(sed -nE 's/^VERSION="(\$\{VERSION:-)?([0-9]+\.[0-9]+\.[0-9]+)\}?".*/\2/p' install.sh | head -1)"
           man="$(python3 -c "import json; print(json.load(open('templates/release-manifest.json')).get('version',''))")"
           echo "RELEASE=$rel  install.sh=$inst  manifest=$man"
           if [[ "$rel" != "$inst" || "$rel" != "$man" ]]; then
