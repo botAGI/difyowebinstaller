@@ -42,6 +42,7 @@ SEP=$'\x1f'
 
 PHASES=(
     "Diagnostics${SEP}phase_diagnostics${SEP}0${SEP}preflight"
+    "Airgapped Preflight${SEP}phase_airgapped_preflight${SEP}0${SEP}preflight"
     "Wizard${SEP}phase_wizard${SEP}0${SEP}"
     "Docker${SEP}phase_docker${SEP}0${SEP}"
     "Configuration${SEP}phase_config${SEP}0${SEP}"
