@@ -548,7 +548,10 @@ Docling (5-page arxiv PDF, warm): **6.04s**, 0.32s/page, ~1.6 GiB GPU memory.
 
 ## 🗺 Roadmap & Status
 
-- **v3.1** _(current)_ — Day-2 UX + hardening + docs (9 phases): `agmind doctor`
+- **v3.1.1** _(current)_ — release housekeeping: version strings synced `v3.0.2` → `v3.1.1`
+  (`RELEASE` / `install.sh` `VERSION` / `templates/release-manifest.json`), `versions.env`
+  header refreshed; ADR `Status: Accepted` lines confirmed; manifest digest regen → backlog 999.6.
+- **v3.1** — Day-2 UX + hardening + docs (9 phases): `agmind doctor`
   (preflight/health + `--fix` + sanitized `--bundle`), `agmind status`
   (overview table + `--json`/`--watch`), `agmind open`/`endpoints`/`creds`,
   `agmind config validate`/`diff` + `install --dry-run`/`--resume-from` +

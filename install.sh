@@ -7,7 +7,7 @@
 set -euo pipefail
 trap 'echo "ERROR at line $LINENO: $BASH_COMMAND" >&2' ERR
 
-VERSION="${VERSION:-3.0.2}"   # keep in sync with RELEASE / README / templates/release-manifest.json
+VERSION="${VERSION:-3.1.1}"   # keep in sync with RELEASE / README / templates/release-manifest.json
 TOTAL_PHASES=0   # sentinel — overwritten by phases_count() after sourcing lib/phases.sh (so _cleanup_on_failure's $TOTAL_PHASES is always defined, even if a source fails)
 INSTALLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "version": "v3.0.2",
-  "release_date": "2026-05-11",
+  "version": "v3.1.1",
+  "release_date": "2026-05-12",
   "min_installer_version": "1.0.0",
   "images": {
     "dify-api": {
