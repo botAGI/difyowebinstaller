@@ -1502,7 +1502,9 @@ main() {
     # Checkpoint resume — derive 1-based start from .install_phase file (fallback when --resume-from absent)
     local start=1
     if [[ "$FORCE_RESTART" == "true" ]]; then rm -f "${INSTALL_DIR}/.install_phase"; fi
-    if [[ -z "$resume_from" && -f "${INSTALL_DIR}/.install_phase" ]]; then
+    # --dry-run always starts from phase 1 — resume prompt would block non-interactive
+    # dry-run invocations (read fails without TTY under set -e → spurious "Failed at phase 1/12").
+    if [[ -z "$resume_from" && "${DRY_RUN:-false}" != "true" && -f "${INSTALL_DIR}/.install_phase" ]]; then
         local saved; saved="$(cat "${INSTALL_DIR}/.install_phase" 2>/dev/null)"
         if [[ "$saved" =~ ^([1-9]|1[01])$ ]]; then
             if [[ "$NON_INTERACTIVE" == "true" ]]; then start="$saved"
