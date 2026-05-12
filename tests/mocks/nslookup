@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Mock nslookup — DNS resolver stub for unit tests. Keyed by MOCK_DNS_FIXTURE (ok|fail).
+# WHY: lib/doctor.sh::doctor_check_dns_mdns does a real `host/nslookup registry.ollama.ai`;
+# GitHub runners may lack bind-utils/dnsutils → rc=127 → spurious WARN → test_doctor flake.
+case "${MOCK_DNS_FIXTURE:-ok}" in
+    ok)   echo "registry.ollama.ai has address 192.0.2.1"; exit 0 ;;
+    fail) echo "Host registry.ollama.ai not found" >&2; exit 1 ;;
+    *)    echo "mock nslookup: unknown MOCK_DNS_FIXTURE=${MOCK_DNS_FIXTURE}" >&2; exit 2 ;;
+esac
