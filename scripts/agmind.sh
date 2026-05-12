@@ -162,6 +162,315 @@ cmd_troubleshoot() {
 }
 
 # ============================================================================
+# DEMO
+# ============================================================================
+# Round-trip demo: install a minimal RAG workflow into Dify, ingest a sample
+# document, and query it. Requires a running stack (agmind status / doctor).
+# Live API round-trip deferred to Plan 06 manual checkpoint.
+
+_demo_health_gate() {
+    # Check Dify API health
+    if ! docker exec agmind-api curl -sf http://localhost:5001/health >/dev/null 2>&1; then
+        echo -e "${RED}Dify API недоступен.${NC}" >&2
+        echo "Проверьте: agmind status   /   agmind doctor" >&2
+        exit 1
+    fi
+    # Check vLLM /v1/models (local or peer)
+    local vllm_url
+    vllm_url="$(_read_env VLLM_API_URL "http://localhost:8000")"
+    if ! curl -sf --max-time 10 "${vllm_url}/v1/models" >/dev/null 2>&1; then
+        echo -e "${RED}vLLM недоступен (${vllm_url}/v1/models).${NC}" >&2
+        echo "Если кластер: убедитесь что peer поднят (agmind status)" >&2
+        echo "Проверьте: agmind logs vllm   /   agmind doctor" >&2
+        exit 1
+    fi
+}
+
+_demo_state_file() {
+    echo "${INSTALL_DIR}/.demo-state"
+}
+
+_demo_get_token() {
+    local token="${DIFY_CONSOLE_TOKEN:-}"
+    if [[ -z "$token" ]]; then
+        local email pass encoded
+        email="${DIFY_ADMIN_EMAIL:-admin@agmind.ai}"
+        encoded="$(_read_env INIT_PASSWORD "")"
+        if [[ -n "$encoded" ]]; then
+            pass="$(echo "$encoded" | base64 -d 2>/dev/null || echo "$encoded")"
+        fi
+        if [[ -n "${pass:-}" ]]; then
+            local login_resp
+            login_resp="$(curl -s --max-time 30 -X POST "http://localhost/console/api/login" \
+                -H 'Content-Type: application/json' \
+                -d "{\"email\":\"${email}\",\"password\":\"${pass}\",\"language\":\"en-US\",\"remember_me\":true}")"
+            token="$(echo "$login_resp" | python3 -c \
+                'import sys,json;print((json.load(sys.stdin).get("data") or {}).get("access_token",""))' 2>/dev/null || echo "")"
+        fi
+    fi
+    echo "$token"
+}
+
+_demo_install() {
+    local verbose=false
+    [[ "${1:-}" == "--verbose" ]] && verbose=true
+
+    _demo_health_gate
+
+    # Locate demo workflow file
+    local dsl_src="${AGMIND_DIR}/scripts/demo/demo-workflow.yaml"
+    [[ ! -f "$dsl_src" ]] && dsl_src="${INSTALL_DIR}/scripts/demo/demo-workflow.yaml"
+    if [[ ! -f "$dsl_src" ]]; then
+        echo -e "${RED}demo-workflow.yaml не найден: ${dsl_src}${NC}" >&2
+        echo "Переустановите AGmind: sudo bash install.sh" >&2
+        exit 1
+    fi
+
+    # Substitute model placeholder
+    local model
+    model="$(_read_env VLLM_MODEL "gemma-4-26B-A4B-it")"
+    local dsl_tmp
+    dsl_tmp="$(mktemp /tmp/demo-workflow-XXXXXX.yaml)"
+    sed "s/_REPLACE_WITH_YOUR_MODEL_/${model}/g" "$dsl_src" > "$dsl_tmp"
+
+    # Get Dify console token
+    local token
+    token="$(_demo_get_token)"
+    if [[ -z "$token" ]]; then
+        echo -e "${RED}Не удалось получить Dify console token.${NC}" >&2
+        echo "Запустите вручную:" >&2
+        echo "  DIFY_CONSOLE_TOKEN=<jwt> agmind demo install" >&2
+        echo "Или: Dify Studio → + Create App → Import DSL" >&2
+        rm -f "$dsl_tmp"
+        exit 1
+    fi
+
+    [[ "$verbose" == "true" ]] && echo "POST /console/api/apps/imports ..."
+
+    # Import workflow DSL
+    local yaml_content app_id import_resp
+    yaml_content="$(cat "$dsl_tmp")"
+    rm -f "$dsl_tmp"
+    import_resp="$(curl -s --max-time 60 -X POST "http://localhost/console/api/apps/imports" \
+        -H "Authorization: Bearer ${token}" \
+        -H 'Content-Type: application/json' \
+        -d "$(python3 -c "import json,sys; print(json.dumps({'mode':'yaml-content','yaml_content':sys.stdin.read(),'name':'AGmind Demo'}))" <<<"$yaml_content")")"
+    app_id="$(echo "$import_resp" | python3 -c \
+        'import sys,json;d=json.load(sys.stdin);print(d.get("app_id",""))' 2>/dev/null || echo "")"
+
+    if [[ -z "$app_id" ]]; then
+        echo -e "${RED}Импорт workflow не удался.${NC}" >&2
+        [[ "$verbose" == "true" ]] && echo "$import_resp" | python3 -m json.tool 2>&1 | head -20 >&2
+        echo "Подсказка: Настройте LLM в Dify: Settings → Model Provider → openai_api_compatible → http://vllm:8000/v1" >&2
+        exit 1
+    fi
+    echo "Workflow импортирован — app_id=${app_id}"
+
+    # Create demo Knowledge Base
+    [[ "$verbose" == "true" ]] && echo "POST /console/api/datasets ..."
+    local kb_resp dataset_id
+    kb_resp="$(curl -s --max-time 30 -X POST "http://localhost/console/api/datasets" \
+        -H "Authorization: Bearer ${token}" \
+        -H 'Content-Type: application/json' \
+        -d '{"name":"AGmind Demo KB","description":"Demo knowledge base created by agmind demo install","indexing_technique":"high_quality","permission":"all_team_members"}')"
+    dataset_id="$(echo "$kb_resp" | python3 -c \
+        'import sys,json;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")"
+
+    if [[ -z "$dataset_id" ]]; then
+        echo -e "${YELLOW}Предупреждение: создать KB не удалось — KB создайте вручную в Dify.${NC}" >&2
+        [[ "$verbose" == "true" ]] && echo "$kb_resp" | python3 -m json.tool 2>&1 | head -10 >&2
+        dataset_id=""
+    else
+        echo "KB создана — dataset_id=${dataset_id}"
+    fi
+
+    # Save state
+    local state_file
+    state_file="$(_demo_state_file)"
+    printf 'app_id=%s\ndataset_id=%s\ntoken=%s\n' "$app_id" "$dataset_id" "$token" > "$state_file"
+    chmod 600 "$state_file" 2>/dev/null || true
+    echo "Состояние сохранено в ${state_file}"
+    echo ""
+    echo -e "${GREEN}Demo установлен.${NC} Следующий шаг:"
+    echo "  agmind demo ingest   — загрузить sample-документ"
+    echo "  agmind demo ask 'Что такое AGmind?'"
+}
+
+_demo_ingest() {
+    local verbose=false
+    [[ "${1:-}" == "--verbose" ]] && { verbose=true; shift; }
+    local doc_path="${1:-}"
+    [[ -z "$doc_path" ]] && doc_path="${AGMIND_DIR}/scripts/demo/agmind-quickstart-sample.md"
+    [[ ! -f "$doc_path" ]] && doc_path="${INSTALL_DIR}/scripts/demo/agmind-quickstart-sample.md"
+
+    _demo_health_gate
+
+    if [[ ! -f "$doc_path" ]]; then
+        echo -e "${RED}Sample-документ не найден: ${doc_path}${NC}" >&2
+        echo "Укажите путь: agmind demo ingest /path/to/doc.md" >&2
+        exit 1
+    fi
+
+    # Read state
+    local state_file dataset_id token
+    state_file="$(_demo_state_file)"
+    if [[ ! -f "$state_file" ]]; then
+        echo -e "${RED}Demo не установлен — сначала: agmind demo install${NC}" >&2
+        exit 1
+    fi
+    dataset_id="$(grep '^dataset_id=' "$state_file" | cut -d'=' -f2-)"
+    token="$(grep '^token=' "$state_file" | cut -d'=' -f2-)"
+
+    if [[ -z "$dataset_id" ]]; then
+        echo -e "${RED}dataset_id не найден в состоянии demo — повторите agmind demo install${NC}" >&2
+        exit 1
+    fi
+
+    [[ "$verbose" == "true" ]] && echo "POST /console/api/datasets/${dataset_id}/document/create-by-file ..."
+
+    # Upload document
+    local upload_resp doc_id
+    upload_resp="$(curl -s --max-time 120 -X POST \
+        "http://localhost/console/api/datasets/${dataset_id}/document/create-by-file" \
+        -H "Authorization: Bearer ${token}" \
+        -F "file=@${doc_path}" \
+        -F 'data={"indexing_technique":"high_quality","process_rule":{"mode":"automatic"}}')"
+    doc_id="$(echo "$upload_resp" | python3 -c \
+        'import sys,json;d=json.load(sys.stdin);print((d.get("document") or {}).get("id",""))' 2>/dev/null || echo "")"
+
+    if [[ -z "$doc_id" ]]; then
+        echo -e "${RED}Загрузка документа не удалась.${NC}" >&2
+        [[ "$verbose" == "true" ]] && echo "$upload_resp" | python3 -m json.tool 2>&1 | head -20 >&2
+        exit 1
+    fi
+    echo "Документ загружен — doc_id=${doc_id}"
+
+    # Poll indexing status (up to 120s)
+    local status_val _poll
+    for _poll in $(seq 1 24); do
+        status_resp="$(curl -s --max-time 15 \
+            "http://localhost/console/api/datasets/${dataset_id}/documents?page=1&limit=1" \
+            -H "Authorization: Bearer ${token}")"
+        status_val="$(echo "$status_resp" | python3 -c \
+            'import sys,json;docs=(json.load(sys.stdin).get("data") or []);print(docs[0].get("display_status","") if docs else "")' 2>/dev/null || echo "")"
+        [[ "$verbose" == "true" ]] && echo "  Статус индексирования: ${status_val}"
+        [[ "$status_val" == "available" || "$status_val" == "completed" ]] && break
+        sleep 5
+    done
+
+    if [[ "$status_val" == "available" || "$status_val" == "completed" ]]; then
+        echo -e "${GREEN}Индексирование завершено.${NC}"
+        echo "Следующий шаг: agmind demo ask 'Что такое AGmind?'"
+    else
+        echo -e "${YELLOW}Индексирование ещё идёт (статус: ${status_val}).${NC}"
+        echo "Проверьте в Dify Knowledge Base UI, затем повторите: agmind demo ask ..."
+    fi
+}
+
+_demo_ask() {
+    local verbose=false
+    [[ "${1:-}" == "--verbose" ]] && { verbose=true; shift; }
+    local query="$*"
+    [[ -z "$query" ]] && query="Что такое AGmind?"
+
+    _demo_health_gate
+
+    # Read state
+    local state_file app_id token
+    state_file="$(_demo_state_file)"
+    if [[ ! -f "$state_file" ]]; then
+        echo -e "${RED}Demo не установлен — сначала: agmind demo install${NC}" >&2
+        exit 1
+    fi
+    app_id="$(grep '^app_id=' "$state_file" | cut -d'=' -f2-)"
+    token="$(grep '^token=' "$state_file" | cut -d'=' -f2-)"
+
+    # Get or create Service API key for demo app
+    local svc_key
+    svc_key="${DIFY_SERVICE_API_KEY:-}"
+    if [[ -z "$svc_key" ]]; then
+        local keys_resp
+        keys_resp="$(curl -s --max-time 30 \
+            "http://localhost/console/api/apps/${app_id}/api-keys" \
+            -H "Authorization: Bearer ${token}")"
+        svc_key="$(echo "$keys_resp" | python3 -c \
+            'import sys,json;keys=(json.load(sys.stdin).get("data") or []);print(keys[0].get("token","") if keys else "")' 2>/dev/null || echo "")"
+        if [[ -z "$svc_key" ]]; then
+            # Create new key
+            local create_resp
+            create_resp="$(curl -s --max-time 30 -X POST \
+                "http://localhost/console/api/apps/${app_id}/api-keys" \
+                -H "Authorization: Bearer ${token}" \
+                -H 'Content-Type: application/json' \
+                -d '{}')"
+            svc_key="$(echo "$create_resp" | python3 -c \
+                'import sys,json;print(json.load(sys.stdin).get("token",""))' 2>/dev/null || echo "")"
+        fi
+    fi
+
+    if [[ -z "$svc_key" ]]; then
+        echo -e "${RED}Service API key не получен.${NC}" >&2
+        echo "Получите вручную в Dify: App → API Access → Create API Key" >&2
+        echo "Затем: DIFY_SERVICE_API_KEY=app-xxx agmind demo ask '${query}'" >&2
+        exit 1
+    fi
+
+    [[ "$verbose" == "true" ]] && echo "POST /v1/chat-messages (query: ${query}) ..."
+
+    local resp answer
+    resp="$(curl -s --max-time 120 -X POST "http://localhost/v1/chat-messages" \
+        -H "Authorization: Bearer ${svc_key}" \
+        -H 'Content-Type: application/json' \
+        -d "$(python3 -c "import json,sys; print(json.dumps({
+            'query': sys.stdin.read(),
+            'inputs': {},
+            'response_mode': 'blocking',
+            'conversation_id': '',
+            'user': 'demo'
+        }))" <<<"$query")")"
+
+    answer="$(echo "$resp" | python3 -c \
+        'import sys,json;d=json.load(sys.stdin);print(d.get("answer",""))' 2>/dev/null || echo "")"
+
+    if [[ -z "$answer" ]]; then
+        echo -e "${RED}Пустой ответ.${NC}" >&2
+        [[ "$verbose" == "true" ]] && echo "$resp" | python3 -m json.tool 2>&1 | head -20 >&2
+        echo "Если vLLM ещё загружает модель — подождите и повторите." >&2
+        echo "Проверьте: agmind logs vllm" >&2
+        exit 1
+    fi
+
+    echo "$answer"
+
+    # Print sources if available
+    local sources
+    sources="$(echo "$resp" | python3 -c \
+        'import sys,json;rr=json.load(sys.stdin).get("retriever_resources",[]);
+[print("  •",r.get("document_name","?"),"(score:",round(r.get("score",0),2),")") for r in rr]' 2>/dev/null || true)"
+    if [[ -n "$sources" ]]; then
+        echo ""
+        echo "Источники:"
+        echo "$sources"
+    fi
+}
+
+cmd_demo() {
+    local sub="${1:-}"
+    case "$sub" in
+        install) shift; _demo_install "$@" ;;
+        ingest)  shift; _demo_ingest "$@" ;;
+        ask)     shift; _demo_ask "$@" ;;
+        *)
+            echo "Usage: agmind demo <install|ingest|ask [вопрос]>" >&2
+            echo "  install — создать demo KB + импортировать sample RAG-workflow в Dify" >&2
+            echo "  ingest  — загрузить bundled sample-документ в demo KB" >&2
+            echo "  ask     — спросить у demo-приложения: agmind demo ask 'Что такое AGmind?'" >&2
+            exit 1
+            ;;
+    esac
+}
+
+# ============================================================================
 # OPEN
 # ============================================================================
 
