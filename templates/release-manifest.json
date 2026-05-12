@@ -116,7 +116,7 @@
     "certbot": {
       "registry": "docker.io",
       "image": "certbot/certbot",
-      "tag": "v3.1.0",
+      "tag": "v5.6.0",
       "digest": "",
       "platforms": [
         "linux/amd64",
