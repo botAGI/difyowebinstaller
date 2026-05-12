@@ -69,13 +69,13 @@ DEFAULT_WATCH_INTERVAL=2
 # Known init-containers: containers that are EXPECTED to exit cleanly.
 # WHY: Exited(0) for these = STATE "done" (gray), not "exited" (red).
 # Source: grep 'restart: "no"' templates/docker-compose.yml → redis-lock-cleaner (L892),
-#         k6 (L1761), milvus-init (L680). CLAUDE.md §8 init-containers rule.
+#         k6 (L1761), milvus-init (L680). Init-containers exit 0 cleanly = "done" state.
 # shellcheck disable=SC2034  # referenced via substring match in _status_is_init_container
 KNOWN_INIT_CONTAINERS="redis-lock-cleaner k6 milvus-init"
 
 # Distroless containers: they have no /bin/sh and thus no healthcheck.
 # WHY: docker inspect .State.Health == "" → STATE "running" (green), NOT "unhealthy".
-# Source: tests/unit/test_distroless_no_healthcheck.sh + CLAUDE.md §8.
+# Source: tests/unit/test_distroless_no_healthcheck.sh.
 # NOT distroless: prometheus / alertmanager / postgres-exporter (busybox, healthcheck works).
 # shellcheck disable=SC2034  # referenced in _status_docker_state via substring match
 DISTROLESS_NO_HC="loki redis-exporter nginx-exporter alloy"
@@ -133,7 +133,7 @@ _status_is_active_service() {
 }
 
 # _status_is_init_container <svc> — true if this service is a known one-shot init container.
-# WHY: init-containers exit cleanly = STATE "done" (gray), not "exited" (red). CLAUDE.md §8.
+# WHY: init-containers exit cleanly = STATE "done" (gray), not "exited" (red).
 _status_is_init_container() {
     local svc="$1"
     [[ " ${KNOWN_INIT_CONTAINERS} " == *" ${svc} "* ]]
@@ -175,7 +175,7 @@ _status_docker_state() {
     # Step 2a: INIT CONTAINER pre-check — for known-init containers, query docker FIRST.
     # WHY: init-containers exit cleanly (restart:"no") → STATE "done" regardless of whether
     # their profile is "active". We must not let the disabled-check (step 2b) shadow "done".
-    # CLAUDE.md §8 init-containers rule. Ref: 02-02 test init_container_done.
+    # Init-containers exit 0 = "done" state. Ref: 02-02 test init_container_done.
     if _status_is_init_container "$svc"; then
         local raw_init_status
         raw_init_status="$(docker ps -a --filter "name=^${container}$" --format '{{.Status}}' 2>/dev/null | head -1)"
@@ -188,7 +188,7 @@ _status_docker_state() {
     fi
 
     # Step 2b: DISABLED — profile is OFF → state=disabled (gray). No docker probe needed.
-    # WHY SC3: disabled profiles must NOT show as FAIL/red. CLAUDE.md §6.
+    # WHY SC3: disabled profiles must NOT show as FAIL/red.
     if ! _status_is_active_service "$svc"; then
         echo "disabled"
         return 0
@@ -207,7 +207,7 @@ _status_docker_state() {
 
     # Step 5: INIT CONTAINER (running) — expected to exit cleanly.
     # WHY: redis-lock-cleaner/k6/milvus-init have restart:"no" → exit 0 = STATE "done".
-    # CLAUDE.md §8 init-containers rule. (Exited case handled in step 2a above.)
+    # Init-containers rule: Exited case handled in step 2a above.
     if _status_is_init_container "$svc"; then
         if echo "$raw_status" | grep -qi "exited\|exit"; then
             echo "done"
@@ -258,7 +258,7 @@ _status_docker_state() {
     # Step 10: DISTROLESS — container is Up but has no healthcheck → STATE "running" (green).
     # WHY: loki/alloy/redis-exporter/nginx-exporter have no /bin/sh → no CMD-SHELL healthcheck.
     # docker inspect .State.Health == "" (empty string) for no-healthcheck containers.
-    # CLAUDE.md §8 distroless rule.
+    # Distroless containers have no /bin/sh — CMD-SHELL healthchecks always fail.
     if [[ -z "$hc_status" ]]; then
         if echo "$raw_status" | grep -qi "^up"; then
             echo "running"
@@ -525,7 +525,7 @@ _status_collect_rows() {
     _status_row_add "backup" "core" "running" "—" "$backup_notes" "0"
 
     # LLM_ON_PEER handling: if vLLM runs on a peer spark, add a peer-vllm row.
-    # WHY: LLM_ON_PEER=true means vllm is on peer node spark-69a2, not local. CLAUDE.md §6.
+    # WHY: LLM_ON_PEER=true means vllm is on peer node spark-69a2, not local. (see docs/adr/0001-arm64-only)
     local llm_on_peer
     llm_on_peer="$(_read_env LLM_ON_PEER "false")"
     if [[ "$llm_on_peer" == "true" ]]; then
@@ -655,7 +655,7 @@ _status_json_escape() {
 
 # _status_render_json — emit D-11 JSON schema to stdout.
 # WHY python3: shell string concat breaks on quotes/newlines in notes/messages.
-# Mirror of lib/doctor.sh::_registry_render_json (CLAUDE.md §8 precedent).
+# Mirror of lib/doctor.sh::_registry_render_json.
 _status_render_json() {
     local entry name group state url notes restarts
     local services_json="" first=1
@@ -816,7 +816,7 @@ RestartCount: {{.RestartCount}}' 2>/dev/null || echo "(inspect unavailable)"
 
     # GPU section (only for GPU-using services)
     # WHY --query-compute-apps: on GB10 (DGX Spark), --query-gpu=memory.used returns [N/A].
-    # Use per-PID query instead. CLAUDE.md §6/§8.
+    # Use per-PID query instead (NVML memory.used returns N/A on GB10 unified memory).
     case "$svc" in
         vllm|vllm-embed|vllm-rerank|tei|tei-rerank|docling)
             echo ""
@@ -874,7 +874,7 @@ RestartCount: {{.RestartCount}}' 2>/dev/null || echo "(inspect unavailable)"
             ;;
         redis)
             # WHY grep: only show non-secret highlights. REDIS_PASSWORD never echoed.
-            # CLAUDE.md §5 — no credentials in stdout/logs.
+            # Security: no credentials in stdout/logs.
             local redis_pw
             redis_pw="$(_read_env REDIS_PASSWORD "")"
             docker exec "$container" redis-cli -a "$redis_pw" INFO server 2>/dev/null \

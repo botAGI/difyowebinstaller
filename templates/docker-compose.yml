@@ -964,7 +964,7 @@ services:
     # lightweight python plugins (openai_api_compatible, etc.).
     mem_limit: ${PLUGIN_DAEMON_MEM_LIMIT:-4g}
     # Docker embedded DNS (127.0.0.11) дропает большие DNS ответы для CDN
-    # (kunlunaq.com / xethub HF LFS) — см. CLAUDE.md §8 "Docker embedded DNS".
+    # (kunlunaq.com / xethub HF LFS — Docker embedded DNS drops large responses).
     # Hardcoded IP — workaround. CDN ротирует IP каждые недели, обновлять снапшотом
     # `dig +short A <host>`. Last verified 2026-04-28.
     # TODO: structural fix — `dns: [1.1.1.1, 8.8.8.8]` для plugin_daemon, тогда
@@ -1267,7 +1267,7 @@ services:
       - --storage.path=/var/lib/alloy/data
       - --server.http.listen-addr=0.0.0.0:12345
     # No healthcheck — Alloy distroless image не имеет wget/curl/sh.
-    # Pitfall 6 в CLAUDE.md §8 (как у redis-exporter, nginx-exporter).
+    # Distroless — нет /bin/sh (как у redis-exporter, nginx-exporter).
     # Мониторинг через Prometheus `up{job="alloy"}` если targets настроены.
     depends_on:
       loki:

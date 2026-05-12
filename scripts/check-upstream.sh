@@ -39,7 +39,7 @@ ALL_CHECKS=(
     "Crawl4AI|CRAWL4AI_VERSION|unclecode/crawl4ai|gh"
     "SurrealDB|SURREALDB_VERSION|surrealdb/surrealdb|gh"
     # RAGFlow self-built (ar2r223/ragflow-spark@digest) from infiniflow upstream + Hendrik
-    # patches (CLAUDE.md §8 RAGFlow specifics). Track infiniflow для rebuild signal.
+    # patches (RAGFlow arm64 upstream specifics). Track infiniflow для rebuild signal.
     # ES + MySQL = pre-built Docker Hub images.
     "RAGFlow|RAGFLOW_VERSION|infiniflow/ragflow|gh"
     "RAGFlow ES|RAGFLOW_ES_VERSION|elasticsearch|hub"
@@ -98,14 +98,14 @@ declare -A LOCAL_SUFFIX=(
 )
 
 # ============================================================================
-# Hold list — components с известными upstream блокерами (CLAUDE.md §8).
+# Hold list — components с известными upstream блокерами (see docs/adr/0009-cadvisor-minio-arm64-holds).
 # Workflow выявит новый upstream tag, но НЕ предложит обновляться.
 # Формат: [Component Name]="reason for hold"
 # ============================================================================
 declare -A HOLD_REASONS=(
     ["Plugin Daemon"]="0.5.4/5/6 broken (#640 null content / #672 migrate / #521 CLI). Wait for 0.5.7+ from upstream."
     [Docling]="v1.17 RapidOcr ONNX regression — startup FAIL без pre-warm step. Stay на v1.16.1."
-    [cAdvisor]="v0.56.0/1/2 — release tag exists, но container manifest БЕЗ arm64 (CLAUDE.md §8). Stay ≤v0.55.1."
+    [cAdvisor]="v0.56.0/1/2 — release tag exists, но container manifest БЕЗ arm64 (see docs/adr/0009-cadvisor-minio-arm64-holds). Stay ≤v0.55.1."
     [vLLM]="v1.x major. Spark-builds (eugr/vllm-node-tf5, gemma4-cu130) пинятся отдельно через VLLM_SPARK_IMAGE — bump только после теста на GB10 sm_121a."
     [LiteLLM]="1.83.x = nightly. Wait for next .stable.patch.X tag перед bump."
     [Ollama]="0.20+ major jump. Verify Open WebUI compatibility before upgrade."
@@ -121,7 +121,7 @@ declare -A HOLD_REASONS=(
 
 # ============================================================================
 # Docker image для arm64 manifest verification.
-# CLAUDE.md §8: image:tag должен иметь подтверждённый arm64 в multi-arch
+# image:tag должен иметь подтверждённый arm64 в multi-arch (see docs/adr/0001-arm64-only)
 # manifest. Если репо upstream != Docker image — указывай явно.
 # Для source=hub репо берётся из ALL_CHECKS как-есть.
 # ============================================================================
@@ -328,7 +328,7 @@ print(tags[0] if tags else '')
 }
 
 # ============================================================================
-# arm64 manifest verification (CLAUDE.md §8 / §10 DoD)
+# arm64 manifest verification (see docs/adr/0001-arm64-only)
 # ============================================================================
 
 # Returns 0 if image:tag has arm64 in its manifest, 1 otherwise, 2 on fetch error.
@@ -479,7 +479,7 @@ check_component() {
     local change
     change=$(classify_change "$current" "$latest")
 
-    # Held by known upstream blocker (CLAUDE.md §8) — surface, but don't suggest
+    # Held by known upstream blocker (see docs/adr/) — surface, but don't suggest
     if [[ -n "${HOLD_REASONS[$name]+x}" ]]; then
         local reason="${HOLD_REASONS[$name]}"
         ALL_RESULTS+=("${name}|${current}|${report_latest}|hold|${reason}")
@@ -512,7 +512,7 @@ check_component() {
         fi
     fi
 
-    # arm64 manifest verification — required для DGX Spark (CLAUDE.md §8)
+    # arm64 manifest verification — required для DGX Spark (see docs/adr/0001-arm64-only)
     local docker_image=""
     if [[ "$source" == "hub" ]]; then
         if [[ "$repo" == */* ]]; then
@@ -594,15 +594,15 @@ generate_report() {
         echo "- **🔄 minor**: Review changelog. Test before release."
         echo "- **⚠️ major**: Breaking changes possible. Careful testing required."
         echo "- **🔀 branch**: Tracking a branch — latest stable release shown for reference."
-        echo "- **⏸ HOLD**: Upstream release exists, но pinned по известной причине (CLAUDE.md §8). НЕ обновлять без снятия блокера."
+        echo "- **⏸ HOLD**: Upstream release exists, но pinned по известной причине (см. docs/adr/). НЕ обновлять без снятия блокера."
         echo "- **🔒 Dify-pinned**: Upstream Dify docker-compose.yaml пинит конкретную версию этого компонента. Bump выше Dify pin = риск schema/protocol incompatibility. Ждать новый Dify minor с обновлённым pin."
-        echo "- **🚫 no arm64**: Upstream tag есть, но в multi-arch manifest НЕТ arm64. Несовместимо с DGX Spark — ловит cAdvisor v0.56-style ловушки (CLAUDE.md §8)."
+        echo "- **🚫 no arm64**: Upstream tag есть, но в multi-arch manifest НЕТ arm64. Несовместимо с DGX Spark (см. docs/adr/0009-cadvisor-minio-arm64-holds)."
         echo "- **❌ fetch error**: Could not reach upstream API."
         echo ""
         echo "### How to update (только для 📦 / 🔄 / ⚠️)"
         echo "1. On test server: \`agmind update --component <name> --version <latest> --force\`"
         echo "2. Run \`agmind doctor\` — verify 0 errors"
-        echo "3. Verify arm64: \`bash tests/compose/test_image_tags_exist.sh core/compose.yml\` (CLAUDE.md §10 DoD)"
+        echo "3. Verify arm64: \`bash tests/compose/test_image_tags_exist.sh core/compose.yml\` (make manifest-check)"
         echo "4. If OK — update \`templates/versions.env\` — commit — create Release"
         echo "5. If FAIL — \`agmind update --rollback\`"
     } > "$REPORT_FILE"

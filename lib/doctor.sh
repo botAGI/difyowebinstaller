@@ -219,7 +219,7 @@ _doctor_read_env_safe() {
 
 # ----------------------------------------------------------------------------
 # doctor_check_arch_driver — arch (aarch64), NVIDIA driver version, apt-mark pin
-# WHY: aarch64-only since v3.1; driver 580 HOLD mandatory (CLAUDE.md §6/§8)
+# WHY: aarch64-only since v3.1; driver 580 HOLD mandatory (see docs/adr/0001-arm64-only, docs/adr/0005-driver-580-hold)
 # ----------------------------------------------------------------------------
 doctor_check_arch_driver() {
     # Arch check
@@ -270,12 +270,13 @@ doctor_check_arch_driver() {
 
     local drv_major
     drv_major="${drv%%.*}"
-    # WHY FAIL ≥590 (CLAUDE.md §8): три регрессии на GB10 UMA — CUDAGraph deadlock,
+    # WHY FAIL ≥590: три регрессии на GB10 UMA — CUDAGraph deadlock,
     #   UMA memory leak, Blackwell TMA bug. NVIDIA staff: not supported past 580.126.09.
+    #   (see docs/adr/0005-driver-580-hold)
     if [[ "${drv_major:-0}" -ge 590 ]] 2>/dev/null; then
         _registry_add "driver_version" "arch-driver" "FAIL" \
             "NVIDIA driver ${drv} — FAIL: ≥590 сломан на DGX Spark GB10 (CUDAGraph deadlock / UMA leak / TMA bug)" \
-            "Downgrade: sudo apt install nvidia-driver-580-open; sudo reboot — NVIDIA не поддерживает >580.126.09 на Spark (CLAUDE.md §8)"
+            "Downgrade: sudo apt install nvidia-driver-580-open; sudo reboot — см. docs/adr/0005-driver-580-hold"
     elif [[ "${drv_major:-0}" -ge 580 ]] 2>/dev/null; then
         _registry_add "driver_version" "arch-driver" "OK" \
             "NVIDIA driver ${drv} (580.x — golden для DGX Spark)"
@@ -285,7 +286,7 @@ doctor_check_arch_driver() {
     fi
 
     # Driver pin check (apt-mark showhold)
-    # WHY: driver 580 must be held to prevent unattended-upgrades pulling 590+ (CLAUDE.md §8)
+    # WHY: driver 580 must be held to prevent unattended-upgrades pulling 590+ (see docs/adr/0005-driver-580-hold)
     if ! command -v apt-mark &>/dev/null; then
         _registry_add "driver_pin" "arch-driver" "SKIP" \
             "apt-mark недоступен (non-Debian) — проверка pin пропущена"
@@ -301,7 +302,7 @@ doctor_check_arch_driver() {
             _registry_add "driver_pin" "arch-driver" "OK" \
                 "NVIDIA driver 580.x pin: apt-mark hold выставлен"
         else
-            # WHY WARN fixable: unattended-upgrades may pull 590+ which breaks Spark (CLAUDE.md §8)
+            # WHY WARN fixable: unattended-upgrades may pull 590+ which breaks Spark (see docs/adr/0005-driver-580-hold)
             _registry_add "driver_pin" "arch-driver" "WARN" \
                 "NVIDIA driver 580.x не зафиксирован (apt-mark hold не выставлен) — риск обновления до 590+" \
                 "sudo agmind doctor --fix (выставит apt-mark hold)" \
@@ -372,7 +373,7 @@ doctor_check_docker() {
 
 # ----------------------------------------------------------------------------
 # doctor_check_kernel — vm.max_map_count (ES/RAGFlow requirement)
-# WHY WARN/FAIL: ES bootstrap hard-fails if < 262144 (CLAUDE.md §8)
+# WHY WARN/FAIL: ES bootstrap hard-fails if < 262144 (see docs/troubleshooting.md)
 # ----------------------------------------------------------------------------
 doctor_check_kernel() {
     local mmc
@@ -386,18 +387,18 @@ doctor_check_kernel() {
         _registry_add "vm_max_map_count" "kernel-params" "OK" \
             "vm.max_map_count=${mmc} (≥262144 — OK для Elasticsearch)"
     else
-        # WHY FAIL if RAGFlow active: ES requires this for bootstrap (CLAUDE.md §8)
+        # WHY FAIL if RAGFlow active: ES requires this for bootstrap (see docs/troubleshooting.md)
         local ragflow_active
         ragflow_active="$(_doctor_read_env_safe ENABLE_RAGFLOW false)"
         if [[ "$ragflow_active" == "true" ]]; then
             _registry_add "vm_max_map_count" "kernel-params" "FAIL" \
                 "vm.max_map_count=${mmc} — FAIL: <262144 и ENABLE_RAGFLOW=true (ES не запустится)" \
-                "sudo agmind doctor --fix (sysctl + /etc/sysctl.d/99-agmind-es.conf) — ES требует ≥262144 (CLAUDE.md §8)" \
+                "sudo agmind doctor --fix (sysctl + /etc/sysctl.d/99-agmind-es.conf) — ES требует ≥262144" \
                 true "_ensure_es_sysctl"
         else
             _registry_add "vm_max_map_count" "kernel-params" "WARN" \
                 "vm.max_map_count=${mmc} — <262144 (нужно для Elasticsearch/RAGFlow)" \
-                "sudo agmind doctor --fix (sysctl + /etc/sysctl.d/99-agmind-es.conf) — ES требует ≥262144 (CLAUDE.md §8)" \
+                "sudo agmind doctor --fix (sysctl + /etc/sysctl.d/99-agmind-es.conf) — ES требует ≥262144" \
                 true "_ensure_es_sysctl"
         fi
     fi
@@ -405,7 +406,7 @@ doctor_check_kernel() {
 
 # ----------------------------------------------------------------------------
 # doctor_check_dns_mdns — DNS resolve, mDNS status, foreign :5353 responder
-# WHY: dead mDNS / foreign responder are known §8 failure classes (CLAUDE.md §8)
+# WHY: dead mDNS / foreign responder are known failure classes (see docs/troubleshooting.md)
 # ----------------------------------------------------------------------------
 doctor_check_dns_mdns() {
     # DNS resolution check
@@ -489,7 +490,7 @@ doctor_check_dns_mdns() {
                     "mDNS: agmind-dify.local резолвится"
             else
                 # Check if avahi is alive but agmind-mdns.service failed
-                # WHY: dead mDNS while avahi is alive = agmind-mdns.service failed (CLAUDE.md §8)
+                # WHY: dead mDNS while avahi is alive = agmind-mdns.service failed (see docs/troubleshooting.md)
                 local avahi_active agmind_mdns_active
                 set +e
                 avahi_active="$(systemctl is-active avahi-daemon 2>/dev/null || echo "unknown")"
@@ -513,7 +514,7 @@ doctor_check_dns_mdns() {
     fi
 
     # Foreign :5353 responder check
-    # WHY: second mDNS responder on :5353 breaks avahi and all agmind-*.local aliases (CLAUDE.md §8)
+    # WHY: second mDNS responder on :5353 breaks avahi and all agmind-*.local aliases (see docs/troubleshooting.md)
     local _foreign_tmp
     _foreign_tmp="$(mktemp)"
     local _foreign_rc
@@ -551,14 +552,14 @@ doctor_check_dns_mdns() {
         _squatter_hint="$(grep -oE '(nxserver|nxserver\.bin|systemd-resolve|iTunes|mDNSResponder)' "$_foreign_tmp" 2>/dev/null | head -3 | tr '\n' ',' | sed 's/,$//' || echo "non-avahi process")"
         _registry_add "foreign_mdns" "dns-mdns" "FAIL" \
             "mDNS :5353 занят сторонним процессом (${_squatter_hint:-non-avahi}) — avahi не может публиковать .local-имена" \
-            "NoMachine: EnableLocalNetworkBroadcast 0 в /etc/NX/server/localhost/server.cfg; systemctl restart nxserver (CLAUDE.md §8)"
+            "NoMachine: EnableLocalNetworkBroadcast 0 в /etc/NX/server/localhost/server.cfg; systemctl restart nxserver (см. docs/troubleshooting.md раздел 5)"
     fi
     rm -f "$_foreign_tmp"
 }
 
 # ----------------------------------------------------------------------------
 # doctor_check_gpu — host nvidia-smi, nvidia runtime, GPU-in-container visibility
-# WHY: NVIDIA_DRIVER_CAPABILITIES=compute,utility mandatory on Spark (CLAUDE.md §8)
+# WHY: NVIDIA_DRIVER_CAPABILITIES=compute,utility mandatory on Spark (see docs/adr/0005-driver-580-hold)
 # ----------------------------------------------------------------------------
 doctor_check_gpu() {
     # Skip entire check if both providers are external
@@ -608,7 +609,7 @@ doctor_check_gpu() {
     llm_on_peer="$(_doctor_read_env_safe LLM_ON_PEER false)"
     for svc in vllm docling; do
         local cname="agmind-${svc}"
-        # WHY: vLLM on peer node (LLM_ON_PEER=true) — skip local GPU check (CLAUDE.md §6)
+        # WHY: vLLM on peer node (LLM_ON_PEER=true) — skip local GPU check (see docs/adr/0001-arm64-only)
         if [[ "$svc" == "vllm" && "$llm_on_peer" == "true" ]]; then
             _registry_add "gpu_in_vllm" "gpu" "SKIP" \
                 "vLLM на peer (LLM_ON_PEER=true) — проверяется через --peer"
@@ -657,7 +658,7 @@ doctor_check_gpu() {
                 if [[ "$torch_out" == "False" || "$torch_out" == "error" ]]; then
                     _registry_add "gpu_in_${svc}" "gpu" "FAIL" \
                         "${cname}: torch.cuda.is_available()=False / NVML init fail" \
-                        "Добавить NVIDIA_DRIVER_CAPABILITIES=compute,utility в compose env (CLAUDE.md §8)"
+                        "Добавить NVIDIA_DRIVER_CAPABILITIES=compute,utility в compose env (см. docs/adr/0005-driver-580-hold)"
                 elif [[ "$torch_out" == "nopython" ]]; then
                     _registry_add "gpu_in_${svc}" "gpu" "SKIP" \
                         "${cname}: nvidia-smi -L failed но python3 недоступен для torch-check"
@@ -666,10 +667,10 @@ doctor_check_gpu() {
                         "${cname}: torch.cuda.is_available()=True"
                 fi
             else
-                # WHY FAIL: NVIDIA_DRIVER_CAPABILITIES=compute,utility обязательно на Spark (CLAUDE.md §8)
+                # WHY FAIL: NVIDIA_DRIVER_CAPABILITIES=compute,utility обязательно на Spark (see docs/adr/0005-driver-580-hold)
                 _registry_add "gpu_in_${svc}" "gpu" "FAIL" \
                     "${cname}: NVIDIA_DRIVER_CAPABILITIES=compute отсутствует в env контейнера — GPU недоступен" \
-                    "Добавить NVIDIA_DRIVER_CAPABILITIES=compute,utility в compose env (CLAUDE.md §8)"
+                    "Добавить NVIDIA_DRIVER_CAPABILITIES=compute,utility в compose env (см. docs/adr/0005-driver-580-hold)"
             fi
         fi
     done
@@ -760,7 +761,7 @@ doctor_check_ports() {
 
 # ----------------------------------------------------------------------------
 # doctor_check_images — local docker image availability per compose config
-# WHY: catches images not yet pulled before docker compose up fails (CLAUDE.md §8)
+# WHY: catches images not yet pulled before docker compose up fails
 # ----------------------------------------------------------------------------
 doctor_check_images() {
     if [[ "$_DOCTOR_DOCKER_DOWN" -eq 1 ]]; then
@@ -971,7 +972,7 @@ doctor_check_services() {
                 val="$(_doctor_read_env_safe "$var" "")"
                 if [[ -n "$val" ]]; then
                     env_ok=$((env_ok + 1))
-                    # WHY: report as set/unset only — never the value (THREAT T-01-04 / CLAUDE.md §5)
+                    # WHY: report as set/unset only — never the value (THREAT T-01-04)
                     _registry_add "env_${var}" "services" "OK" ".env ${var}: задан (значение скрыто)"
                 else
                     _registry_add "env_${var}" "services" "FAIL" \
@@ -1002,7 +1003,7 @@ doctor_check_services() {
 
 # ----------------------------------------------------------------------------
 # doctor_check_security_exposure — exposed admin ports + docker.sock consumers
-# WHY: read-only subset of Phase 7 security audit (CLAUDE.md §8)
+# WHY: read-only subset of Phase 7 security audit
 # ----------------------------------------------------------------------------
 doctor_check_security_exposure() {
     # Admin UI ports that should NOT be bound to 0.0.0.0/all interfaces
@@ -1058,7 +1059,7 @@ doctor_check_security_exposure() {
 
 # ----------------------------------------------------------------------------
 # doctor_check_install_state — .install_phase, install.log errors, loadtest scripts
-# WHY: missing loadtest scripts = _copy_runtime_files script_subdirs regression (CLAUDE.md §8)
+# WHY: missing loadtest scripts = _copy_runtime_files script_subdirs regression (see docs/troubleshooting.md)
 # ----------------------------------------------------------------------------
 doctor_check_install_state() {
     if ! _doctor_installed; then
@@ -1097,7 +1098,7 @@ doctor_check_install_state() {
         "${err_count} строк с ошибками в install.log + journalctl (grep -i ERROR ${INSTALL_DIR}/install.log | tail)"
 
     # Loadtest scripts check
-    # WHY: missing scripts/loadtest = _copy_runtime_files script_subdirs whitelist regression (CLAUDE.md §8)
+    # WHY: missing scripts/loadtest = _copy_runtime_files script_subdirs whitelist regression
     local ld_dir="${MOCK_LOADTEST_DIR:-${INSTALL_DIR}/scripts/loadtest}"
     if [[ -d "$ld_dir" && -n "$(ls -A "$ld_dir" 2>/dev/null)" ]]; then
         _registry_add "loadtest_scripts" "install-state" "OK" \
@@ -1105,7 +1106,7 @@ doctor_check_install_state() {
     else
         _registry_add "loadtest_scripts" "install-state" "WARN" \
             "loadtest dir пуст или отсутствует (${ld_dir}) — регрессия _copy_runtime_files script_subdirs whitelist" \
-            "sudo bash install.sh (CLAUDE.md §8)"
+            "sudo bash install.sh"
     fi
 }
 
@@ -1129,7 +1130,7 @@ doctor_check_peer() {
 # ============================================================================
 
 # _doctor_fix_mapcount — reproduce install.sh::_ensure_es_sysctl logic.
-# WHY: ES bootstrap fails if vm.max_map_count < 262144 (CLAUDE.md §8 vm.max_map_count).
+# WHY: ES bootstrap fails if vm.max_map_count < 262144 (see docs/troubleshooting.md).
 # Idempotent: TRUNCATE (not append) so a repeat run overwrites, not duplicates (D-08).
 # RESEARCH Pitfall 6: must use > not >> on /etc/sysctl.d/99-agmind-es.conf.
 _doctor_fix_mapcount() {
@@ -1150,7 +1151,7 @@ _doctor_fix_mapcount() {
 }
 
 # _doctor_fix_mdns — restart avahi-daemon then agmind-mdns.service.
-# WHY: dead mDNS while avahi is alive = agmind-mdns.service failed (CLAUDE.md §8).
+# WHY: dead mDNS while avahi is alive = agmind-mdns.service failed (see docs/troubleshooting.md).
 # Idempotent: systemctl restart is always safe to re-run.
 _doctor_fix_mdns() {
     if ! command -v systemctl >/dev/null 2>&1; then
@@ -1166,7 +1167,7 @@ _doctor_fix_mdns() {
 }
 
 # _doctor_fix_driver_pin — apply apt-mark hold on installed nvidia-* packages.
-# WHY: apt-mark hold so unattended-upgrades won't pull 590+ (CLAUDE.md §8 Driver 580 HOLD).
+# WHY: apt-mark hold so unattended-upgrades won't pull 590+ (see docs/adr/0005-driver-580-hold).
 # Idempotent: apt-mark hold is safe to repeat; already-held packages stay held.
 _doctor_fix_driver_pin() {
     if ! command -v apt-mark >/dev/null 2>&1; then
@@ -1566,7 +1567,7 @@ BUNDLE_README
 
     # ── FINAL SELF-TEST GATE (D-14.3 — HARD GATE, run BEFORE tar) ─────────────
     # WHY T-01-09: abort BEFORE creating the tar if any secret survived sanitization.
-    # Print only FILE names, NEVER the matching lines or values (CLAUDE.md §5).
+    # Print only FILE names, NEVER the matching lines or values (security: never expose credential values).
     if grep -rEiq \
         '(password|secret|token|bearer|api[_-]?key)[[:space:]]*[=:][[:space:]]*[a-zA-Z0-9]{8,}' \
         "${staging}/" 2>/dev/null; then
