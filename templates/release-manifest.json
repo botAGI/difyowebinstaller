@@ -67,7 +67,7 @@
     "weaviate": {
       "registry": "docker.io",
       "image": "semitechnologies/weaviate",
-      "tag": "1.37.2",
+      "tag": "1.37.3",
       "digest": "",
       "platforms": [
         "linux/amd64",
