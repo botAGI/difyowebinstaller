@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# tests/mocks/xdg-open — PATH stub for agmind open tests.
+# Records argv to MOCK_XDG_LOG; never actually opens anything.
+set -uo pipefail
+printf '%s\n' "xdg-open $*" >> "${MOCK_XDG_LOG:-/dev/null}"
+exit "${MOCK_XDG_EXIT:-0}"
