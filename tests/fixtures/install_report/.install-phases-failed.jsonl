@@ -1,0 +1,2 @@
+{"n":1,"name":"Diagnostics","status":"ok","started":"2026-05-12T10:00:00Z","ended":"2026-05-12T10:00:05Z","duration_s":5}
+{"n":2,"name":"Wizard","status":"fail","started":"2026-05-12T10:00:05Z","ended":"2026-05-12T10:00:30Z","duration_s":25}
