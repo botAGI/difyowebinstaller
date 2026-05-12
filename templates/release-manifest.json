@@ -155,7 +155,7 @@
     "grafana": {
       "registry": "docker.io",
       "image": "grafana/grafana",
-      "tag": "12.4.3",
+      "tag": "13.0.1",
       "digest": "",
       "platforms": [
         "linux/amd64",
