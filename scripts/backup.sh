@@ -255,6 +255,19 @@ cd "${TARGET_DIR}"
 sha256sum *.gz *.backup 2>/dev/null > sha256sums.txt || true
 cd - >/dev/null
 
+# 7b. MANIFEST.txt — completeness oracle for `agmind backup verify` / `restore --dry-run`.
+# Plain-text list of every file currently in TARGET_DIR (pre-encryption names).
+{
+    echo "# AGmind backup manifest v1"
+    echo "# Date: ${DATE}"
+    echo "# Schema: 1"
+    for _mf in "${TARGET_DIR}"/*; do
+        _mfname="$(basename "$_mf")"
+        [[ "$_mfname" == "MANIFEST.txt" ]] && continue
+        echo "$_mfname"
+    done
+} > "${TARGET_DIR}/MANIFEST.txt"
+
 # === Encryption ===
 if [[ "${ENABLE_BACKUP_ENCRYPTION:-false}" == "true" ]]; then
     echo "Encrypting backup..."
@@ -271,11 +284,22 @@ if [[ "${ENABLE_BACKUP_ENCRYPTION:-false}" == "true" ]]; then
     fi
 fi
 
-# Regenerate checksums after encryption
+# Regenerate checksums + manifest after encryption (files renamed .gz/.backup -> .age)
 if [[ "${ENABLE_BACKUP_ENCRYPTION:-false}" == "true" ]]; then
     cd "${TARGET_DIR}"
     sha256sum *.age 2>/dev/null > sha256sums.txt || true
     cd - >/dev/null
+    {
+        echo "# AGmind backup manifest v1"
+        echo "# Date: ${DATE}"
+        echo "# Schema: 1"
+        echo "# Encrypted: true"
+        for _mf in "${TARGET_DIR}"/*; do
+            _mfname="$(basename "$_mf")"
+            [[ "$_mfname" == "MANIFEST.txt" ]] && continue
+            echo "$_mfname"
+        done
+    } > "${TARGET_DIR}/MANIFEST.txt"
 fi
 
 # 8. Rotation — delete backups older than retention period
