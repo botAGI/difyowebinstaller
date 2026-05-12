@@ -381,12 +381,177 @@ restore_verify() {
     return 0
 }
 
+# ============================================================================
+# RESTORE PLAN HELPERS
+# ============================================================================
+
+# _VALID_SERVICES — authoritative list of --service values; derived from
+# restore_artifact_map's 4th field to avoid a second hardcoded list.
+_VALID_SERVICES="dify rag ragflow openwebui ollama config"
+
+# _plan_compose_names_for_service <svc>
+# Returns the compose service names to stop/start for the given group.
+# WHY hardcoded fallback: lib/restore.sh is standalone-safe; sources
+# lib/service-map.sh if available, else uses the small static subset.
+_plan_compose_names_for_service() {
+    local svc="$1" restore_dir="${2:-}"
+    case "$svc" in
+        dify)      echo "api worker web sandbox plugin_daemon" ;;
+        rag)
+            # Only the vector store actually present in the backup
+            if [[ -n "$restore_dir" && -f "${restore_dir}/qdrant.tar.gz" ]]; then
+                echo "qdrant"
+            else
+                echo "weaviate"
+            fi
+            ;;
+        ragflow)   echo "ragflow ragflow_mysql ragflow_es01" ;;
+        openwebui) echo "open-webui" ;;
+        ollama)    echo "ollama" ;;
+        config)    echo "" ;;   # no containers — config applied on next agmind restart
+        *)         echo "" ;;
+    esac
+}
+
+# _plan_artifacts_for_service <svc|""> <restore_dir>
+# Prints artifact-map rows (tab-delimited: filename|type|target|service|optional)
+# filtered to the given service group. Empty svc = all rows.
+# For "rag": only emits the vector store file actually present in restore_dir.
+_plan_artifacts_for_service() {
+    local svc="$1" restore_dir="$2"
+    restore_artifact_map | while IFS='|' read -r fname atype atarget asvc aopt; do
+        # Skip meta entries (sha256sums.txt etc.)
+        [[ "$asvc" == "skip" ]] && continue
+        # Filter by service group
+        [[ -z "$svc" || "$asvc" == "$svc" ]] || continue
+        # For rag: only emit the vector store actually present on disk
+        if [[ "$asvc" == "rag" ]]; then
+            [[ -f "${restore_dir}/${fname}" ]] || continue
+        fi
+        printf '%s|%s|%s|%s|%s\n' "$fname" "$atype" "$atarget" "$asvc" "$aopt"
+    done
+}
+
 # restore_plan <RESTORE_DIR> [--service <name>] [--dry-run]
 # Prints human-readable restore plan (what will be restored, what will be stopped).
-# Read-only — zero mutations.
+# Read-only — zero mutations, no FS writes, no mutating docker calls.
+# Exit 0 if restore_verify returns 0; exit 1 if restore_verify found FAIL
+# (plan is printed either way, with a warning on verify FAIL).
 restore_plan() {
-    echo "restore_plan: не реализовано (Wave 2)" >&2
-    return 1
+    local restore_dir="" svc="" dry=0
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --dry-run)        dry=1; shift ;;
+            --service)
+                shift
+                [[ $# -gt 0 ]] || { echo "restore_plan: --service requires a value" >&2; return 1; }
+                svc="$1"; shift
+                ;;
+            --service=*)      svc="${1#--service=}"; shift ;;
+            -*)               echo "restore_plan: unknown option: $1" >&2; return 1 ;;
+            *)                restore_dir="$1"; shift ;;
+        esac
+    done
+
+    [[ -n "$restore_dir" ]] || { echo "restore_plan: RESTORE_DIR required" >&2; return 1; }
+
+    # Validate --service value before anything else
+    if [[ -n "$svc" ]]; then
+        local ok=0 v
+        for v in $_VALID_SERVICES; do
+            [[ "$v" == "$svc" ]] && ok=1 && break
+        done
+        if [[ "$ok" -eq 0 ]]; then
+            echo "Неизвестный сервис: ${svc}. Допустимые: ${_VALID_SERVICES}" >&2
+            return 1
+        fi
+    fi
+
+    [[ -d "$restore_dir" ]] || { echo "Каталог не найден: ${restore_dir}" >&2; return 1; }
+
+    # ── 1. Run restore_verify first (read-only — no mutations) ───────────────
+    local vrc=0
+    restore_verify "$restore_dir" || vrc=$?
+    echo
+
+    # ── 2. Plan header ────────────────────────────────────────────────────────
+    if [[ "$dry" -eq 1 ]]; then
+        echo "=== План восстановления (dry-run) ==="
+    else
+        echo "=== План восстановления ==="
+    fi
+    [[ -n "$svc" ]] && echo "Область: --service ${svc}"
+
+    # ── 3. PostgreSQL section ─────────────────────────────────────────────────
+    echo
+    echo "PostgreSQL:"
+    local pg_found=0 afile atype atgt asvc aopt
+    while IFS='|' read -r afile atype atgt asvc aopt; do
+        [[ "$atype" == "pgdump" ]] || continue
+        [[ -f "${restore_dir}/${afile}" ]] || continue
+        echo "  ${atgt} ← ${afile}"
+        pg_found=1
+    done < <(_plan_artifacts_for_service "$svc" "$restore_dir")
+    [[ "$pg_found" -eq 1 ]] || echo "  (нет SQL-дампов в области)"
+
+    # ── 4. Volumes / каталоги section ────────────────────────────────────────
+    echo
+    echo "Volumes / каталоги:"
+    local vol_found=0
+    while IFS='|' read -r afile atype atgt asvc aopt; do
+        case "$atype" in
+            volume-path|volume-docker|volume-tar) : ;;
+            *) continue ;;
+        esac
+        [[ -f "${restore_dir}/${afile}" ]] || continue
+        echo "  $(basename "${atgt}") ← ${afile} → ${atgt}"
+        vol_found=1
+    done < <(_plan_artifacts_for_service "$svc" "$restore_dir")
+    [[ "$vol_found" -eq 1 ]] || echo "  (нет томов в области)"
+
+    # ── 5. Config section ─────────────────────────────────────────────────────
+    echo
+    echo "Config:"
+    local cfg_found=0
+    while IFS='|' read -r afile atype atgt asvc aopt; do
+        case "$atype" in
+            config-file|config-tar) : ;;
+            *) continue ;;
+        esac
+        [[ -f "${restore_dir}/${afile}" ]] || continue
+        echo "  ${atgt} ← ${afile}"
+        cfg_found=1
+    done < <(_plan_artifacts_for_service "$svc" "$restore_dir")
+    [[ "$cfg_found" -eq 1 ]] || echo "  (нет конфигов в области)"
+
+    # ── 6. Будет остановлено section ─────────────────────────────────────────
+    echo
+    echo "Будет остановлено:"
+    if [[ -z "$svc" ]]; then
+        echo "  весь стек (docker compose down), затем поднимется заново"
+    else
+        local names
+        names="$(_plan_compose_names_for_service "$svc" "$restore_dir")"
+        if [[ -n "$names" ]]; then
+            echo "  только: ${names}"
+            if [[ "$svc" == "dify" ]]; then
+                echo "  (postgres НЕ останавливается — БД восстанавливается в живой контейнер)"
+            fi
+        else
+            echo "  ничего (конфиг применится после: \`agmind restart\`)"
+        fi
+    fi
+
+    # ── 7. Trailing line + exit code ─────────────────────────────────────────
+    echo
+    if [[ "$dry" -eq 1 ]]; then
+        echo "Изменений не внесено (dry-run)."
+    fi
+    if [[ "$vrc" -ne 0 ]]; then
+        echo "ВНИМАНИЕ: бэкап не прошёл verify — восстановление рискованно." >&2
+        return 1
+    fi
+    return 0
 }
 
 # restore_apply <RESTORE_DIR> [--service <name>] [--auto-confirm]
