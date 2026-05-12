@@ -13,58 +13,120 @@ IMAGE_VALIDATION_TIMEOUT="${IMAGE_VALIDATION_TIMEOUT:-20}"
 # BUILD PROFILES
 # ============================================================================
 
+# Apply implied ENABLE_*/<X>_PROVIDER defaults for a named meta-profile.
+# Uses conditional assignment so a user-set env var always wins. Reads
+# NAMED_PROFILE_IMPLIED from service-map.sh (guard-sourced by the caller).
+_np_apply_defaults() {
+    local profile="$1" kv var val
+    local implied="${NAMED_PROFILE_IMPLIED[$profile]:-}"
+    [[ -z "$implied" ]] && return 0
+    for kv in $implied; do
+        var="${kv%%=*}"; val="${kv#*=}"
+        # Set only if currently unset/empty — env-override wins
+        if [[ -z "${!var:-}" ]]; then
+            printf -v "$var" '%s' "$val"
+            # shellcheck disable=SC2163  # intentional: export the variable named by $var
+            export "$var"
+        fi
+    done
+}
+
 # Build comma-separated compose profiles from wizard choices.
 # Returns profiles string in COMPOSE_PROFILE_STRING.
 build_compose_profiles() {
     local profiles=""
+    # _np_active=1 when a recognized named profile was applied (Phase 9).
+    # Used below to suppress the VECTOR_STORE default when the named profile
+    # intentionally omits a vector store (e.g. observability, security).
+    local _np_active=0
+
+    # --- Phase 9: named meta-profile expansion -------------------------------
+    # If DEPLOY_PROFILE names one of the 8 meta-profiles → set implied ENABLE_*
+    # defaults (env-override wins) + seed the profiles accumulator with the
+    # profile's raw compose profiles. Then the existing ENABLE_*-driven logic
+    # below runs as a composable add-on layer. DEPLOY_PROFILE unset / "custom" /
+    # "lan" → this block is a no-op (SC4: identical to pre-Phase-9 behavior).
+    if [[ -n "${DEPLOY_PROFILE:-}" && "${DEPLOY_PROFILE}" != "custom" && "${DEPLOY_PROFILE}" != "lan" ]]; then
+        # Guard-source service-map.sh for NAMED_PROFILE_EXPANSION / NAMED_PROFILE_IMPLIED
+        if [[ -z "${_SERVICE_MAP_LOADED:-}" ]]; then
+            # shellcheck source=service-map.sh
+            source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/service-map.sh"
+        fi
+        if [[ -n "${NAMED_PROFILE_EXPANSION[${DEPLOY_PROFILE}]:-}" ]]; then
+            _np_active=1
+            _np_apply_defaults "${DEPLOY_PROFILE}"
+            local _np _np_raw="${NAMED_PROFILE_EXPANSION[${DEPLOY_PROFILE}]}"
+            local _np_arr; IFS=',' read -ra _np_arr <<< "$_np_raw"
+            for _np in "${_np_arr[@]}"; do
+                # vllm raw profile is dropped when it runs on the peer (LLM_ON_PEER=true)
+                if [[ "$_np" == "vllm" && "${LLM_ON_PEER:-false}" == "true" ]]; then continue; fi
+                # XOR: skip a vector-store profile that conflicts with VECTOR_STORE env override
+                if [[ "$_np" == "weaviate" && "${VECTOR_STORE:-}" == "qdrant" ]]; then continue; fi
+                if [[ "$_np" == "qdrant"   && "${VECTOR_STORE:-}" == "weaviate" ]]; then continue; fi
+                if [[ ",${profiles}," != *",${_np},"* ]]; then
+                    profiles="${profiles:+$profiles,}${_np}"
+                fi
+            done
+        fi
+    fi
+    # ------------------------------------------------------------------------
+
+    # Dedup-safe append: add $1 to $profiles only if not already present.
+    # Used by both the named-expansion block above and the ENABLE_*-driven path
+    # below so a named profile seeding "weaviate" is never doubled by the
+    # VECTOR_STORE default path (and vice versa).
+    _add_prof() { [[ ",${profiles}," != *",${1},"* ]] && profiles="${profiles:+$profiles,}${1}"; return 0; }
 
     # VPS profile dropped 2026-04-25 — DGX Spark (LAN) only.
-    if [[ "${VECTOR_STORE:-weaviate}" == "qdrant" ]]; then profiles="${profiles:+$profiles,}qdrant"; fi
-    if [[ "${VECTOR_STORE:-weaviate}" == "weaviate" ]]; then profiles="${profiles:+$profiles,}weaviate"; fi
+    # When a named profile is active, skip VECTOR_STORE default: the named
+    # profile already seeded the correct vector-store profile (or intentionally
+    # omits one). VECTOR_STORE set explicitly (env-override) still applies.
+    if [[ $_np_active -eq 0 || -n "${VECTOR_STORE:-}" ]]; then
+        if [[ "${VECTOR_STORE:-weaviate}" == "qdrant" ]]; then _add_prof qdrant; fi
+        if [[ "${VECTOR_STORE:-weaviate}" == "weaviate" ]]; then _add_prof weaviate; fi
+    fi
     # Docling: check both wizard var (ENABLE_DOCLING) and .env var (ETL_TYPE) for resume support
     # Backward compat: ETL_ENHANCED=true without ENABLE_DOCLING → treat as ENABLE_DOCLING=true
     local docling_enabled="${ENABLE_DOCLING:-${ETL_ENHANCED:-false}}"
     if [[ "$docling_enabled" == "true" || "${ETL_TYPE:-dify}" == "unstructured_api" ]]; then
-        profiles="${profiles:+$profiles,}docling"
+        _add_prof docling
     fi
-    if [[ "${MONITORING_MODE:-none}" == "local" ]]; then profiles="${profiles:+$profiles,}monitoring"; fi
-    if [[ "${ENABLE_PORTAINER:-true}" != "false" ]]; then profiles="${profiles:+$profiles,}portainer"; fi
-    if [[ "${ENABLE_AUTHELIA:-false}" == "true" ]]; then profiles="${profiles:+$profiles,}authelia"; fi
+    if [[ "${MONITORING_MODE:-none}" == "local" ]]; then _add_prof monitoring; fi
+    if [[ "${ENABLE_PORTAINER:-true}" != "false" ]]; then _add_prof portainer; fi
+    if [[ "${ENABLE_AUTHELIA:-false}" == "true" ]]; then _add_prof authelia; fi
 
     if [[ "${LLM_PROVIDER:-}" == "ollama" || "${EMBED_PROVIDER:-}" == "ollama" ]]; then
-        profiles="${profiles:+$profiles,}ollama"
+        _add_prof ollama
     fi
     if [[ "${LLM_PROVIDER:-}" == "vllm" ]]; then
         # LLM_ON_PEER=true → vllm runs on peer Spark (Plan 02-04 phase_deploy_peer).
         # Set by cluster_mode_save (lib/cluster_mode.sh) when AGMIND_MODE=master.
         if [[ "${LLM_ON_PEER:-false}" != "true" ]]; then
-            profiles="${profiles:+$profiles,}vllm"
+            _add_prof vllm
         else
             log_info "LLM_ON_PEER=true: vllm profile skipped locally (runs on peer ${PEER_IP:-?})"
         fi
     fi
-    if [[ "${EMBED_PROVIDER:-}" == "tei" ]]; then profiles="${profiles:+$profiles,}tei"; fi
-    if [[ "${EMBED_PROVIDER:-}" == "vllm-embed" ]]; then profiles="${profiles:+$profiles,}vllm-embed"; fi
+    if [[ "${EMBED_PROVIDER:-}" == "tei" ]]; then _add_prof tei; fi
+    if [[ "${EMBED_PROVIDER:-}" == "vllm-embed" ]]; then _add_prof vllm-embed; fi
     if [[ "${ENABLE_RERANKER:-false}" == "true" ]]; then
         if [[ "${RERANKER_PROVIDER:-tei}" == "vllm-rerank" ]]; then
-            profiles="${profiles:+$profiles,}vllm-rerank"
+            _add_prof vllm-rerank
         else
-            profiles="${profiles:+$profiles,}reranker"
+            _add_prof reranker
         fi
     fi
-    if [[ "${ENABLE_LITELLM:-true}" == "true" ]]; then profiles="${profiles:+$profiles,}litellm"; fi
-    if [[ "${ENABLE_SEARXNG:-false}" == "true" ]]; then profiles="${profiles:+$profiles,}searxng"; fi
-    if [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]]; then profiles="${profiles:+$profiles,}notebook"; fi
-    if [[ "${ENABLE_DBGPT:-false}" == "true" ]]; then profiles="${profiles:+$profiles,}dbgpt"; fi
-    if [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]]; then profiles="${profiles:+$profiles,}crawl4ai"; fi
-    if [[ "${ENABLE_OPENWEBUI:-false}" == "true" ]]; then profiles="${profiles:+$profiles,}openwebui"; fi
-    if [[ "${ENABLE_MINIO:-false}" == "true" ]]; then profiles="${profiles:+$profiles,}minio"; fi
+    if [[ "${ENABLE_LITELLM:-true}" == "true" ]]; then _add_prof litellm; fi
+    if [[ "${ENABLE_SEARXNG:-false}" == "true" ]]; then _add_prof searxng; fi
+    if [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]]; then _add_prof notebook; fi
+    if [[ "${ENABLE_DBGPT:-false}" == "true" ]]; then _add_prof dbgpt; fi
+    if [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]]; then _add_prof crawl4ai; fi
+    if [[ "${ENABLE_OPENWEBUI:-false}" == "true" ]]; then _add_prof openwebui; fi
+    if [[ "${ENABLE_MINIO:-false}" == "true" ]]; then _add_prof minio; fi
     # RAGFlow auto-pulls minio profile (shared bucket).
     if [[ "${ENABLE_RAGFLOW:-false}" == "true" ]]; then
-        profiles="${profiles:+$profiles,}ragflow"
-        if [[ "${ENABLE_MINIO:-true}" != "false" ]] && [[ "$profiles" != *",minio"* ]] && [[ "$profiles" != "minio"* ]]; then
-            profiles="${profiles:+$profiles,}minio"
-        fi
+        _add_prof ragflow
+        if [[ "${ENABLE_MINIO:-true}" != "false" ]]; then _add_prof minio; fi
     fi
 
     COMPOSE_PROFILE_STRING="$profiles"
