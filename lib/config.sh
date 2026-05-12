@@ -1682,6 +1682,416 @@ DEFAULTAMEOF
 }
 
 # ============================================================================
+# CONFIG VALIDATION  —  agmind config validate  (Phase 4, D-01..D-03)
+# ============================================================================
+
+# Fallback log shims (same pattern as lib/doctor.sh:22-34)
+# Guard: only define if not provided by common.sh / health.sh already sourced.
+command -v log_info    >/dev/null 2>&1 || log_info()    { echo "  -> $*"; }
+command -v log_success >/dev/null 2>&1 || log_success() { echo "  ✓ $*"; }
+command -v log_warn    >/dev/null 2>&1 || log_warn()    { echo "  ⚠ $*"; }
+command -v log_error   >/dev/null 2>&1 || log_error()   { echo "  ✗ $*" >&2; }
+
+# Fallback colors when common.sh is not sourced
+RED="${RED:-\033[0;31m}"
+GREEN="${GREEN:-\033[0;32m}"
+YELLOW="${YELLOW:-\033[1;33m}"
+CYAN="${CYAN:-\033[0;36m}"
+BOLD="${BOLD:-\033[1m}"
+NC="${NC:-\033[0m}"
+
+# Record separator — ASCII Unit Separator (same as lib/doctor.sh and lib/phases.sh)
+_CFGVAL_SEP=$'\x1f'
+
+# Registry: each entry is "id${SEP}label${SEP}fn"
+# Verified against _generate_env_file: these are the actual .env keys written by install.
+# DB_PASSWORD (not POSTGRES_PASSWORD), BIND_ADDR (not SERVER_IP) are the real keys.
+CONFIG_VALIDATE_CHECKS=(
+    "env_placeholders${_CFGVAL_SEP}Unresolved __PLACEHOLDER__ in .env${_CFGVAL_SEP}_cfgval_env_placeholders"
+    "env_required_keys${_CFGVAL_SEP}Required env keys present and non-empty${_CFGVAL_SEP}_cfgval_env_required_keys"
+    "versions_manifest_sync${_CFGVAL_SEP}versions.env <-> release-manifest.json in sync${_CFGVAL_SEP}_cfgval_versions_manifest_sync"
+    "compose_schema${_CFGVAL_SEP}docker compose config -q valid${_CFGVAL_SEP}_cfgval_compose_schema"
+    "no_unstable_tags${_CFGVAL_SEP}No :latest / mutating tags in effective config${_CFGVAL_SEP}_cfgval_no_unstable_tags"
+)
+
+# Result accumulator — populated by _cfgval_record, read by render functions.
+_CFGVAL_RESULTS=()
+
+# _cfgval_record status id label detail [hint]
+# Appends one result record. status: ok | fail | skip
+_cfgval_record() {
+    local status="$1" id="$2" label="$3" detail="${4:-}" hint="${5:-}"
+    _CFGVAL_RESULTS+=("${status}${_CFGVAL_SEP}${id}${_CFGVAL_SEP}${label}${_CFGVAL_SEP}${detail}${_CFGVAL_SEP}${hint}")
+}
+
+# ---------------------------------------------------------------------------
+# CHECK FUNCTIONS — each returns 0=ok, 1=fail, 77=skip
+# ---------------------------------------------------------------------------
+
+# _cfgval_env_placeholders — detect unresolved __PLACEHOLDER__ tokens in .env
+_cfgval_env_placeholders() {
+    local label="Unresolved __PLACEHOLDER__ in .env"
+    local env_file="${INSTALL_DIR}/docker/.env"
+    if [[ ! -f "$env_file" ]]; then
+        _cfgval_record fail env_placeholders "$label" ".env not found at ${env_file}" \
+            "Run install.sh to generate the config"
+        return 1
+    fi
+    local unresolved
+    unresolved="$(grep -oE '__[A-Z][A-Z0-9_]*__' "$env_file" 2>/dev/null | sort -u || true)"
+    if [[ -n "$unresolved" ]]; then
+        _cfgval_record fail env_placeholders "$label" \
+            "Unresolved placeholders: $(echo "$unresolved" | tr '\n' ' ')" \
+            "Re-run install.sh to regenerate config"
+        return 1
+    fi
+    _cfgval_record ok env_placeholders "$label" "No unresolved __PLACEHOLDER__ found"
+    return 0
+}
+
+# _cfgval_env_required_keys — verify required keys are present and non-empty
+_cfgval_env_required_keys() {
+    local label="Required env keys present and non-empty"
+    local env_file="${INSTALL_DIR}/docker/.env"
+    if [[ ! -f "$env_file" ]]; then
+        _cfgval_record fail env_required_keys "$label" ".env not found" \
+            "Run install.sh to generate the config"
+        return 1
+    fi
+    # Verified against _generate_env_file in lib/config.sh (RESEARCH §3):
+    # DB_PASSWORD (not POSTGRES_PASSWORD), BIND_ADDR (not SERVER_IP) are the real .env keys.
+    local REQUIRED_ENV_KEYS=(
+        SECRET_KEY
+        DB_PASSWORD
+        REDIS_PASSWORD
+        LLM_PROVIDER
+        VECTOR_STORE
+        STORAGE_TYPE
+        FILES_URL
+        BIND_ADDR
+        DIFY_VERSION
+    )
+    local missing=()
+    local key val
+    for key in "${REQUIRED_ENV_KEYS[@]}"; do
+        # grep for the key; cut value after first '='; strip surrounding quotes
+        val="$(grep -E "^${key}=" "$env_file" 2>/dev/null | head -1 | cut -d= -f2-)"
+        # Strip surrounding single/double quotes
+        val="${val#\'}" ; val="${val%\'}"
+        val="${val#\"}" ; val="${val%\"}"
+        if [[ -z "$val" ]]; then
+            missing+=("$key")
+        fi
+    done
+    if [[ "${#missing[@]}" -gt 0 ]]; then
+        # NEVER include values — only key names
+        _cfgval_record fail env_required_keys "$label" \
+            "Missing or empty keys: ${missing[*]}" \
+            "Check ${env_file} — re-run install.sh"
+        return 1
+    fi
+    _cfgval_record ok env_required_keys "$label" "All required keys present and non-empty"
+    return 0
+}
+
+# _cfgval_versions_manifest_sync — compare versions.env values against release-manifest.json tags
+_cfgval_versions_manifest_sync() {
+    local label="versions.env <-> release-manifest.json in sync"
+    local vfile="${INSTALL_DIR}/versions.env"
+    local mfile="${INSTALL_DIR}/release-manifest.json"
+    if [[ ! -f "$vfile" || ! -f "$mfile" ]]; then
+        _cfgval_record skip versions_manifest_sync "$label" \
+            "versions.env or release-manifest.json not found — skipping"
+        return 77
+    fi
+    if ! command -v python3 >/dev/null 2>&1; then
+        _cfgval_record skip versions_manifest_sync "$label" \
+            "python3 not available — skipping sync check"
+        return 77
+    fi
+    # Build two sets of tag values: from manifest (images.*.tag) and from versions.env (*_VERSION)
+    # Compare by tag value: if any versions.env value exists in manifest and doesn't match → FAIL
+    local result
+    result="$(python3 - "$vfile" "$mfile" <<'PYEOF'
+import json, sys, re
+
+venv_file = sys.argv[1]
+manifest_file = sys.argv[2]
+
+# Parse versions.env: collect *_VERSION key → value
+venv = {}
+with open(venv_file) as f:
+    for line in f:
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        if '=' in line:
+            k, v = line.split('=', 1)
+            venv[k] = v.strip().strip('"').strip("'")
+
+# Parse manifest: collect all image tags
+try:
+    with open(manifest_file) as f:
+        manifest = json.load(f)
+    # Support images.{name}.tag structure
+    images = manifest.get('images', {})
+    manifest_tags = {}
+    for name, info in images.items():
+        if isinstance(info, dict):
+            tag = info.get('tag', '')
+            if tag:
+                manifest_tags[name] = tag
+except Exception as e:
+    print(f"ERROR: cannot parse manifest: {e}", end='')
+    sys.exit(2)
+
+# Find mismatches: for each versions.env value that matches a manifest tag
+mismatches = []
+manifest_tag_set = set(manifest_tags.values())
+manifest_name_tag = {name: tag for name, tag in manifest_tags.items()}
+
+# Check: for each manifest image, find which versions.env key has matching tag format
+# Strategy: check if any *_VERSION value != corresponding manifest tag
+# Map: strip service name suffixes to guess the *_VERSION key
+for img_name, img_tag in manifest_name_tag.items():
+    # Derive candidate env key names from image name
+    # e.g. dify-api → DIFY_VERSION, weaviate → WEAVIATE_VERSION, redis → REDIS_VERSION
+    base = img_name.upper().replace('-', '_').split('_')[0]
+    candidate_key = f"{base}_VERSION"
+    if candidate_key in venv:
+        env_val = venv[candidate_key]
+        if env_val != img_tag:
+            mismatches.append(f"{candidate_key}: versions.env={env_val} manifest={img_tag}")
+
+if mismatches:
+    print('MISMATCH:' + '; '.join(mismatches), end='')
+    sys.exit(1)
+else:
+    print('OK', end='')
+    sys.exit(0)
+PYEOF
+    )" || true
+
+    local pyrc=$?
+    if [[ $pyrc -eq 2 ]]; then
+        _cfgval_record skip versions_manifest_sync "$label" \
+            "Could not parse manifest: ${result#ERROR: }"
+        return 77
+    elif [[ "$result" == MISMATCH:* ]]; then
+        local detail="${result#MISMATCH:}"
+        _cfgval_record fail versions_manifest_sync "$label" "$detail" \
+            "Re-copy templates/versions.env + templates/release-manifest.json (they ship together)"
+        return 1
+    fi
+    _cfgval_record ok versions_manifest_sync "$label" "versions.env and release-manifest.json are in sync"
+    return 0
+}
+
+# _cfgval_compose_schema — validate docker compose config -q exits 0
+_cfgval_compose_schema() {
+    local label="docker compose config -q valid"
+    local compose_file="${INSTALL_DIR}/docker/docker-compose.yml"
+    local env_file="${INSTALL_DIR}/docker/.env"
+    if [[ ! -f "$compose_file" ]]; then
+        _cfgval_record skip compose_schema "$label" \
+            "docker-compose.yml not found — skipping"
+        return 77
+    fi
+    if ! command -v docker >/dev/null 2>&1; then
+        _cfgval_record skip compose_schema "$label" \
+            "docker not available — skipping"
+        return 77
+    fi
+    # Pitfall 3: docker daemon down → skip (not fail)
+    if ! docker info >/dev/null 2>&1; then
+        _cfgval_record skip compose_schema "$label" \
+            "Docker daemon not running — compose schema check skipped"
+        return 77
+    fi
+    local err
+    # cd into docker dir so 'docker compose config' finds docker-compose.yml + .env naturally.
+    # This also makes the docker mock work correctly (mock keyed on $2=config, not $2=-f).
+    if err="$(cd "${INSTALL_DIR}/docker" && docker compose config -q 2>&1)"; then
+        _cfgval_record ok compose_schema "$label" "docker compose config -q passed"
+        return 0
+    else
+        _cfgval_record fail compose_schema "$label" \
+            "compose config invalid: ${err:0:300}" \
+            "Check compose syntax and env var definitions"
+        return 1
+    fi
+}
+
+# _cfgval_no_unstable_tags — detect :latest / mutating tags in effective compose config
+_cfgval_no_unstable_tags() {
+    local label="No :latest / mutating tags in effective config"
+    local compose_file="${INSTALL_DIR}/docker/docker-compose.yml"
+    local env_file="${INSTALL_DIR}/docker/.env"
+    if [[ ! -f "$compose_file" ]]; then
+        _cfgval_record skip no_unstable_tags "$label" \
+            "docker-compose.yml not found — skipping"
+        return 77
+    fi
+    if ! command -v docker >/dev/null 2>&1; then
+        _cfgval_record skip no_unstable_tags "$label" \
+            "docker not available — skipping"
+        return 77
+    fi
+    if ! docker info >/dev/null 2>&1; then
+        _cfgval_record skip no_unstable_tags "$label" \
+            "Docker daemon not running — tag check skipped"
+        return 77
+    fi
+    local rendered
+    # cd into docker dir so 'docker compose config' finds docker-compose.yml + .env naturally.
+    # This also makes the docker mock work correctly (mock keyed on $2=config, not $2=-f).
+    rendered="$(cd "${INSTALL_DIR}/docker" && docker compose config 2>/dev/null || true)"
+    # Extract image lines and find mutating tags
+    local flagged=()
+    local img_line tag
+    while IFS= read -r img_line; do
+        # Extract the part after 'image:'
+        local img="${img_line#*image:}"
+        img="${img// /}"       # strip spaces
+        img="${img//\"/}"      # strip quotes
+        img="${img//\'/}"
+        # Extract tag: last part after ':'
+        if [[ "$img" == *:* ]]; then
+            tag="${img##*:}"
+        else
+            # No tag → implicit :latest
+            tag="latest"
+        fi
+        if [[ "$tag" =~ ^(latest|main|stable|edge|nightly|dev|master)$ ]]; then
+            flagged+=("$img")
+        fi
+    done < <(echo "$rendered" | grep -E '^\s+image:')
+
+    if [[ "${#flagged[@]}" -gt 0 ]]; then
+        _cfgval_record fail no_unstable_tags "$label" \
+            "Unstable/mutating tags: ${flagged[*]}" \
+            "Pin all images to immutable tags in versions.env"
+        return 1
+    fi
+    _cfgval_record ok no_unstable_tags "$label" "No mutating image tags found"
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# RENDER FUNCTIONS
+# ---------------------------------------------------------------------------
+
+# _cfgval_render_human total failed skipped
+_cfgval_render_human() {
+    local total="$1" failed="$2" skipped="$3"
+    local rec status id label detail hint
+    for rec in "${_CFGVAL_RESULTS[@]+"${_CFGVAL_RESULTS[@]}"}"; do
+        IFS=$'\x1f' read -r status id label detail hint <<< "$rec"
+        case "$status" in
+            ok)
+                echo -e "  ${GREEN}[OK]${NC}   ${label}"
+                ;;
+            fail)
+                echo -e "  ${RED}[FAIL]${NC} ${label} — ${detail}"
+                [[ -n "$hint" ]] && echo -e "         ${CYAN}-> ${hint}${NC}"
+                ;;
+            skip)
+                echo -e "  ${CYAN}[SKIP]${NC} ${label} — ${detail}"
+                ;;
+        esac
+    done
+    echo ""
+    if [[ "$failed" -gt 0 ]]; then
+        echo -e "  ${RED}${total} checks — ${failed} failed, ${skipped} skipped${NC}"
+    else
+        echo -e "  ${GREEN}${total} checks passed (${skipped} skipped)${NC}"
+    fi
+}
+
+# _cfgval_render_json total failed skipped exit_code
+_cfgval_render_json() {
+    local total="$1" failed="$2" skipped="$3" exit_code="$4"
+    local rec status id label detail hint
+    local checks_json="" first=1
+    for rec in "${_CFGVAL_RESULTS[@]+"${_CFGVAL_RESULTS[@]}"}"; do
+        IFS=$'\x1f' read -r status id label detail hint <<< "$rec"
+        local item
+        item="$(python3 -c "
+import json, sys
+obj = {
+    'id':     sys.argv[1],
+    'label':  sys.argv[2],
+    'status': sys.argv[3],
+    'detail': sys.argv[4],
+}
+print(json.dumps(obj))
+" "$id" "$label" "$status" "$detail" 2>/dev/null)" || \
+            item="{\"id\":\"${id}\",\"label\":\"${label}\",\"status\":\"${status}\",\"detail\":\"\"}"
+        if [[ "$first" -eq 1 ]]; then
+            checks_json="$item"
+            first=0
+        else
+            checks_json="${checks_json},${item}"
+        fi
+    done
+    printf '{"checks":[%s],"summary":{"total":%d,"failed":%d,"skipped":%d},"exit":%d}\n' \
+        "$checks_json" "$total" "$failed" "$skipped" "$exit_code"
+}
+
+# ---------------------------------------------------------------------------
+# PUBLIC ENTRY POINT
+# ---------------------------------------------------------------------------
+
+# config_validate [--json]
+# Exit: 0=all checks pass, 1=>=1 check failed, 2=cannot run (not installed / no .env)
+config_validate() {
+    local json_mode=false
+    [[ "${1:-}" == "--json" ]] && json_mode=true
+    _CFGVAL_RESULTS=()
+
+    # Exit-2 pre-checks: is AGmind installed?
+    if [[ ! -d "${INSTALL_DIR}/docker" ]]; then
+        if "$json_mode"; then
+            printf '{"checks":[],"summary":{"total":0,"failed":0,"skipped":0},"exit":2}\n'
+        else
+            log_error "AGmind not installed — no ${INSTALL_DIR}/docker"
+        fi
+        return 2
+    fi
+    if [[ ! -f "${INSTALL_DIR}/docker/.env" ]]; then
+        if "$json_mode"; then
+            printf '{"checks":[],"summary":{"total":0,"failed":0,"skipped":0},"exit":2}\n'
+        else
+            log_error ".env missing in ${INSTALL_DIR}/docker — run install.sh first"
+        fi
+        return 2
+    fi
+
+    local failed=0 skipped=0 total=0 rc id label fn rec
+    for rec in "${CONFIG_VALIDATE_CHECKS[@]}"; do
+        IFS=$'\x1f' read -r id label fn <<< "$rec"
+        total=$((total+1))
+        rc=0
+        "$fn" || rc=$?
+        case $rc in
+            1)  failed=$((failed+1)) ;;
+            77) skipped=$((skipped+1)) ;;
+        esac
+    done
+
+    local exit_code=0
+    [[ $failed -gt 0 ]] && exit_code=1
+
+    if "$json_mode"; then
+        _cfgval_render_json "$total" "$failed" "$skipped" "$exit_code"
+    else
+        _cfgval_render_human "$total" "$failed" "$skipped"
+    fi
+
+    return $exit_code
+}
+
+# ============================================================================
 # STANDALONE
 # ============================================================================
 
