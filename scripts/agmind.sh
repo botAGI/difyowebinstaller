@@ -102,6 +102,66 @@ cmd_doctor() {
 }
 
 # ============================================================================
+# TROUBLESHOOT
+# ============================================================================
+# Prints a section of docs/troubleshooting.md to stdout (no pager).
+# Usage: agmind troubleshoot [topic]
+# No arg  → list all topics and exit 0
+# Known topic → print section and exit 0
+# Unknown topic → print error to stderr and exit 1
+
+cmd_troubleshoot() {
+    local topic="${1:-}"
+    local ts_file="${AGMIND_DIR}/docs/troubleshooting.md"
+
+    if [[ -z "$topic" ]]; then
+        echo "Доступные темы (agmind troubleshoot <тема>):"
+        echo ""
+        echo "  vllm         — vLLM: модель не загружается, timeout при первом запросе"
+        echo "  gpu / cuda   — CUDA не виден в контейнере (torch.cuda.is_available()=False)"
+        echo "  ragflow / es — RAGFlow: Elasticsearch не поднимается (max_map_count)"
+        echo "  dify / worker — Dify worker завис, задачи не выполняются (force-recreate trap)"
+        echo "  ports        — Конфликт портов (особенно UDP/5353 mDNS)"
+        echo "  mdns / dns   — DNS/mDNS не работает, agmind-*.local не резолвится"
+        echo "  model / download — Модель не скачивается, большой файл обрывается"
+        echo "  restore      — Восстановление не работает"
+        echo "  update       — Обновление не работает"
+        echo "  memory / oom — Мало памяти / OOM (unified memory budget)"
+        return 0
+    fi
+
+    # Map topic alias → section number N
+    local N
+    case "${topic,,}" in
+        vllm)               N=1 ;;
+        gpu|cuda)           N=2 ;;
+        ragflow|es)         N=3 ;;
+        dify|worker)        N=4 ;;
+        ports)              N=5 ;;
+        mdns|dns)           N=6 ;;
+        model|download)     N=7 ;;
+        restore)            N=8 ;;
+        update)             N=9 ;;
+        memory|oom)         N=10 ;;
+        *)
+            echo -e "${RED}Неизвестная тема: ${topic}${NC}" >&2
+            echo "agmind troubleshoot — список тем" >&2
+            exit 1
+            ;;
+    esac
+
+    if [[ ! -f "$ts_file" ]]; then
+        echo -e "${RED}troubleshooting.md не найден: ${ts_file}${NC}" >&2
+        echo "Переустановите AGmind или проверьте AGMIND_DIR" >&2
+        exit 1
+    fi
+
+    # Print from "### N." heading up to (but not including) next "### N." or EOF.
+    # The /^### [0-9]+\./ check fires BEFORE f{print} so next section heading is never emitted.
+    awk -v n="${N}" 'BEGIN{pat="^### "n"\\."} $0 ~ pat {f=1; next} f && /^### [0-9]+\./ {exit} f{print}' "$ts_file"
+}
+
+# ============================================================================
 # OPEN
 # ============================================================================
 
@@ -1192,6 +1252,12 @@ Commands:
   bundle install <tar>        (root) Load a bundle on an air-gapped box, then run AGMIND_AIRGAPPED=true install
   creds show [--show] [--json]   Show stack credentials (root-only; masked unless --show)
   creds rotate [args]   Rotate passwords and keys — wraps rotate_secrets.sh (root)
+  troubleshoot <тема>   Печатает раздел docs/troubleshooting.md (vllm|gpu|dify|mdns|memory|...)
+                        Без аргумента — список всех тем и exit 0
+  demo <install|ingest|ask>   Демо-RAG за ~5 минут (нужен поднятый стек)
+    install     Создать demo KB + импортировать sample RAG-workflow в Dify
+    ingest      Загрузить bundled sample-документ в demo KB
+    ask [вопрос]  Спросить у demo-приложения
   uninstall          Remove AGMind (root)
   rotate-secrets     Rotate passwords and keys (root)
   help               Show this help
@@ -1345,6 +1411,8 @@ case "${1:-help}" in
             *)       cmd_bundle "$@" ;;
         esac
         ;;
+    troubleshoot)   shift; cmd_troubleshoot "$@" ;;
+    demo)           shift; cmd_demo "$@" ;;
     help|--help|-h) cmd_help ;;
     *)              echo -e "${RED}Unknown command: ${1}${NC}" >&2; cmd_help; exit 1 ;;
 esac
