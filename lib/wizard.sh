@@ -130,10 +130,90 @@ _ask_choice() {
 # ============================================================================
 
 _wizard_profile() {
-    # AGmind v3.1+ targets DGX Spark only. Single profile = LAN.
-    # VDS/VPS path был удалён 2026-04-25 (вместе с веткой agmind-caddy).
-    DEPLOY_PROFILE="lan"
+    # Phase 9: named deployment profile selection (8 options + custom).
+    # Guard-source named-profile maps (NAMED_PROFILE_EXPANSION/DESC/IMPLIED).
+    if [[ -z "${_SERVICE_MAP_LOADED:-}" ]]; then
+        # shellcheck source=/dev/null
+        source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/service-map.sh"
+    fi
+
+    # Non-interactive (CI / --profile flag): honor a pre-set DEPLOY_PROFILE if it
+    # names a known profile; otherwise default to "rag".
+    if [[ "${NON_INTERACTIVE:-false}" == "true" ]]; then
+        case "${DEPLOY_PROFILE:-}" in
+            core|rag|ragflow|observability|security|agents|full|dev|custom) : ;;  # keep
+            *) DEPLOY_PROFILE="rag" ;;
+        esac
+    else
+        local choice
+        choice=$(wt_menu "Профиль развёртывания" \
+            "Выберите профиль развёртывания (или 'custom' для детальной настройки):" \
+            "rag"           "RAG-стек: Dify + vLLM + Weaviate + Docling [рекомендуется]" \
+            "core"          "Core: Dify + vLLM (без RAG)" \
+            "ragflow"       "RAGFlow: RAGFlow + Elasticsearch + MySQL + MinIO" \
+            "observability" "Мониторинг: Prometheus + Grafana + Loki + Portainer" \
+            "security"      "Безопасность: Authelia + fail2ban / hardening" \
+            "agents"        "Агенты: LiteLLM + Crawl4AI + SearXNG + dbGPT + Open WebUI + Notebook" \
+            "full"          "Полный стек (по одному из каждой XOR-пары; без Milvus/Ollama)" \
+            "dev"           "Dev: Core + мониторинг (быстрая итерация)" \
+            "custom"        "Custom: детальный выбор каждого компонента")
+        DEPLOY_PROFILE="${choice:-rag}"
+    fi
+    export DEPLOY_PROFILE
+
+    if [[ "$DEPLOY_PROFILE" == "custom" ]]; then
+        _SKIP_GRANULAR=false
+        return 0
+    fi
+
+    # Apply implied ENABLE_*/<X>_PROVIDER defaults for the chosen named profile.
+    # := semantics — a value already in the env (e.g. from a prior resume) wins.
+    local kv var val
+    for kv in ${NAMED_PROFILE_IMPLIED[$DEPLOY_PROFILE]:-}; do
+        var="${kv%%=*}"; val="${kv#*=}"
+        if [[ -z "${!var:-}" ]]; then printf -v "$var" '%s' "$val"; fi
+        # shellcheck disable=SC2163  # var holds the variable name to export (dynamic export)
+        export "$var"
+    done
+
+    # Vector-DB sub-question for profiles that include a vector DB.
+    case "$DEPLOY_PROFILE" in
+        rag|full|dev) _wizard_vector_db_choice ;;
+    esac
+
+    # Composable add-on questions (skip if the profile already implies them).
+    if [[ "${MONITORING_MODE:-none}" != "local" ]]; then
+        if [[ "${NON_INTERACTIVE:-false}" != "true" ]] && wt_yesno "Мониторинг" \
+            "Добавить мониторинг (Prometheus + Grafana + Portainer)?" --defaultno; then
+            MONITORING_MODE="local"; ENABLE_PORTAINER="true"
+        fi
+    fi
+    export MONITORING_MODE ENABLE_PORTAINER
+    if [[ "${ENABLE_AUTHELIA:-false}" != "true" ]]; then
+        if [[ "${NON_INTERACTIVE:-false}" != "true" ]] && wt_yesno "Безопасность" \
+            "Добавить Authelia (SSO) и hardening?" --defaultno; then
+            ENABLE_AUTHELIA="true"
+        fi
+    fi
+    export ENABLE_AUTHELIA
+
+    # Tell run_wizard to skip the granular ENABLE_* sections.
+    _SKIP_GRANULAR=true
     return 0
+}
+
+# Vector-DB choice sub-question (Weaviate recommended / Qdrant lightweight / Milvus experimental).
+_wizard_vector_db_choice() {
+    if [[ "${NON_INTERACTIVE:-false}" == "true" ]]; then
+        VECTOR_STORE="${VECTOR_STORE:-weaviate}"; export VECTOR_STORE; return 0
+    fi
+    local v
+    v=$(wt_menu "Vector DB" "Выберите векторную БД:" \
+        "weaviate" "Weaviate [рекомендуется]" \
+        "qdrant"   "Qdrant (легковесная)" \
+        "milvus"   "Milvus (экспериментально — не для production)")
+    VECTOR_STORE="${v:-weaviate}"
+    export VECTOR_STORE
 }
 
 _wizard_security_defaults() {
@@ -1716,27 +1796,43 @@ run_wizard() {
 
     _init_wizard_defaults
 
+    # _SKIP_GRANULAR is set to true by _wizard_profile when a named profile is chosen.
+    # When true, the granular component-toggle questions below are skipped because the
+    # named profile already set the implied ENABLE_*/<X>_PROVIDER defaults.
+    local _SKIP_GRANULAR=false
+
     _wizard_cluster_mode
-    _wizard_profile
+    _wizard_profile      # sets DEPLOY_PROFILE + implied vars + _SKIP_GRANULAR (true for named profiles)
     _wizard_security_defaults
     _wizard_domain
-    _wizard_llm_provider
+
+    # ── Granular component-toggle questions (skipped when a named profile was chosen) ──
+    # Skipped sections: _wizard_llm_provider, _wizard_embed_provider, _wizard_reranker_model,
+    # _wizard_vector_store, _wizard_etl, _wizard_storage, _wizard_openwebui, _wizard_monitoring,
+    # _wizard_alerts, _wizard_optional_services.
+    # Always run: _wizard_llm_model, _wizard_embedding_model, _wizard_hf_token, _wizard_tls,
+    # _wizard_security, _wizard_tunnel, _wizard_backups, _wizard_dify_premium,
+    # _wizard_summary, _wizard_confirm (deploy-required inputs, not component toggles).
+    if [[ "${_SKIP_GRANULAR:-false}" != "true" ]]; then
+        _wizard_llm_provider
+        _wizard_embed_provider
+        _wizard_reranker_model
+        _wizard_vector_store
+        _wizard_etl
+        _wizard_storage
+        _wizard_openwebui
+        _wizard_monitoring
+        _wizard_alerts
+        _wizard_optional_services
+    fi
+
     _wizard_llm_model
-    _wizard_embed_provider
     _wizard_embedding_model
-    _wizard_reranker_model
-    _wizard_vector_store
-    _wizard_etl
-    _wizard_storage
-    _wizard_openwebui
     _wizard_hf_token
     _wizard_tls
-    _wizard_monitoring
-    _wizard_alerts
     _wizard_security
     _wizard_tunnel
     _wizard_backups
-    _wizard_optional_services
     _wizard_dify_premium
     _wizard_summary
     _wizard_confirm
@@ -1753,6 +1849,7 @@ run_wizard() {
     export ALERT_MODE ALERT_WEBHOOK_URL ALERT_TELEGRAM_TOKEN ALERT_TELEGRAM_CHAT_ID
     export ALERT_EMAIL_TO ALERT_EMAIL_FROM ALERT_EMAIL_SMARTHOST ALERT_EMAIL_AUTH_USER ALERT_EMAIL_AUTH_PASS
     export ENABLE_UFW ENABLE_FAIL2BAN ENABLE_AUTHELIA
+    export ENABLE_PORTAINER
     export BACKUP_TARGET BACKUP_SCHEDULE BACKUP_DIR
     export REMOTE_BACKUP_HOST REMOTE_BACKUP_PORT REMOTE_BACKUP_USER REMOTE_BACKUP_KEY REMOTE_BACKUP_PATH
     export ADMIN_UI_OPEN
