@@ -443,6 +443,71 @@ with open(path, 'r+b') as f:
 ) && pass "TC13 backup_writes_manifest: backup.sh contains MANIFEST.txt generation block" \
   || fail "TC13 backup_writes_manifest: MANIFEST.txt block absent from backup.sh (RED until Plan 02)"
 
+# ── TC14: wrapper_dispatch ────────────────────────────────────────────────────
+# Static assertions that scripts/restore.sh and scripts/agmind.sh are correctly wired.
+# Also a behavioral check: source lib/restore.sh with mocks + call restore_plan --dry-run.
+(
+    set +e
+    # ── Part A: scripts/restore.sh wiring ──
+    # 1. sources lib/restore.sh
+    grep -q 'source.*lib/restore.sh' "${REPO_ROOT}/scripts/restore.sh" \
+        || { echo "  restore.sh does not source lib/restore.sh" >&2; false; exit; }
+    # 2. delegates to restore_plan with --dry-run
+    grep -q 'restore_plan.*--dry-run' "${REPO_ROOT}/scripts/restore.sh" \
+        || { echo "  restore.sh does not call restore_plan --dry-run" >&2; false; exit; }
+    # 3. delegates to restore_apply
+    grep -q 'restore_apply' "${REPO_ROOT}/scripts/restore.sh" \
+        || { echo "  restore.sh does not call restore_apply" >&2; false; exit; }
+    # 4. flock acquired BEFORE source (line number check)
+    _fl=$(grep -n 'flock -n 9' "${REPO_ROOT}/scripts/restore.sh" | head -1 | cut -d: -f1)
+    _sl=$(grep -n 'source.*lib/restore.sh' "${REPO_ROOT}/scripts/restore.sh" | head -1 | cut -d: -f1)
+    [[ -n "$_fl" && -n "$_sl" && "$_fl" -lt "$_sl" ]] \
+        || { echo "  flock (line ${_fl}) is NOT before source lib/restore.sh (line ${_sl})" >&2; false; exit; }
+    # 5. thin entrypoint: ≤ 90 lines
+    _lc="$(wc -l < "${REPO_ROOT}/scripts/restore.sh")"
+    [[ "$_lc" -le 90 ]] \
+        || { echo "  restore.sh has ${_lc} lines (expected ≤90 for thin entrypoint)" >&2; false; exit; }
+
+    # ── Part B: scripts/agmind.sh wiring ──
+    # 6. dispatches backup verify
+    grep -q 'backup verify' "${REPO_ROOT}/scripts/agmind.sh" \
+        || { echo "  agmind.sh does not contain 'backup verify'" >&2; false; exit; }
+    # 7. dispatches backup list via restore_list
+    grep -q 'restore_list' "${REPO_ROOT}/scripts/agmind.sh" \
+        || { echo "  agmind.sh does not call restore_list" >&2; false; exit; }
+    # 8. sources lib/restore.sh for list/verify branches
+    _sc="$(grep -c 'source.*lib/restore.sh' "${REPO_ROOT}/scripts/agmind.sh")"
+    [[ "$_sc" -ge 2 ]] \
+        || { echo "  agmind.sh sources lib/restore.sh only ${_sc} time(s) (expected ≥2)" >&2; false; exit; }
+    # 9. cmd_help mentions backup <sub> and --dry-run
+    grep -q 'backup <sub>' "${REPO_ROOT}/scripts/agmind.sh" \
+        || { echo "  cmd_help missing 'backup <sub>'" >&2; false; exit; }
+    grep -q '\-\-dry-run' "${REPO_ROOT}/scripts/agmind.sh" \
+        || { echo "  cmd_help missing '--dry-run'" >&2; false; exit; }
+
+    # ── Part C: behavioral — lib/restore.sh restore_plan --dry-run via mocks ──
+    export PATH="${MOCK_DIR}:${PATH}"
+    export INSTALL_DIR="${TMP_ROOT}/tc14_install"
+    export BACKUP_BASE="${TMP_ROOT}/tc14_backups"
+    mkdir -p "$INSTALL_DIR" "$BACKUP_BASE"
+    fix_dir="${TMP_ROOT}/tc14_fix"
+    _mk_fixture "$fix_dir"
+    # shellcheck source=/dev/null
+    source "${REPO_ROOT}/lib/restore.sh"
+    RED=''; GREEN=''; YELLOW=''; CYAN=''; BOLD=''; NC=''
+    out="$(restore_plan "$fix_dir" --dry-run 2>&1 || true)"
+    # restore_plan exits 0 when verify passes (fixture is valid)
+    rc=0
+    restore_plan "$fix_dir" --dry-run >/dev/null 2>&1 || rc=$?
+    [[ "$rc" -eq 0 ]] \
+        || { echo "  restore_plan --dry-run on valid fixture returned rc=$rc (expected 0)" >&2; false; exit; }
+    # plan output contains the dry-run trailer
+    echo "$out" | grep -q "Изменений не внесено (dry-run)" \
+        || { echo "  restore_plan --dry-run output missing dry-run trailer" >&2; false; exit; }
+    true
+) && pass "TC14 wrapper_dispatch: scripts/restore.sh + agmind.sh correctly wired to lib/restore.sh" \
+  || fail "TC14 wrapper_dispatch: wiring check failed — see details above"
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 echo "## test_restore: ${PASS} PASS, ${FAIL} FAIL"
