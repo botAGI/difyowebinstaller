@@ -120,3 +120,63 @@ SERVICE_GROUP_ORDER="core dify llm rag ragflow observability optional"
 # All known compose profiles (for compose down --remove-orphans)
 # shellcheck disable=SC2034  # sourced global used by compose.sh _compose_down_all
 ALL_COMPOSE_PROFILES="monitoring,portainer,qdrant,weaviate,etl,authelia,ollama,vllm,tei,reranker,vllm-embed,vllm-rerank,docling,litellm,searxng,notebook,dbgpt,crawl4ai,openwebui,minio"
+
+# ============================================================================
+# NAMED META-PROFILES (Phase 9) — 8 user-facing profiles over the ~20 raw profiles
+# ============================================================================
+#
+# Each named profile = a comma-separated list of RAW compose profiles. Wizard /
+# build_compose_profiles also sets implied ENABLE_*/<X>_PROVIDER defaults per
+# named profile (those defaults live in lib/compose.sh::_np_apply_defaults so
+# they can use `: "${VAR:=val}"` — user env-override always wins).
+#
+# XOR pairs (mutually exclusive — port/GPU conflicts; a named profile picks ONE):
+#   vector DB:  weaviate XOR qdrant XOR milvus  (milvus EXPERIMENTAL — not in any named profile incl. 'full')
+#   embed:      vllm-embed XOR tei              (TEI has no arm64 manifest on DGX Spark — use vllm-embed)
+#   reranker:   vllm-rerank XOR reranker
+#   LLM:        vllm XOR ollama                 (ollama hidden per CLAUDE.md §6 — not in any named profile)
+#
+# 'ragflow' is intentionally NOT a raw profile here — it's pulled in via the
+# ENABLE_RAGFLOW=true implied default (build_compose_profiles already adds the
+# ragflow+minio raw profiles when ENABLE_RAGFLOW=true). The [ragflow] entry below
+# lists only 'minio' (RAGFlow's S3 bucket); 'ragflow' raw profile is added by the
+# ENABLE_RAGFLOW path.
+# shellcheck disable=SC2034  # sourced global used by lib/compose.sh + scripts/agmind.sh (cmd_profiles/cmd_estimate)
+declare -A NAMED_PROFILE_EXPANSION=(
+    [core]="vllm,litellm"
+    [rag]="vllm,litellm,weaviate,docling,vllm-embed"
+    [ragflow]="minio"
+    [observability]="monitoring,portainer"
+    [security]="authelia"
+    [agents]="litellm,crawl4ai,searxng,dbgpt,openwebui,notebook"
+    [full]="vllm,litellm,weaviate,docling,vllm-embed,vllm-rerank,minio,monitoring,portainer,authelia,crawl4ai,searxng,dbgpt,openwebui,notebook"
+    [dev]="vllm,litellm,weaviate,docling,monitoring,portainer"
+)
+
+# Human-readable one-line description per named profile (for `agmind profiles`).
+# shellcheck disable=SC2034  # sourced global used by scripts/agmind.sh::cmd_profiles
+declare -A NAMED_PROFILE_DESC=(
+    [core]="Dify core + vLLM + LiteLLM (minimal — no RAG)"
+    [rag]="Core + Weaviate + Docling + vLLM-embed (recommended full RAG stack)"
+    [ragflow]="RAGFlow + Elasticsearch + MySQL + MinIO"
+    [observability]="Prometheus + Grafana + Loki + exporters + Portainer"
+    [security]="Authelia + fail2ban/hardening"
+    [agents]="LiteLLM + Crawl4AI + SearXNG + dbGPT + Open WebUI + Notebook"
+    [full]="Everything (one of each XOR pair; excludes Milvus + Ollama)"
+    [dev]="Core + observability (fast iteration; no RAGFlow/agents/security)"
+)
+
+# Implied ENABLE_*/<X>_PROVIDER defaults per named profile, as a space-separated
+# VAR=val list. build_compose_profiles applies these with :=
+# (env-override wins). Keep in sync with NAMED_PROFILE_EXPANSION above.
+# shellcheck disable=SC2034  # sourced global used by lib/compose.sh::_np_apply_defaults + lib/wizard.sh
+declare -A NAMED_PROFILE_IMPLIED=(
+    [core]="LLM_PROVIDER=vllm ENABLE_LITELLM=true"
+    [rag]="LLM_PROVIDER=vllm ENABLE_LITELLM=true VECTOR_STORE=weaviate ENABLE_DOCLING=true EMBED_PROVIDER=vllm-embed"
+    [ragflow]="ENABLE_RAGFLOW=true ENABLE_MINIO=true"
+    [observability]="MONITORING_MODE=local ENABLE_PORTAINER=true"
+    [security]="ENABLE_AUTHELIA=true"
+    [agents]="ENABLE_LITELLM=true ENABLE_CRAWL4AI=true ENABLE_SEARXNG=true ENABLE_DBGPT=true ENABLE_OPENWEBUI=true ENABLE_NOTEBOOK=true"
+    [full]="LLM_PROVIDER=vllm ENABLE_LITELLM=true VECTOR_STORE=weaviate ENABLE_DOCLING=true EMBED_PROVIDER=vllm-embed ENABLE_RERANKER=true RERANKER_PROVIDER=vllm-rerank ENABLE_MINIO=true MONITORING_MODE=local ENABLE_PORTAINER=true ENABLE_AUTHELIA=true ENABLE_CRAWL4AI=true ENABLE_SEARXNG=true ENABLE_DBGPT=true ENABLE_OPENWEBUI=true ENABLE_NOTEBOOK=true"
+    [dev]="LLM_PROVIDER=vllm ENABLE_LITELLM=true VECTOR_STORE=weaviate ENABLE_DOCLING=true MONITORING_MODE=local ENABLE_PORTAINER=true"
+)
