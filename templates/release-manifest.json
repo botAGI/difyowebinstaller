@@ -7,7 +7,7 @@
     "dify-api": {
       "registry": "docker.io",
       "image": "langgenius/dify-api",
-      "tag": "1.13.3",
+      "tag": "1.14.1",
       "digest": "",
       "platforms": [
         "linux/amd64",
@@ -17,7 +17,7 @@
     "dify-web": {
       "registry": "docker.io",
       "image": "langgenius/dify-web",
-      "tag": "1.13.3",
+      "tag": "1.14.1",
       "digest": "",
       "platforms": [
         "linux/amd64",
@@ -87,7 +87,7 @@
     "dify-sandbox": {
       "registry": "docker.io",
       "image": "langgenius/dify-sandbox",
-      "tag": "0.2.14",
+      "tag": "0.2.15",
       "digest": "",
       "platforms": [
         "linux/amd64"
@@ -126,7 +126,7 @@
     "dify-plugin-daemon": {
       "registry": "docker.io",
       "image": "langgenius/dify-plugin-daemon",
-      "tag": "0.5.3-local",
+      "tag": "0.6.0-local",
       "digest": "",
       "platforms": [
         "linux/amd64",
