@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Mock uname — passthrough to real uname UNLESS MOCK_UNAME_FIXTURE is set.
+# WHY: lib/doctor.sh::doctor_check_arch_driver does `uname -m`; the dev box is
+# aarch64 (DGX Spark) so it's OK locally, but GitHub runners are x86_64 → WARN
+# "Arch: x86_64 — AGmind requires aarch64" → test_doctor.sh happy_path flake.
+# Default behaviour is real uname so tests that don't opt in are unaffected.
+# Fixtures: dgx_spark (aarch64/Linux) | amd64 (x86_64/Linux)
+REAL_UNAME=/usr/bin/uname
+[[ -x "$REAL_UNAME" ]] || REAL_UNAME=/bin/uname
+
+if [[ -z "${MOCK_UNAME_FIXTURE:-}" ]]; then
+    exec "$REAL_UNAME" "$@"
+fi
+
+case "${MOCK_UNAME_FIXTURE}" in
+    dgx_spark) m=aarch64; s=Linux ;;
+    amd64)     m=x86_64;  s=Linux ;;
+    *) echo "mock uname: unknown MOCK_UNAME_FIXTURE=${MOCK_UNAME_FIXTURE}" >&2; exit 2 ;;
+esac
+
+case "${1:-}" in
+    -m)    echo "$m" ;;
+    -s|"") echo "$s" ;;
+    -r)    echo "6.17.0-test" ;;
+    -a)    echo "$s testhost 6.17.0-test #1 SMP $m GNU/Linux" ;;
+    *)     exec "$REAL_UNAME" "$@" ;;
+esac
