@@ -1,0 +1,78 @@
+# AGmind demo workflow — installed by 'agmind demo install'.
+# Forked from dify-workflows/example-rag-qa.yaml.
+# The placeholder _REPLACE_WITH_YOUR_MODEL_ is substituted at import time
+# by _demo_install() using VLLM_MODEL from .env.
+
+app:
+  description: "AGmind demo RAG assistant. Created by 'agmind demo install'."
+  icon: "🤖"
+  icon_background: "#D5F5E3"
+  mode: "chat"
+  name: "AGmind Demo"
+
+kind: app
+version: "0.1.5"
+
+model_config:
+  model:
+    provider: "openai_api_compatible"
+    name: "_REPLACE_WITH_YOUR_MODEL_"
+    mode: "chat"
+    completion_params:
+      temperature: 0.3
+      max_tokens: 1000
+      top_p: 0.9
+  pre_prompt: |
+    Ты — демо-ассистент AGmind. Отвечаешь строго на основе контекста из базы знаний.
+
+    Правила:
+    - Если ответ не следует из контекста — скажи "Не нашёл в базе знаний".
+    - Не выдумывай факты.
+    - Отвечай на языке вопроса.
+    - После каждого утверждения, взятого из контекста, ставь источник
+      в квадратных скобках: [Источник: {название документа}].
+
+    Контекст:
+    {{#context#}}
+  prompt_type: "simple"
+
+  agent_mode:
+    enabled: false
+    tools: []
+
+  dataset_configs:
+    retrieval_model: "multiple"
+    datasets:
+      datasets: []
+    top_k: 5
+    score_threshold: 0.5
+    reranking_enable: false
+
+  file_upload:
+    image:
+      enabled: false
+
+  retriever_resource:
+    enabled: true
+
+  speech_to_text:
+    enabled: false
+
+  text_to_speech:
+    enabled: false
+
+  opening_statement: "Привет! Я демо-ассистент AGmind. Задайте вопрос по загруженным документам."
+  suggested_questions: []
+  suggested_questions_after_answer:
+    enabled: false
+
+  more_like_this:
+    enabled: false
+
+  sensitive_word_avoidance:
+    enabled: false
+    type: ""
+    configs: []
+
+  annotation_reply:
+    enabled: false

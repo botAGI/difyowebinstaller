@@ -505,7 +505,7 @@ _copy_runtime_files() {
     if [[ "$INSTALLER_DIR" != "$INSTALL_DIR" ]]; then
         cp "${INSTALLER_DIR}/scripts/"*.sh "${INSTALL_DIR}/scripts/" 2>/dev/null || true
         # Subdirectories — explicit list (directories are less common additions)
-        local script_subdirs=(loadtest)
+        local script_subdirs=(loadtest demo)
         for d in "${script_subdirs[@]}"; do
             if [[ -d "${INSTALLER_DIR}/scripts/${d}" ]]; then
                 mkdir -p "${INSTALL_DIR}/scripts/${d}"
