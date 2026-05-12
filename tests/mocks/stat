@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# stat passthrough mock — MOCK_STAT_FIXTURE=<mode bits> overrides -c %a; unset → real stat.
+# Usage: MOCK_STAT_FIXTURE=644 → echoes 644 for any -c '%a' invocation.
+# If MOCK_STAT_FIXTURE is unset or empty → exec real /usr/bin/stat with all args.
+set -euo pipefail
+
+if [[ -n "${MOCK_STAT_FIXTURE:-}" ]]; then
+    # Check if this looks like a permission query (-c '%a' or -c '%a' or -c%a)
+    for _a in "$@"; do
+        case "$_a" in
+            '%a'|'%a '|'%A') echo "${MOCK_STAT_FIXTURE}"; exit 0 ;;
+        esac
+    done
+    # Also match if args contain -c with %a format (stat -c '%a' file)
+    _args="$*"
+    if [[ "$_args" == *"%a"* ]]; then
+        echo "${MOCK_STAT_FIXTURE}"
+        exit 0
+    fi
+fi
+
+# No fixture set or no match — passthrough to real stat
+exec /usr/bin/stat "$@"

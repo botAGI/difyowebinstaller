@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# ufw log-only mock — MOCK_UFW_LOG accumulates invocations, MOCK_UFW_STATUS sets 'ufw status' output.
+# Usage:
+#   MOCK_UFW_LOG=/tmp/ufw.log     — records all invocations
+#   MOCK_UFW_STATUS=inactive      — output of 'ufw status' (default: inactive)
+# Always exits 0 (successful execution).
+set -euo pipefail
+
+echo "ufw $* " >> "${MOCK_UFW_LOG:-/dev/null}"
+
+if [[ "${1:-}" == "status" ]]; then
+    echo "${MOCK_UFW_STATUS:-inactive}"
+fi
+
+exit 0
