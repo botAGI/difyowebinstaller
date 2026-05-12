@@ -54,11 +54,12 @@ _assert "cAdvisor pinned to v0.55.1 (arm64 hold)" "v0.55.1" "$cadv"
 minio="$(_get_version MINIO_VERSION)"
 _assert "MinIO pinned to last arm64 release" "RELEASE.2025-09-07T16-13-09Z" "$minio"
 
-# Rule 3: Plugin daemon — golden stable 0.5.3-local until 0.5.7 ships.
-# §8: «0.5.4 #640 null-content; 0.5.5 #640 still; 0.5.6 #672 broken auto-migrate».
-# 0.6.0 release notes минимальные — deep-dive нужен ДО bump (memory project_dify_version_status).
+# Rule 3: Plugin daemon — pinned by upstream Dify 1.14.1 docker-compose (upstream-tested combo).
+# History: 0.5.5 fixed .difypkg query-param install (#593); 0.5.8 re-added db migration (#690,
+# resolves #672); 0.6.0 = pid-1 fix. Hold on 0.5.3-local lifted 2026-05-12 when Dify bumped to
+# 1.14.1 and pinned 0.6.0-local. Update this assert when Dify next bumps plugin_daemon.
 pd="$(_get_version PLUGIN_DAEMON_VERSION)"
-_assert "Plugin daemon pinned to 0.5.3-local (golden stable)" "0.5.3-local" "$pd"
+_assert "Plugin daemon pinned to 0.6.0-local (Dify 1.14.1 upstream combo)" "0.6.0-local" "$pd"
 
 # Rule 4: vLLM Spark image — HARD HOLD per §8.
 # DGX Spark driver 580 + sm_121 + 580 UMA leak + 595 TMA bug — НЕ обновлять
