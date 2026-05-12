@@ -175,9 +175,15 @@ _demo_health_gate() {
         echo "Проверьте: agmind status   /   agmind doctor" >&2
         exit 1
     fi
-    # Check vLLM /v1/models (local or peer)
-    local vllm_url
-    vllm_url="$(_read_env VLLM_API_URL "http://localhost:8000")"
+    # Check vLLM /v1/models (local or peer via LLM_ON_PEER=true + PEER_IP)
+    local vllm_url llm_on_peer peer_ip
+    llm_on_peer="$(_read_env LLM_ON_PEER "false")"
+    peer_ip="$(_read_env PEER_IP "192.168.100.2")"
+    if [[ "$llm_on_peer" == "true" ]]; then
+        vllm_url="$(_read_env VLLM_API_URL "http://${peer_ip}:8000")"
+    else
+        vllm_url="$(_read_env VLLM_API_URL "http://localhost:8000")"
+    fi
     if ! curl -sf --max-time 10 "${vllm_url}/v1/models" >/dev/null 2>&1; then
         echo -e "${RED}vLLM недоступен (${vllm_url}/v1/models).${NC}" >&2
         echo "Если кластер: убедитесь что peer поднят (agmind status)" >&2
@@ -190,25 +196,45 @@ _demo_state_file() {
     echo "${INSTALL_DIR}/.demo-state"
 }
 
-_demo_get_token() {
-    local token="${DIFY_CONSOLE_TOKEN:-}"
-    if [[ -z "$token" ]]; then
-        local email pass encoded
-        email="${DIFY_ADMIN_EMAIL:-admin@agmind.ai}"
-        encoded="$(_read_env INIT_PASSWORD "")"
-        if [[ -n "$encoded" ]]; then
-            pass="$(echo "$encoded" | base64 -d 2>/dev/null || echo "$encoded")"
-        fi
-        if [[ -n "${pass:-}" ]]; then
-            local login_resp
-            login_resp="$(curl -s --max-time 30 -X POST "http://localhost/console/api/login" \
-                -H 'Content-Type: application/json' \
-                -d "{\"email\":\"${email}\",\"password\":\"${pass}\",\"language\":\"en-US\",\"remember_me\":true}")"
-            token="$(echo "$login_resp" | python3 -c \
-                'import sys,json;print((json.load(sys.stdin).get("data") or {}).get("access_token",""))' 2>/dev/null || echo "")"
-        fi
+# _demo_login <cookie_jar_path>
+# Logs into Dify Console API and saves cookies to <cookie_jar_path>.
+# Dify >=1.13 returns auth as Set-Cookie (access_token + csrf_token), not JSON body.
+# Returns 0 on success, 1 on failure.
+_demo_login() {
+    local cookie_jar="$1"
+    local email pass
+    email="${DIFY_ADMIN_EMAIL:-admin@agmind.ai}"
+    # INIT_PASSWORD stored verbatim in .env (do NOT base64-decode).
+    pass="$(_read_env INIT_PASSWORD "")"
+    [[ -z "$pass" ]] && return 1
+    local result
+    result="$(curl -s --max-time 30 -X POST "http://localhost/console/api/login" \
+        -H 'Content-Type: application/json' \
+        -c "$cookie_jar" \
+        -d "{\"email\":\"${email}\",\"password\":\"${pass}\",\"language\":\"en-US\",\"remember_me\":true}" \
+        | python3 -c 'import sys,json;print(json.load(sys.stdin).get("result","fail"))' 2>/dev/null)"
+    [[ "$result" == "success" ]]
+}
+
+# _demo_curl_console <cookie_jar> <method> <path> [curl_args...]
+# Makes an authenticated Console API call using cookie-jar auth + CSRF header for POST/PUT/DELETE.
+_demo_curl_console() {
+    local cookie_jar="$1" method="$2" path="$3"; shift 3
+    local csrf_token
+    csrf_token="$(grep 'csrf_token' "$cookie_jar" 2>/dev/null | awk '{print $NF}' | head -1 | tr -d '[:space:]')"
+    local csrf_header=()
+    # Dify requires X-CSRF-Token on ALL methods (including GET) for cookie-based auth
+    if [[ -n "$csrf_token" ]]; then
+        csrf_header=(-H "X-CSRF-Token: ${csrf_token}")
     fi
-    echo "$token"
+    curl -s -b "$cookie_jar" -c "$cookie_jar" "${csrf_header[@]}" \
+        --max-time 60 -X "$method" "http://localhost${path}" "$@"
+}
+
+# Legacy helper: obtain a single access_token JWT string (used by _demo_ask for service API key fetch).
+_demo_get_token() {
+    local cookie_jar="$1"
+    grep 'access_token' "$cookie_jar" 2>/dev/null | awk '{print $NF}' | head -1 | tr -d '[:space:]'
 }
 
 _demo_install() {
@@ -226,24 +252,34 @@ _demo_install() {
         exit 1
     fi
 
-    # Substitute model placeholder
-    local model
-    model="$(_read_env VLLM_MODEL "gemma-4-26B-A4B-it")"
-    local dsl_tmp
-    dsl_tmp="$(mktemp /tmp/demo-workflow-XXXXXX.yaml)"
-    sed "s/_REPLACE_WITH_YOUR_MODEL_/${model}/g" "$dsl_src" > "$dsl_tmp"
-
-    # Get Dify console token
-    local token
-    token="$(_demo_get_token)"
-    if [[ -z "$token" ]]; then
-        echo -e "${RED}Не удалось получить Dify console token.${NC}" >&2
-        echo "Запустите вручную:" >&2
-        echo "  DIFY_CONSOLE_TOKEN=<jwt> agmind demo install" >&2
-        echo "Или: Dify Studio → + Create App → Import DSL" >&2
-        rm -f "$dsl_tmp"
+    # Login to Dify Console API (cookie-based auth — Dify >=1.13)
+    local cookie_jar
+    cookie_jar="$(mktemp /tmp/demo-cookies-XXXXXX.txt)"
+    if ! _demo_login "$cookie_jar"; then
+        echo -e "${RED}Не удалось войти в Dify Console API.${NC}" >&2
+        echo "Запустите вручную: Dify Studio → + Create App → Import DSL" >&2
+        rm -f "$cookie_jar"
         exit 1
     fi
+
+    # Resolve model name: query active LLM from Dify (more reliable than VLLM_MODEL in .env)
+    local model
+    model="$(_demo_curl_console "$cookie_jar" GET \
+        "/console/api/workspaces/current/models/model-types/llm" \
+        | python3 -c "
+import sys,json
+for p in (json.load(sys.stdin).get('data') or []):
+    for m in (p.get('models') or []):
+        if m.get('status') == 'active':
+            print(m.get('model','')); exit()
+" 2>/dev/null || echo "")"
+    [[ -z "$model" ]] && model="$(_read_env VLLM_MODEL "gemma-4-26B-A4B-it")"
+    [[ "$verbose" == "true" ]] && echo "  Используем модель: ${model}"
+
+    # Substitute model placeholder in DSL
+    local dsl_tmp
+    dsl_tmp="$(mktemp /tmp/demo-workflow-XXXXXX.yaml)"
+    sed "s|_REPLACE_WITH_YOUR_MODEL_|${model}|g" "$dsl_src" > "$dsl_tmp"
 
     [[ "$verbose" == "true" ]] && echo "POST /console/api/apps/imports ..."
 
@@ -251,8 +287,7 @@ _demo_install() {
     local yaml_content app_id import_resp
     yaml_content="$(cat "$dsl_tmp")"
     rm -f "$dsl_tmp"
-    import_resp="$(curl -s --max-time 60 -X POST "http://localhost/console/api/apps/imports" \
-        -H "Authorization: Bearer ${token}" \
+    import_resp="$(_demo_curl_console "$cookie_jar" POST /console/api/apps/imports \
         -H 'Content-Type: application/json' \
         -d "$(python3 -c "import json,sys; print(json.dumps({'mode':'yaml-content','yaml_content':sys.stdin.read(),'name':'AGmind Demo'}))" <<<"$yaml_content")")"
     app_id="$(echo "$import_resp" | python3 -c \
@@ -262,6 +297,7 @@ _demo_install() {
         echo -e "${RED}Импорт workflow не удался.${NC}" >&2
         [[ "$verbose" == "true" ]] && echo "$import_resp" | python3 -m json.tool 2>&1 | head -20 >&2
         echo "Подсказка: Настройте LLM в Dify: Settings → Model Provider → openai_api_compatible → http://vllm:8000/v1" >&2
+        rm -f "$cookie_jar"
         exit 1
     fi
     echo "Workflow импортирован — app_id=${app_id}"
@@ -269,25 +305,44 @@ _demo_install() {
     # Create demo Knowledge Base
     [[ "$verbose" == "true" ]] && echo "POST /console/api/datasets ..."
     local kb_resp dataset_id
-    kb_resp="$(curl -s --max-time 30 -X POST "http://localhost/console/api/datasets" \
-        -H "Authorization: Bearer ${token}" \
+    kb_resp="$(_demo_curl_console "$cookie_jar" POST /console/api/datasets \
         -H 'Content-Type: application/json' \
         -d '{"name":"AGmind Demo KB","description":"Demo knowledge base created by agmind demo install","indexing_technique":"high_quality","permission":"all_team_members"}')"
     dataset_id="$(echo "$kb_resp" | python3 -c \
         'import sys,json;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")"
 
     if [[ -z "$dataset_id" ]]; then
-        echo -e "${YELLOW}Предупреждение: создать KB не удалось — KB создайте вручную в Dify.${NC}" >&2
-        [[ "$verbose" == "true" ]] && echo "$kb_resp" | python3 -m json.tool 2>&1 | head -10 >&2
-        dataset_id=""
+        # Check for duplicate name — reuse existing KB
+        local kb_code
+        kb_code="$(echo "$kb_resp" | python3 -c \
+            'import sys,json;print(json.load(sys.stdin).get("code",""))' 2>/dev/null || echo "")"
+        if [[ "$kb_code" == "dataset_name_duplicate" ]]; then
+            dataset_id="$(_demo_curl_console "$cookie_jar" GET \
+                "/console/api/datasets?page=1&limit=50" \
+                | python3 -c "
+import sys,json
+for d in json.load(sys.stdin).get('data',[]):
+    if d.get('name')=='AGmind Demo KB':
+        print(d.get('id','')); exit()
+" 2>/dev/null || echo "")"
+            [[ -n "$dataset_id" ]] && echo "KB уже существует — dataset_id=${dataset_id}" \
+                || echo -e "${YELLOW}Предупреждение: KB не найдена, создайте вручную в Dify.${NC}" >&2
+        else
+            echo -e "${YELLOW}Предупреждение: создать KB не удалось — KB создайте вручную в Dify.${NC}" >&2
+            [[ "$verbose" == "true" ]] && echo "$kb_resp" | python3 -m json.tool 2>&1 | head -10 >&2
+        fi
     else
         echo "KB создана — dataset_id=${dataset_id}"
     fi
 
-    # Save state
+    # Save state (cookie jar path for reuse by ingest/ask)
     local state_file
     state_file="$(_demo_state_file)"
-    printf 'app_id=%s\ndataset_id=%s\ntoken=%s\n' "$app_id" "$dataset_id" "$token" > "$state_file"
+    local saved_jar="${INSTALL_DIR}/.demo-cookies.txt"
+    cp "$cookie_jar" "$saved_jar" 2>/dev/null || true
+    chmod 600 "$saved_jar" 2>/dev/null || true
+    rm -f "$cookie_jar"
+    printf 'app_id=%s\ndataset_id=%s\ncookie_jar=%s\n' "$app_id" "$dataset_id" "$saved_jar" > "$state_file"
     chmod 600 "$state_file" 2>/dev/null || true
     echo "Состояние сохранено в ${state_file}"
     echo ""
@@ -312,49 +367,105 @@ _demo_ingest() {
     fi
 
     # Read state
-    local state_file dataset_id token
+    local state_file dataset_id cookie_jar
     state_file="$(_demo_state_file)"
     if [[ ! -f "$state_file" ]]; then
         echo -e "${RED}Demo не установлен — сначала: agmind demo install${NC}" >&2
         exit 1
     fi
     dataset_id="$(grep '^dataset_id=' "$state_file" | cut -d'=' -f2-)"
-    token="$(grep '^token=' "$state_file" | cut -d'=' -f2-)"
+    cookie_jar="$(grep '^cookie_jar=' "$state_file" | cut -d'=' -f2-)"
 
     if [[ -z "$dataset_id" ]]; then
         echo -e "${RED}dataset_id не найден в состоянии demo — повторите agmind demo install${NC}" >&2
         exit 1
     fi
 
-    [[ "$verbose" == "true" ]] && echo "POST /console/api/datasets/${dataset_id}/document/create-by-file ..."
+    # Re-login if cookie jar missing or expired
+    if [[ ! -f "${cookie_jar:-}" ]]; then
+        cookie_jar="${INSTALL_DIR}/.demo-cookies.txt"
+        _demo_login "$cookie_jar" || { echo -e "${RED}Re-login failed${NC}" >&2; exit 1; }
+    fi
 
-    # Upload document
-    local upload_resp doc_id
-    upload_resp="$(curl -s --max-time 120 -X POST \
-        "http://localhost/console/api/datasets/${dataset_id}/document/create-by-file" \
-        -H "Authorization: Bearer ${token}" \
+    # Step 1: Upload file to /files/upload (Dify 1.13+ 2-step document ingest)
+    [[ "$verbose" == "true" ]] && echo "POST /console/api/files/upload ..."
+    local file_resp file_id
+    file_resp="$(_demo_curl_console "$cookie_jar" POST /console/api/files/upload \
         -F "file=@${doc_path}" \
-        -F 'data={"indexing_technique":"high_quality","process_rule":{"mode":"automatic"}}')"
+        -F "source=datasets")"
+    file_id="$(echo "$file_resp" | python3 -c \
+        'import sys,json;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")"
+    if [[ -z "$file_id" ]]; then
+        echo -e "${RED}Загрузка файла не удалась.${NC}" >&2
+        [[ "$verbose" == "true" ]] && echo "$file_resp" | python3 -m json.tool 2>&1 | head -10 >&2
+        exit 1
+    fi
+    [[ "$verbose" == "true" ]] && echo "  file_id=${file_id}"
+
+    # Step 2: Create document from uploaded file
+    [[ "$verbose" == "true" ]] && echo "POST /console/api/datasets/${dataset_id}/documents ..."
+    local upload_resp doc_id
+    upload_resp="$(_demo_curl_console "$cookie_jar" POST \
+        "/console/api/datasets/${dataset_id}/documents" \
+        -H 'Content-Type: application/json' \
+        -d "$(python3 -c "
+import json, sys
+# Use 'custom' mode so Dify uses built-in MarkdownExtractor (not Unstructured API)
+# which is needed for markdown files when ETL_TYPE=Unstructured is configured
+print(json.dumps({
+    'indexing_technique': 'high_quality',
+    'process_rule': {
+        'mode': 'custom',
+        'rules': {
+            'pre_processing_rules': [
+                {'id': 'remove_extra_spaces', 'enabled': True},
+                {'id': 'remove_urls_emails', 'enabled': False}
+            ],
+            'segmentation': {
+                'separator': '\n\n',
+                'max_tokens': 500,
+                'chunk_overlap': 50
+            }
+        }
+    },
+    'data_source': {
+        'info_list': {
+            'data_source_type': 'upload_file',
+            'file_info_list': {'file_ids': ['${file_id}']}
+        }
+    }
+}))
+")")"
     doc_id="$(echo "$upload_resp" | python3 -c \
-        'import sys,json;d=json.load(sys.stdin);print((d.get("document") or {}).get("id",""))' 2>/dev/null || echo "")"
+        'import sys,json;d=json.load(sys.stdin);docs=d.get("documents",[]);print(docs[0].get("id","") if docs else "")' 2>/dev/null || echo "")"
 
     if [[ -z "$doc_id" ]]; then
-        echo -e "${RED}Загрузка документа не удалась.${NC}" >&2
+        echo -e "${RED}Создание документа не удалось.${NC}" >&2
         [[ "$verbose" == "true" ]] && echo "$upload_resp" | python3 -m json.tool 2>&1 | head -20 >&2
         exit 1
     fi
     echo "Документ загружен — doc_id=${doc_id}"
+    # Save doc_id to state for reference
+    if grep -q '^doc_id=' "$state_file" 2>/dev/null; then
+        sed -i "s/^doc_id=.*/doc_id=${doc_id}/" "$state_file"
+    else
+        echo "doc_id=${doc_id}" >> "$state_file"
+    fi
 
-    # Poll indexing status (up to 120s)
-    local status_val _poll
+    # Poll indexing status for the specific document (up to 120s)
+    local status_val _poll status_resp
     for _poll in $(seq 1 24); do
-        status_resp="$(curl -s --max-time 15 \
-            "http://localhost/console/api/datasets/${dataset_id}/documents?page=1&limit=1" \
-            -H "Authorization: Bearer ${token}")"
-        status_val="$(echo "$status_resp" | python3 -c \
-            'import sys,json;docs=(json.load(sys.stdin).get("data") or []);print(docs[0].get("display_status","") if docs else "")' 2>/dev/null || echo "")"
+        status_resp="$(_demo_curl_console "$cookie_jar" GET \
+            "/console/api/datasets/${dataset_id}/documents?page=1&limit=50")"
+        status_val="$(echo "$status_resp" | python3 -c "
+import sys,json
+docs=json.load(sys.stdin).get('data') or []
+doc=[d for d in docs if d.get('id')=='${doc_id}']
+print(doc[0].get('display_status','') if doc else '')
+" 2>/dev/null || echo "")"
         [[ "$verbose" == "true" ]] && echo "  Статус индексирования: ${status_val}"
         [[ "$status_val" == "available" || "$status_val" == "completed" ]] && break
+        [[ "$status_val" == "error" ]] && break
         sleep 5
     done
 
@@ -376,31 +487,35 @@ _demo_ask() {
     _demo_health_gate
 
     # Read state
-    local state_file app_id token
+    local state_file app_id cookie_jar
     state_file="$(_demo_state_file)"
     if [[ ! -f "$state_file" ]]; then
         echo -e "${RED}Demo не установлен — сначала: agmind demo install${NC}" >&2
         exit 1
     fi
     app_id="$(grep '^app_id=' "$state_file" | cut -d'=' -f2-)"
-    token="$(grep '^token=' "$state_file" | cut -d'=' -f2-)"
+    cookie_jar="$(grep '^cookie_jar=' "$state_file" | cut -d'=' -f2-)"
+
+    # Re-login if cookie jar missing or expired
+    if [[ ! -f "${cookie_jar:-}" ]]; then
+        cookie_jar="${INSTALL_DIR}/.demo-cookies.txt"
+        _demo_login "$cookie_jar" || { echo -e "${RED}Re-login failed${NC}" >&2; exit 1; }
+    fi
 
     # Get or create Service API key for demo app
     local svc_key
     svc_key="${DIFY_SERVICE_API_KEY:-}"
     if [[ -z "$svc_key" ]]; then
         local keys_resp
-        keys_resp="$(curl -s --max-time 30 \
-            "http://localhost/console/api/apps/${app_id}/api-keys" \
-            -H "Authorization: Bearer ${token}")"
+        keys_resp="$(_demo_curl_console "$cookie_jar" GET \
+            "/console/api/apps/${app_id}/api-keys")"
         svc_key="$(echo "$keys_resp" | python3 -c \
             'import sys,json;keys=(json.load(sys.stdin).get("data") or []);print(keys[0].get("token","") if keys else "")' 2>/dev/null || echo "")"
         if [[ -z "$svc_key" ]]; then
             # Create new key
             local create_resp
-            create_resp="$(curl -s --max-time 30 -X POST \
-                "http://localhost/console/api/apps/${app_id}/api-keys" \
-                -H "Authorization: Bearer ${token}" \
+            create_resp="$(_demo_curl_console "$cookie_jar" POST \
+                "/console/api/apps/${app_id}/api-keys" \
                 -H 'Content-Type: application/json' \
                 -d '{}')"
             svc_key="$(echo "$create_resp" | python3 -c \
@@ -415,26 +530,51 @@ _demo_ask() {
         exit 1
     fi
 
-    [[ "$verbose" == "true" ]] && echo "POST /v1/chat-messages (query: ${query}) ..."
+    [[ "$verbose" == "true" ]] && echo "POST /v1/chat-messages streaming (query: ${query}) ..."
 
-    local resp answer
-    resp="$(curl -s --max-time 120 -X POST "http://localhost/v1/chat-messages" \
+    # Use streaming mode: blocking returns empty answer when model uses reasoning (Qwen3/thinking models)
+    # Accumulate SSE chunks, strip <think>...</think> blocks, concatenate answer tokens
+    local answer
+    answer="$(curl -s --max-time 120 -X POST "http://localhost/v1/chat-messages" \
         -H "Authorization: Bearer ${svc_key}" \
         -H 'Content-Type: application/json' \
         -d "$(python3 -c "import json,sys; print(json.dumps({
             'query': sys.stdin.read(),
             'inputs': {},
-            'response_mode': 'blocking',
+            'response_mode': 'streaming',
             'conversation_id': '',
             'user': 'demo'
-        }))" <<<"$query")")"
+        }))" <<<"$query")" \
+        | python3 -c "
+import sys, json, re
 
-    answer="$(echo "$resp" | python3 -c \
-        'import sys,json;d=json.load(sys.stdin);print(d.get("answer",""))' 2>/dev/null || echo "")"
+full = ''
+retriever_resources = []
+for line in sys.stdin:
+    line = line.strip()
+    if not line.startswith('data: '):
+        continue
+    try:
+        d = json.loads(line[6:])
+    except Exception:
+        continue
+    event = d.get('event','')
+    if event == 'message':
+        full += d.get('answer','') or ''
+    elif event == 'message_end':
+        rr = (d.get('metadata') or {}).get('retriever_resources') or []
+        for r in rr:
+            name = r.get('document_name','?')
+            score = round(r.get('score',0),2)
+            sys.stderr.write(f'  • {name} (score: {score})\n')
+
+# Strip <think>...</think> block (Qwen3 thinking leak when --reasoning-parser not set)
+full = re.sub(r'<think>.*?</think>', '', full, flags=re.DOTALL).strip()
+print(full)
+" 2>/tmp/demo-sources.txt)"
 
     if [[ -z "$answer" ]]; then
         echo -e "${RED}Пустой ответ.${NC}" >&2
-        [[ "$verbose" == "true" ]] && echo "$resp" | python3 -m json.tool 2>&1 | head -20 >&2
         echo "Если vLLM ещё загружает модель — подождите и повторите." >&2
         echo "Проверьте: agmind logs vllm" >&2
         exit 1
@@ -442,11 +582,10 @@ _demo_ask() {
 
     echo "$answer"
 
-    # Print sources if available
+    # Print sources captured from stream metadata
     local sources
-    sources="$(echo "$resp" | python3 -c \
-        'import sys,json;rr=json.load(sys.stdin).get("retriever_resources",[]);
-[print("  •",r.get("document_name","?"),"(score:",round(r.get("score",0),2),")") for r in rr]' 2>/dev/null || true)"
+    sources="$(cat /tmp/demo-sources.txt 2>/dev/null)"
+    rm -f /tmp/demo-sources.txt
     if [[ -n "$sources" ]]; then
         echo ""
         echo "Источники:"
