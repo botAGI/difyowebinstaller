@@ -522,6 +522,12 @@ _copy_runtime_files() {
     cp "${INSTALLER_DIR}/lib/bundle.sh"    "${INSTALL_DIR}/scripts/bundle.sh"    2>/dev/null || true
     cp "${INSTALLER_DIR}/lib/service-map.sh" "${INSTALL_DIR}/scripts/service-map.sh" 2>/dev/null || true
     cp "${INSTALLER_DIR}/lib/estimate.sh"  "${INSTALL_DIR}/scripts/estimate.sh"  2>/dev/null || true
+    cp "${INSTALLER_DIR}/lib/doctor.sh"    "${INSTALL_DIR}/scripts/doctor.sh"    2>/dev/null || true
+    cp "${INSTALLER_DIR}/lib/status.sh"    "${INSTALL_DIR}/scripts/status.sh"    2>/dev/null || true
+    cp "${INSTALLER_DIR}/lib/config.sh"    "${INSTALL_DIR}/scripts/config.sh"    2>/dev/null || true
+    # restore.sh → restore-lib.sh: scripts/restore.sh is the thin exec entrypoint (glob-copied
+    # above); agmind.sh sources this lib for restore_verify/restore_list/_resolve_backup_dir.
+    cp "${INSTALLER_DIR}/lib/restore.sh"   "${INSTALL_DIR}/scripts/restore-lib.sh" 2>/dev/null || true
     chmod +x "${INSTALL_DIR}/scripts/"*.sh 2>/dev/null || true
 }
 
