@@ -7,6 +7,12 @@
 set -euo pipefail
 export LC_ALL=C  # Ensure consistent regex behavior across locales (BUG-V3-041)
 
+# Early --dry-run detection: must happen BEFORE flock (/var/lock needs root)
+# and BEFORE the unconditional root check. Scan $@ for the flag.
+DRY_RUN=false
+for _arg in "$@"; do [[ "$_arg" == "--dry-run" ]] && { DRY_RUN=true; break; }; done
+unset _arg
+
 INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
 COMPOSE_FILE="${INSTALL_DIR}/docker/docker-compose.yml"
 VERSIONS_FILE="${INSTALL_DIR}/versions.env"
@@ -40,23 +46,31 @@ source "${_UPDATE_SCRIPT_DIR}/../lib/service-map.sh"
 source "${_UPDATE_SCRIPT_DIR}/../lib/compose.sh" 2>/dev/null || true
 
 # Exclusive lock — prevent parallel operations
-LOCK_FILE="/var/lock/agmind-operation.lock"
-exec 9>"$LOCK_FILE"
-if ! flock -n 9; then
-    log_error "Another AGMind operation is running. Wait for it to finish."
-    exit 1
+# Skip lock in dry-run: /var/lock requires root; dry-run mutates nothing.
+if [[ "$DRY_RUN" != "true" ]]; then
+    LOCK_FILE="/var/lock/agmind-operation.lock"
+    exec 9>"$LOCK_FILE"
+    if ! flock -n 9; then
+        log_error "Another AGMind operation is running. Wait for it to finish."
+        exit 1
+    fi
 fi
 
-if [[ $EUID -ne 0 ]]; then
-    log_error "This script must be run as root"
-    exit 1
+# Root check — bypassed for --dry-run (read-only operation, D-06)
+if [[ "$DRY_RUN" != "true" ]]; then
+    if [[ $EUID -ne 0 ]]; then
+        log_error "This script must be run as root"
+        exit 1
+    fi
 fi
 
-# Fix log file permissions
-mkdir -p "$(dirname "$LOG_FILE")"
-chmod 700 "$(dirname "$LOG_FILE")"
-touch "$LOG_FILE"
-chmod 600 "$LOG_FILE"
+# Fix log file permissions — skip in dry-run (nothing is logged, log dir must not be created)
+if [[ "$DRY_RUN" != "true" ]]; then
+    mkdir -p "$(dirname "$LOG_FILE")"
+    chmod 700 "$(dirname "$LOG_FILE")"
+    touch "$LOG_FILE"
+    chmod 600 "$LOG_FILE"
+fi
 
 # Cleanup on failure
 cleanup_on_failure() {
@@ -96,6 +110,7 @@ while [[ $# -gt 0 ]]; do
             fi
             ;;
         --force)        FORCE=true; shift ;;
+        --dry-run)      DRY_RUN=true; shift ;;
         --main)         UPDATE_BRANCH="main"; shift ;;        # back-compat (default since 2026-04)
         --release)      UPDATE_BRANCH="release"; shift ;;     # opt-in to legacy release-track branch
         --scripts-only) SCRIPTS_ONLY=true; shift ;;
@@ -305,6 +320,11 @@ check_pg_major_upgrade() {
         log_error ""
         log_error "See: https://github.com/botAGI/AGmind/blob/main/docs/pg-upgrade.md"
         echo ""
+        # In dry-run: print warning only — no log_update (mutates log file), no exit (no block)
+        if [[ "${DRY_RUN:-false}" == "true" ]]; then
+            log_warn "WARNING: PostgreSQL major upgrade ${pg_major_old}->${pg_major_new} will block 'agmind update' until you migrate data."
+            return 0
+        fi
         if [[ "$FORCE" != "true" ]]; then
             log_update "BLOCKED" "PostgreSQL major upgrade ${pg_major_old}->${pg_major_new} — manual migration required"
             exit 1
@@ -391,7 +411,9 @@ print(f\"RELEASE_NOTES='{body}'\")
     DOWNLOADED_VERSIONS_FILE="$tmp_versions"
 
     # Parse into NEW_VERSIONS associative array
-    declare -gA NEW_VERSIONS
+    # Note: declare -gA without =() triggers "unbound variable" under set -u when array stays
+    # empty (bash 5.2 bug with global associative array declarations inside functions).
+    declare -gA NEW_VERSIONS=()
     while IFS='=' read -r key value; do
         [[ -z "$key" || "$key" =~ ^# ]] && continue
         key=$(echo "$key" | tr -d '[:space:]')
@@ -971,6 +993,35 @@ log_update() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') | ${status} | ${details}" >> "$LOG_FILE"
 }
 
+# Print compose services whose image tag would change (D-07 image-tag heuristic).
+# Relies on NEW_VERSIONS and CURRENT_VERSIONS (populated by fetch_release_info /
+# load_current_versions) and the NAME_TO_VERSION_KEY / NAME_TO_SERVICES maps
+# sourced from lib/service-map.sh.
+_dry_run_would_recreate() {
+    local would_recreate=() key name svc seen
+    for key in "${!NEW_VERSIONS[@]}"; do
+        [[ "${NEW_VERSIONS[$key]}" == "${CURRENT_VERSIONS[$key]:-}" ]] && continue
+        for name in "${!NAME_TO_VERSION_KEY[@]}"; do
+            [[ "${NAME_TO_VERSION_KEY[$name]}" == "$key" ]] || continue
+            # shellcheck disable=SC2086  # intentional word-split on space-separated service list
+            for svc in ${NAME_TO_SERVICES[$name]:-}; do
+                seen=0
+                if [[ ${#would_recreate[@]} -gt 0 ]]; then
+                    printf '%s\n' "${would_recreate[@]}" | grep -qx "$svc" && seen=1
+                fi
+                [[ $seen -eq 0 ]] && would_recreate+=("$svc")
+            done
+        done
+    done
+    echo ""
+    if [[ ${#would_recreate[@]} -gt 0 ]]; then
+        echo "Would recreate (image tag change): ${would_recreate[*]}"
+    else
+        echo "Would recreate (image tag change): (none — no image tags differ)"
+    fi
+    echo "  Note: this is an image-tag heuristic; env/config changes can also trigger recreates."
+}
+
 # ============================================================================
 # MAIN
 # ============================================================================
@@ -980,6 +1031,31 @@ main() {
     echo -e "${BOLD}${CYAN}  AGMind Update System${NC}"
     echo -e "${BOLD}${CYAN}=======================================${NC}"
     echo ""
+
+    # === Dry-run path (D-05/D-06) — runs BEFORE check_preflight so no compose file needed ===
+    # Reads .env (load_current_versions) + fetches remote versions.env via curl only.
+    # Makes zero changes; exits 0 before update_scripts/create_update_backup/.env mutation.
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo ""
+        echo "=== DRY RUN — no changes will be made ==="
+        load_current_versions
+        local CURRENT_RELEASE
+        CURRENT_RELEASE="$(get_current_release)"
+        if ! fetch_release_info; then
+            log_error "Could not fetch release info"
+            exit 1
+        fi
+        if ! display_bundle_diff; then
+            echo ""
+            echo "Already up to date (${CURRENT_RELEASE}) — nothing would change."
+            exit 0
+        fi
+        _dry_run_would_recreate
+        check_pg_major_upgrade || true   # prints warning if major bump; never fatal in dry-run
+        echo ""
+        echo "[dry-run] No changes made. Run 'agmind update' (as root) to apply."
+        exit 0
+    fi
 
     # Pre-flight
     if ! check_preflight; then

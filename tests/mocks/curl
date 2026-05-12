@@ -1,11 +1,25 @@
 #!/usr/bin/env bash
 # Mock curl — echoes MOCK_CURL_RESPONSE and returns MOCK_CURL_EXIT.
-# Ignores all flags. Reusable for Plan 02-04 Task 4 MAJOR 6.
+# Supports -o <file>: writes response to file instead of stdout (Plan 04-03).
+# Ignores all other flags. Reusable for Plan 02-04 Task 4 MAJOR 6.
 [[ "${MOCK_DEBUG:-0}" == "1" ]] && echo "mock-curl $*" >&2
 if [[ "${MOCK_CURL_EXIT:-0}" != "0" ]]; then
     exit "${MOCK_CURL_EXIT}"
 fi
+# Parse -o <outfile> from args
+_mock_curl_outfile=""
+_mock_curl_args=("$@")
+for (( _i=0; _i<${#_mock_curl_args[@]}; _i++ )); do
+    if [[ "${_mock_curl_args[$_i]}" == "-o" ]]; then
+        _mock_curl_outfile="${_mock_curl_args[$(( _i+1 ))]:-}"
+        break
+    fi
+done
 if [[ -n "${MOCK_CURL_RESPONSE:-}" ]]; then
-    echo "${MOCK_CURL_RESPONSE}"
+    if [[ -n "$_mock_curl_outfile" ]]; then
+        printf '%s\n' "${MOCK_CURL_RESPONSE}" > "$_mock_curl_outfile"
+    else
+        echo "${MOCK_CURL_RESPONSE}"
+    fi
 fi
 exit 0
