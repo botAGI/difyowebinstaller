@@ -1,67 +1,74 @@
 # Security Policy
 
-AGmind ставит корпоративную RAG-платформу (Dify + RAGFlow + vLLM + Open WebUI
-+ vector stores + мониторинг) одной командой на DGX Spark. Установщик трогает
-firewall, генерирует секреты, поднимает ~30 контейнеров — security-баги здесь
-имеют высокий blast radius.
+AGmind installs a corporate RAG platform (Dify + RAGFlow + vLLM + Open WebUI +
+vector stores + monitoring) on a DGX Spark with a single command. The installer
+touches the firewall, generates secrets, and brings up ~30 containers — a
+security bug here has a large blast radius. We take reports seriously.
 
 ## Reporting a Vulnerability
 
-**Не открывайте публичный GitHub issue для security-проблем.**
+**Do not open a public GitHub issue for security problems.**
 
-Сообщайте через один из приватных каналов:
+Use one of the private channels:
 
-1. **GitHub Security Advisories** (предпочтительно) —
+1. **GitHub Security Advisories** (preferred) —
    [Report a vulnerability](https://github.com/botAGI/AGmind/security/advisories/new)
-   на вкладке Security репозитория. Это даёт приватную ветку обсуждения
-   и координированное раскрытие.
+   from the repo's Security tab. This gives a private discussion thread and a
+   coordinated-disclosure workflow.
 
-2. **Email** — если GHSA недоступен, напишите мейнтейнерам (адрес в профиле
-   организации / README). В письме укажите:
-   - затронутую версию / commit
-   - шаги воспроизведения
-   - предполагаемый impact (RCE / privilege escalation / data exposure / DoS)
-   - предлагаемый фикс, если есть
+2. **Email** — if GHSA is unavailable, email the maintainers (address in the
+   org profile / README). Include:
+   - affected version / commit
+   - reproduction steps
+   - assessed impact (RCE / privilege escalation / data exposure / DoS)
+   - a suggested fix, if you have one
 
-Мы стараемся ответить в течение **72 часов** и выпустить фикс в течение
-**14 дней** для critical/high severity. Если эти сроки нарушаются — напишите
-повторно.
+We aim to acknowledge within **72 hours** and ship a fix within **14 days** for
+critical / high severity. If those windows slip, please ping again.
 
 ## Scope
 
-В scope (сообщайте):
-- `install.sh`, `lib/*.sh`, `scripts/*.sh` — установщик и runtime-скрипты
-- `templates/docker-compose*.yml`, `templates/*.template` — конфигурация стека
-- `.github/workflows/*.yml` — CI/CD pipeline
-- credentials handling, firewall/SSH/TLS setup, secret generation/rotation
-- supply chain (pinned image tags, GitHub Actions, downloaded binaries +
-  их SHA256)
+In scope (please report):
+- `install.sh`, `lib/*.sh`, `scripts/*.sh` — the installer and runtime scripts
+- `templates/docker-compose*.yml`, `templates/*.template` — stack configuration
+- `.github/workflows/*.yml` — the CI/CD pipeline
+- credentials handling, firewall / SSH / TLS setup, secret generation & rotation
+- supply chain — pinned image tags, GitHub Actions pins, downloaded binaries and
+  their SHA256 checks
 
-Вне scope:
-- уязвимости в upstream-образах (Dify, RAGFlow, vLLM, Postgres, etc) — сообщайте
-  напрямую их мейнтейнерам; мы pin'им версии и реагируем на их advisories
-- проблемы только при намеренно небезопасной конфигурации (`SKIP_DOCKER_HARDENING=true`,
-  `AGMIND_ALLOW_AMD64=true`, отключённый fail2ban и т.п.) — это явный opt-out
-- DoS через перегрузку (RAG-индексация тяжёлых документов и т.п.) — это resource
-  management, не security boundary
-- self-XSS / атаки требующие физического/админ-доступа к хосту
+Out of scope:
+- vulnerabilities in upstream images (Dify, RAGFlow, vLLM, Postgres, …) — report
+  those to their maintainers; we pin versions and react to their advisories
+- issues that only occur under deliberately insecure configuration
+  (`SKIP_DOCKER_HARDENING=true`, `AGMIND_ALLOW_AMD64=true`, fail2ban disabled,
+  …) — that is an explicit opt-out
+- DoS via overload (heavy-document RAG indexing, etc.) — that is resource
+  management, not a security boundary
+- self-XSS, or attacks that require physical / admin access to the host
 
 ## Supported Versions
 
-Поддерживается только последний релиз. Бэкпорты security-фиксов в старые
-релизы не делаем — обновляйтесь до latest. Версии компонентов pin'ятся в
-`templates/versions.env`; security-bumps летят через обычный release cycle
-(или hotfix для critical).
+Only the latest release is supported. We do not backport security fixes to
+older releases — upgrade to latest. Component versions are pinned in
+`templates/versions.env`; security bumps ship through the normal release cycle
+(or a hotfix for critical severity).
 
 ## Security Practices in This Repo
 
-- Все image:tag pin'ятся к конкретным версиям (никаких `:latest`) с verified
-  arm64 manifest — проверяется CI (`tests/compose/test_image_tags_exist.sh`).
-- Все GitHub Actions pin'ятся к полному commit SHA — проверяется zizmor в CI.
-- Скачиваемые бинарники (SOPS и т.п.) проверяются по SHA256 — refuse install
-  на mismatch.
-- Trivy config scan + zizmor static analysis + OpenSSF Scorecard в CI.
-- Институциональная память по прошлым инцидентам — в `CLAUDE.md` §8 (часть
-  правил оттуда enforce'ится как regression-тесты в `tests/unit/`).
-- Credentials хранятся в `chmod 600` файлах, передаются через env/secrets,
-  не выводятся в stdout/логи/UI.
+- Every `image:tag` is pinned to a concrete version (no `:latest`) with a
+  verified arm64 manifest — enforced in CI (`tests/compose/test_image_tags_exist.sh`).
+- Every GitHub Action is pinned to a full commit SHA — enforced by zizmor in CI.
+- Downloaded binaries (SOPS, etc.) are verified against a pinned SHA256 — the
+  installer refuses on mismatch.
+- CI runs Trivy config scan + zizmor static analysis + OpenSSF Scorecard.
+- Architectural and operational decisions (driver holds, arm64-manifest holds,
+  plugin-daemon pin, network isolation, …) are recorded as ADRs in
+  [`docs/adr/`](docs/adr/); many of those rules are enforced as regression tests
+  in [`tests/unit/`](tests/unit/).
+- Credentials live in `chmod 600` files, are passed via environment variables /
+  secrets, and are never printed to stdout, logs, or UI hints.
+- The security model (no exposed admin UI, docker-socket-proxy, airgapped mode)
+  is documented in [`docs/security/`](docs/security/) and
+  [`docs/architecture/security-zones.md`](docs/architecture/security-zones.md);
+  `agmind security audit` runs a read-only runtime self-check (exposed ports,
+  privileged containers, `docker.sock` consumers, weak secrets, bad file perms).
