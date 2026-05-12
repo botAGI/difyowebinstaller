@@ -6,10 +6,11 @@ set -euo pipefail
 
 # --- Directory resolution ---
 AGMIND_DIR="${AGMIND_DIR:-$(cd "$(dirname "$(realpath "$0")")/.." && pwd)}"
-INSTALL_DIR="$AGMIND_DIR"
+# INSTALL_DIR may be overridden by tests or in-place installs; default to AGMIND_DIR.
+INSTALL_DIR="${INSTALL_DIR:-$AGMIND_DIR}"
 export INSTALL_DIR
 SCRIPTS_DIR="${AGMIND_DIR}/scripts"
-COMPOSE_DIR="${AGMIND_DIR}/docker"
+COMPOSE_DIR="${INSTALL_DIR}/docker"
 COMPOSE_FILE="${COMPOSE_DIR}/docker-compose.yml"
 ENV_FILE="${COMPOSE_DIR}/.env"
 
@@ -287,6 +288,40 @@ cmd_security() {
         audit) shift 2>/dev/null || true; security_audit "$@" ;;
         *)     echo "Usage: agmind security audit [--json]" >&2; return 1 ;;
     esac
+}
+
+# ============================================================================
+# PROFILES  (thin wrapper — logic in lib/estimate.sh::profiles_list)
+# ============================================================================
+
+cmd_profiles() {
+    # Read-only — no root required. Sources service-map.sh for NAMED_PROFILE_EXPANSION.
+    # shellcheck source=/dev/null
+    source "${SCRIPTS_DIR}/service-map.sh" 2>/dev/null \
+        || source "${AGMIND_DIR}/lib/service-map.sh" 2>/dev/null \
+        || { echo -e "${RED}service-map module missing — reinstall AGmind${NC}" >&2; return 1; }
+    # shellcheck source=/dev/null
+    source "${SCRIPTS_DIR}/estimate.sh" 2>/dev/null \
+        || source "${AGMIND_DIR}/lib/estimate.sh" 2>/dev/null \
+        || { echo -e "${RED}estimate module missing — reinstall AGmind${NC}" >&2; return 1; }
+    profiles_list "$@"
+}
+
+# ============================================================================
+# ESTIMATE  (thin wrapper — logic in lib/estimate.sh::estimate_resources)
+# ============================================================================
+
+cmd_estimate() {
+    # Read-only — no root required. Sources service-map.sh + estimate.sh.
+    # shellcheck source=/dev/null
+    source "${SCRIPTS_DIR}/service-map.sh" 2>/dev/null \
+        || source "${AGMIND_DIR}/lib/service-map.sh" 2>/dev/null \
+        || { echo -e "${RED}service-map module missing — reinstall AGmind${NC}" >&2; return 1; }
+    # shellcheck source=/dev/null
+    source "${SCRIPTS_DIR}/estimate.sh" 2>/dev/null \
+        || source "${AGMIND_DIR}/lib/estimate.sh" 2>/dev/null \
+        || { echo -e "${RED}estimate module missing — reinstall AGmind${NC}" >&2; return 1; }
+    estimate_resources "$@"
 }
 
 # ============================================================================
@@ -1150,6 +1185,8 @@ Commands:
                         Services: dify chat grafana portainer ragflow minio litellm notebook
                         Bare or --list: print all openable services and their URLs
   endpoints [--json]    List all public service URLs (SERVICE | URL | STATE); --json = machine-readable; always exit 0
+  profiles [--json]     List the 8 named deployment profiles and which one is currently active
+  estimate [<profile>] [--json]   Estimate RAM/disk/GPU requirements for a profile (default: active) vs available resources
   security audit [--json]   Scan exposed ports / privileged containers / docker.sock consumers / weak secrets / bad file perms (report-only)
   bundle create [--out <p>]   Build an offline transfer bundle (images + models + repo, NO secrets) — large/slow, NOT a backup
   bundle install <tar>        (root) Load a bundle on an air-gapped box, then run AGMIND_AIRGAPPED=true install
@@ -1276,6 +1313,8 @@ case "${1:-help}" in
     plugin-daemon)  shift; cmd_plugin_daemon "$@" ;;
     open)           shift; cmd_open "$@" ;;
     endpoints)      shift; cmd_endpoints "$@" ;;
+    profiles)       shift; cmd_profiles "$@" ;;
+    estimate)       shift; cmd_estimate "$@" ;;
     creds)
         shift
         case "${1:-show}" in
