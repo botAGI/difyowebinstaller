@@ -905,8 +905,15 @@ Commands:
   restore [latest|<dir>] [--auto-confirm] [--dry-run] [--service <name>]   Restore from backup (root)
     --dry-run          Print the restore plan, change nothing (runs verify too)
     --service <name>   Restore only one group: dify | rag | ragflow | openwebui | ollama | config
+  config <sub>           Config validation and update preview (no root; static)
+    validate [--json]      Check installed .env (placeholders, required keys), versions<->manifest sync,
+                           compose schema validity, no :latest/mutating tags
+    diff [--release]       Preview version changes 'agmind update' would make (no root; no changes made)
+                           Note: 'agmind upgrade --diff' shows pinned-in-.env vs actually-running-container
+                           drift (a different axis from 'config diff' which shows current-pinned vs target-release)
   update [options]       Update AGMind stack (root)
     --check                Check for new bundle release (GitHub Releases)
+    --dry-run              Preview what update would do (no root; no changes made) — same as 'config diff'
     --component <name>     Emergency: update single component (shows warning)
     --version <tag>        Target version (use with --component)
     --force                Skip emergency mode confirmation
@@ -978,7 +985,14 @@ case "${1:-help}" in
         esac
         ;;
     restore)        shift; _require_root restore; exec "${SCRIPTS_DIR}/restore.sh" "$@" ;;
-    update)         shift; _require_root update; exec "${SCRIPTS_DIR}/update.sh" "$@" ;;
+    update)
+        shift
+        # --dry-run is read-only — skip root check (D-06: agmind.sh side of two-bypass topology)
+        if [[ " $* " != *" --dry-run "* ]]; then
+            _require_root update
+        fi
+        exec "${SCRIPTS_DIR}/update.sh" "$@"
+        ;;
     upgrade)        shift
                     case "${1:-}" in
                         --diff|diff|""|--help|-h) cmd_upgrade_diff ;;
@@ -987,6 +1001,34 @@ case "${1:-help}" in
                            echo "Apply: rerun install.sh OR edit /opt/agmind/docker/.env + docker compose up -d" >&2
                            exit 1 ;;
                     esac ;;
+    config)
+        shift
+        case "${1:-}" in
+            validate)
+                shift
+                # Static read-only check — no root required
+                # shellcheck source=/dev/null
+                source "${AGMIND_DIR}/lib/config.sh" 2>/dev/null \
+                    || { echo -e "${RED}lib/config.sh not found${NC}" >&2; exit 2; }
+                config_validate "$@"
+                ;;
+            diff)
+                shift
+                # Update preview — no root (read-only); update.sh --dry-run handles its own bypass
+                exec "${SCRIPTS_DIR}/update.sh" --dry-run "$@"
+                ;;
+            ""|--help|-h|help)
+                echo "Usage: agmind config <validate|diff> [options]"
+                echo "  validate [--json]      Check installed .env / versions<->manifest / compose schema (no root; static)"
+                echo "  diff [--release]       Preview what 'agmind update' would change (no root; no changes made)"
+                ;;
+            *)
+                echo "Unknown 'config' subcommand: $1" >&2
+                echo "Usage: agmind config <validate|diff>" >&2
+                exit 1
+                ;;
+        esac
+        ;;
     uninstall)      shift; _require_root uninstall; exec "${SCRIPTS_DIR}/uninstall.sh" "$@" ;;
     rotate-secrets) shift; _require_root rotate-secrets; exec "${SCRIPTS_DIR}/rotate_secrets.sh" "$@" ;;
     logs)           shift; exec docker compose -f "$COMPOSE_FILE" logs "$@" ;;
