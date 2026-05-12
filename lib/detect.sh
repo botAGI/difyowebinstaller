@@ -14,6 +14,17 @@
 set -euo pipefail
 
 # ============================================================================
+# FALLBACK SHIM — active when sourced without lib/airgapped.sh
+# ============================================================================
+command -v airgapped_guard >/dev/null 2>&1 || \
+    airgapped_guard() {
+        [[ "${AGMIND_AIRGAPPED:-false}" == "true" ]] && {
+            echo "[WARN] airgapped: skipping $1" >&2; return 0
+        }
+        return 1
+    }
+
+# ============================================================================
 # OS DETECTION
 # ============================================================================
 
@@ -471,6 +482,10 @@ _ensure_lldpd() {
     fi
 
     if command -v apt-get >/dev/null 2>&1; then
+        if airgapped_guard "apt-get install lldpd"; then
+            log_warn "airgapped: lldpd install skipped — peer detection via fping fallback only"
+            return 0
+        fi
         log_info "Installing lldpd for peer detection..."
         DEBIAN_FRONTEND=noninteractive apt-get install -y -q lldpd >/dev/null 2>&1 || {
             log_warn "lldpd install failed — peer detection via LLDP disabled (fping fallback only)"
