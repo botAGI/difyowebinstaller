@@ -268,6 +268,28 @@ cmd_creds_show() {
 }
 
 # ============================================================================
+# SECURITY AUDIT
+# ============================================================================
+
+cmd_security() {
+    # `agmind security audit [--json]` — read-only scanner. Logic in lib/security.sh::security_audit.
+    # Runtime copy: scripts/security.sh (from _copy_runtime_files). Dev fallback: lib/security.sh.
+    # lib/doctor.sh sourced first because security_audit reuses doctor_check_security_exposure.
+    # shellcheck source=/dev/null
+    source "${SCRIPTS_DIR}/doctor.sh" 2>/dev/null || source "${AGMIND_DIR}/lib/doctor.sh" 2>/dev/null || true
+    # shellcheck source=/dev/null
+    source "${SCRIPTS_DIR}/security.sh" 2>/dev/null \
+        || source "${AGMIND_DIR}/lib/security.sh" 2>/dev/null \
+        || { echo -e "${RED}security module missing — reinstall AGmind${NC}" >&2; return 1; }
+    # subcommand: only `audit` for now
+    local sub="${1:-audit}"
+    case "$sub" in
+        audit) shift 2>/dev/null || true; security_audit "$@" ;;
+        *)     echo "Usage: agmind security audit [--json]" >&2; return 1 ;;
+    esac
+}
+
+# ============================================================================
 # STOP / START / RESTART
 # ============================================================================
 
@@ -1102,6 +1124,7 @@ Commands:
                         Services: dify chat grafana portainer ragflow minio litellm notebook
                         Bare or --list: print all openable services and their URLs
   endpoints [--json]    List all public service URLs (SERVICE | URL | STATE); --json = machine-readable; always exit 0
+  security audit [--json]   Scan exposed ports / privileged containers / docker.sock consumers / weak secrets / bad file perms (report-only)
   creds show [--show] [--json]   Show stack credentials (root-only; masked unless --show)
   creds rotate [args]   Rotate passwords and keys — wraps rotate_secrets.sh (root)
   uninstall          Remove AGMind (root)
@@ -1221,6 +1244,7 @@ case "${1:-help}" in
                         *)               echo "Usage: agmind dify import-workflow <dsl.yaml>" >&2; exit 1 ;;
                     esac ;;
     ragflow)        shift; cmd_ragflow "$@" ;;
+    security)       shift; cmd_security "$@" ;;
     plugin-daemon)  shift; cmd_plugin_daemon "$@" ;;
     open)           shift; cmd_open "$@" ;;
     endpoints)      shift; cmd_endpoints "$@" ;;

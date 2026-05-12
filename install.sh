@@ -485,9 +485,10 @@ _copy_runtime_files() {
         done
     fi
     # lib/ → scripts/ copy: different subdirs, always safe even in self-install
-    cp "${INSTALLER_DIR}/lib/health.sh" "${INSTALL_DIR}/scripts/health.sh" 2>/dev/null || true
-    cp "${INSTALLER_DIR}/lib/detect.sh" "${INSTALL_DIR}/scripts/detect.sh" 2>/dev/null || true
-    cp "${INSTALLER_DIR}/lib/creds.sh"  "${INSTALL_DIR}/scripts/creds.sh"  2>/dev/null || true
+    cp "${INSTALLER_DIR}/lib/health.sh"    "${INSTALL_DIR}/scripts/health.sh"    2>/dev/null || true
+    cp "${INSTALLER_DIR}/lib/detect.sh"   "${INSTALL_DIR}/scripts/detect.sh"   2>/dev/null || true
+    cp "${INSTALLER_DIR}/lib/creds.sh"    "${INSTALL_DIR}/scripts/creds.sh"    2>/dev/null || true
+    cp "${INSTALLER_DIR}/lib/security.sh" "${INSTALL_DIR}/scripts/security.sh" 2>/dev/null || true
     chmod +x "${INSTALL_DIR}/scripts/"*.sh 2>/dev/null || true
 }
 
