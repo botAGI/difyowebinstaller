@@ -96,7 +96,7 @@
     "squid": {
       "registry": "docker.io",
       "image": "ubuntu/squid",
-      "tag": "6.6-24.04_edge",
+      "tag": "7.2-26.04_edge",
       "digest": "",
       "platforms": [
         "linux/amd64",
