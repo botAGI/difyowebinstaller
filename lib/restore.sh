@@ -158,7 +158,7 @@ dify_plugin_db.sql.gz|pgdump|dify_plugin|dify|true
 dify-storage.tar.gz|volume-path|docker/volumes/app/storage|dify|true
 qdrant.tar.gz|volume-path|docker/volumes/qdrant|rag|true
 weaviate.tar.gz|volume-path|docker/volumes/weaviate|rag|true
-minio-data.tar.gz|volume-docker|minio_data|dify|true
+minio-data.tar.gz|volume-docker|minio_data|optional|true
 openwebui.tar.gz|volume-docker|openwebui|openwebui|true
 ollama.tar.gz|volume-docker|ollama_data|ollama|true
 surrealdb.tar.gz|volume-docker|surrealdb|optional|true
