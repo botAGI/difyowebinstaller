@@ -898,8 +898,13 @@ Commands:
     es-health            ES cluster health
   mdns-status [--json]  Diagnose mDNS publishing (exits 1 on any issue)
   init-dify          Initialize Dify admin (if auto-init failed)
-  backup             Create backup (root)
-  restore <path>     Restore from backup (root)
+  backup <sub>       Backup operations (root)
+    create [--include-models]   Create a backup (default; can include vLLM model cache)
+    list                        List backups (DATE / SIZE / STATUS)
+    verify [latest|<dir>] [--json]   Check backup integrity; exit 0=valid, 1=corrupt/incomplete
+  restore [latest|<dir>] [--auto-confirm] [--dry-run] [--service <name>]   Restore from backup (root)
+    --dry-run          Print the restore plan, change nothing (runs verify too)
+    --service <name>   Restore only one group: dify | rag | ragflow | openwebui | ollama | config
   update [options]       Update AGMind stack (root)
     --check                Check for new bundle release (GitHub Releases)
     --component <name>     Emergency: update single component (shows warning)
@@ -940,7 +945,38 @@ case "${1:-help}" in
     start)          cmd_start ;;
     restart)        cmd_restart ;;
     init-dify)      cmd_init_dify ;;
-    backup)         shift; _require_root backup; exec "${SCRIPTS_DIR}/backup.sh" "$@" ;;
+    backup)
+        shift
+        _require_root backup
+        _bk_sub="${1:-create}"
+        case "$_bk_sub" in
+            create|"")
+                [[ "$_bk_sub" == "create" ]] && shift || true
+                exec "${SCRIPTS_DIR}/backup.sh" "$@"
+                ;;
+            list|ls)
+                # shellcheck source=/dev/null
+                source "${AGMIND_DIR}/lib/restore.sh" || { echo -e "${RED}lib/restore.sh not found${NC}" >&2; exit 1; }
+                restore_list
+                ;;
+            verify)  # agmind backup verify [latest|<dir>] [--json]
+                shift
+                # shellcheck source=/dev/null
+                source "${AGMIND_DIR}/lib/restore.sh" || { echo -e "${RED}lib/restore.sh not found${NC}" >&2; exit 1; }
+                _bk_dir="$(_resolve_backup_dir "${1:-latest}")" || exit 1
+                if [[ "${2:-}" == "--json" ]]; then
+                    restore_verify "$_bk_dir" --json
+                else
+                    restore_verify "$_bk_dir"
+                fi
+                ;;
+            *)
+                echo -e "${RED}Unknown backup subcommand: ${_bk_sub}${NC}" >&2
+                echo "Usage: agmind backup [create [--include-models] | list | verify [latest|<dir>] [--json]]" >&2
+                exit 1
+                ;;
+        esac
+        ;;
     restore)        shift; _require_root restore; exec "${SCRIPTS_DIR}/restore.sh" "$@" ;;
     update)         shift; _require_root update; exec "${SCRIPTS_DIR}/update.sh" "$@" ;;
     upgrade)        shift
