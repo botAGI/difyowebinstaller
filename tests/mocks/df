@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Mock df — passthrough to real df UNLESS MOCK_DF_FIXTURE is set.
+# WHY: lib/doctor.sh::doctor_check_resources reads `df -BG /`; GitHub runners have
+# ~14GB free on / → WARN "≥20GB рекомендуется" → test_doctor.sh happy_path flake.
+# Fixtures: plenty (200G total, 160G free, 20%) | low (50G, 14G free, 72%)
+REAL_DF=/usr/bin/df; [[ -x "$REAL_DF" ]] || REAL_DF=/bin/df
+if [[ -z "${MOCK_DF_FIXTURE:-}" ]]; then exec "$REAL_DF" "$@"; fi
+case "$MOCK_DF_FIXTURE" in
+    plenty) tot=200 used=40 avail=160 pct=20 ;;
+    low)    tot=50  used=36 avail=14  pct=72 ;;
+    *) echo "mock df: unknown MOCK_DF_FIXTURE=$MOCK_DF_FIXTURE" >&2; exit 2 ;;
+esac
+gflag=0; for a in "$@"; do [[ "$a" == -B* ]] && gflag=1; done
+echo "Filesystem 1B-blocks Used Avail Use% Mounted-on"
+if [[ $gflag -eq 1 ]]; then
+    echo "/dev/root ${tot}G ${used}G ${avail}G ${pct}% /"
+else
+    echo "/dev/root $((tot*1048576)) $((used*1048576)) $((avail*1048576)) ${pct}% /"
+fi

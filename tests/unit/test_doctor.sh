@@ -10,6 +10,16 @@ REPO_ROOT="$(cd "$(dirname "$(realpath "$0")")/../.." && pwd)"
 MOCK_DIR="${REPO_ROOT}/tests/mocks"
 export PATH="${MOCK_DIR}:${PATH}"
 
+# Pin host-environment probes to healthy values so the suite is deterministic on
+# x86_64 CI runners (the dev box is aarch64 with lots of RAM/disk, which masked
+# the arch / DNS / ping / disk / RAM checks that hit the real environment —
+# see tests/mocks/{uname,host,nslookup,ping,df,free}).
+export MOCK_UNAME_FIXTURE=dgx_spark
+export MOCK_DNS_FIXTURE=ok
+export MOCK_PING_FIXTURE=ok
+export MOCK_DF_FIXTURE=plenty
+export MOCK_FREE_FIXTURE=spark
+
 # Null out colors so test output is plain text (no escape sequences in diffs)
 RED=''; GREEN=''; YELLOW=''; CYAN=''; BOLD=''; NC=''
 export RED GREEN YELLOW CYAN BOLD NC
