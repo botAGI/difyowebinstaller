@@ -212,13 +212,173 @@ _resolve_backup_dir() {
 # ============================================================================
 
 # restore_verify <RESTORE_DIR> [--json]
-# Verifies backup integrity: checksums, archive integrity, SQL sanity, completeness.
-# Exit 0 = no FAIL; exit 1 = ≥1 FAIL.
+# Read-only integrity checks (D-05). Exit 0 if no FAIL, 1 if ≥1 FAIL.
+# Checks: dir_exists / checksums / archive_integrity / sql_sanity / encryption / completeness.
+# WHY return not exit: lib is sourced under set -euo pipefail; exit would kill the caller.
 restore_verify() {
-    # shellcheck disable=SC2034
-    local restore_dir="${1:-}"
-    echo "restore_verify: не реализовано (Wave 1)" >&2
-    return 1
+    local restore_dir="" json=0
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --json) json=1; shift ;;
+            -*)     echo "restore_verify: unknown option: $1" >&2; return 2 ;;
+            *)      restore_dir="$1"; shift ;;
+        esac
+    done
+    [[ -n "$restore_dir" ]] || { echo "restore_verify: RESTORE_DIR required" >&2; return 2; }
+
+    _registry_reset
+
+    # ── Check 1: dir_exists ───────────────────────────────────────────────────
+    # WHY: all other checks are meaningless if the directory is missing or empty.
+    if [[ -d "$restore_dir" && -n "$(ls -A "$restore_dir" 2>/dev/null)" ]]; then
+        _registry_add "dir_exists" "dir_exists" "OK" "Каталог бэкапа: ${restore_dir}" "" false ""
+    else
+        _registry_add "dir_exists" "dir_exists" "FAIL" "Каталог бэкапа не найден или пуст: ${restore_dir}" \
+            "Проверь путь: \`agmind backup list\`" false ""
+        if [[ "$json" -eq 1 ]]; then _registry_render_json; else _registry_render_human; echo; fi
+        _registry_count
+        [[ "$RESTORE_ERRORS" -eq 0 ]] && return 0 || return 1
+    fi
+
+    # ── Check 2: checksums ────────────────────────────────────────────────────
+    # WHY set +e: sha256sum -c exits 1 on any mismatch; under set -euo pipefail that
+    #     would kill the script before we can record the FAIL in the registry.
+    if [[ ! -f "${restore_dir}/sha256sums.txt" ]]; then
+        _registry_add "checksums" "checksums" "WARN" \
+            "sha256sums.txt отсутствует (старый формат бэкапа) — целостность не гарантирована" \
+            "Рассмотри более свежий бэкап: \`agmind backup list\`" false ""
+    else
+        local sums_out sums_rc
+        set +e
+        sums_out="$(cd "$restore_dir" && sha256sum -c sha256sums.txt 2>&1)"; sums_rc=$?
+        set -e
+        if [[ "$sums_rc" -eq 0 ]]; then
+            _registry_add "checksums" "checksums" "OK" "Контрольные суммы совпадают" "" false ""
+        else
+            local bad
+            bad="$(printf '%s\n' "$sums_out" | grep -E ': (FAILED|НЕ СОВПАЛО|ОШИБКА|FAILED open or read)' | head -3 | tr '\n' ' ')"
+            _registry_add "checksums" "checksums" "FAIL" \
+                "Контрольные суммы не совпадают: ${bad:-несоответствие}" \
+                "Бэкап повреждён — используй предыдущий: \`agmind backup list\`" false ""
+        fi
+    fi
+
+    # ── Check 3: archive_integrity ────────────────────────────────────────────
+    # WHY both gzip -t and tar -tzf: gzip -t checks CRC of compressed stream;
+    #     tar -tzf additionally validates TAR header structure.
+    local arch_ok=1 f
+    for f in "${restore_dir}"/*.tar.gz; do
+        [[ -f "$f" ]] || continue
+        if ! gzip -t "$f" 2>/dev/null; then
+            _registry_add "archive_$(basename "$f")" "archive_integrity" "FAIL" \
+                "Архив повреждён: $(basename "$f") (gzip -t)" \
+                "Используй предыдущий бэкап: \`agmind backup list\`" false ""
+            arch_ok=0
+        elif ! tar -tzf "$f" >/dev/null 2>&1; then
+            _registry_add "archive_$(basename "$f")" "archive_integrity" "FAIL" \
+                "Архив повреждён: $(basename "$f") (tar листинг)" \
+                "Используй предыдущий бэкап: \`agmind backup list\`" false ""
+            arch_ok=0
+        fi
+    done
+    for f in "${restore_dir}"/*.sql.gz; do
+        [[ -f "$f" ]] || continue
+        if ! gzip -t "$f" 2>/dev/null; then
+            _registry_add "archive_$(basename "$f")" "archive_integrity" "FAIL" \
+                "SQL-дамп повреждён: $(basename "$f")" \
+                "Используй предыдущий бэкап: \`agmind backup list\`" false ""
+            arch_ok=0
+        fi
+    done
+    [[ "$arch_ok" -eq 1 ]] && \
+        _registry_add "archive_ok" "archive_integrity" "OK" "Архивы целы (gzip -t / tar)" "" false ""
+
+    # ── Check 4: sql_sanity ───────────────────────────────────────────────────
+    # WHY pipe to head: reads only first 5 lines; no disk write; fully read-only.
+    if [[ -f "${restore_dir}/dify_db.sql.gz" ]]; then
+        local sql_head
+        sql_head="$(gunzip -c "${restore_dir}/dify_db.sql.gz" 2>/dev/null | head -5 || true)"
+        if [[ -z "$sql_head" ]]; then
+            _registry_add "sql_sanity" "sql_sanity" "FAIL" \
+                "dify_db.sql.gz пуст — дамп не был создан" \
+                "Бэкап неполный — используй предыдущий: \`agmind backup list\`" false ""
+        elif ! printf '%s\n' "$sql_head" | grep -qE '^-- PostgreSQL database dump|^SET statement_timeout'; then
+            _registry_add "sql_sanity" "sql_sanity" "WARN" \
+                "dify_db.sql.gz не содержит стандартного pg_dump-заголовка (непустой)" \
+                "Дамп может быть нестандартного формата — проверь вручную" false ""
+        else
+            _registry_add "sql_sanity" "sql_sanity" "OK" \
+                "dify_db.sql.gz: валидный pg_dump-заголовок" "" false ""
+        fi
+    fi
+
+    # ── Check 5: encryption ───────────────────────────────────────────────────
+    # WHY -o /dev/null: test-decode is fully read-only; the .age file is never modified.
+    local age_files=() af
+    for af in "${restore_dir}"/*.age; do [[ -f "$af" ]] && age_files+=("$af"); done
+    if [[ "${#age_files[@]}" -eq 0 ]]; then
+        _registry_add "encryption" "encryption" "SKIP" "Шифрование не используется" "" false ""
+    else
+        local age_key="${INSTALL_DIR}/.age/agmind.key"
+        if [[ ! -f "$age_key" ]]; then
+            _registry_add "encryption" "encryption" "FAIL" \
+                "Ключ шифрования не найден: ${age_key}" \
+                "Восстановление невозможно без ключа — найди резервную копию ключа" false ""
+        elif ! command -v age >/dev/null 2>&1; then
+            _registry_add "encryption" "encryption" "FAIL" \
+                "age не установлен" \
+                "Переустанови: \`sudo agmind update\`" false ""
+        elif ! age -d -i "$age_key" -o /dev/null "${age_files[0]}" 2>/dev/null; then
+            _registry_add "encryption" "encryption" "FAIL" \
+                "Расшифровка не удалась — ключ может не подходить к этому бэкапу" \
+                "Проверь, что ключ соответствует этому бэкапу" false ""
+        else
+            _registry_add "encryption" "encryption" "OK" \
+                "Расшифровка проверена (тестовый decode в /dev/null)" "" false ""
+        fi
+    fi
+
+    # ── Check 6: completeness ─────────────────────────────────────────────────
+    # WHY MANIFEST.txt: avoids guessing which artifacts are expected based on profiles;
+    #     old backups (no MANIFEST) fall back to core-minimum check with WARN.
+    if [[ -f "${restore_dir}/MANIFEST.txt" ]]; then
+        local artifact comp_ok=1
+        while IFS= read -r artifact; do
+            [[ -z "$artifact" || "$artifact" == \#* ]] && continue
+            if [[ ! -f "${restore_dir}/${artifact}" ]]; then
+                _registry_add "comp_${artifact}" "completeness" "FAIL" \
+                    "Артефакт из MANIFEST отсутствует: ${artifact}" \
+                    "Бэкап неполный — используй предыдущий: \`agmind backup list\`" false ""
+                comp_ok=0
+            fi
+        done < "${restore_dir}/MANIFEST.txt"
+        [[ "$comp_ok" -eq 1 ]] && \
+            _registry_add "completeness" "completeness" "OK" \
+                "Все артефакты из MANIFEST на месте" "" false ""
+    else
+        _registry_add "comp_no_manifest" "completeness" "WARN" \
+            "MANIFEST.txt отсутствует (старый формат бэкапа) — проверка полноты ограничена" \
+            "Обновлённые бэкапы создают MANIFEST автоматически" false ""
+        local core
+        for core in "dify_db.sql.gz" "env.backup"; do
+            if [[ ! -f "${restore_dir}/${core}" && ! -f "${restore_dir}/${core}.age" ]]; then
+                _registry_add "comp_${core}" "completeness" "FAIL" \
+                    "Ключевой артефакт отсутствует: ${core}" \
+                    "Бэкап повреждён или неполный — используй предыдущий: \`agmind backup list\`" false ""
+            fi
+        done
+    fi
+
+    # ── Render + exit ─────────────────────────────────────────────────────────
+    if [[ "$json" -eq 1 ]]; then
+        _registry_render_json
+    else
+        _registry_render_human
+        echo
+    fi
+    _registry_count
+    [[ "$RESTORE_ERRORS" -eq 0 ]] || return 1
+    return 0
 }
 
 # restore_plan <RESTORE_DIR> [--service <name>] [--dry-run]
