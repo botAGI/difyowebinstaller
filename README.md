@@ -542,10 +542,12 @@ Docling (5-page arxiv PDF, warm): **6.04s**, 0.32s/page, ~1.6 GiB GPU memory.
 
 Quick navigation via CLI:
 ```bash
-agmind troubleshoot vllm       # vLLM / CUDA issues → docs/troubleshooting.md §1
-agmind troubleshoot dify       # Dify worker / tasks stuck → §2
-agmind troubleshoot mdns       # mDNS / .local resolution → §3
-agmind troubleshoot memory     # OOM / unified memory → §4
+agmind troubleshoot vllm       # vLLM model not loading → docs/troubleshooting.md §1
+agmind troubleshoot gpu        # CUDA not visible in container → §2
+agmind troubleshoot dify       # Dify worker / tasks stuck → §4
+agmind troubleshoot mdns       # mDNS / .local resolution → §6
+agmind troubleshoot memory     # OOM / unified memory → §10
+#  (no-arg `agmind troubleshoot` lists all topics; sections: 1 vllm · 2 gpu · 3 ragflow/es · 4 dify · 5 ports · 6 mdns · 7 model-download · 8 restore · 9 update · 10 memory)
 ```
 
 ---
