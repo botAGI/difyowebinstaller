@@ -77,7 +77,7 @@
     "qdrant": {
       "registry": "docker.io",
       "image": "qdrant/qdrant",
-      "tag": "v1.17.1",
+      "tag": "v1.18.0",
       "digest": "",
       "platforms": [
         "linux/amd64",
