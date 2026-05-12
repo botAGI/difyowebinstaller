@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# iptables log-only mock — MOCK_IPTABLES_LOG accumulates; -C returns MOCK_IPTABLES_CHECK_EXIT (default 1=absent).
+# Usage:
+#   MOCK_IPTABLES_LOG=/tmp/ipt.log    — records all invocations
+#   MOCK_IPTABLES_CHECK_EXIT=1        — exit code for -C check (1=rule absent, 0=rule present)
+# All non-check invocations exit 0.
+set -euo pipefail
+
+echo "iptables $* " >> "${MOCK_IPTABLES_LOG:-/dev/null}"
+
+# Detect -C (check) in the argument list
+for _a in "$@"; do
+    if [[ "$_a" == "-C" ]]; then
+        exit "${MOCK_IPTABLES_CHECK_EXIT:-1}"
+    fi
+done
+
+exit 0

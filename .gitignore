@@ -50,3 +50,4 @@ logs/
 # Allow test fixtures that have the same names as runtime-generated files
 !tests/fixtures/creds/credentials.txt
 !tests/fixtures/creds/.admin_password
+!tests/fixtures/security_audit/credentials.txt

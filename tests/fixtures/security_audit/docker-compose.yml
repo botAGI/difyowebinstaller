@@ -1,0 +1,10 @@
+version: "3.8"
+# Security audit test fixture — has ONE admin-UI service bound to 0.0.0.0.
+# Used by audit_finds_exposed_port: portainer on 0.0.0.0:9443 → severity=critical.
+services:
+  portainer:
+    image: portainer/portainer-ce:2.41.1
+    container_name: agmind-portainer
+    ports:
+      - "0.0.0.0:9443:9443"
+    restart: unless-stopped
