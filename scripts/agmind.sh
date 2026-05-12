@@ -1656,6 +1656,7 @@ Commands:
     es-health            ES cluster health
   mdns-status [--json]  Diagnose mDNS publishing (exits 1 on any issue)
   init-dify          Initialize Dify admin (if auto-init failed)
+  dify import-workflow <dsl.yaml>   Import a Dify workflow DSL into the running Dify
   backup <sub>       Backup operations (root)
     create [--include-models]   Create a backup (default; can include vLLM model cache)
     list                        List backups (DATE / SIZE / STATUS)
@@ -1738,13 +1739,17 @@ case "${1:-help}" in
                 ;;
             list|ls)
                 # shellcheck source=/dev/null
-                source "${AGMIND_DIR}/lib/restore.sh" || { echo -e "${RED}lib/restore.sh not found${NC}" >&2; exit 1; }
+                source "${SCRIPTS_DIR}/restore-lib.sh" 2>/dev/null \
+                    || source "${AGMIND_DIR}/lib/restore.sh" 2>/dev/null \
+                    || { echo -e "${RED}restore module not found — reinstall AGmind${NC}" >&2; exit 1; }
                 restore_list
                 ;;
             verify)  # agmind backup verify [latest|<dir>] [--json]
                 shift
                 # shellcheck source=/dev/null
-                source "${AGMIND_DIR}/lib/restore.sh" || { echo -e "${RED}lib/restore.sh not found${NC}" >&2; exit 1; }
+                source "${SCRIPTS_DIR}/restore-lib.sh" 2>/dev/null \
+                    || source "${AGMIND_DIR}/lib/restore.sh" 2>/dev/null \
+                    || { echo -e "${RED}restore module not found — reinstall AGmind${NC}" >&2; exit 1; }
                 _bk_dir="$(_resolve_backup_dir "${1:-latest}")" || exit 1
                 if [[ "${2:-}" == "--json" ]]; then
                     restore_verify "$_bk_dir" --json
@@ -1783,8 +1788,9 @@ case "${1:-help}" in
                 shift
                 # Static read-only check — no root required
                 # shellcheck source=/dev/null
-                source "${AGMIND_DIR}/lib/config.sh" 2>/dev/null \
-                    || { echo -e "${RED}lib/config.sh not found${NC}" >&2; exit 2; }
+                source "${SCRIPTS_DIR}/config.sh" 2>/dev/null \
+                    || source "${AGMIND_DIR}/lib/config.sh" 2>/dev/null \
+                    || { echo -e "${RED}config module not found — reinstall AGmind${NC}" >&2; exit 2; }
                 config_validate "$@"
                 ;;
             diff)
