@@ -41,27 +41,43 @@ _NAMED_PROFILE_ORDER="core rag ragflow observability security agents full dev"
 # PRIVATE HELPERS
 # ============================================================================
 
-# Return the compose file to analyse: installed copy → repo template fallback.
+# Resolve .env file path: honour ENV_FILE (set by agmind.sh dispatcher) or
+# fall back to INSTALL_DIR/docker/.env.
+_est_env_file() {
+    if [[ -n "${ENV_FILE:-}" && -f "${ENV_FILE}" ]]; then
+        echo "${ENV_FILE}"
+    else
+        echo "${INSTALL_DIR}/docker/.env"
+    fi
+}
+
+# Return the compose file to analyse.
+# Priority: COMPOSE_FILE env (set by agmind.sh) → INSTALL_DIR/docker/ → repo template fallback.
 _est_compose_file() {
-    if [[ -f "${INSTALL_DIR}/docker/docker-compose.yml" ]]; then
+    if [[ -n "${COMPOSE_FILE:-}" && -f "${COMPOSE_FILE}" ]]; then
+        echo "${COMPOSE_FILE}"
+    elif [[ -f "${INSTALL_DIR}/docker/docker-compose.yml" ]]; then
         echo "${INSTALL_DIR}/docker/docker-compose.yml"
     else
-        # Fallback: repo template (when AGmind not yet installed)
-        local _selfdir; _selfdir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+        # Fallback: repo template (when AGmind not yet installed).
+        # Resolve symlinks so that a symlinked lib/estimate.sh in scripts/ still
+        # finds the repo root's templates/ directory correctly.
+        local _real; _real="$(realpath "${BASH_SOURCE[0]}" 2>/dev/null || readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+        local _selfdir; _selfdir="$(cd "$(dirname "$_real")/.." && pwd)"
         echo "${_selfdir}/templates/docker-compose.yml"
     fi
 }
 
 # Read DEPLOY_PROFILE from .env only — no other key.
 _est_active_profile() {
-    local _envf="${INSTALL_DIR}/docker/.env"
+    local _envf; _envf="$(_est_env_file)"
     [[ -f "$_envf" ]] || { echo ""; return 0; }
     grep -E '^DEPLOY_PROFILE=' "$_envf" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"' || echo ""
 }
 
 # Read a single boolean-ish flag key from .env (used only for LLM_ON_PEER).
 _est_env_flag() {
-    local _key="$1" _envf="${INSTALL_DIR}/docker/.env"
+    local _key="$1" _envf; _envf="$(_est_env_file)"
     [[ -f "$_envf" ]] || { echo ""; return 0; }
     grep -E "^${_key}=" "$_envf" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"' || echo ""
 }
@@ -290,10 +306,14 @@ estimate_resources() {
     fi
 
     # ── Warnings + exit code ──
+    # Exit 1 (RAM-over) only when using the installed compose (pre-install estimate
+    # is informational — the full template may exceed RAM of many hosts by design).
     local _rc=0
+    local _is_installed=false
+    [[ "$_cf" == "${INSTALL_DIR}/docker/docker-compose.yml" ]] && _is_installed=true
     if python3 -c "import sys; sys.exit(0 if ${_total} > ${_ram_avail} else 1)" 2>/dev/null; then
         _warnings+=("RAM estimate (${_total} GiB) exceeds available (${_ram_avail} GiB)")
-        _rc=1
+        [[ "$_is_installed" == "true" ]] && _rc=1
     fi
     if python3 -c "import sys; sys.exit(0 if ${_disk_approx} > ${_disk_avail} else 1)" 2>/dev/null; then
         _warnings+=("Disk estimate (~${_disk_approx} GiB) exceeds free (${_disk_avail} GiB)")
@@ -337,7 +357,7 @@ print(json.dumps({
         "gpu_gib": float(os.environ["ESTIMATE_GPU_AVAIL"]),
     },
     "warnings": warn,
-}, indent=2))
+}))
 PY
     else
         # Human-readable table
