@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Mock free — passthrough to real free UNLESS MOCK_FREE_FIXTURE is set AND `-g` requested.
 # WHY: lib/doctor.sh::doctor_check_resources reads `free -g` (Mem total/used, Swap total).
-# Fixtures: spark (120G mem, 32G swap)
+# Fixtures: spark (120G mem, 32G swap) | over (32G mem — less than rag 121 GiB estimate sum)
 REAL_FREE=/usr/bin/free; [[ -x "$REAL_FREE" ]] || REAL_FREE=/bin/free
 if [[ -z "${MOCK_FREE_FIXTURE:-}" || "${1:-}" != "-g" ]]; then exec "$REAL_FREE" "$@"; fi
 case "$MOCK_FREE_FIXTURE" in
     spark) memtot=120 memused=20 swaptot=32 ;;
+    over)  memtot=32  memused=20 swaptot=4  ;;
     *) echo "mock free: unknown MOCK_FREE_FIXTURE=$MOCK_FREE_FIXTURE" >&2; exit 2 ;;
 esac
 echo "               total        used        free"
