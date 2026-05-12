@@ -7,10 +7,10 @@
 set -euo pipefail
 trap 'echo "ERROR at line $LINENO: $BASH_COMMAND" >&2' ERR
 
-VERSION="3.0.2"   # keep in sync with RELEASE / README / templates/release-manifest.json
+VERSION="${VERSION:-3.0.2}"   # keep in sync with RELEASE / README / templates/release-manifest.json
 TOTAL_PHASES=0   # sentinel — overwritten by phases_count() after sourcing lib/phases.sh (so _cleanup_on_failure's $TOTAL_PHASES is always defined, even if a source fails)
 INSTALLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-INSTALL_DIR="/opt/agmind"
+INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
 TEMPLATE_DIR="${INSTALLER_DIR}/templates"
 
 # Verify running from project directory
@@ -71,15 +71,148 @@ _acquire_lock() {
     fi
 }
 
+# ==============================================================================
+# INSTALL REPORT (D-08/D-09/D-10)
+# _build_install_report <status> <failed_phase>
+# status ∈ {ok, failed}; failed_phase = "" (ok path) or 1-based phase number string.
+# Writes ${INSTALL_DIR}/install-report.json atomically. NEVER fails the installer.
+# ==============================================================================
+_build_install_report() {
+    local status="${1:-ok}" failed_phase="${2:-}"
+    local report_file="${INSTALL_DIR}/install-report.json"
+    local jsonl_file="${INSTALL_DIR}/.install-phases.jsonl"
+    # Use a temp file for atomic write; exit gracefully on mktemp failure (best-effort record)
+    local tmp
+    tmp="$(mktemp "${INSTALL_DIR}/.install-report.XXXXXX" 2>/dev/null)" || return 0
+
+    # ended = now; started = "started" field of FIRST jsonl line (parsed with python3)
+    local ended_iso started duration_s s_epoch e_epoch
+    ended_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    started=""
+    if [[ -f "$jsonl_file" && -s "$jsonl_file" ]] && command -v python3 >/dev/null 2>&1; then
+        started="$(python3 -c '
+import json, sys
+try:
+    line = sys.stdin.readline()
+    print(json.loads(line).get("started", "") if line.strip() else "")
+except Exception:
+    print("")
+' < "$jsonl_file" 2>/dev/null || true)"
+    fi
+    [[ -z "${started:-}" ]] && started="$ended_iso"
+    s_epoch="$(date -d "$started" +%s 2>/dev/null || date +%s)"
+    e_epoch="$(date +%s)"
+    duration_s=$(( e_epoch - s_epoch ))
+    [[ "$duration_s" -lt 0 ]] && duration_s=0
+
+    # phases[] — jsonl lines joined by comma (each line is already valid JSON)
+    local phases_json="[]"
+    if [[ -f "$jsonl_file" && -s "$jsonl_file" ]]; then
+        phases_json="[$(paste -sd ',' "$jsonl_file")]"
+    fi
+
+    # services[] — docker ps -a --format '{{.Names}}\t{{.State}}' filtered to agmind-* containers
+    # Parse each output line with python3: try JSON first (mock), then tab-split (real docker).
+    local services_json="[]"
+    if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+        local rows=()
+        local _ps_line _svc_name _svc_state _svc_health
+        while IFS= read -r _ps_line; do
+            [[ -z "$_ps_line" ]] && continue
+            # Parse: try JSON {"name":"agmind-X","status":"Y"} (mock output),
+            # then fall back to tab-separated "agmind-X\trunning" (real docker).
+            _svc_name=""
+            _svc_state=""
+            if command -v python3 >/dev/null 2>&1; then
+                read -r _svc_name _svc_state < <(python3 -c "
+import json, sys
+line = sys.stdin.readline().strip()
+try:
+    d = json.loads(line)
+    print(d.get('name',''), d.get('status',''))
+except Exception:
+    parts = line.split('\t', 1)
+    print(parts[0] if len(parts) > 0 else '', parts[1] if len(parts) > 1 else '')
+" <<< "$_ps_line" 2>/dev/null || true)
+            else
+                _svc_name="${_ps_line%%$'\t'*}"
+                _svc_state="${_ps_line#*$'\t'}"
+            fi
+            [[ -z "$_svc_name" ]] && continue
+            # Only include agmind-* containers
+            [[ "$_svc_name" == agmind-* ]] || continue
+            # Get health status via inspect (graceful fallback to "none")
+            # Note: use --format (not -f) for mock compatibility
+            _svc_health="$(docker inspect --format \
+                '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
+                "$_svc_name" 2>/dev/null || echo none)"
+            [[ -z "$_svc_health" ]] && _svc_health="none"
+            rows+=("{\"name\":\"${_svc_name#agmind-}\",\"container\":\"${_svc_name}\",\"status\":\"${_svc_state}\",\"health\":\"${_svc_health}\"}")
+        done < <(docker ps -a --format '{{.Names}}\t{{.State}}' 2>/dev/null || true)
+        if [[ ${#rows[@]} -gt 0 ]]; then
+            services_json="[$(IFS=,; printf '%s' "${rows[*]}")]"
+        fi
+    fi
+
+    # errors[] — phases with status "fail" in jsonl
+    local errors_json="[]"
+    if [[ -f "$jsonl_file" && -s "$jsonl_file" ]]; then
+        local err_rows=() _eline _ename
+        while IFS= read -r _eline; do
+            [[ "$_eline" == *'"status":"fail"'* ]] || continue
+            _ename=""
+            if command -v python3 >/dev/null 2>&1; then
+                _ename="$(python3 -c "
+import json, sys
+try:
+    d = json.loads(sys.stdin.readline())
+    print(d.get('name', 'unknown'))
+except Exception:
+    print('unknown')
+" <<< "$_eline" 2>/dev/null || true)"
+            else
+                _ename="$(echo "$_eline" | grep -oE '"name":"[^"]+"' | head -1 | sed 's/.*:"//;s/"$//' || true)"
+            fi
+            err_rows+=("\"Phase: ${_ename:-unknown} failed\"")
+        done < "$jsonl_file"
+        if [[ ${#err_rows[@]} -gt 0 ]]; then
+            errors_json="[$(IFS=,; printf '%s' "${err_rows[*]}")]"
+        fi
+    fi
+
+    local failed_phase_json="null"
+    [[ -n "$failed_phase" ]] && failed_phase_json="\"${failed_phase}\""
+
+    # Hand-roll the JSON (D-10: no json-tool needed for output; jsonl lines inserted verbatim)
+    # Security: only {{.Names}} and {{.State}} from docker ps — no env values in report.
+    printf '{\n  "schema_version": 1,\n  "agmind_version": "%s",\n  "mode": "%s",\n  "status": "%s",\n  "started": "%s",\n  "ended": "%s",\n  "duration_s": %d,\n  "failed_phase": %s,\n  "phases": %s,\n  "services": %s,\n  "errors": %s\n}\n' \
+        "${VERSION:-unknown}" \
+        "${AGMIND_MODE:-single}" \
+        "$status" \
+        "$started" \
+        "$ended_iso" \
+        "$duration_s" \
+        "$failed_phase_json" \
+        "$phases_json" \
+        "$services_json" \
+        "$errors_json" > "$tmp" 2>/dev/null || { rm -f "$tmp"; return 0; }
+
+    mv "$tmp" "$report_file" 2>/dev/null || { rm -f "$tmp"; return 0; }
+    chmod 644 "$report_file" 2>/dev/null || true
+    return 0
+}
+
 _cleanup_on_failure() {
     local rc=$?
     if [[ $rc -eq 0 ]]; then return; fi
     echo ""
     log_error "Installation aborted (code: ${rc})."
+    local _failed_phase=""
     if [[ -f "${INSTALL_DIR}/.install_phase" ]]; then
-        local p; p="$(cat "${INSTALL_DIR}/.install_phase" 2>/dev/null)"
-        log_warn "Failed at phase ${p}/${TOTAL_PHASES}. Re-run: sudo bash install.sh"
+        _failed_phase="$(cat "${INSTALL_DIR}/.install_phase" 2>/dev/null || true)"
+        log_warn "Failed at phase ${_failed_phase}/${TOTAL_PHASES}. Re-run: sudo bash install.sh"
     fi
+    _build_install_report "failed" "${_failed_phase:-}" 2>/dev/null || true
 }
 
 # --- Banner ---
@@ -256,7 +389,7 @@ phase_models_graceful() {
     fi
 }
 phase_backups()     { setup_backups; }
-phase_complete()    { create_openwebui_admin; _init_minio_bucket; _init_ragflow_minio_user; _ensure_api_responsive; _init_dify_admin; _sync_grafana_admin_password; _ensure_docling_ocr_models; _save_credentials; _install_cli; _install_crons; _install_systemd_service; verify_services || true; _verify_post_install_smoke; doctor_run --full 2>/dev/null || true; _show_final_summary; _apply_dify_patches; }
+phase_complete()    { create_openwebui_admin; _init_minio_bucket; _init_ragflow_minio_user; _ensure_api_responsive; _init_dify_admin; _sync_grafana_admin_password; _ensure_docling_ocr_models; _save_credentials; _install_cli; _install_crons; _install_systemd_service; verify_services || true; _verify_post_install_smoke; doctor_run --full 2>/dev/null || true; _build_install_report "ok" ""; _show_final_summary; _apply_dify_patches; }
 
 _apply_dify_patches() {
     [[ "${ENABLE_DIFY_PREMIUM:-false}" == "true" ]] || return 0
@@ -1357,6 +1490,18 @@ main() {
         run_diagnostics || true
     fi
 
+    # D-11: on an existing install, dry-run also surfaces config sanity + version status.
+    # Read-only — config_validate is a static file check; nothing is mutated.
+    if [[ "${DRY_RUN:-false}" == "true" && -f "${INSTALL_DIR}/docker/.env" ]]; then
+        echo ""
+        log_info "Existing installation detected — running config validation (informational):"
+        config_validate || true
+        local _installed_dify
+        _installed_dify="$(grep -E '^DIFY_VERSION=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+        log_info "Installed DIFY_VERSION: ${_installed_dify:-unknown}  (run 'agmind config diff' for full version delta)"
+        echo ""
+    fi
+
     # Run the phase engine (lib/phases.sh) — replaces the old hardcoded phase table
     local engine_flags=()
     [[ "${DRY_RUN:-false}" == "true" ]] && engine_flags+=(--dry-run)
@@ -1366,4 +1511,9 @@ main() {
     rm -f "${INSTALL_DIR}/.install_phase"
 }
 
-main "$@"
+# AGMIND_LIB_ONLY=1 guard: when sourced by unit tests (test_install_report.sh),
+# define all functions above but do NOT run the installer, acquire locks, or set
+# EXIT traps. This is the LOCKED convention: the env var name must not be renamed.
+if [[ "${AGMIND_LIB_ONLY:-}" != "1" ]]; then
+    main "$@"
+fi
