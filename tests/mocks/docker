@@ -24,6 +24,14 @@
 #   MOCK_DOCKER_COMPOSE_CONFIG_EXIT: exit code for `docker compose ... config -q` (default 0)
 #   MOCK_DOCKER_COMPOSE_CONFIG_OUTPUT: stderr output when config -q exits non-zero
 #   MOCK_DOCKER_COMPOSE_CONFIG_RENDERED_FILE: file path to cat for `docker compose ... config` (no -q)
+#
+# Phase 7 additions (additive — existing fixtures intact):
+#   sock_rw fixture: inspect returns rw docker.sock mount (for audit_finds_rw_sock test)
+#   MOCK_DOCKER_IMAGE_INSPECT_EXIT: exit code for `docker image inspect` (0=present, 1=missing)
+#   MOCK_DOCKER_IMAGE_INSPECT_MISSING: image name pattern → when inspected, exits 1 (missing)
+#   MOCK_DOCKER_VOLUME_INSPECT_FIXTURE: ok (non-empty) | empty | missing — for airgapped model checks
+#   MOCK_DOCKER_SAVE_DIR: when set, `docker save -o <path>` creates a stub tar at that path
+#   MOCK_DOCKER_LOAD_EXIT: exit code for `docker load` (default 0)
 set -euo pipefail
 
 # Call-log: always record invocation so tests can assert docker was/wasn't called.
@@ -113,6 +121,24 @@ case "${MOCK_DOCKER_FIXTURE:-healthy}" in
                         with_ollama)    printf 'agmind_ollama_data\n' ;;
                         full)           printf 'agmind_openwebui_data\nagmind_ollama_data\nagmind_weaviate\n' ;;
                         *)              : ;;
+                    esac
+                fi
+                # Phase 7: docker volume inspect <name> — for airgapped model volume checks
+                if [[ "${2:-}" == "inspect" ]]; then
+                    _vol_name="${3:-}"
+                    case "${MOCK_DOCKER_VOLUME_INSPECT_FIXTURE:-ok}" in
+                        ok)
+                            printf '[{"Name":"%s","Mountpoint":"/var/lib/docker/volumes/%s/_data"}]\n' \
+                                "$_vol_name" "$_vol_name"
+                            ;;
+                        missing)
+                            echo "Error: No such volume: ${_vol_name}" >&2
+                            exit 1
+                            ;;
+                        *)
+                            printf '[{"Name":"%s","Mountpoint":"/var/lib/docker/volumes/%s/_data"}]\n' \
+                                "$_vol_name" "$_vol_name"
+                            ;;
                     esac
                 fi
                 exit 0
@@ -414,6 +440,19 @@ case "${MOCK_DOCKER_FIXTURE:-healthy}" in
                 ;;
             image)
                 if [[ "${2:-}" == "inspect" ]]; then
+                    # Phase 7: MOCK_DOCKER_IMAGE_INSPECT_EXIT — configurable exit for airgapped tests
+                    # MOCK_DOCKER_IMAGE_INSPECT_MISSING — pattern; if image name matches, exit 1
+                    _img_arg="${3:-}"
+                    if [[ -n "${MOCK_DOCKER_IMAGE_INSPECT_MISSING:-}" ]]; then
+                        if [[ "$_img_arg" == *"${MOCK_DOCKER_IMAGE_INSPECT_MISSING}"* ]]; then
+                            echo "Error: No such image: ${_img_arg}" >&2
+                            exit 1
+                        fi
+                    fi
+                    if [[ -n "${MOCK_DOCKER_IMAGE_INSPECT_EXIT:-}" && "${MOCK_DOCKER_IMAGE_INSPECT_EXIT}" != "0" ]]; then
+                        echo "Error: No such image: ${_img_arg}" >&2
+                        exit "${MOCK_DOCKER_IMAGE_INSPECT_EXIT}"
+                    fi
                     echo '[{"Id":"sha256:abc123"}]'
                 else
                     exit 0
@@ -421,6 +460,36 @@ case "${MOCK_DOCKER_FIXTURE:-healthy}" in
                 ;;
             images)
                 printf 'REPOSITORY              TAG    IMAGE ID\nagmind/example          1.0    abc123\n'
+                ;;
+            save)
+                # Phase 7: docker save [-o <path>] <image> — for bundle_create tests
+                # MOCK_DOCKER_SAVE_DIR: if set, create a stub tar at the -o path
+                _save_out=""
+                _save_scanning_o=0
+                for _sv in "$@"; do
+                    if [[ "$_save_scanning_o" -eq 1 ]]; then
+                        _save_out="$_sv"
+                        _save_scanning_o=0
+                    elif [[ "$_sv" == "-o" ]]; then
+                        _save_scanning_o=1
+                    fi
+                done
+                if [[ -n "${MOCK_DOCKER_SAVE_DIR:-}" && -n "$_save_out" ]]; then
+                    # Create a minimal stub tar at the requested output path
+                    mkdir -p "$(dirname "$_save_out")"
+                    tar czf "$_save_out" -C "${MOCK_DOCKER_SAVE_DIR}" . 2>/dev/null \
+                        || printf '' | gzip > "$_save_out"
+                elif [[ -n "$_save_out" ]]; then
+                    # Create a minimal empty gzip file
+                    printf '\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\x03\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00' \
+                        > "$_save_out" 2>/dev/null || true
+                fi
+                exit 0
+                ;;
+            load)
+                # Phase 7: docker load [-i <path>] — for bundle_install tests
+                # MOCK_DOCKER_LOAD_EXIT: configurable exit code (default 0)
+                exit "${MOCK_DOCKER_LOAD_EXIT:-0}"
                 ;;
             system)
                 if [[ "${2:-}" == "df" ]]; then
@@ -478,6 +547,35 @@ case "${MOCK_DOCKER_FIXTURE:-healthy}" in
                         exit 0
                         ;;
                 esac
+                ;;
+            *)
+                exit 0
+                ;;
+        esac
+        ;;
+    sock_rw)
+        # Phase 7: simulate a container with rw docker.sock mount (for audit_finds_rw_sock)
+        case "${1:-}" in
+            ps)
+                printf 'agmind-portainer\n'
+                ;;
+            inspect)
+                echo '[{"RestartCount":0,"Mounts":[{"Source":"/var/run/docker.sock","RW":true}],"Config":{"Env":["PATH=/usr/bin"]}}]'
+                ;;
+            info)
+                printf 'Server Version: 29.0.3\nRuntimes: nvidia runc\n'
+                ;;
+            version)
+                if [[ "${2:-}" == "--format" ]]; then echo "29.0.3"; else echo "Docker version 29.0.3, build abc123"; fi
+                ;;
+            compose)
+                case "${2:-}" in
+                    version) if [[ "${3:-}" == "--short" ]]; then echo "v2.27.0"; else echo "Docker Compose version v2.27.0"; fi ;;
+                    *) exit 0 ;;
+                esac
+                ;;
+            image)
+                if [[ "${2:-}" == "inspect" ]]; then echo '[{"Id":"sha256:abc123"}]'; else exit 0; fi
                 ;;
             *)
                 exit 0
