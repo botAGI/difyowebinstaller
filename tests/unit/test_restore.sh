@@ -59,8 +59,7 @@ _mk_fixture() {
 }
 
 # ── TC1: verify_happy_path ────────────────────────────────────────────────────
-# Against Wave-0 stub: restore_verify exits non-zero (not yet implemented).
-# This TC will go GREEN (exit 0, no [FAIL]) once Plan 02 implements restore_verify.
+# restore_verify on valid fixture → exit 0, no [FAIL] in output (Plan 02 GREEN).
 (
     set +e
     export PATH="${MOCK_DIR}:${PATH}"
@@ -71,16 +70,16 @@ _mk_fixture() {
     _mk_fixture "$fix_dir"
     # shellcheck source=/dev/null
     source "${REPO_ROOT}/lib/restore.sh"
-    restore_verify "$fix_dir" 2>/dev/null
+    out="$(restore_verify "$fix_dir" 2>&1)"
     rc=$?
-    # Stub returns 1 — correct Wave-0 behavior (RED is expected and documented)
-    [[ "$rc" -ne 0 ]]
-) && pass "TC1 verify_happy_path: restore_verify stub exits non-zero (RED until Plan 02)" \
-  || fail "TC1 verify_happy_path: stub unexpectedly returned 0"
+    # Plan 02: valid fixture → exit 0 AND no [FAIL] lines
+    [[ "$rc" -eq 0 ]] && ! echo "$out" | grep -q '\[FAIL\]'
+) && pass "TC1 verify_happy_path: valid fixture → restore_verify exits 0, no [FAIL]" \
+  || fail "TC1 verify_happy_path: restore_verify did not exit 0 or printed [FAIL] on valid fixture"
 
 # ── TC2: verify_corrupt_tar ───────────────────────────────────────────────────
 # Overwrite last 4 bytes of weaviate.tar.gz → gzip -t fails (corruption confirmed).
-# restore_verify will catch this in Plan 02; stub exits non-zero regardless.
+# restore_verify must exit 1 with [FAIL] in output (Plan 02 GREEN).
 (
     set +e
     export PATH="${MOCK_DIR}:${PATH}"
@@ -102,14 +101,16 @@ with open(path, 'r+b') as f:
     corrupt_rc=$?
     # shellcheck source=/dev/null
     source "${REPO_ROOT}/lib/restore.sh"
-    restore_verify "$fix_dir" 2>/dev/null
+    out="$(restore_verify "$fix_dir" 2>&1)"
     verify_rc=$?
-    [[ "$corrupt_rc" -ne 0 ]] && [[ "$verify_rc" -ne 0 ]]
-) && pass "TC2 verify_corrupt_tar: gzip -t confirms corruption; stub exits non-zero (RED until Plan 02)" \
-  || fail "TC2 verify_corrupt_tar: corruption not detected or unexpected stub behavior"
+    # Plan 02: corrupt tar → exit 1 AND [FAIL] in output (archive_integrity or checksums)
+    [[ "$corrupt_rc" -ne 0 ]] && [[ "$verify_rc" -ne 0 ]] && echo "$out" | grep -q '\[FAIL\]'
+) && pass "TC2 verify_corrupt_tar: corrupt tar → restore_verify exits 1 with [FAIL]" \
+  || fail "TC2 verify_corrupt_tar: corruption not detected or restore_verify did not exit 1 / print [FAIL]"
 
 # ── TC3: verify_checksum_fail ─────────────────────────────────────────────────
 # Flip one hex char in sha256sums.txt → sha256sum -c fails (mismatch confirmed).
+# restore_verify must exit 1 with [FAIL] in output (Plan 02 GREEN).
 (
     set +e
     export PATH="${MOCK_DIR}:${PATH}"
@@ -125,14 +126,16 @@ with open(path, 'r+b') as f:
     chk_rc=$?
     # shellcheck source=/dev/null
     source "${REPO_ROOT}/lib/restore.sh"
-    restore_verify "$fix_dir" 2>/dev/null
+    out="$(restore_verify "$fix_dir" 2>&1)"
     verify_rc=$?
-    [[ "$chk_rc" -ne 0 ]] && [[ "$verify_rc" -ne 0 ]]
-) && pass "TC3 verify_checksum_fail: sha256sum mismatch confirmed; stub exits non-zero (RED until Plan 02)" \
-  || fail "TC3 verify_checksum_fail: mismatch not confirmed or unexpected stub behavior"
+    # Plan 02: checksum mismatch → exit 1 AND [FAIL] in output
+    [[ "$chk_rc" -ne 0 ]] && [[ "$verify_rc" -ne 0 ]] && echo "$out" | grep -q '\[FAIL\]'
+) && pass "TC3 verify_checksum_fail: checksum mismatch → restore_verify exits 1 with [FAIL]" \
+  || fail "TC3 verify_checksum_fail: mismatch not confirmed or restore_verify did not exit 1 / print [FAIL]"
 
 # ── TC4: verify_empty_sql ─────────────────────────────────────────────────────
 # Replace dify_db.sql.gz with empty gzip → gunzip -c gives empty output.
+# restore_verify must exit 1 with [FAIL] sql_sanity (Plan 02 GREEN).
 (
     set +e
     export PATH="${MOCK_DIR}:${PATH}"
@@ -147,14 +150,16 @@ with open(path, 'r+b') as f:
     sql_content="$(gunzip -c "${fix_dir}/dify_db.sql.gz" 2>/dev/null | head -1 || true)"
     # shellcheck source=/dev/null
     source "${REPO_ROOT}/lib/restore.sh"
-    restore_verify "$fix_dir" 2>/dev/null
+    out="$(restore_verify "$fix_dir" 2>&1)"
     verify_rc=$?
-    [[ -z "$sql_content" ]] && [[ "$verify_rc" -ne 0 ]]
-) && pass "TC4 verify_empty_sql: empty SQL confirmed + stub exits non-zero (RED until Plan 02)" \
-  || fail "TC4 verify_empty_sql: unexpected result"
+    # Plan 02: empty SQL → exit 1 AND [FAIL] in output
+    [[ -z "$sql_content" ]] && [[ "$verify_rc" -ne 0 ]] && echo "$out" | grep -q '\[FAIL\]'
+) && pass "TC4 verify_empty_sql: empty SQL → restore_verify exits 1 with [FAIL]" \
+  || fail "TC4 verify_empty_sql: empty SQL not detected or restore_verify did not exit 1 / print [FAIL]"
 
 # ── TC5: verify_missing_artifact ──────────────────────────────────────────────
 # Delete env.backup from fixture that HAS MANIFEST listing it.
+# restore_verify must exit 1 with [FAIL] completeness (Plan 02 GREEN).
 (
     set +e
     export PATH="${MOCK_DIR}:${PATH}"
@@ -169,14 +174,16 @@ with open(path, 'r+b') as f:
     if ! grep -q "env.backup" "${fix_dir}/MANIFEST.txt"; then exit 1; fi
     # shellcheck source=/dev/null
     source "${REPO_ROOT}/lib/restore.sh"
-    restore_verify "$fix_dir" 2>/dev/null
+    out="$(restore_verify "$fix_dir" 2>&1)"
     verify_rc=$?
-    [[ "$verify_rc" -ne 0 ]]
-) && pass "TC5 verify_missing_artifact: env.backup absent from MANIFEST-backed fixture; stub RED" \
-  || fail "TC5 verify_missing_artifact: unexpected result"
+    # Plan 02: missing MANIFEST artifact → exit 1 AND specific message
+    [[ "$verify_rc" -ne 0 ]] && echo "$out" | grep -q "env.backup"
+) && pass "TC5 verify_missing_artifact: missing env.backup → restore_verify exits 1, mentions env.backup" \
+  || fail "TC5 verify_missing_artifact: restore_verify did not exit 1 or did not mention env.backup"
 
 # ── TC5b: verify_old_no_manifest ─────────────────────────────────────────────
-# Fixture WITHOUT MANIFEST.txt but WITH dify_db.sql.gz + env.backup.
+# Fixture WITHOUT MANIFEST.txt but WITH dify_db.sql.gz + env.backup (core set present).
+# restore_verify must exit 0 with [WARN] (no FAIL — core files present) (Plan 02 GREEN).
 (
     set +e
     export PATH="${MOCK_DIR}:${PATH}"
@@ -190,11 +197,12 @@ with open(path, 'r+b') as f:
     if [[ ! -f "${fix_dir}/env.backup" ]]; then exit 1; fi
     # shellcheck source=/dev/null
     source "${REPO_ROOT}/lib/restore.sh"
-    restore_verify "$fix_dir" 2>/dev/null
+    out="$(restore_verify "$fix_dir" 2>&1)"
     verify_rc=$?
-    [[ "$verify_rc" -ne 0 ]]
-) && pass "TC5b verify_old_no_manifest: fixture without MANIFEST + stub exits non-zero (RED)" \
-  || fail "TC5b verify_old_no_manifest: unexpected result"
+    # Plan 02: no MANIFEST + core present → exit 0 (WARN only, no FAIL) + WARN message about old format
+    [[ "$verify_rc" -eq 0 ]] && echo "$out" | grep -q '\[WARN\]' && ! echo "$out" | grep -q '\[FAIL\]'
+) && pass "TC5b verify_old_no_manifest: no MANIFEST + core present → exit 0, WARN shown, no FAIL" \
+  || fail "TC5b verify_old_no_manifest: restore_verify did not exit 0 or WARN missing or FAIL present"
 
 # ── TC6: dry_run_read_only ────────────────────────────────────────────────────
 # restore_plan <fixture> --dry-run → fixture dir mtime unchanged AND
