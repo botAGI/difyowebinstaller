@@ -234,10 +234,10 @@ sudo NON_INTERACTIVE=true \
    ssrf-network    — isolated: Dify Sandbox ↔ Squid proxy
 ```
 
-> [!NOTE]
-> Hardcoded SVG diagram in `branding/architecture.svg` is from v2.x and no
-> longer reflects the stack (Ollama / TEI / Promtail / VPS profile shown there
-> have all been retired). Treat the ASCII above as the source of truth.
+> [!TIP]
+> For rendered diagrams see [`docs/architecture/`](docs/architecture/) — service
+> topology, data-flow, and network/security zones (Mermaid). The ASCII above is
+> the quick reference.
 
 ### Repository Layout
 

@@ -1,10 +1,31 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="AGMind">
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#4F46E5"/>
-      <stop offset="100%" style="stop-color:#7C3AED"/>
+    <linearGradient id="agmBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0e1626"/>
+      <stop offset="1" stop-color="#070b12"/>
     </linearGradient>
+    <linearGradient id="agmGrn" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4ade80"/>
+      <stop offset="0.55" stop-color="#22c55e"/>
+      <stop offset="1" stop-color="#15803d"/>
+    </linearGradient>
+    <filter id="agmGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="7" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
   </defs>
-  <rect width="200" height="200" rx="40" fill="url(#bg)"/>
-  <text x="100" y="130" font-family="Arial, sans-serif" font-size="90" font-weight="bold" fill="white" text-anchor="middle">AG</text>
+
+  <!-- near-black rounded square + thin green ring -->
+  <rect x="3" y="3" width="250" height="250" rx="54" fill="url(#agmBg)"
+        stroke="#1f9d55" stroke-opacity="0.35" stroke-width="2.5"/>
+
+  <!-- AG wordmark — bold monospace, green gradient, soft glow -->
+  <text x="128" y="148" text-anchor="middle"
+        font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace"
+        font-size="116" font-weight="700" letter-spacing="-4"
+        fill="url(#agmGrn)" filter="url(#agmGlow)">AG</text>
+
+  <!-- green base / prompt line -->
+  <rect x="48" y="178" width="160" height="7" rx="3.5" fill="url(#agmGrn)" opacity="0.9"/>
+  <rect x="48" y="178" width="160" height="7" rx="3.5" fill="#22c55e" opacity="0.35" filter="url(#agmGlow)"/>
 </svg>

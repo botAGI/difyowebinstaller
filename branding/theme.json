@@ -1,9 +1,13 @@
 {
-  "name": "AGMind Default",
-  "primary_color": "#4F46E5",
-  "background_color": "#F9FAFB",
-  "sidebar_color": "#1F2937",
-  "text_color": "#111827",
-  "accent_color": "#6366F1",
-  "font_family": "Inter, system-ui, -apple-system, sans-serif"
+  "name": "AGMind Dark-Green",
+  "primary_color": "#22c55e",
+  "background_color": "#070b12",
+  "surface_color": "#0e1626",
+  "sidebar_color": "#0a0f1a",
+  "text_color": "#e6edf3",
+  "muted_text_color": "#8b98a5",
+  "accent_color": "#4ade80",
+  "border_color": "#1f2a3a",
+  "font_family": "Inter, system-ui, -apple-system, sans-serif",
+  "mono_font_family": "'JetBrains Mono','SF Mono',Menlo,Consolas,monospace"
 }
