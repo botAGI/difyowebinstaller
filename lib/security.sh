@@ -365,6 +365,525 @@ with open('$compose_file', 'w') as f:
 }
 
 # ============================================================================
+# SECURITY AUDIT (agmind security audit) — read-only scanner
+# ============================================================================
+# Reuses lib/doctor.sh::doctor_check_security_exposure for exposed-ports +
+# docker.sock-consumers data; adds privileged-containers / weak-env / file-perms.
+# Report-only — no --fix (operator applies fixes). Secret VALUES are never printed.
+# WHY: SC2 requirement — closes "weak/default secrets undetected",
+#      "world-readable secret files", "Portainer rw-socket not behind auth".
+
+# Fallback log/color shims if sourced standalone (mirror lib/doctor.sh)
+command -v log_info    >/dev/null 2>&1 || log_info()    { echo "  -> $*"; }
+command -v log_warn    >/dev/null 2>&1 || log_warn()    { echo "  ! $*" >&2; }
+command -v log_error   >/dev/null 2>&1 || log_error()   { echo "  ✗ $*" >&2; }
+command -v log_success >/dev/null 2>&1 || log_success() { echo "  ✓ $*"; }
+
+# _SEC_SEP — ASCII Unit Separator, same pattern as DOCTOR_REGISTRY (not in normal messages)
+_SEC_SEP=$'\x1f'
+# SECURITY_AUDIT_CHECKS — array of \x1f-records: id|severity|target|detail|fix
+SECURITY_AUDIT_CHECKS=()
+
+_sec_registry_add() {
+    # Usage: _sec_registry_add id severity target detail [fix]
+    local id="$1" severity="$2" target="$3" detail="$4" fix="${5:-}"
+    SECURITY_AUDIT_CHECKS+=("${id}${_SEC_SEP}${severity}${_SEC_SEP}${target}${_SEC_SEP}${detail}${_SEC_SEP}${fix}")
+}
+
+# _sec_severity_rank — maps severity string to integer for comparison
+_sec_severity_rank() {
+    case "${1:-info}" in
+        info)     echo 0 ;;
+        low)      echo 1 ;;
+        medium)   echo 2 ;;
+        high)     echo 3 ;;
+        critical) echo 4 ;;
+        *)        echo 0 ;;
+    esac
+}
+
+# _sec_check_exposed_ports — reads compose file for admin-UI ports bound to 0.0.0.0
+# WHY T-07-12: admin UIs bound to all interfaces expose them to the LAN (CLAUDE.md §8 nginx §5)
+_sec_check_exposed_ports() {
+    local install_dir="${INSTALL_DIR:-/opt/agmind}"
+    local compose_file="${install_dir}/docker/docker-compose.yml"
+    if [[ ! -f "$compose_file" ]]; then
+        _sec_registry_add "exposed_compose_missing" "info" "compose" \
+            "docker-compose.yml not found at ${compose_file} — exposed-ports check skipped" \
+            ""
+        return 0
+    fi
+    # Parse ports: lines matching 0.0.0.0:HOSTPORT:CONTAINERPORT in compose file
+    # Use python3 for precise regex extraction of host port number (avoids bash regex pitfalls)
+    # WHY python3: grep -oE on '0.0.0.0:N' returns 'N' but '0:N' also matches last IP octet
+    local found_any=false
+    local ports_found
+    ports_found="$(python3 - "$compose_file" <<'PYEOF'
+import re, sys
+
+compose_path = sys.argv[1]
+try:
+    with open(compose_path) as f:
+        content = f.read()
+except Exception:
+    sys.exit(0)
+
+# Match 0.0.0.0:HOSTPORT:CONTAINERPORT (with or without surrounding quotes)
+pattern = re.compile(r'0\.0\.0\.0:(\d+):\d+')
+for m in pattern.finditer(content):
+    print(m.group(1))
+PYEOF
+)" || true
+
+    if [[ -n "$ports_found" ]]; then
+        while IFS= read -r port; do
+            [[ -z "$port" ]] && continue
+            found_any=true
+            # Determine severity by port number
+            # WHY critical for Portainer: direct Docker daemon access = host root equivalent
+            local sev fix_hint
+            fix_hint="bind to 127.0.0.1 or \${SERVICE_BIND_ADDR} in .env"
+            case "$port" in
+                9443|9000|3001|3000|9090) sev="high" ;;  # Admin UIs — WHY high: LAN-only deploy, no public internet exposure
+                *)                        sev="medium" ;; # Other admin UIs
+            esac
+            _sec_registry_add "exposed_port_${port}" "${sev}" "0.0.0.0:${port}" \
+                "Admin UI port ${port} bound to 0.0.0.0 — accessible from all network interfaces" \
+                "${fix_hint}"
+        done <<< "$ports_found"
+    fi
+
+    if [[ "$found_any" == "false" ]]; then
+        _sec_registry_add "exposed_none" "info" "compose" \
+            "No admin UI ports bound to 0.0.0.0 in compose file" ""
+    fi
+}
+
+# _sec_check_privileged_containers — checks for privileged:true on running agmind-* containers
+# WHY T-07-11: privileged containers bypass namespacing — full root on host
+_sec_check_privileged_containers() {
+    local _docker_ok=true
+    if ! command -v docker >/dev/null 2>&1; then
+        _docker_ok=false
+    else
+        if ! docker info >/dev/null 2>&1; then
+            _docker_ok=false
+        fi
+    fi
+    if [[ "$_docker_ok" == "false" ]]; then
+        echo "docker unavailable — skipping privileged-containers check" >&2
+        _sec_registry_add "priv_skip" "info" "docker" \
+            "docker unavailable — privileged-containers check skipped" ""
+        return 0
+    fi
+
+    local containers
+    containers="$(docker ps --format '{{.Names}}' 2>/dev/null | grep '^agmind-' || true)"
+    if [[ -z "$containers" ]]; then
+        _sec_registry_add "priv_none" "info" "docker" \
+            "No agmind-* containers running — privileged check skipped" ""
+        return 0
+    fi
+
+    local found_any=false
+    while IFS= read -r c; do
+        [[ -z "$c" ]] && continue
+        local priv
+        set +e
+        priv="$(docker inspect "$c" --format '{{.HostConfig.Privileged}}' 2>/dev/null || echo "false")"
+        set -e
+        if [[ "$priv" == "true" ]]; then
+            found_any=true
+            _sec_registry_add "priv_${c}" "medium" "$c" \
+                "${c} is privileged — justification? (cadvisor: reads cgroups/sysfs — expected)" \
+                "review necessity; remove privileged: true if not required"
+        fi
+    done <<< "$containers"
+
+    if [[ "$found_any" == "false" ]]; then
+        _sec_registry_add "priv_ok" "info" "docker" \
+            "No privileged agmind-* containers found" ""
+    fi
+}
+
+# _sec_check_docker_sock_consumers — checks for containers mounting /var/run/docker.sock
+# WHY T-07-11: rw docker.sock = root-equivalent on host (CLAUDE.md §8 security notes)
+_sec_check_docker_sock_consumers() {
+    local _docker_ok=true
+    if ! command -v docker >/dev/null 2>&1; then
+        _docker_ok=false
+    else
+        if ! docker info >/dev/null 2>&1; then
+            _docker_ok=false
+        fi
+    fi
+    if [[ "$_docker_ok" == "false" ]]; then
+        echo "docker unavailable — skipping docker.sock-consumers check" >&2
+        _sec_registry_add "sock_skip" "info" "docker" \
+            "docker unavailable — docker.sock-consumers check skipped" ""
+        return 0
+    fi
+
+    local containers
+    containers="$(docker ps --format '{{.Names}}' 2>/dev/null || true)"
+    if [[ -z "$containers" ]]; then
+        _sec_registry_add "sock_none" "info" "docker" \
+            "No running containers — docker.sock check skipped" ""
+        return 0
+    fi
+
+    local found_any=false
+    while IFS= read -r c; do
+        [[ -z "$c" ]] && continue
+        local raw_json
+        set +e
+        raw_json="$(docker inspect "$c" 2>/dev/null || true)"
+        set -e
+        [[ -z "$raw_json" ]] && continue
+        # Parse Mounts from raw JSON with python3 (mock returns raw JSON; avoids --format Go template)
+        # WHY python3: Go template format is not supported by the mock; python3 handles both
+        local sock_result
+        sock_result="$(python3 - "$c" <<PYEOF
+import json, sys
+cname = sys.argv[1]
+try:
+    data = json.loads('''${raw_json}''')
+    if not isinstance(data, list):
+        data = [data]
+    for obj in data:
+        for m in obj.get('Mounts', []):
+            src = m.get('Source', '')
+            rw = m.get('RW', False)
+            if src == '/var/run/docker.sock':
+                print('rw' if rw else 'ro')
+except Exception:
+    pass
+PYEOF
+)" || true
+        case "${sock_result:-}" in
+            rw)
+                found_any=true
+                # WHY high: rw docker.sock = host root equivalent (CLAUDE.md §5, T-07-11)
+                local _detail _fix
+                _detail="${c}: mounts /var/run/docker.sock rw — elevated risk"
+                _fix="use docker-socket-proxy (read-only) or set PORTAINER_BEHIND_AUTHELIA=true"
+                if [[ "$c" == *"portainer"* && "${PORTAINER_BEHIND_AUTHELIA:-false}" != "true" ]]; then
+                    _detail="${c}: mounts /var/run/docker.sock rw — not behind Authelia (SSH-tunnel only or set PORTAINER_BEHIND_AUTHELIA=true)"
+                fi
+                _sec_registry_add "sock_rw_${c}" "high" "$c" "$_detail" "$_fix"
+                ;;
+            ro)
+                found_any=true
+                _sec_registry_add "sock_ro_${c}" "medium" "$c" \
+                    "${c}: mounts /var/run/docker.sock ro (raw, not via proxy)" \
+                    "route through docker-socket-proxy for read-only controlled access"
+                ;;
+        esac
+    done <<< "$containers"
+
+    if [[ "$found_any" == "false" ]]; then
+        _sec_registry_add "sock_ok" "info" "docker" \
+            "No containers mounting /var/run/docker.sock found" ""
+    fi
+}
+
+# _sec_check_weak_env — scans .env for weak/default secret values
+# WHY T-07-09: weak defaults are a critical security hole (CLAUDE.md §5 credentials)
+# CRITICAL: NEVER print the value — only the key name and reason (SC2 invariant)
+_sec_check_weak_env() {
+    local install_dir="${INSTALL_DIR:-/opt/agmind}"
+    local env_file="${install_dir}/docker/.env"
+    if [[ ! -f "$env_file" ]]; then
+        _sec_registry_add "weak_env_missing" "info" ".env" \
+            ".env not found at ${env_file} — weak-env check skipped" ""
+        return 0
+    fi
+
+    # Default placeholder patterns (case-insensitive match later via lowercase)
+    local -a _defaults=("changeme" "admin" "password" "admin123" "test" "123456" "difyai123456")
+
+    local found_any=false
+    while IFS= read -r line; do
+        # Skip comments and blanks
+        [[ -z "$line" || "$line" == \#* ]] && continue
+        # Match key=value for secret-looking keys
+        local key value
+        case "$line" in
+            *_PASSWORD=*|*_SECRET=*|SECRET_KEY=*|*_API_KEY=*|*_TOKEN=*)
+                key="${line%%=*}"
+                value="${line#*=}"
+                ;;
+            *)
+                continue
+                ;;
+        esac
+
+        # RESEARCH Pitfall 7: empty value → unconfigured, not a finding
+        [[ -z "$value" ]] && continue
+
+        # Check for default/placeholder values (case-insensitive)
+        local lc_value
+        lc_value="$(echo "$value" | tr '[:upper:]' '[:lower:]')"
+        local is_default=false
+        local d
+        for d in "${_defaults[@]}"; do
+            if [[ "$lc_value" == "$d" ]]; then
+                is_default=true
+                break
+            fi
+        done
+
+        if [[ "$is_default" == "true" ]]; then
+            found_any=true
+            # WHY: only key + reason in detail — NEVER the value (T-07-09, SC2 invariant)
+            _sec_registry_add "weak_env_default_${key}" "high" "${key}" \
+                "${key} weak: matches default placeholder" \
+                "set a strong value in .env then restart; or run: agmind creds rotate"
+        elif [[ "${#value}" -lt 12 ]]; then
+            found_any=true
+            # WHY: only key + char count — NEVER the value (T-07-09, SC2 invariant)
+            _sec_registry_add "weak_env_short_${key}" "high" "${key}" \
+                "${key} weak: only ${#value} chars (minimum 12 recommended)" \
+                "set a strong value in .env then restart; or run: agmind creds rotate"
+        fi
+    done < "$env_file"
+
+    if [[ "$found_any" == "false" ]]; then
+        _sec_registry_add "weak_env_ok" "info" ".env" \
+            "No weak/default secret values detected in .env" ""
+    fi
+}
+
+# _sec_check_file_perms — checks secret files are not world/group-readable
+# WHY T-07-10: world-readable credential files allow any local user to read secrets (CLAUDE.md §5)
+_sec_check_file_perms() {
+    local install_dir="${INSTALL_DIR:-/opt/agmind}"
+    # Files to check — skip those that don't exist
+    local -a files_to_check=(
+        "${install_dir}/docker/.env"
+        "${install_dir}/credentials.txt"
+        "${install_dir}/.admin_password"
+    )
+
+    # Also add .secrets/* if the dir exists
+    if [[ -d "${install_dir}/.secrets" ]]; then
+        while IFS= read -r sf; do
+            files_to_check+=("$sf")
+        done < <(find "${install_dir}/.secrets" -maxdepth 1 -type f 2>/dev/null || true)
+    fi
+
+    local found_any=false
+    for f in "${files_to_check[@]}"; do
+        [[ -e "$f" ]] || continue
+        local perm
+        perm="$(stat -c '%a' "$f" 2>/dev/null || echo "unknown")"
+        case "$perm" in
+            600|640)
+                # OK — owner-only or owner+group read (WHY 640: group may be root:docker)
+                _sec_registry_add "perm_ok_$(basename "$f")" "info" "$f" \
+                    "$(basename "$f"): permissions ${perm} — OK" ""
+                ;;
+            unknown)
+                _sec_registry_add "perm_unknown_$(basename "$f")" "info" "$f" \
+                    "$(basename "$f"): could not stat — skipped" ""
+                ;;
+            *)
+                found_any=true
+                # WHY high: world-readable secrets = any local user can read creds (T-07-10)
+                _sec_registry_add "perm_bad_$(basename "$f")" "high" "$f" \
+                    "$(basename "$f"): permissions ${perm} — world/group-readable (expected 600)" \
+                    "chmod 600 ${f}"
+                ;;
+        esac
+    done
+}
+
+# _sec_render_text — human-readable text output
+# Format: [<severity>] <check> — <target>: <detail>  → fix: <fix>
+_sec_render_text() {
+    local rc="${1:-0}" block="${2:-high}"
+    local -A sev_counts=([info]=0 [low]=0 [medium]=0 [high]=0 [critical]=0)
+    local rec id sev target detail fix
+
+    for rec in "${SECURITY_AUDIT_CHECKS[@]+"${SECURITY_AUDIT_CHECKS[@]}"}"; do
+        IFS="${_SEC_SEP}" read -r id sev target detail fix <<< "$rec"
+        sev_counts["${sev:-info}"]=$(( ${sev_counts["${sev:-info}"]:-0} + 1 ))
+        local line="[${sev}] ${id} — ${target}: ${detail}"
+        [[ -n "$fix" ]] && line="${line}  → fix: ${fix}"
+        echo "$line"
+    done
+
+    echo ""
+    echo "=== Security Audit Summary ==="
+    local total=0
+    for s in critical high medium low info; do
+        local n="${sev_counts[$s]:-0}"
+        total=$(( total + n ))
+        [[ "$n" -gt 0 ]] && echo "  ${s}: ${n}"
+    done
+    echo "  total: ${total} findings"
+    echo "  block_severity: ${block}"
+    if [[ "$rc" -eq 0 ]]; then
+        echo "  result: OK (no findings >= block severity)"
+    elif [[ "$rc" -eq 1 ]]; then
+        echo "  result: BLOCK (findings >= ${block} found)"
+    else
+        echo "  result: ERROR (could not run)"
+    fi
+}
+
+# _sec_render_json — machine-readable JSON output
+# WHY python3: safe JSON encoding avoids escaping issues in bash (mirror _registry_render_json)
+_sec_render_json() {
+    local rc="${1:-0}" block="${2:-high}"
+    local rec id sev target detail fix
+    local -a findings=()
+
+    for rec in "${SECURITY_AUDIT_CHECKS[@]+"${SECURITY_AUDIT_CHECKS[@]}"}"; do
+        IFS="${_SEC_SEP}" read -r id sev target detail fix <<< "$rec"
+        # Use python3 for safe JSON encoding (handles quotes/newlines in messages)
+        local json_rec
+        json_rec="$(python3 -c "
+import json, sys
+print(json.dumps({
+    'check': sys.argv[1],
+    'severity': sys.argv[2],
+    'target': sys.argv[3],
+    'detail': sys.argv[4],
+    'fix': sys.argv[5],
+}))
+" "$id" "${sev:-info}" "$target" "$detail" "${fix:-}")"
+        findings+=("$json_rec")
+    done
+
+    # Build findings array JSON
+    local findings_json=""
+    local first=1
+    local f
+    for f in "${findings[@]+"${findings[@]}"}"; do
+        if [[ "$first" -eq 1 ]]; then
+            findings_json="$f"
+            first=0
+        else
+            findings_json="${findings_json},${f}"
+        fi
+    done
+
+    # Count by severity for summary
+    python3 - "$rc" "$block" "${SECURITY_AUDIT_CHECKS[@]+"${SECURITY_AUDIT_CHECKS[@]}"}" <<'PYEOF'
+import json, sys, datetime
+
+rc = int(sys.argv[1])
+block = sys.argv[2]
+sep = '\x1f'
+records = sys.argv[3:]
+
+counts = {'info': 0, 'low': 0, 'medium': 0, 'high': 0, 'critical': 0}
+findings = []
+for rec in records:
+    parts = rec.split(sep)
+    if len(parts) < 5:
+        continue
+    check_id, sev, target, detail, fix = parts[0], parts[1], parts[2], parts[3], parts[4]
+    sev = sev if sev in counts else 'info'
+    counts[sev] = counts.get(sev, 0) + 1
+    findings.append({
+        'check': check_id,
+        'severity': sev,
+        'target': target,
+        'detail': detail,
+        'fix': fix,
+    })
+
+print(json.dumps({
+    'generated_at': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+    'findings': findings,
+    'summary': {
+        'counts_by_severity': counts,
+        'block_severity': block,
+        'exit': rc,
+        'info': counts['info'],
+        'low': counts['low'],
+        'medium': counts['medium'],
+        'high': counts['high'],
+        'critical': counts['critical'],
+    }
+}))
+PYEOF
+}
+
+# security_audit [--json] — main entry point for `agmind security audit`
+# Exit codes:
+#   0 — no finding with severity >= AGMIND_SECURITY_BLOCK (default high)
+#   1 — at least one finding with severity >= AGMIND_SECURITY_BLOCK
+#   2 — INSTALL_DIR does not exist (AGmind not installed)
+security_audit() {
+    local json=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --json) json=true ;;
+            -h|--help) echo "Usage: agmind security audit [--json]"; return 0 ;;
+            *) ;;
+        esac
+        shift
+    done
+
+    local install_dir="${INSTALL_DIR:-/opt/agmind}"
+    if [[ ! -d "$install_dir" ]]; then
+        log_error "AGmind not installed at ${install_dir} — nothing to audit"
+        return 2
+    fi
+
+    # Source doctor.sh for doctor_check_security_exposure reuse (idempotent guard)
+    # Try runtime scripts/ path first, then dev lib/ path
+    if ! declare -F doctor_check_security_exposure >/dev/null 2>&1; then
+        local _sec_script_dir="${SCRIPTS_DIR:-${install_dir}/scripts}"
+        local _sec_lib_dir="${AGMIND_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)}/lib"
+        # shellcheck source=/dev/null
+        source "${_sec_script_dir}/doctor.sh" 2>/dev/null \
+            || source "${_sec_lib_dir}/doctor.sh" 2>/dev/null \
+            || true
+    fi
+
+    # Reset registry
+    SECURITY_AUDIT_CHECKS=()
+
+    # Run all 5 checks
+    _sec_check_exposed_ports
+    _sec_check_privileged_containers
+    _sec_check_docker_sock_consumers
+    _sec_check_weak_env
+    _sec_check_file_perms
+
+    # Compute exit code: compare worst severity to block threshold
+    local block="${AGMIND_SECURITY_BLOCK:-high}"
+    local block_rank
+    block_rank="$(_sec_severity_rank "$block")"
+    local worst=0
+    local rec sev sev_rank
+    for rec in "${SECURITY_AUDIT_CHECKS[@]+"${SECURITY_AUDIT_CHECKS[@]}"}"; do
+        sev="${rec#*${_SEC_SEP}}"
+        sev="${sev%%${_SEC_SEP}*}"
+        sev_rank="$(_sec_severity_rank "$sev")"
+        (( sev_rank > worst )) && worst=$sev_rank
+    done
+
+    local rc=0
+    if (( worst > 0 && worst >= block_rank )); then
+        rc=1
+    fi
+
+    # Render output
+    if [[ "$json" == "true" ]]; then
+        _sec_render_json "$rc" "$block"
+    else
+        _sec_render_text "$rc" "$block"
+    fi
+
+    return $rc
+}
+
+# ============================================================================
 # MAIN ENTRY
 # ============================================================================
 
