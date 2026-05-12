@@ -120,7 +120,7 @@ cmd_troubleshoot() {
         echo "  vllm         — vLLM: модель не загружается, timeout при первом запросе"
         echo "  gpu / cuda   — CUDA не виден в контейнере (torch.cuda.is_available()=False)"
         echo "  ragflow / es — RAGFlow: Elasticsearch не поднимается (max_map_count)"
-        echo "  dify / worker — Dify worker завис, задачи не выполняются (force-recreate trap)"
+        echo "  dify         — Dify задачи зависли, worker не подхватывает"
         echo "  ports        — Конфликт портов (особенно UDP/5353 mDNS)"
         echo "  mdns / dns   — DNS/mDNS не работает, agmind-*.local не резолвится"
         echo "  model / download — Модель не скачивается, большой файл обрывается"
