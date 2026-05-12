@@ -143,7 +143,7 @@ peer_deploy() {
         || log_warn "Peer GPU metrics setup had issues (non-fatal — dashboard HW panels may stay empty)"
 
     # 7. docker compose up on peer
-    # NOTE: CLAUDE.md §8 "force-recreate trap" applies to master stack (Redis/Celery state).
+    # NOTE: force-recreate trap applies to master stack (Redis/Celery state — see docs/adr/0007-force-recreate-trap).
     # Worker compose = vllm + node-exporter only. No Redis, no Celery → no stale state.
     # Use `compose up -d` (not --force-recreate): respects existing containers.
     # shellcheck disable=SC2086
@@ -201,12 +201,12 @@ VLLM_MAX_MODEL_LEN=${VLLM_MAX_MODEL_LEN:-65536}
 # Peer = dedicated under vLLM (no docling/embed/rerank sharing GPU).
 # Override master's shared-budget defaults with peer-dedicated values:
 # - 0.85 util × 121 GiB unified = 103 GiB vLLM, 18 GiB OS headroom
-# - CLAUDE.md §8: 0.90 too tight for OS+Docker+ssh+avahi baseline.
+# - 0.90 too tight for OS+Docker+ssh+avahi baseline.
 VLLM_GPU_MEM_UTIL=${AGMIND_PEER_VLLM_GPU_MEM_UTIL:-0.85}
 VLLM_MEM_LIMIT=${AGMIND_PEER_VLLM_MEM_LIMIT:-110g}
 VLLM_CUDA_DEVICE=${VLLM_CUDA_DEVICE:-0}
 HF_TOKEN=${HF_TOKEN:-}
-# NVIDIA — CLAUDE.md §8 compute,utility required for NVML/libcuda
+# NVIDIA — compute,utility required for NVML/libcuda (see docs/adr/0005-driver-580-hold)
 NVIDIA_DRIVER_CAPABILITIES=compute,utility
 NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
 # Prometheus peer scrape target (Plan 02-05)

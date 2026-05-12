@@ -836,7 +836,7 @@ _register_local_dns() {
     cat > "$unit" <<'EOF'
 [Unit]
 Description=AGmind mDNS .local aliases (avahi-publish-address wrapper)
-Documentation=https://github.com/botAGI/AGmind CLAUDE.md#8
+Documentation=https://github.com/botAGI/AGmind/blob/main/docs/troubleshooting.md
 After=avahi-daemon.service
 Requires=avahi-daemon.service
 BindsTo=avahi-daemon.service
@@ -864,7 +864,7 @@ EOF
     #   - lib/detect.sh preflight_checks Check 12 (DRY_RUN + resume paths — errors++)
     # Both abort install before this code runs. This block logs if _register_local_dns
     # is ever called outside install.sh flow (standalone tests, custom scripts).
-    # Do NOT remove — defence in depth per CLAUDE.md §8 "Second mDNS responder" lesson.
+    # Do NOT remove — defence in depth (second mDNS responder lesson; see docs/troubleshooting.md).
 
     # Detect foreign mDNS responders on 5353 (NoMachine, iTunes, etc.) that
     # compete with avahi for the multicast socket and trigger Local name collision.
@@ -1136,7 +1136,7 @@ coredump_dir /var/spool/squid
 # Long-running requests (docling 500+ page PDF extraction can take 10+ min).
 # Default squid timeouts (5 min) cause 504 Gateway Timeout → Dify retries →
 # docling double-processes same file → 3× slowdown observed 2026-04-22 UAT.
-# See CLAUDE.md §8 + BACKLOG 999.3 context.
+# See BACKLOG 999.3 context.
 request_timeout 30 minutes
 read_timeout 30 minutes
 connect_timeout 2 minutes

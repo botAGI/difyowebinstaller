@@ -3,11 +3,11 @@
 # lives on master. Deployed by master's phase_deploy_peer via scp+ssh.
 #
 # References:
-#   CLAUDE.md §6 — VLLM_SPARK_IMAGE primary on DGX Spark (GB10 arm64)
-#   CLAUDE.md §8 — NVIDIA_DRIVER_CAPABILITIES=compute,utility mandatory;
+#   VLLM_SPARK_IMAGE primary on DGX Spark (GB10 arm64 — see docs/adr/0001-arm64-only)
+#   NVIDIA_DRIVER_CAPABILITIES=compute,utility mandatory (see docs/adr/0005-driver-580-hold);
 #                  gpu_memory_utilization=0.60 safe default on Spark shared memory;
 #                  mem_limit 96g unified memory budget for gemma-4-26B
-#   CLAUDE.md §10 — image tags pinned (no :latest) + registry validation gate
+#   image tags pinned (no :latest) + registry validation gate
 
 x-logging: &logging-defaults
   logging:
@@ -30,7 +30,7 @@ services:
     mem_limit: ${VLLM_MEM_LIMIT:-96g}
     mem_swappiness: 0
     ipc: host
-    # CLAUDE.md §8: Docker embedded DNS (127.0.0.11) drops large DNS responses for
+    # Docker embedded DNS (127.0.0.11) drops large DNS responses for
     # HF xet/LFS CDNs. Explicit resolvers prevent DNS timeout stalls during model
     # weight downloads (observed 2026-04-22 — 14 GB downloaded then stall).
     dns:
@@ -40,7 +40,7 @@ services:
     environment:
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
       - CUDA_VISIBLE_DEVICES=${VLLM_CUDA_DEVICE:-0}
-      # CLAUDE.md §8: compute,utility required for NVML/CUDA to work on DGX Spark.
+      # compute,utility required for NVML/CUDA to work on DGX Spark (see docs/adr/0005-driver-580-hold).
       # Without this env var, torch.cuda.is_available()=False and vLLM silently falls back to CPU.
       - NVIDIA_DRIVER_CAPABILITIES=${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
       - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
@@ -108,7 +108,7 @@ services:
   # ============================================================================
   # node-exporter — host metrics for master's Prometheus scrape
   # Exposes :9100 on peer host (peer-node-exporter scrape job in Plan 02-05)
-  # Note: no healthcheck — distroless image has no /bin/sh (CLAUDE.md §8)
+  # Note: no healthcheck — distroless image has no /bin/sh
   # Textfile collector: reads gpu_metrics.prom written by gpu-metrics.sh cron
   # on peer host — exposes agmind_gpu_* HW metrics for Grafana GPU — worker dashboard.
   # ============================================================================

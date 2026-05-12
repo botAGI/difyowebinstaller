@@ -611,7 +611,7 @@ _restore_pg_dify() {
 
     log_info "Восстановление PostgreSQL (dify)..."
     local compose_dir="${INSTALL_DIR}/docker"
-    # up -d db is idempotent; never use recreate (stale Redis state — CLAUDE.md §8)
+    # up -d db is idempotent; never use recreate (stale Redis state — see docs/adr/0007-force-recreate-trap)
     ( cd "$compose_dir" && docker compose up -d db )
 
     # Wait up to 60s for pg_isready
@@ -882,7 +882,7 @@ restore_apply() {
         [[ -n "$_names" ]] && ( cd "$compose_dir" && docker compose stop $_names )
         # config-only: no containers stopped
     fi
-    # NEVER recreate containers — use stop/up only (stale Redis trap — CLAUDE.md §8)
+    # NEVER recreate containers — use stop/up only (stale Redis trap — see docs/adr/0007-force-recreate-trap)
 
     # 5. Run performers gated by svc
     local _svc_mode="full"
@@ -921,7 +921,7 @@ restore_apply() {
         [[ "$svc" == "config" ]] && echo "Конфигурация восстановлена. Применить: \`agmind restart\`"
     fi
 
-    # 8. Stale-Redis hint after dify-DB restore (CLAUDE.md §8 — FLUSHDB blocked by ACL)
+    # 8. Stale-Redis hint after dify-DB restore (FLUSHDB blocked by ACL — see docs/adr/0007-force-recreate-trap)
     if _svc_match dify "$svc" && [[ -f "${restore_dir}/dify_db.sql.gz" ]]; then
         echo
         echo "Если Celery-воркеры перезапускались, очисти stale Redis-ключи:"

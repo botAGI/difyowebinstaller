@@ -839,7 +839,7 @@ cmd_upgrade_diff() {
 # ставят плагины из marketplace.dify.ai (включая witmeng/ragflow-api для RAGFlow).
 # Выключить при критичном supply-chain risk: agmind plugins offline.
 # Uses `docker restart` (NOT recreate) to preserve plugin daemon state per
-# CLAUDE.md §8 force-recreate trap (avoids stale Redis/Celery cleanup risk).
+# Force-recreate trap: avoids stale Redis/Celery state (see docs/adr/0007-force-recreate-trap).
 # ============================================================================
 
 cmd_plugins() {

@@ -10,7 +10,7 @@ set -euo pipefail
 INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
 
 # ============================================================================
-# DGX SPARK NVIDIA DRIVER HOLD (CLAUDE.md §8 — Driver 580 HOLD)
+# DGX SPARK NVIDIA DRIVER HOLD (see docs/adr/0005-driver-580-hold)
 # ============================================================================
 
 # NVIDIA staff explicitly state: "we do not support new drivers past version
@@ -415,7 +415,7 @@ _sec_severity_rank() {
 }
 
 # _sec_check_exposed_ports — reads compose file for admin-UI ports bound to 0.0.0.0
-# WHY T-07-12: admin UIs bound to all interfaces expose them to the LAN (CLAUDE.md §8 nginx §5)
+# WHY T-07-12: admin UIs bound to all interfaces expose them to the LAN
 _sec_check_exposed_ports() {
     local install_dir="${INSTALL_DIR:-/opt/agmind}"
     local compose_file="${install_dir}/docker/docker-compose.yml"
@@ -519,7 +519,7 @@ _sec_check_privileged_containers() {
 }
 
 # _sec_check_docker_sock_consumers — checks for containers mounting /var/run/docker.sock
-# WHY T-07-11: rw docker.sock = root-equivalent on host (CLAUDE.md §8 security notes)
+# WHY T-07-11: rw docker.sock = root-equivalent on host
 _sec_check_docker_sock_consumers() {
     local _docker_ok=true
     if ! command -v docker >/dev/null 2>&1; then
@@ -575,7 +575,7 @@ PYEOF
         case "${sock_result:-}" in
             rw)
                 found_any=true
-                # WHY high: rw docker.sock = host root equivalent (CLAUDE.md §5, T-07-11)
+                # WHY high: rw docker.sock = host root equivalent (T-07-11)
                 local _detail _fix
                 _detail="${c}: mounts /var/run/docker.sock rw — elevated risk"
                 _fix="use docker-socket-proxy (read-only) or set PORTAINER_BEHIND_AUTHELIA=true"
@@ -600,7 +600,7 @@ PYEOF
 }
 
 # _sec_check_weak_env — scans .env for weak/default secret values
-# WHY T-07-09: weak defaults are a critical security hole (CLAUDE.md §5 credentials)
+# WHY T-07-09: weak defaults are a critical security hole
 # CRITICAL: NEVER print the value — only the key name and reason (SC2 invariant)
 _sec_check_weak_env() {
     local install_dir="${INSTALL_DIR:-/opt/agmind}"
@@ -667,7 +667,7 @@ _sec_check_weak_env() {
 }
 
 # _sec_check_file_perms — checks secret files are not world/group-readable
-# WHY T-07-10: world-readable credential files allow any local user to read secrets (CLAUDE.md §5)
+# WHY T-07-10: world-readable credential files allow any local user to read secrets
 _sec_check_file_perms() {
     local install_dir="${INSTALL_DIR:-/opt/agmind}"
     # Files to check — skip those that don't exist

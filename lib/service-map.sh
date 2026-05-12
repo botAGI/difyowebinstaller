@@ -134,7 +134,7 @@ ALL_COMPOSE_PROFILES="monitoring,portainer,qdrant,weaviate,etl,authelia,ollama,v
 #   vector DB:  weaviate XOR qdrant XOR milvus  (milvus EXPERIMENTAL — not in any named profile incl. 'full')
 #   embed:      vllm-embed XOR tei              (TEI has no arm64 manifest on DGX Spark — use vllm-embed)
 #   reranker:   vllm-rerank XOR reranker
-#   LLM:        vllm XOR ollama                 (ollama hidden per CLAUDE.md §6 — not in any named profile)
+#   LLM:        vllm XOR ollama                 (ollama hidden — not in any named profile; override: LLM_PROVIDER=ollama)
 #
 # 'ragflow' is intentionally NOT a raw profile here — it's pulled in via the
 # ENABLE_RAGFLOW=true implied default (build_compose_profiles already adds the

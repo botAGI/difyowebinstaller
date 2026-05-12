@@ -5,7 +5,7 @@
 # Dependencies: lib/service-map.sh (NAMED_PROFILE_EXPANSION/DESC), python3 (mem_limit
 #               regex parsing + JSON output), nvidia-smi/free/df (host resources).
 # Expects:   INSTALL_DIR (default /opt/agmind). Read-only — no root. Never reads .env secrets.
-# CLAUDE.md §6/§8: GB10 unified memory; NVML returns N/A for `memory.used`; budget 121→85 GiB.
+# GB10 unified memory: NVML returns N/A for memory.used; budget 121→85 GiB (see docs/adr/0001-arm64-only).
 set -euo pipefail
 
 [[ -n "${_ESTIMATE_LOADED:-}" ]] && return 0
@@ -197,7 +197,7 @@ _est_vllm_gpu_util() {
 # ============================================================================
 #
 # Exit codes: 0 = normal display; 1 = RAM estimate exceeds available; 2 = bad arg.
-# CLAUDE.md §8: GPU budget note (121→85 GiB usable after core/buffer/swap headroom);
+# GPU budget note (121→85 GiB usable after core/buffer/swap headroom);
 # NVML returns N/A for memory.used on GB10 — use memory.total + budget note.
 
 estimate_resources() {
@@ -296,13 +296,13 @@ estimate_resources() {
         | head -1 | tr -d ' ' || true)"
 
     if [[ -z "$_gpu_total_raw" || "$_gpu_total_raw" == *"N/A"* ]]; then
-        # CLAUDE.md §8: GB10 unified memory — NVML returns N/A for memory.used;
+        # GB10 unified memory — NVML returns N/A for memory.used;
         # use /proc/meminfo MemTotal as the unified pool size.
         _gpu_total_gib="$(awk '/^MemTotal:/{print int($2/1024/1024)}' /proc/meminfo 2>/dev/null || echo 0)"
-        _gpu_note="unified memory — NVML returns N/A for used (CLAUDE.md §8); ~${_gpu_total_gib} GiB total, ~85 GiB usable after core/buffer/swap headroom"
+        _gpu_note="unified memory — NVML returns N/A for used (GB10 arch); ~${_gpu_total_gib} GiB total, ~85 GiB usable after core/buffer/swap headroom"
     else
         _gpu_total_gib="$(python3 -c "print(int(${_gpu_total_raw}/1024))")"
-        _gpu_note="unified memory — ~${_gpu_total_gib} GiB total, ~85 GiB usable after core/buffer/swap headroom (CLAUDE.md §8)"
+        _gpu_note="unified memory — ~${_gpu_total_gib} GiB total, ~85 GiB usable after core/buffer/swap headroom"
     fi
 
     # ── Warnings + exit code ──

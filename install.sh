@@ -335,7 +335,7 @@ phase_diagnostics() {
 
     run_diagnostics || _confirm_continue "System below minimum requirements"
     # MDNS-02: HARD abort exit 1 on foreign :5353 responder — never silent continue,
-    # even in NON_INTERACTIVE mode. Broken mDNS is a silent deploy disaster (CLAUDE.md §8).
+    # even in NON_INTERACTIVE mode. Broken mDNS is a silent deploy disaster.
     # _assert_no_foreign_mdns is defined in lib/detect.sh (sourced above).
     if ! _assert_no_foreign_mdns; then
         log_error "Refusing to continue: foreign mDNS responder on UDP/5353 will break agmind-*.local"
@@ -349,7 +349,7 @@ phase_diagnostics() {
     # DETECTED_NETWORK env (set by preflight_checks) gates apt-install path in _ensure_lldpd.
     _ensure_lldpd
     hw_detect_peer
-    # CLAUDE.md §8 — pin nvidia driver 580 on DGX Spark (auto-upgrade past 580.126.09
+    # Pin nvidia driver 580 on DGX Spark — auto-upgrade past 580.126.09
     # breaks vLLM via UMA leak / CUDAGraph deadlock / TMA bug). No-op on non-Spark.
     pin_nvidia_driver_dgx_spark
     # ES (BACKLOG #999.7) requires vm.max_map_count >= 262144. Persist в sysctl.d
@@ -528,7 +528,7 @@ _copy_runtime_files() {
 # Cleans stale Redis state left by prior force-recreate of api/worker.
 # Celery hostnames change on recreate, but generate_task_belong:* (DB 0) and
 # celery-task-meta-* (DB 1) still reference the dead hostname — workers pub/sub
-# on wrong channels → new tasks hang. See CLAUDE.md §8 "force-recreate trap".
+# on wrong channels → new tasks hang. See docs/adr/0007-force-recreate-trap.
 # Safe to run anytime: DEL by pattern, no FLUSHDB (Redis ACL blocks it anyway).
 _clean_stale_celery_state() {
     local pw
@@ -561,7 +561,7 @@ _ensure_api_responsive() {
     done
 
     log_warn "Dify API deadlock detected (gunicorn listening but endpoints hang)"
-    log_warn "  Applying CLAUDE.md §8 force-recreate recovery: clean Redis + restart"
+    log_warn "  Applying force-recreate recovery: clean Redis + restart (see docs/adr/0007-force-recreate-trap)"
     _clean_stale_celery_state
     docker restart agmind-api agmind-worker >/dev/null 2>&1 || true
 
@@ -673,7 +673,7 @@ _init_dify_admin() {
 }
 
 # Pre-download EasyOCR Cyrillic model so first OCR on RU scans doesn't
-# stall on network fetch (or fail in air-gapped installs). CLAUDE.md §8:
+# stall on network fetch (or fail in air-gapped installs):
 # cyrillic_g2.pth не в bundled image, качается at first-use, теряется при
 # recreate. Download here makes it persistent in docling_cache volume.
 _ensure_docling_ocr_models() {
@@ -1272,7 +1272,7 @@ _verify_post_install_smoke() {
         warn_count=$((warn_count + 1))
     fi
 
-    # MDNS-04/05: STRICT mDNS smoke per CLAUDE.md §8 "Post-install smoke обязателен".
+    # MDNS-04/05: STRICT mDNS smoke — post-install smoke required (see docs/troubleshooting.md).
     if command -v agmind >/dev/null 2>&1; then
         if ! agmind mdns-status >/dev/null 2>&1; then
             log_error "FATAL smoke: agmind mdns-status reported issue(s) — details below:"
