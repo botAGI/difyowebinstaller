@@ -529,6 +529,27 @@ Docling (5-page arxiv PDF, warm): **6.04s**, 0.32s/page, ~1.6 GiB GPU memory.
 
 ---
 
+## 📚 Documentation
+
+| Document | Description |
+|---|---|
+| [docs/architecture/](docs/architecture/) | Service topology, network layout, deploy phases |
+| [docs/compatibility-matrix.md](docs/compatibility-matrix.md) | Driver / OS / container version compatibility |
+| [docs/vector-db-decision-matrix.md](docs/vector-db-decision-matrix.md) | Weaviate vs Qdrant vs Milvus — selection rationale |
+| [docs/dify-vs-ragflow.md](docs/dify-vs-ragflow.md) | Dify and RAGFlow integration patterns |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | Topic-by-topic fixes (`agmind troubleshoot <topic>`) |
+| [docs/adr/](docs/adr/) | Architecture Decision Records (ADR-0001 … ADR-0009) |
+
+Quick navigation via CLI:
+```bash
+agmind troubleshoot vllm       # vLLM / CUDA issues → docs/troubleshooting.md §1
+agmind troubleshoot dify       # Dify worker / tasks stuck → §2
+agmind troubleshoot mdns       # mDNS / .local resolution → §3
+agmind troubleshoot memory     # OOM / unified memory → §4
+```
+
+---
+
 ## 🤝 Contributing
 
 - Work on `main` only — no feature branches, no merge commits. PRs are cut
