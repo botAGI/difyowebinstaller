@@ -1144,9 +1144,57 @@ services:
     networks:
       - agmind-backend
 
+  # ==================== Docker Socket Proxy (monitoring profile) ====================
+  # Read-only Docker API proxy for cAdvisor + Alloy (SC1 hardening, agmind security audit).
+  # Portainer keeps its raw rw socket — proxy cannot satisfy Portainer's write requirements.
+  # Tecnativa docker-socket-proxy: arm64-verified (ghcr.io manifest 0.3.0, 2026-05-12).
+  docker-socket-proxy:
+    <<: *security-defaults
+    image: ghcr.io/tecnativa/docker-socket-proxy:${DOCKER_SOCKET_PROXY_VERSION:-0.3.0}
+    container_name: agmind-docker-socket-proxy
+    restart: unless-stopped
+    mem_limit: 64m
+    profiles:
+      - monitoring
+    environment:
+      # Read-only allowlist: containers/info/events/images/networks/volumes/ping/version only
+      CONTAINERS: 1
+      INFO: 1
+      EVENTS: 1
+      IMAGES: 1
+      NETWORKS: 1
+      VOLUMES: 1
+      PING: 1
+      VERSION: 1
+      # All write operations denied
+      POST: 0
+      EXEC: 0
+      BUILD: 0
+      DELETE: 0
+      # Additional operations denied
+      AUTH: 0
+      COMMIT: 0
+      CONFIGS: 0
+      CONTAINERS_PRUNE: 0
+      DISTRIBUTION: 0
+      PLUGIN: 0
+      SECRETS: 0
+      SESSION: 0
+      SWARM: 0
+      SYSTEM: 0
+      TASKS: 0
+      VOLUMES_DELETE: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - agmind-backend
+
   # ==================== Alloy (monitoring profile) ====================
   # Replaces deprecated Promtail (BACKLOG #999.5, migrated 2026-04-25).
-  # Reads docker container logs → forwards to Loki. arm64-verified.
+  # Reads docker container logs → forwards to Loki via docker-socket-proxy. arm64-verified.
   alloy:
     <<: *security-defaults
     image: grafana/alloy:${ALLOY_VERSION:-v1.16.1}
@@ -1157,7 +1205,6 @@ services:
       - monitoring
     volumes:
       - ./monitoring/alloy-config.river:/etc/alloy/config.river:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - agmind_alloy_data:/var/lib/alloy/data
     command:
       - run
@@ -1169,6 +1216,8 @@ services:
     # Мониторинг через Prometheus `up{job="alloy"}` если targets настроены.
     depends_on:
       loki:
+        condition: service_started
+      docker-socket-proxy:
         condition: service_started
     networks:
       - agmind-backend
@@ -1219,13 +1268,16 @@ services:
       - monitoring
     expose:
       - "8080"
+    environment:
+      # SC1 hardening: route docker queries through read-only proxy (agmind security audit).
+      # cAdvisor Docker client respects DOCKER_HOST env (standard Docker SDK behavior).
+      DOCKER_HOST: "tcp://docker-socket-proxy:2375"
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:ro
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
       - /dev/disk/:/dev/disk:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - /run/containerd/containerd.sock:/run/containerd/containerd.sock:ro
     command:
       # Docker 29.x + containerd snapshotter: need both docker + containerd sockets
@@ -1240,6 +1292,9 @@ services:
       timeout: 10s
       retries: ${HEALTHCHECK_RETRIES:-5}
       start_period: 15s
+    depends_on:
+      docker-socket-proxy:
+        condition: service_started
     networks:
       - agmind-backend
 
@@ -1348,10 +1403,12 @@ services:
       - agmind-frontend
       - agmind-backend
 
-  # ==================== Portainer (monitoring profile) ====================
+  # ==================== Portainer (portainer profile) ====================
   # ⚠ SECURITY: Portainer requires RW docker.sock = full host control.
   # Mitigations: localhost-only binding, read-only filesystem, no-new-privileges.
   # Set ENABLE_PORTAINER=false to disable entirely if not needed.
+  # Portainer keeps rw docker.sock by design (needs full control); audited by
+  # 'agmind security audit' (flags HIGH if not behind Authelia). See T-07-08.
   portainer:
     <<: *security-defaults
     image: portainer/portainer-ce:${PORTAINER_VERSION:-2.41.1}
