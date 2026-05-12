@@ -157,6 +157,8 @@ services:
     <<: *security-defaults
     image: langgenius/dify-api:${DIFY_VERSION:-1.13.3}
     container_name: agmind-api
+    security_opt:
+      - no-new-privileges:true
     restart: always
     mem_limit: ${API_MEM_LIMIT:-2g}
     environment:
@@ -186,6 +188,8 @@ services:
     <<: *security-defaults
     image: langgenius/dify-api:${DIFY_VERSION:-1.13.3}
     container_name: agmind-worker
+    security_opt:
+      - no-new-privileges:true
     restart: always
     mem_limit: ${WORKER_MEM_LIMIT:-2g}
     environment:
@@ -215,6 +219,8 @@ services:
     <<: *security-defaults
     image: langgenius/dify-web:${DIFY_VERSION:-1.13.3}
     container_name: agmind-web
+    security_opt:
+      - no-new-privileges:true
     restart: always
     mem_limit: ${WEB_MEM_LIMIT:-512m}
     depends_on:
@@ -245,6 +251,8 @@ services:
     # WARNING: open-webui version pinned for white-label compatibility
     image: ghcr.io/open-webui/open-webui:${OPENWEBUI_VERSION:-v0.9.5}
     container_name: agmind-openwebui
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     mem_limit: ${OPENWEBUI_MEM_LIMIT:-2g}
     profiles:
@@ -286,6 +294,8 @@ services:
     <<: *logging-defaults
     image: ollama/ollama:${OLLAMA_VERSION:-0.21.2}
     container_name: agmind-ollama
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     mem_limit: ${OLLAMA_MEM_LIMIT:-8g}
     profiles:
@@ -326,6 +336,8 @@ services:
     <<: *logging-defaults
     image: ${VLLM_IMAGE:-vllm/vllm-openai:${VLLM_VERSION:-v0.19.0}${VLLM_CUDA_SUFFIX:-}}
     container_name: agmind-vllm
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     mem_limit: ${VLLM_MEM_LIMIT:-96g}
     mem_swappiness: 0
@@ -365,6 +377,8 @@ services:
     <<: *logging-defaults
     image: ghcr.io/huggingface/text-embeddings-inference:${TEI_EMBED_VERSION:-${TEI_VERSION:-cuda-1.9.3}}
     container_name: agmind-tei
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     mem_limit: ${TEI_MEM_LIMIT:-8g}
     profiles:
@@ -399,6 +413,8 @@ services:
     <<: *logging-defaults
     image: ghcr.io/huggingface/text-embeddings-inference:${TEI_RERANK_VERSION:-cpu-1.9.3}
     container_name: agmind-tei-rerank
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     mem_limit: ${TEI_RERANK_MEM_LIMIT:-12g}
     profiles:
@@ -430,6 +446,8 @@ services:
     <<: *logging-defaults
     image: ${VLLM_EMBED_IMAGE:-nvcr.io/nvidia/vllm:${VLLM_NGC_VERSION:-26.02-py3}}
     container_name: agmind-vllm-embed
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     mem_limit: ${VLLM_EMBED_MEM_LIMIT:-3g}
     mem_swappiness: 0
@@ -471,6 +489,8 @@ services:
     <<: *logging-defaults
     image: ${VLLM_RERANK_IMAGE:-nvcr.io/nvidia/vllm:${VLLM_NGC_VERSION:-26.02-py3}}
     container_name: agmind-vllm-rerank
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     mem_limit: ${VLLM_RERANK_MEM_LIMIT:-2g}
     mem_swappiness: 0
@@ -510,6 +530,8 @@ services:
     <<: *security-defaults
     image: postgres:${POSTGRES_VERSION:-16-alpine3.23}
     container_name: agmind-db
+    security_opt:
+      - no-new-privileges:true
     restart: always
     mem_limit: ${DB_MEM_LIMIT:-4g}
     cap_add:
@@ -552,6 +574,8 @@ services:
     <<: *security-defaults
     image: redis:${REDIS_VERSION:-7.4.8-alpine}
     container_name: agmind-redis
+    security_opt:
+      - no-new-privileges:true
     restart: always
     mem_limit: ${REDIS_MEM_LIMIT:-1g}
     read_only: true
@@ -580,6 +604,8 @@ services:
     <<: *security-defaults
     image: semitechnologies/weaviate:${WEAVIATE_VERSION:-1.37.2}
     container_name: agmind-weaviate
+    security_opt:
+      - no-new-privileges:true
     restart: always
     mem_limit: ${WEAVIATE_MEM_LIMIT:-4g}
     profiles:
@@ -617,6 +643,8 @@ services:
     <<: *security-defaults
     image: qdrant/qdrant:${QDRANT_VERSION:-v1.17.1}
     container_name: agmind-qdrant
+    security_opt:
+      - no-new-privileges:true
     restart: always
     mem_limit: ${QDRANT_MEM_LIMIT:-2g}
     profiles:
@@ -648,6 +676,8 @@ services:
     <<: *security-defaults
     image: quay.io/coreos/etcd:${MILVUS_ETCD_VERSION:-v3.5.25}
     container_name: agmind-milvus-etcd
+    security_opt:
+      - no-new-privileges:true
     restart: always
     mem_limit: ${MILVUS_ETCD_MEM_LIMIT:-1g}
     profiles:
@@ -678,6 +708,8 @@ services:
     # Идемпотентно — `mc mb --ignore-existing` не падает если bucket уже есть.
     image: minio/mc:${MC_VERSION:-RELEASE.2025-08-13T08-35-41Z}
     container_name: agmind-milvus-init
+    security_opt:
+      - no-new-privileges:true
     profiles:
       - milvus
     depends_on:
@@ -704,6 +736,7 @@ services:
     profiles:
       - milvus
     security_opt:
+      - no-new-privileges:true
       - seccomp:unconfined
     command: ["milvus", "run", "standalone"]
     environment:
@@ -739,6 +772,8 @@ services:
     <<: *logging-defaults
     image: ${DOCLING_IMAGE:-quay.io/docling-project/docling-serve-cu130:v1.16.1}
     container_name: agmind-docling
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     mem_limit: ${DOCLING_MEM_LIMIT:-8g}
     mem_swappiness: 0
@@ -798,6 +833,8 @@ services:
     <<: *security-defaults
     image: ghcr.io/berriai/litellm:${LITELLM_VERSION:-v1.83.14-stable.patch.3}
     container_name: agmind-litellm
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     mem_limit: ${LITELLM_MEM_LIMIT:-1g}
     profiles:
@@ -866,6 +903,8 @@ services:
     <<: *security-defaults
     image: ubuntu/squid:${SQUID_VERSION:-6.6-24.04_edge}
     container_name: agmind-ssrf-proxy
+    security_opt:
+      - no-new-privileges:true
     restart: always
     mem_limit: ${SSRF_MEM_LIMIT:-256m}
     cap_add:
@@ -889,6 +928,8 @@ services:
   redis-lock-cleaner:
     image: redis:${REDIS_VERSION:-7.4.8-alpine}
     container_name: agmind-redis-lock-cleaner
+    security_opt:
+      - no-new-privileges:true
     restart: "no"
     mem_limit: 64m
     volumes:
@@ -911,6 +952,8 @@ services:
     <<: *logging-defaults
     image: langgenius/dify-plugin-daemon:${PLUGIN_DAEMON_VERSION:-0.5.3-local}
     container_name: agmind-plugin-daemon
+    security_opt:
+      - no-new-privileges:true
     restart: always
     # Phase 41 calibration (2026-04-18): Dify chat load 8 VU × 2min → 760 msgs,
     # plugin_daemon steady ~2 GiB (cold-start init of all python plugins),
@@ -987,6 +1030,8 @@ services:
     <<: *security-defaults
     image: nginx:${NGINX_VERSION:-1.30.0-alpine}
     container_name: agmind-nginx
+    security_opt:
+      - no-new-privileges:true
     restart: always
     mem_limit: ${NGINX_MEM_LIMIT:-256m}
     cap_add:
@@ -1045,6 +1090,8 @@ services:
     <<: *security-defaults
     image: minio/minio:${MINIO_VERSION:-RELEASE.2025-09-07T16-13-09Z}
     container_name: agmind-minio
+    security_opt:
+      - no-new-privileges:true
     restart: always
     mem_limit: ${MINIO_MEM_LIMIT:-2g}
     profiles:
@@ -1074,6 +1121,8 @@ services:
     <<: *security-defaults
     image: prom/prometheus:${PROMETHEUS_VERSION:-v2.54.1}
     container_name: agmind-prometheus
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     mem_limit: ${PROMETHEUS_MEM_LIMIT:-1g}
     profiles:
@@ -1107,6 +1156,8 @@ services:
     <<: *security-defaults
     image: prom/alertmanager:${ALERTMANAGER_VERSION:-v0.32.1}
     container_name: agmind-alertmanager
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     mem_limit: ${ALERTMANAGER_MEM_LIMIT:-256m}
     profiles:
@@ -1132,6 +1183,8 @@ services:
       - SETUID
       - SETGID
     container_name: agmind-loki
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     mem_limit: ${LOKI_MEM_LIMIT:-1g}
     profiles:
@@ -1199,6 +1252,8 @@ services:
     <<: *security-defaults
     image: grafana/alloy:${ALLOY_VERSION:-v1.16.1}
     container_name: agmind-alloy
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     mem_limit: ${ALLOY_MEM_LIMIT:-256m}
     profiles:
@@ -1227,6 +1282,8 @@ services:
     <<: *security-defaults
     image: prom/node-exporter:${NODE_EXPORTER_VERSION:-v1.11.1}
     container_name: agmind-node-exporter
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     mem_limit: ${NODE_EXPORTER_MEM_LIMIT:-128m}
     profiles:
@@ -1304,6 +1361,11 @@ services:
     <<: *security-defaults
     image: oliver006/redis_exporter:${REDIS_EXPORTER_VERSION:-v1.83.0}
     container_name: agmind-redis-exporter
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     mem_limit: ${REDIS_EXPORTER_MEM_LIMIT:-64m}
     profiles:
@@ -1325,6 +1387,11 @@ services:
     <<: *security-defaults
     image: prometheuscommunity/postgres-exporter:${POSTGRES_EXPORTER_VERSION:-v0.19.1}
     container_name: agmind-postgres-exporter
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     mem_limit: ${POSTGRES_EXPORTER_MEM_LIMIT:-128m}
     profiles:
@@ -1351,6 +1418,11 @@ services:
     <<: *security-defaults
     image: nginx/nginx-prometheus-exporter:${NGINX_EXPORTER_VERSION:-1.5.1}
     container_name: agmind-nginx-exporter
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     mem_limit: ${NGINX_EXPORTER_MEM_LIMIT:-64m}
     profiles:
@@ -1370,6 +1442,8 @@ services:
     <<: *security-defaults
     image: grafana/grafana:${GRAFANA_VERSION:-12.4.3}
     container_name: agmind-grafana
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     mem_limit: ${GRAFANA_MEM_LIMIT:-512m}
     cap_add:
@@ -1413,10 +1487,12 @@ services:
     <<: *security-defaults
     image: portainer/portainer-ce:${PORTAINER_VERSION:-2.41.1}
     container_name: agmind-portainer
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     mem_limit: ${PORTAINER_MEM_LIMIT:-256m}
     profiles:
-      - monitoring
+      - portainer
     # Portainer process runs as uid=0 but needs membership in the host's `docker`
     # group to read /var/run/docker.sock (mode 660 root:docker). Without group_add
     # the local endpoint snapshot fails permanently → master node shows "Down" in
@@ -1452,6 +1528,8 @@ services:
     <<: *security-defaults
     image: authelia/authelia:${AUTHELIA_VERSION:-4.39.19}
     container_name: agmind-authelia
+    security_opt:
+      - no-new-privileges:true
     profiles: ["authelia"]
     restart: always
     mem_limit: ${AUTHELIA_MEM_LIMIT:-256m}
@@ -1473,6 +1551,8 @@ services:
     <<: *security-defaults
     image: docker.io/searxng/searxng:${SEARXNG_VERSION:-2026.5.10-df1f24fb7}
     container_name: agmind-searxng
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     mem_limit: ${SEARXNG_MEM_LIMIT:-256m}
     profiles:
@@ -1493,6 +1573,8 @@ services:
     <<: *security-defaults
     image: docker.io/surrealdb/surrealdb:${SURREALDB_VERSION:-v2.6.5}
     container_name: agmind-surrealdb
+    security_opt:
+      - no-new-privileges:true
     user: "0:0"
     restart: unless-stopped
     mem_limit: ${SURREALDB_MEM_LIMIT:-256m}
@@ -1515,6 +1597,8 @@ services:
     <<: *security-defaults
     image: docker.io/lfnovo/open_notebook:${OPEN_NOTEBOOK_VERSION:-1.8.5}
     container_name: agmind-notebook
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     mem_limit: ${OPEN_NOTEBOOK_MEM_LIMIT:-512m}
     profiles:
@@ -1546,6 +1630,8 @@ services:
     <<: *security-defaults
     image: docker.io/eosphorosai/dbgpt-openai:${DBGPT_VERSION:-v0.8.0}
     container_name: agmind-dbgpt
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     mem_limit: ${DBGPT_MEM_LIMIT:-1g}
     profiles:
@@ -1571,6 +1657,8 @@ services:
     <<: *security-defaults
     image: docker.io/unclecode/crawl4ai:${CRAWL4AI_VERSION:-0.8.6}
     container_name: agmind-crawl4ai
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     mem_limit: ${CRAWL4AI_MEM_LIMIT:-2g}
     shm_size: '1g'
@@ -1595,6 +1683,8 @@ services:
     <<: *security-defaults
     image: docker.io/mysql:${RAGFLOW_MYSQL_VERSION:-8.0.39}
     container_name: agmind-ragflow-mysql
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     mem_limit: ${RAGFLOW_MYSQL_MEM_LIMIT:-1g}
     profiles:
@@ -1626,6 +1716,8 @@ services:
     <<: *security-defaults
     image: docker.io/elasticsearch:${RAGFLOW_ES_VERSION:-9.4.0}
     container_name: agmind-ragflow-es
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     mem_limit: ${RAGFLOW_ES_MEM_LIMIT:-4g}
     profiles:
@@ -1667,6 +1759,8 @@ services:
     <<: *security-defaults
     image: quay.io/prometheuscommunity/elasticsearch-exporter:${ELASTICSEARCH_EXPORTER_VERSION:-v1.9.0}
     container_name: agmind-ragflow-es-exporter
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     mem_limit: ${ES_EXPORTER_MEM_LIMIT:-128m}
     profiles:
@@ -1692,6 +1786,8 @@ services:
     <<: *security-defaults
     image: ${RAGFLOW_IMAGE:-ar2r223/ragflow-spark@sha256:4a0eff2da9bf1ca95d20c4345e2217397a6f40e3e9665105db9d68b4998d6dbe}
     container_name: agmind-ragflow
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     mem_limit: ${RAGFLOW_MEM_LIMIT:-8g}
     profiles:
@@ -1792,6 +1888,8 @@ services:
     <<: *security-defaults
     image: certbot/certbot:${CERTBOT_VERSION:-v3.1.0}
     container_name: agmind-certbot
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     mem_limit: ${CERTBOT_MEM_LIMIT:-128m}
     profiles:
@@ -1815,6 +1913,8 @@ services:
     <<: *logging-defaults
     image: grafana/k6:${K6_VERSION:-0.55.2}
     container_name: agmind-k6
+    security_opt:
+      - no-new-privileges:true
     restart: "no"
     mem_limit: ${K6_MEM_LIMIT:-256m}
     profiles:
