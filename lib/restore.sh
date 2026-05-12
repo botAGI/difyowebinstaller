@@ -554,17 +554,414 @@ restore_plan() {
     return 0
 }
 
-# restore_apply <RESTORE_DIR> [--service <name>] [--auto-confirm]
-# Executes the restore: stops containers, restores artifacts, restarts containers.
-# Requires root. Respects flock acquired by the caller (scripts/restore.sh).
-restore_apply() {
-    echo "restore_apply: не реализовано (Wave 2)" >&2
-    return 1
+# ============================================================================
+# RESTORE APPLY — PERFORMER FUNCTIONS
+# WHY split: each performer is independently testable; no-service path calls
+#     all performers in sequence (same as scripts/restore.sh); selective path
+#     calls only the relevant ones.
+# NOTE: flock is already held by scripts/restore.sh (fd 9) — do NOT re-acquire.
+# NOTE: use `return`, never `exit` — lib is sourced under `set -euo pipefail`.
+# umask 077 — applied here for standalone-safe (scripts/restore.sh also sets it).
+# ============================================================================
+
+# shellcheck disable=SC2034
+RESTORE_TMP=""
+
+# _restore_cleanup — trap handler; removes RESTORE_TMP only (no compose-up-on-fail
+# in the lib; the thin scripts/restore.sh wrapper keeps its own compose-up trap).
+_restore_cleanup() {
+    [[ -d "${RESTORE_TMP:-}" ]] && rm -rf "$RESTORE_TMP"
 }
 
-# restore_list — prints table of available backups (DATE / SIZE / STATUS).
+# _restore_decrypt <dir>
+# Decrypts *.age files in-place using ${INSTALL_DIR}/.age/agmind.key.
+# Returns 1 if encrypted files are present but cannot be decrypted.
+_restore_decrypt() {
+    local dir="$1"
+    local has_age=false af
+    for af in "${dir}"/*.age; do [[ -f "$af" ]] && has_age=true && break; done
+    [[ "$has_age" == "true" ]] || return 0   # no .age files → nothing to do
+
+    local age_key="${INSTALL_DIR}/.age/agmind.key"
+    local key_to_use=""
+    if [[ -f "$age_key" ]] && command -v age >/dev/null 2>&1; then
+        key_to_use="$age_key"
+    else
+        log_warn "Ключ расшифровки не найден: ${age_key}"
+        return 1
+    fi
+
+    log_info "Расшифровка бэкапа..."
+    for af in "${dir}"/*.age; do
+        [[ -f "$af" ]] || continue
+        local out="${af%.age}"
+        age -d -i "$key_to_use" -o "$out" "$af" && rm -f "$af"
+    done
+    log_success "Бэкап расшифрован"
+    return 0
+}
+
+# _restore_pg_dify <dir>
+# Restores the dify PostgreSQL database (drop + recreate + gunzip | psql).
+# On selective path: `docker compose up -d db` is idempotent (safe for live db).
+# On no-service path: `stop db` at end (start-all step re-starts it).
+_restore_pg_dify() {
+    local dir="$1" svc_mode="${2:-full}"   # full | selective
+    [[ -f "${dir}/dify_db.sql.gz" ]] || return 0
+
+    log_info "Восстановление PostgreSQL (dify)..."
+    local compose_dir="${INSTALL_DIR}/docker"
+    # up -d db is idempotent; never use recreate (stale Redis state — CLAUDE.md §8)
+    ( cd "$compose_dir" && docker compose up -d db )
+
+    # Wait up to 60s for pg_isready
+    local _pg_try
+    for _pg_try in $(seq 1 30); do
+        if ( cd "$compose_dir" && docker compose exec -T db pg_isready -U postgres >/dev/null 2>&1 ); then
+            break
+        fi
+        sleep 2
+    done
+    if ! ( cd "$compose_dir" && docker compose exec -T db pg_isready -U postgres >/dev/null 2>&1 ); then
+        log_error "PostgreSQL не готов в отведённое время"
+        return 1
+    fi
+
+    ( cd "$compose_dir" && docker compose exec -T db psql -U postgres -c "DROP DATABASE IF EXISTS dify;" 2>/dev/null ) || true
+    ( cd "$compose_dir" && docker compose exec -T db psql -U postgres -c "CREATE DATABASE dify;" 2>/dev/null ) || true
+
+    if ! gunzip -c "${dir}/dify_db.sql.gz" | \
+            ( cd "$compose_dir" && docker compose exec -T db psql -U postgres -d dify 2>/dev/null ); then
+        log_error "PostgreSQL restore не удался (dify)"
+        return 1
+    fi
+
+    # On full restore: stop db; start-all step will bring it back
+    [[ "$svc_mode" == "full" ]] && ( cd "$compose_dir" && docker compose stop db )
+    log_success "PostgreSQL (dify) восстановлен"
+    return 0
+}
+
+# _restore_pg_dify_plugin <dir>
+_restore_pg_dify_plugin() {
+    local dir="$1" svc_mode="${2:-full}"
+    [[ -f "${dir}/dify_plugin_db.sql.gz" ]] || return 0
+
+    local compose_dir="${INSTALL_DIR}/docker"
+    ( cd "$compose_dir" && docker compose exec -T db psql -U postgres -c "DROP DATABASE IF EXISTS dify_plugin;" 2>/dev/null ) || true
+    ( cd "$compose_dir" && docker compose exec -T db psql -U postgres -c "CREATE DATABASE dify_plugin;" 2>/dev/null ) || true
+
+    if ! gunzip -c "${dir}/dify_plugin_db.sql.gz" | \
+            ( cd "$compose_dir" && docker compose exec -T db psql -U postgres -d dify_plugin 2>/dev/null ); then
+        log_error "PostgreSQL restore не удался (dify_plugin)"
+        return 1
+    fi
+    log_success "PostgreSQL (dify_plugin) восстановлен"
+    return 0
+}
+
+# _restore_volume_path_safe <dir> <archive_file> <target_path>
+# Generic safe-rename restore for volume-path archives.
+# Moves old data to RESTORE_TMP/.old before extracting; rolls back on failure.
+_restore_volume_path_safe() {
+    local dir="$1" archive="$2" target_path="$3"
+    [[ -f "${dir}/${archive}" ]] || return 0
+
+    local target="${INSTALL_DIR}/${target_path}"
+    local tmp_old
+    tmp_old="${RESTORE_TMP}/$(basename "$target").old"
+    mkdir -p "$tmp_old"
+    [[ -d "$target" ]] && mv "$target" "${tmp_old}/" 2>/dev/null || true
+    mkdir -p "$target"
+    if tar xzf "${dir}/${archive}" -C "${target}/"; then
+        rm -rf "$tmp_old"
+        log_success "${archive} восстановлен → ${target}"
+    else
+        rm -rf "$target"
+        mv "${tmp_old}/$(basename "$target")" "$target" 2>/dev/null || true
+        rm -rf "$tmp_old"
+        log_error "${archive} restore не удался, старые данные сохранены"
+        return 1
+    fi
+    return 0
+}
+
+# _restore_volume_vectorstore <dir>
+# Restores qdrant OR weaviate volume-path (whichever archive is present).
+_restore_volume_vectorstore() {
+    local dir="$1"
+    if [[ -f "${dir}/qdrant.tar.gz" ]]; then
+        log_info "Восстановление Qdrant..."
+        _restore_volume_path_safe "$dir" "qdrant.tar.gz" "docker/volumes/qdrant"
+    elif [[ -f "${dir}/weaviate.tar.gz" ]]; then
+        log_info "Восстановление Weaviate..."
+        _restore_volume_path_safe "$dir" "weaviate.tar.gz" "docker/volumes/weaviate"
+    fi
+    return 0
+}
+
+# _restore_volume_dify_storage <dir>
+_restore_volume_dify_storage() {
+    local dir="$1"
+    [[ -f "${dir}/dify-storage.tar.gz" ]] || return 0
+    log_info "Восстановление Dify storage..."
+    _restore_volume_path_safe "$dir" "dify-storage.tar.gz" "docker/volumes/app/storage"
+}
+
+# _restore_volume_docker_run <dir> <archive> <vol_pattern> <display_name>
+# Generic restore for docker-named volumes using `docker run --rm alpine`.
+_restore_volume_docker_run() {
+    local dir="$1" archive="$2" vol_pattern="$3" display_name="$4"
+    [[ -f "${dir}/${archive}" ]] || return 0
+
+    local vol_name
+    # shellcheck disable=SC2026,SC2046
+    vol_name="$(docker volume ls -q 2>/dev/null | grep -m1 "$vol_pattern" || true)"
+    if [[ -z "$vol_name" ]]; then
+        log_warn "Volume ${vol_pattern} не найден, пропускаем ${display_name}"
+        return 0
+    fi
+    docker run --rm -v "${vol_name}:/data" -v "${dir}:/backup" \
+        alpine sh -c "rm -rf /data/* && tar xzf /backup/${archive} -C /data/"
+    log_success "${display_name} восстановлен"
+    return 0
+}
+
+# _restore_volume_openwebui <dir>
+_restore_volume_openwebui() {
+    local dir="$1"
+    log_info "Восстановление Open WebUI..."
+    _restore_volume_docker_run "$dir" "openwebui.tar.gz" "openwebui" "Open WebUI"
+}
+
+# _restore_volume_ollama <dir>
+_restore_volume_ollama() {
+    local dir="$1"
+    log_info "Восстановление Ollama models..."
+    _restore_volume_docker_run "$dir" "ollama.tar.gz" "ollama_data" "Ollama"
+}
+
+# _restore_ragflow <dir>
+# RAGFlow restore is not automated (MySQL + ES + MinIO requires manual steps).
+# Presence of ragflow artifacts is noted; user is directed to documentation.
+_restore_ragflow() {
+    local dir="$1"
+    if [[ -f "${dir}/ragflow_mysql.sql.gz" || -f "${dir}/ragflow_es.live.tar.gz" ]]; then
+        log_warn "RAGFlow артефакты есть в бэкапе, но автоматический restore не реализован"
+        echo "       → см. backup.sh §6g для ручного восстановления RAGFlow"
+    fi
+    return 0
+}
+
+# _restore_config <dir> <auto:0|1>
+# Restores .env, nginx.conf, authelia config (prompt or auto-confirm).
+_restore_config() {
+    local dir="$1" auto="${2:-0}"
+    [[ -f "${dir}/env.backup" ]] || return 0
+
+    local do_restore="no"
+    if [[ "$auto" -eq 1 ]]; then
+        do_restore="yes"
+    else
+        read -rp "Восстановить конфигурацию (.env, nginx)? (yes/no): " do_restore
+    fi
+    [[ "$do_restore" == "yes" ]] || return 0
+
+    umask 077
+    cp "${dir}/env.backup" "${INSTALL_DIR}/docker/.env"
+    chmod 600 "${INSTALL_DIR}/docker/.env"
+    cp "${dir}/nginx.conf.backup" "${INSTALL_DIR}/docker/nginx/nginx.conf" 2>/dev/null || true
+    if [[ -f "${dir}/docker-compose.yml.backup" ]]; then
+        cp "${dir}/docker-compose.yml.backup" "${INSTALL_DIR}/docker/docker-compose.yml" 2>/dev/null || true
+    fi
+    if [[ -f "${dir}/authelia.tar.gz" ]]; then
+        log_info "Восстановление Authelia конфигурации..."
+        mkdir -p "${INSTALL_DIR}/docker/authelia"
+        tar xzf "${dir}/authelia.tar.gz" -C "${INSTALL_DIR}/docker/authelia/"
+        log_success "Authelia конфигурация восстановлена"
+    fi
+    # Legacy: age_keys directory in backup root
+    if [[ -d "${dir}/age_keys" ]]; then
+        log_info "Восстановление ключей шифрования..."
+        mkdir -p "${INSTALL_DIR}/.age"
+        cp -r "${dir}/age_keys/"* "${INSTALL_DIR}/.age/"
+        chmod 700 "${INSTALL_DIR}/.age"
+        chmod 600 "${INSTALL_DIR}/.age/"* 2>/dev/null || true
+        log_success "Ключи шифрования восстановлены"
+    fi
+    log_success "Конфигурация восстановлена"
+    return 0
+}
+
+# ── _svc_match helper ─────────────────────────────────────────────────────────
+# Returns 0 if svc is empty (all mode) or equals the given name.
+_svc_match() {
+    local check_svc="$1" cur_svc="$2"
+    [[ -z "$cur_svc" || "$check_svc" == "$cur_svc" ]]
+}
+
+# ============================================================================
+# restore_apply <RESTORE_DIR> [--service <name>] [--auto-confirm]
+# Executes the actual restore. No-service path = full restore (same sequence as
+# scripts/restore.sh steps 6-18, refactored into performers). Selective path
+# stops ONLY affected containers — never `docker compose down`, never recreate containers.
+# Requires root (checked by caller). flock already held by scripts/restore.sh.
+# ============================================================================
+restore_apply() {
+    local restore_dir="" svc="" auto=0
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --auto-confirm)  auto=1; shift ;;
+            --service)
+                shift
+                [[ $# -gt 0 ]] || { echo "restore_apply: --service requires a value" >&2; return 1; }
+                svc="$1"; shift
+                ;;
+            --service=*)     svc="${1#--service=}"; shift ;;
+            -*)              echo "restore_apply: unknown option: $1" >&2; return 1 ;;
+            *)               restore_dir="$1"; shift ;;
+        esac
+    done
+
+    [[ -n "$restore_dir" ]] || { echo "restore_apply: RESTORE_DIR required" >&2; return 1; }
+
+    # Validate --service
+    if [[ -n "$svc" ]]; then
+        local ok=0 v
+        for v in $_VALID_SERVICES; do
+            [[ "$v" == "$svc" ]] && ok=1 && break
+        done
+        if [[ "$ok" -eq 0 ]]; then
+            echo "Неизвестный сервис: ${svc}. Допустимые: ${_VALID_SERVICES}" >&2
+            return 1
+        fi
+    fi
+
+    [[ -d "$restore_dir" ]] || { echo "Каталог не найден: ${restore_dir}" >&2; return 1; }
+
+    # 0. Preview plan + confirmation
+    local _vrc=0
+    restore_plan "$restore_dir" ${svc:+--service "$svc"} || _vrc=$?
+    if [[ "$auto" -ne 1 ]]; then
+        local _c
+        read -rp "Восстановить из этого бэкапа? Текущие данные будут перезаписаны. (yes/no): " _c
+        [[ "$_c" == "yes" ]] || { echo "Отменено."; return 0; }
+    fi
+
+    # 1. Decrypt .age files in-place (only in apply — never in verify/plan)
+    _restore_decrypt "$restore_dir" || return 1
+
+    # 2. Verify checksums (warn + continue under auto-confirm; prompt otherwise)
+    if [[ -f "${restore_dir}/sha256sums.txt" ]]; then
+        local _sums_ok=0
+        ( cd "$restore_dir" && sha256sum -c sha256sums.txt >/dev/null 2>&1 ) && _sums_ok=1 || true
+        if [[ "$_sums_ok" -ne 1 ]]; then
+            log_warn "Контрольные суммы НЕ совпадают!"
+            if [[ "$auto" -ne 1 ]]; then
+                local _fc
+                read -rp "Продолжить восстановление? (yes/no): " _fc
+                [[ "$_fc" == "yes" ]] || { echo "Отменено."; return 1; }
+            fi
+        fi
+    fi
+
+    # 3. RESTORE_TMP on same FS as data volumes (avoids cross-device mv)
+    RESTORE_TMP="${INSTALL_DIR}/.restore_tmp"
+    mkdir -p "$RESTORE_TMP"
+    # shellcheck disable=SC2064
+    trap '_restore_cleanup' RETURN INT TERM
+
+    # 4. Stop containers
+    local compose_dir="${INSTALL_DIR}/docker"
+    if [[ -z "$svc" ]]; then
+        ( cd "$compose_dir" && docker compose down )
+    else
+        local _names
+        _names="$(_plan_compose_names_for_service "$svc" "$restore_dir")"
+        # shellcheck disable=SC2086
+        [[ -n "$_names" ]] && ( cd "$compose_dir" && docker compose stop $_names )
+        # config-only: no containers stopped
+    fi
+    # NEVER recreate containers — use stop/up only (stale Redis trap — CLAUDE.md §8)
+
+    # 5. Run performers gated by svc
+    local _svc_mode="full"
+    [[ -n "$svc" ]] && _svc_mode="selective"
+
+    if _svc_match dify "$svc"; then
+        _restore_pg_dify      "$restore_dir" "$_svc_mode"
+        _restore_pg_dify_plugin "$restore_dir" "$_svc_mode"
+        _restore_volume_dify_storage "$restore_dir"
+    fi
+    if _svc_match rag       "$svc"; then _restore_volume_vectorstore "$restore_dir"; fi
+    if _svc_match openwebui "$svc"; then _restore_volume_openwebui  "$restore_dir"; fi
+    if _svc_match ollama    "$svc"; then _restore_volume_ollama     "$restore_dir"; fi
+    if _svc_match ragflow   "$svc"; then _restore_ragflow           "$restore_dir" || true; fi
+    if _svc_match config    "$svc"; then _restore_config            "$restore_dir" "$auto"; fi
+
+    # 6. Cleanup tmp
+    rm -rf "$RESTORE_TMP" 2>/dev/null || true
+    RESTORE_TMP=""
+
+    # 7. Start containers
+    if [[ -z "$svc" ]]; then
+        local _profiles=""
+        [[ -f "${compose_dir}/.env" ]] && \
+            _profiles="$(grep '^COMPOSE_PROFILES=' "${compose_dir}/.env" 2>/dev/null | cut -d= -f2- || true)"
+        if [[ -n "$_profiles" ]]; then
+            ( cd "$compose_dir" && COMPOSE_PROFILES="$_profiles" docker compose up -d )
+        else
+            ( cd "$compose_dir" && docker compose up -d )
+        fi
+    else
+        local _start_names
+        _start_names="$(_plan_compose_names_for_service "$svc" "$restore_dir")"
+        # shellcheck disable=SC2086
+        [[ -n "$_start_names" ]] && ( cd "$compose_dir" && docker compose up -d $_start_names )
+        [[ "$svc" == "config" ]] && echo "Конфигурация восстановлена. Применить: \`agmind restart\`"
+    fi
+
+    # 8. Stale-Redis hint after dify-DB restore (CLAUDE.md §8 — FLUSHDB blocked by ACL)
+    if _svc_match dify "$svc" && [[ -f "${restore_dir}/dify_db.sql.gz" ]]; then
+        echo
+        echo "Если Celery-воркеры перезапускались, очисти stale Redis-ключи:"
+        echo "  redis-cli -a \$REDIS_PASSWORD -n 0 --scan --pattern 'generate_task_belong:*' | xargs redis-cli -a \$REDIS_PASSWORD -n 0 DEL"
+        echo "  redis-cli -a \$REDIS_PASSWORD -n 1 --scan --pattern 'celery-task-meta-*'   | xargs redis-cli -a \$REDIS_PASSWORD -n 1 DEL"
+        echo "  (FLUSHDB заблокирован ACL — только DEL по ключам.)"
+    fi
+    echo
+    echo "=== Восстановление завершено ==="
+    return 0
+}
+
+# ============================================================================
+# restore_list — prints DATE / SIZE / STATUS table of available backups.
+# STATUS: ok if sha256sums.txt + core artifact present; suspect otherwise.
+#         Appends ' [зашифрован]' marker if *.age files present.
 # Called by `agmind backup list`.
+# ============================================================================
 restore_list() {
-    echo "restore_list: не реализовано (Wave 2)" >&2
-    return 1
+    local base="${BACKUP_BASE:-/var/backups/agmind}"
+    [[ -d "$base" ]] || { echo "Нет каталога бэкапов: ${base}" >&2; return 1; }
+    printf "%-20s %-8s %s\n" "ДАТА" "РАЗМЕР" "СТАТУС"
+    printf "%-20s %-8s %s\n" "----" "------" "------"
+    local found=0 dir name size status enc
+    for dir in "${base}"/*/; do
+        [[ -d "$dir" ]] || continue
+        found=1
+        name="$(basename "$dir")"
+        size="$(du -sh "$dir" 2>/dev/null | cut -f1)"
+        enc=""
+        ls "${dir}"/*.age >/dev/null 2>&1 && enc=" [зашифрован]"
+        if [[ ! -f "${dir}/sha256sums.txt" ]]; then
+            status="suspect"
+        elif [[ ! -f "${dir}/dify_db.sql.gz" && ! -f "${dir}/dify_db.sql.gz.age" ]]; then
+            status="suspect"
+        else
+            status="ok"
+        fi
+        printf "%-20s %-8s %s%s\n" "$name" "$size" "$status" "$enc"
+    done
+    [[ "$found" -eq 1 ]] || echo "(нет бэкапов)"
+    return 0
 }
