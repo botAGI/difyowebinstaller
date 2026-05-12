@@ -10,6 +10,8 @@
 #   HF_TOKEN, AGMIND_PEER_USER, AGMIND_PEER_SSH_KEY, NODE_EXPORTER_VERSION,
 #   PORTAINER_AGENT_SECRET, PORTAINER_AGENT_VERSION, PORTAINER_PORT, MONITORING_MODE
 # Exports: nothing (side-effects only: cluster.json status, ssh/docker on peer, backup.conf)
+# Notes: After vLLM is up, restricts peer :8000 to master QSFP IP / LAN subnet via
+#   idempotent ufw/iptables rule applied on peer over ssh (non-fatal, defence-in-depth). See SC4.
 set -euo pipefail
 
 # ============================================================================
@@ -159,6 +161,10 @@ peer_deploy() {
         return 1
     fi
 
+    # 8.5. Restrict peer vLLM :8000 to master QSFP IP / LAN subnet (SC4 / D-09).
+    # Idempotent ufw/iptables rule applied on peer via ssh sudo -n; non-fatal.
+    _apply_peer_vllm_firewall "$peer_ip" "$peer_user" "$ssh_opts"
+
     # 9. Install systemd unit on peer so `docker compose up -d` runs after reboot.
     # Without this, peer relies solely on restart=unless-stopped, with no
     # application-level safety net if docker daemon is restarted manually.
@@ -294,6 +300,49 @@ _wait_peer_vllm_ready() {
         log_info "  ...waiting (${elapsed}s elapsed)"
         [[ $elapsed -lt 300 ]] && sleep 5 || sleep 15
     done
+}
+
+# Returns the master's IP on the QSFP cluster subnet (192.168.100.0/24).
+# Used to derive master_ip for the peer vLLM firewall rule (SC4 / D-09).
+# Fallback: hardcoded 192.168.100.1 (NAT-on-demand master gateway per project_nat_qsfp_gateway).
+_qsfp_master_ip() {
+    ip -4 addr show 2>/dev/null | awk '/inet 192\.168\.100\./{print $2}' | cut -d/ -f1 | head -1
+}
+
+# Apply idempotent firewall rule on peer restricting vLLM :8000 to the master QSFP IP
+# / LAN subnet (192.168.100.0/24). Uses ufw if active on peer, else iptables.
+# All commands run via sudo -n on the peer (peer user has NOPASSWD sudo per project_spark_cluster).
+# Non-fatal: ssh/sudo failure logs a warn and continues — defence-in-depth (peer is already
+# air-gapped via wifi-off). Re-running is safe: check-before-add prevents duplicate rules.
+# shellcheck disable=SC2086
+_apply_peer_vllm_firewall() {
+    local peer_ip="$1" peer_user="$2" ssh_opts="$3"
+    local master_ip; master_ip="$(_qsfp_master_ip 2>/dev/null || true)"
+    [[ -z "$master_ip" ]] && master_ip="192.168.100.1"
+    local lan_subnet="${AGMIND_CLUSTER_SUBNET:-192.168.100.0/24}"
+
+    log_info "Applying peer :8000 firewall rule (restrict to ${lan_subnet}) on ${peer_ip}..."
+    # shellcheck disable=SC2086
+    ssh $ssh_opts "${peer_user}@${peer_ip}" "
+set -e
+if command -v ufw >/dev/null 2>&1 && sudo -n ufw status 2>/dev/null | grep -q 'active'; then
+    # ufw path: idempotent — only add if not already present
+    sudo -n ufw status | grep -q '8000.*${lan_subnet}' \
+        || { sudo -n ufw allow from ${lan_subnet} to any port 8000 comment 'AGmind vLLM LAN-only'; \
+             sudo -n ufw deny 8000 comment 'AGmind vLLM block non-LAN'; }
+else
+    # iptables path: idempotent check-before-insert
+    sudo -n iptables -C INPUT -p tcp --dport 8000 -s ${lan_subnet} -j ACCEPT 2>/dev/null \
+        || sudo -n iptables -I INPUT -p tcp --dport 8000 -s ${lan_subnet} -j ACCEPT
+    sudo -n iptables -C INPUT -p tcp --dport 8000 -j DROP 2>/dev/null \
+        || sudo -n iptables -A INPUT -p tcp --dport 8000 -j DROP
+    command -v netfilter-persistent >/dev/null 2>&1 || command -v iptables-save >/dev/null 2>&1 \
+        && echo '(note: install iptables-persistent on the peer to persist this rule across reboots)' \
+        || true
+fi
+" 2>/dev/null \
+        && log_success "peer :8000 restricted to ${lan_subnet} (master ${master_ip})" \
+        || log_warn "peer :8000 firewall rule not applied (non-fatal — defence-in-depth; peer is air-gapped via wifi-off)"
 }
 
 # Install gpu-metrics.sh + cron on peer host so node-exporter textfile collector
