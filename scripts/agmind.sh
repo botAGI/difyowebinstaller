@@ -23,6 +23,9 @@ source "${SCRIPTS_DIR}/health.sh" 2>/dev/null || {
 }
 # shellcheck source=/dev/null
 source "${SCRIPTS_DIR}/detect.sh" 2>/dev/null || true
+# shellcheck source=/dev/null
+source "${SCRIPTS_DIR}/i18n.sh" 2>/dev/null \
+    || source "${AGMIND_DIR}/lib/i18n.sh" 2>/dev/null || true
 
 # Colors from health.sh (which sources common.sh patterns)
 RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
