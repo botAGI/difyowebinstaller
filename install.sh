@@ -25,6 +25,7 @@ fi
 
 # --- Source library modules ---
 source "${INSTALLER_DIR}/lib/common.sh"
+source "${INSTALLER_DIR}/lib/i18n.sh"
 source "${INSTALLER_DIR}/lib/detect.sh"
 # shellcheck source=lib/cluster_mode.sh
 source "${INSTALLER_DIR}/lib/cluster_mode.sh"
@@ -516,6 +517,7 @@ _copy_runtime_files() {
     # lib/ → scripts/ copy: different subdirs, always safe even in self-install
     cp "${INSTALLER_DIR}/lib/health.sh"    "${INSTALL_DIR}/scripts/health.sh"    2>/dev/null || true
     cp "${INSTALLER_DIR}/lib/detect.sh"   "${INSTALL_DIR}/scripts/detect.sh"   2>/dev/null || true
+    cp "${INSTALLER_DIR}/lib/i18n.sh"     "${INSTALL_DIR}/scripts/i18n.sh"     2>/dev/null || true
     cp "${INSTALLER_DIR}/lib/creds.sh"      "${INSTALL_DIR}/scripts/creds.sh"      2>/dev/null || true
     cp "${INSTALLER_DIR}/lib/security.sh"  "${INSTALL_DIR}/scripts/security.sh"  2>/dev/null || true
     cp "${INSTALLER_DIR}/lib/airgapped.sh"  "${INSTALL_DIR}/scripts/airgapped.sh"  2>/dev/null || true
