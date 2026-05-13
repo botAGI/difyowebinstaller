@@ -14,7 +14,7 @@
 [![Dual Spark](https://img.shields.io/badge/cluster-dual--Spark-purple)](#)
 [![Containers](https://img.shields.io/badge/containers-30%2B-orange)](#)
 
-**Website:** [prem.agmind.dev](https://prem.agmind.dev/)
+
 
 [Quick Start](#-quick-start) · [Architecture](#-architecture) · [Cluster](#-cluster-dual-spark) · [Operations](#-operations) · [Troubleshooting](#-troubleshooting) · [🇷🇺 Русский](#-русская-документация)
 
@@ -828,7 +828,7 @@ Docling (5 страниц arxiv PDF, warm): **6.04s**, 0.32s/page.
 - Bump тега образа = свидетельство `docker manifest inspect <image>:<tag> | grep arm64` в commit message.
 
 ---
-
+**Website:** [prem.agmind.dev](https://prem.agmind.dev/)
 ## 📜 Лицензия
 
 [Apache License 2.0](LICENSE) © 2024–2026 AGMind Contributors.
