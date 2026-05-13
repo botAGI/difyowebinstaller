@@ -80,6 +80,18 @@ for f in "${compose_files[@]}"; do
     done < <(grep -E '^\s*image:' "$f")
 done
 
+# Targeted assertion: VLLM_AEON_IMAGE must be set and non-empty in versions.env.
+# It is used in lib/wizard.sh (not a compose image: line), so the compose-image
+# loop above won't cover it — check explicitly.
+aeon_val="${pinned[VLLM_AEON_IMAGE]:-}"
+if [[ -n "$aeon_val" ]]; then
+    echo "  PASS: VLLM_AEON_IMAGE is set and non-empty in versions.env (${aeon_val})"
+    pass=$((pass+1))
+else
+    echo "  FAIL: VLLM_AEON_IMAGE is missing or empty in versions.env"
+    fail=$((fail+1))
+fi
+
 echo ""
 echo "=== Summary: ${pass} passed, ${fail} failed ==="
 [[ $fail -eq 0 ]]
