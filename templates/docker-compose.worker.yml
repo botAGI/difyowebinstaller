@@ -44,6 +44,9 @@ services:
       # Without this env var, torch.cuda.is_available()=False and vLLM silently falls back to CPU.
       - NVIDIA_DRIVER_CAPABILITIES=${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
       - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
+      # Required when VLLM_MAX_MODEL_LEN > 1M (1M YaRN context, qwen36 opt-in).
+      # Wizard sets VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 when 1M ctx is chosen.
+      - VLLM_ALLOW_LONG_MAX_MODEL_LEN=${VLLM_ALLOW_LONG_MAX_MODEL_LEN:-0}
     command: >-
       ${VLLM_CMD_PREFIX:-}
       --model ${VLLM_MODEL:-${VLLM_SPARK_MODEL:-google/gemma-4-26B-A4B-it}}

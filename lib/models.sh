@@ -304,6 +304,14 @@ download_models() {
     # vLLM/TEI: models download at container startup (Phase 6).
     # Only stream logs if container is NOT yet healthy — skip if already loaded.
     # LLM_ON_PEER=true → vllm runs on peer, no local container to poll.
+    #
+    # Path A — Qwen3.6 lazy-pull note (verified 2026-05-13):
+    # Qwen/Qwen3.6-35B-A3B-FP8 (~35 GB), z-lab/Qwen3.6-35B-A3B-DFlash (~905 MB),
+    # and AEON-7/Qwen3.6-35B-A3B-heretic-NVFP4 (~26 GB) are all PUBLIC on HuggingFace
+    # (Apache 2.0 / community — no HF_TOKEN required). vLLM pulls them from HF at
+    # container first start into the agmind_vllm_cache volume (same lazy-pull flow as
+    # Gemma). No pre-download change needed here — _stream_gpu_model_logs already
+    # waits for the container to become healthy regardless of model.
     if [[ "$llm_provider" == "vllm" && "${LLM_ON_PEER:-false}" != "true" ]]; then
         local vllm_health
         vllm_health="$(docker inspect --format='{{.State.Health.Status}}' agmind-vllm 2>/dev/null || echo "none")"
