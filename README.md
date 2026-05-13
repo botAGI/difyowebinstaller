@@ -115,6 +115,26 @@ stack is live.
 > All credentials live in `/opt/agmind/credentials.txt` (`chmod 600`,
 > root-only).
 
+### Language
+
+The wizard is bilingual (English / Russian). Language selection works as follows:
+
+1. **Interactive:** the wizard's first question is "Language / Язык" — prefilled
+   with the autodetected value. Answer `en` or `ru`.
+2. **Env override:** set `AGMIND_LANG=en` or `AGMIND_LANG=ru` before running
+   `install.sh` / `agmind` to force a language. Takes precedence over locale.
+3. **Autodetect:** if `AGMIND_LANG` is not set, the system locale
+   (`LC_ALL` → `LC_MESSAGES` → `LANG`) is checked; a value starting with `ru`
+   resolves to Russian, everything else to English (default `en`).
+
+```bash
+# Force Russian
+sudo AGMIND_LANG=ru bash install.sh
+
+# Force English (also the default when locale is not ru_*)
+sudo AGMIND_LANG=en bash install.sh
+```
+
 ### Non-Interactive Install
 
 ```bash
