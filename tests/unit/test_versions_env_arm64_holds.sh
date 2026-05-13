@@ -119,6 +119,13 @@ else
     fail=$((fail+1))
 fi
 
+# Rule 8: VLLM_AEON_IMAGE — Path A community fork, arm64 manifest verified 2026-05-13.
+# DO NOT bump without re-verifying arm64 + 35B params (v2 was wrongly built for 27B once).
+# digest sha256:31ba8cc1510458b011c9fcc90cee44311628506cd7e4756aa2bb6e98471c253a
+aeon="$(_get_version VLLM_AEON_IMAGE)"
+_assert "VLLM_AEON_IMAGE pinned to v1.2 (arm64 verified 2026-05-13)" \
+    "ghcr.io/aeon-7/vllm-spark-omni-q36:v1.2" "$aeon"
+
 echo ""
 echo "=== Summary: ${pass} passed, ${fail} failed ==="
 [[ $fail -eq 0 ]]
