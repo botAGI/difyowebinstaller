@@ -351,11 +351,11 @@ _wizard_llm_provider() {
     fi
 
     local choice
-    choice=$(wt_menu "LLM-провайдер" \
-        "Выберите LLM-провайдер:" \
-        "1" "vLLM (рекомендуется для DGX Spark)" \
-        "2" "Внешний API" \
-        "3" "Пропустить")
+    choice=$(wt_menu "$(t wizard.llm_provider.title)" \
+        "$(t wizard.llm_provider.prompt)" \
+        "1" "$(t wizard.llm_provider.opt_vllm)" \
+        "2" "$(t wizard.llm_provider.opt_external)" \
+        "3" "$(t wizard.llm_provider.opt_skip)")
 
     # Default to detected preference if empty
     choice="${choice:-$default_tag}"
@@ -1602,46 +1602,46 @@ _wizard_summary() {
     fi
 
     local summary=""
-    summary+="Профиль:      ${DEPLOY_PROFILE}\n"
-    if [[ -n "$DOMAIN" ]]; then summary+="Домен:        ${DOMAIN}\n"; fi
-    summary+="Вектор. БД:   ${VECTOR_STORE}\n"
-    if [[ "$ENABLE_DOCLING" == "true" ]]; then summary+="ETL:          Docling (${DOCLING_IMAGE##*/})\n"; fi
+    summary+="$(t wizard.summary.profile)      ${DEPLOY_PROFILE}\n"
+    if [[ -n "$DOMAIN" ]]; then summary+="$(t wizard.summary.domain)        ${DOMAIN}\n"; fi
+    summary+="$(t wizard.summary.vector_db)   ${VECTOR_STORE}\n"
+    if [[ "$ENABLE_DOCLING" == "true" ]]; then summary+="$(t wizard.summary.etl)          Docling (${DOCLING_IMAGE##*/})\n"; fi
     if [[ "${LLM_PROVIDER:-}" == "vllm" && -n "${VLLM_MAX_MODEL_LEN:-}" ]]; then
         local ctx_k=$(( VLLM_MAX_MODEL_LEN / 1024 ))
-        summary+="LLM:          ${LLM_PROVIDER} (${VLLM_MODEL}) ctx=${ctx_k}K\n"
+        summary+="$(t wizard.summary.llm)          ${LLM_PROVIDER} (${VLLM_MODEL}) ctx=${ctx_k}K\n"
     else
-        summary+="LLM:          ${LLM_PROVIDER} ${LLM_MODEL}${VLLM_MODEL:+ (${VLLM_MODEL})}\n"
+        summary+="$(t wizard.summary.llm)          ${LLM_PROVIDER} ${LLM_MODEL}${VLLM_MODEL:+ (${VLLM_MODEL})}\n"
     fi
-    summary+="Эмбеддинги:   ${EMBED_PROVIDER} ${EMBEDDING_MODEL}\n"
+    summary+="$(t wizard.summary.embeddings)   ${EMBED_PROVIDER} ${EMBEDDING_MODEL}\n"
     if [[ "${ENABLE_RERANKER:-}" == "true" ]]; then
         local _rr_dev="CPU"
         if [[ "${RERANKER_ON_GPU:-false}" == "true" ]]; then _rr_dev="GPU"; fi
-        summary+="Реранкер:     ${RERANK_MODEL} (${_rr_dev})\n"
+        summary+="$(t wizard.summary.reranker)     ${RERANK_MODEL} (${_rr_dev})\n"
     fi
-    if [[ "$TLS_MODE" != "none" ]]; then summary+="TLS:          ${TLS_MODE}\n"; fi
-    if [[ "$MONITORING_MODE" != "none" ]]; then summary+="Мониторинг:   ${MONITORING_MODE}\n"; fi
-    if [[ "$ALERT_MODE" != "none" ]]; then summary+="Уведомления:  ${ALERT_MODE}\n"; fi
+    if [[ "$TLS_MODE" != "none" ]]; then summary+="$(t wizard.summary.tls)          ${TLS_MODE}\n"; fi
+    if [[ "$MONITORING_MODE" != "none" ]]; then summary+="$(t wizard.summary.monitoring)   ${MONITORING_MODE}\n"; fi
+    if [[ "$ALERT_MODE" != "none" ]]; then summary+="$(t wizard.summary.alerts)  ${ALERT_MODE}\n"; fi
     if [[ "${ENABLE_MINIO:-false}" == "true" ]]; then
-        summary+="Хранилище:    MinIO (S3) agmind-storage.local:9001\n"
+        summary+="$(t wizard.summary.storage)    $(t wizard.summary.storage_minio)\n"
     else
-        summary+="Хранилище:    Локальное (./volumes/app/storage)\n"
+        summary+="$(t wizard.summary.storage)    $(t wizard.summary.storage_local)\n"
     fi
-    if [[ "$ENABLE_UFW" == "true" ]]; then summary+="UFW:          включён\n"; fi
-    if [[ "$ENABLE_FAIL2BAN" == "true" ]]; then summary+="Fail2ban:     SSH jail\n"; fi
-    if [[ "$ENABLE_AUTHELIA" == "true" ]]; then summary+="Authelia:     2FA включена\n"; fi
-    if [[ "${ENABLE_LITELLM:-true}" == "true" ]]; then summary+="LiteLLM:      включён (AI Gateway)\n"; fi
-    if [[ "${ENABLE_SEARXNG:-false}" == "true" ]]; then summary+="SearXNG:      agmind-search.local\n"; fi
-    if [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]]; then summary+="Open Notebook: agmind-notebook.local\n"; fi
-    if [[ "${ENABLE_DBGPT:-false}" == "true" ]]; then summary+="DB-GPT:       agmind-dbgpt.local\n"; fi
-    if [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]]; then summary+="Crawl4AI:     agmind-crawl.local\n"; fi
-    if [[ "${ENABLE_OPENWEBUI:-false}" == "true" ]]; then summary+="Open WebUI:   agmind-chat.local\n"; fi
-    if [[ "${ENABLE_RAGFLOW:-false}" == "true" ]]; then summary+="RAGFlow:      внутренний (Dify plugin: witmeng/ragflow-api)\n"; fi
-    if [[ "${ENABLE_DIFY_PREMIUM:-true}" == "true" ]]; then summary+="Dify Premium: включён (патч после запуска)\n"; fi
-    summary+="Бэкапы:       ${BACKUP_TARGET} (${BACKUP_SCHEDULE})\n"
+    if [[ "$ENABLE_UFW" == "true" ]]; then summary+="$(t wizard.summary.ufw)          $(t wizard.summary.enabled)\n"; fi
+    if [[ "$ENABLE_FAIL2BAN" == "true" ]]; then summary+="$(t wizard.summary.fail2ban)     $(t wizard.summary.fail2ban_val)\n"; fi
+    if [[ "$ENABLE_AUTHELIA" == "true" ]]; then summary+="$(t wizard.summary.authelia)     $(t wizard.summary.authelia_val)\n"; fi
+    if [[ "${ENABLE_LITELLM:-true}" == "true" ]]; then summary+="$(t wizard.summary.litellm)      $(t wizard.summary.litellm_val)\n"; fi
+    if [[ "${ENABLE_SEARXNG:-false}" == "true" ]]; then summary+="$(t wizard.summary.searxng)      agmind-search.local\n"; fi
+    if [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]]; then summary+="$(t wizard.summary.notebook) agmind-notebook.local\n"; fi
+    if [[ "${ENABLE_DBGPT:-false}" == "true" ]]; then summary+="$(t wizard.summary.dbgpt)       agmind-dbgpt.local\n"; fi
+    if [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]]; then summary+="$(t wizard.summary.crawl4ai)     agmind-crawl.local\n"; fi
+    if [[ "${ENABLE_OPENWEBUI:-false}" == "true" ]]; then summary+="$(t wizard.summary.openwebui)   agmind-chat.local\n"; fi
+    if [[ "${ENABLE_RAGFLOW:-false}" == "true" ]]; then summary+="$(t wizard.summary.ragflow)      $(t wizard.summary.ragflow_val)\n"; fi
+    if [[ "${ENABLE_DIFY_PREMIUM:-true}" == "true" ]]; then summary+="$(t wizard.summary.dify_premium) $(t wizard.summary.dify_premium_val)\n"; fi
+    summary+="$(t wizard.summary.backups)       ${BACKUP_TARGET} (${BACKUP_SCHEDULE})\n"
 
     # VRAM plan (only for vLLM — Ollama manages VRAM internally)
     if [[ "${LLM_PROVIDER:-}" == "vllm" ]]; then
-        summary+="\n--- GPU память ---\n"
+        summary+="\n$(t wizard.summary.gpu_header)\n"
         local vllm_weights vllm_ctx_label
         vllm_weights=$(_get_vllm_weights_gb "${VLLM_MODEL:-}")
         local ctx_len="${VLLM_MAX_MODEL_LEN:-32768}"
@@ -1665,13 +1665,13 @@ _wizard_summary() {
             vllm_total=$(( gpu_vram_gb * gpu_util / 100 ))
             local kv_est=$(( vllm_total - vllm_weights ))
             if [[ "$kv_est" -lt 0 ]]; then kv_est=0; fi
-            summary+="vLLM:         ~${vllm_total} GB   (веса ${vllm_weights} + KV ~${kv_est} @ ${vllm_ctx_label})   ${VLLM_MODEL:-unknown}\n"
+            summary+="$(t wizard.summary.gpu_vllm)         ~${vllm_total} GB   (${vllm_weights}+KV ~${kv_est} @ ${vllm_ctx_label})   ${VLLM_MODEL:-unknown}\n"
         elif [[ "$vllm_weights" -gt 0 ]]; then
             # No GPU info — show weights-only estimate
             vllm_total=$(( vllm_weights + 5 ))  # weights + ~5 GB overhead
-            summary+="vLLM:         ~${vllm_total} GB+   (веса ${vllm_weights} + KV кэш)   ${VLLM_MODEL:-unknown}\n"
+            summary+="$(t wizard.summary.gpu_vllm)         ~${vllm_total} GB+   (${vllm_weights}+KV cache)   ${VLLM_MODEL:-unknown}\n"
         else
-            summary+="vLLM:         ? GB   (${VLLM_MODEL:-unknown})\n"
+            summary+="$(t wizard.summary.gpu_vllm)         ? GB   (${VLLM_MODEL:-unknown})\n"
         fi
 
         local embed_vram=0
@@ -1709,7 +1709,7 @@ _wizard_summary() {
         summary+="---------------------\n"
 
         if [[ "$vllm_total" == "?" ]]; then
-            summary+="Итого:        ? GB (неизвестная модель)\n"
+            summary+="$(t wizard.summary.gpu_total)        ? GB (unknown model)\n"
         else
             local total_vram=$(( vllm_total + embed_vram + rerank_vram + docling_vram ))
             local mem_type="VRAM"
@@ -1721,13 +1721,13 @@ _wizard_summary() {
                 avail_gb=$(( DETECTED_GPU_VRAM / 1024 ))
             fi
             if [[ "$avail_gb" -gt 0 ]]; then
-                summary+="Итого:        ~${total_vram} GB / ${avail_gb} GB ${mem_type} доступно\n"
+                summary+="$(t wizard.summary.gpu_total)        ~${total_vram} GB / ${avail_gb} GB ${mem_type}\n"
                 if [[ "$total_vram" -gt "$avail_gb" ]]; then
-                    summary+="!! ${mem_type} бюджет превышен! Возможен OOM.\n"
+                    summary+="!! $(t wizard.summary.gpu_oom)\n"
                 fi
             else
-                summary+="Итого:        ~${total_vram} GB\n"
-                summary+="GPU память не определена -- проверьте вручную\n"
+                summary+="$(t wizard.summary.gpu_total)        ~${total_vram} GB\n"
+                summary+="$(t wizard.summary.gpu_unknown)\n"
             fi
         fi
     fi
@@ -1744,6 +1744,28 @@ _wizard_confirm() {
         echo "Отменено."
         exit 0
     fi
+}
+
+# ============================================================================
+# LANGUAGE — first interactive question; resolves AGMIND_LANG (en|ru)
+# Non-interactive: AGMIND_LANG already resolved at source time by lib/i18n.sh.
+# ============================================================================
+
+_wizard_language() {
+    if [[ "${NON_INTERACTIVE:-false}" == "true" ]]; then
+        # Already resolved by lib/i18n.sh at source time; just re-export for safety.
+        export AGMIND_LANG="${AGMIND_LANG:-en}"
+        return 0
+    fi
+
+    local _lang
+    _lang=$(wt_input "Language / Язык" "$(t wizard.language.prompt)" "${AGMIND_LANG:-en}")
+    _lang="${_lang,,}"  # lowercase
+    case "$_lang" in
+        en|ru) AGMIND_LANG="$_lang" ;;
+        *) AGMIND_LANG="${AGMIND_LANG:-en}" ;;
+    esac
+    export AGMIND_LANG
 }
 
 # ============================================================================
@@ -1801,6 +1823,7 @@ run_wizard() {
     # named profile already set the implied ENABLE_*/<X>_PROVIDER defaults.
     local _SKIP_GRANULAR=false
 
+    _wizard_language
     _wizard_cluster_mode
     _wizard_profile      # sets DEPLOY_PROFILE + implied vars + _SKIP_GRANULAR (true for named profiles)
     _wizard_security_defaults
@@ -1858,6 +1881,7 @@ run_wizard() {
     export ENABLE_DIFY_PREMIUM
     export ENABLE_RAGFLOW RAGFLOW_DEVICE
     export ENABLE_MINIO
+    export AGMIND_LANG
 }
 
 # Run if executed directly
