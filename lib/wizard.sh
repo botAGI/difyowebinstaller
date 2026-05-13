@@ -37,6 +37,9 @@ _init_wizard_defaults() {
     VLLM_EXTRA_ARGS="${VLLM_EXTRA_ARGS:-}"
     VLLM_CUDA_SUFFIX="${VLLM_CUDA_SUFFIX:-}"
     VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-}"
+    VLLM_GPU_MEM_UTIL="${VLLM_GPU_MEM_UTIL:-}"
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN="${VLLM_ALLOW_LONG_MAX_MODEL_LEN:-0}"
+    AGMIND_LLM_PROFILE="${AGMIND_LLM_PROFILE:-}"
     EMBED_PROVIDER="${EMBED_PROVIDER:-}"
     EMBEDDING_MODEL="${EMBEDDING_MODEL:-}"
     TEI_EMBED_VERSION="${TEI_EMBED_VERSION:-}"
@@ -373,20 +376,159 @@ _wizard_llm_provider() {
         log_info "Blackwell GPU (compute ${DETECTED_GPU_COMPUTE}) -> vLLM с CUDA 13.0 (-cu130)"
     fi
 
-    # DGX Spark: scitrera image (CUDA 13, GB10 sm_121 compatible) + Gemma 4
-    # - vllm/vllm-openai:gemma4-cu130 hangs on torch.compile for sm_121 (PyTorch 8.0-12.0 cap)
-    # - vllm/vllm-openai:gemma4-cu130 = custom build for GB10 Blackwell CUDA 13+
-    # - NGC entrypoint style: exec "$@" requires VLLM_CMD_PREFIX=""
-    # - Embed/rerank stay on NGC (different containers, smaller models)
+    # DGX Spark: 3-way LLM profile selector.
+    # Profile 1 (default) = Gemma 4 26B — validated, byte-identical to prior behavior.
+    # Profile 2 = Qwen3.6-35B FP8 + DFlash (opt-in, AEON community fork).
+    # Profile 3 = Qwen3.6-35B heretic NVFP4 + DFlash (opt-in, uncensored, loud warning).
+    # VLLM_AEON_IMAGE sourced from versions.env (loaded at top of run_wizard).
     if [[ "$LLM_PROVIDER" == "vllm" && "${DETECTED_DGX_SPARK:-false}" == "true" ]]; then
-        VLLM_IMAGE="vllm/vllm-openai:gemma4-cu130"
-        VLLM_MODEL="google/gemma-4-26B-A4B-it"
-        VLLM_CUDA_SUFFIX=""
-        VLLM_CMD_PREFIX=""  # scitrera NGC entrypoint needs program name
-        VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-65536}"
-        VLLM_EXTRA_ARGS="--kv-cache-dtype fp8 --enable-prefix-caching --enforce-eager"
-        log_info "DGX Spark → Gemma 4 26B-A4B (${VLLM_IMAGE})"
+        _wizard_llm_profile
     fi
+}
+
+# _wizard_llm_profile — DGX Spark 3-way LLM profile sub-menu.
+# Called from _wizard_llm_provider when LLM_PROVIDER=vllm + DETECTED_DGX_SPARK=true.
+# Non-interactive: controlled by AGMIND_LLM_PROFILE env (gemma|qwen36-fp8|qwen36-heretic).
+_wizard_llm_profile() {
+    # Ensure VLLM_AEON_IMAGE is available (sourced from versions.env at run_wizard top).
+    local _aeon_image="${VLLM_AEON_IMAGE:-ghcr.io/aeon-7/vllm-spark-omni-q36:v1.2}"
+
+    local profile_choice
+    if [[ "${NON_INTERACTIVE:-false}" == "true" ]]; then
+        # Map AGMIND_LLM_PROFILE env to menu choice
+        case "${AGMIND_LLM_PROFILE:-}" in
+            qwen36-fp8)     profile_choice="2" ;;
+            qwen36-heretic) profile_choice="3" ;;
+            gemma|*)        profile_choice="1" ;;
+        esac
+    else
+        profile_choice=$(wt_menu \
+            "$(t wizard.llm_profile.title)" \
+            "$(t wizard.llm_profile.prompt)" \
+            "1" "$(t wizard.llm_profile.opt_gemma)" \
+            "2" "$(t wizard.llm_profile.opt_qwen36_fp8)" \
+            "3" "$(t wizard.llm_profile.opt_qwen36_heretic)")
+        profile_choice="${profile_choice:-1}"
+    fi
+
+    case "${profile_choice}" in
+        2)
+            # --- Profile 2: Qwen3.6-35B FP8 + DFlash ---
+            # Auto-fallback: if AEON image is unreachable, drop back to Gemma.
+            if ! docker image inspect "$_aeon_image" >/dev/null 2>&1 \
+               && ! timeout 15 docker manifest inspect "$_aeon_image" >/dev/null 2>&1; then
+                log_warn "$(t wizard.llm_profile.aeon_unavailable)"
+                _wizard_llm_profile_gemma
+                return
+            fi
+            AGMIND_LLM_PROFILE="qwen36-fp8"
+            VLLM_IMAGE="$_aeon_image"
+            VLLM_MODEL="Qwen/Qwen3.6-35B-A3B-FP8"
+            VLLM_CUDA_SUFFIX=""
+            VLLM_CMD_PREFIX=""
+            VLLM_EXTRA_ARGS="--quantization compressed-tensors --enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3 --attention-backend flash_attn --speculative-config '{\"method\":\"dflash\",\"model\":\"z-lab/Qwen3.6-35B-A3B-DFlash\",\"num_speculative_tokens\":15}' --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching --trust-remote-code"
+            if [[ "${LLM_ON_PEER:-false}" == "true" ]]; then
+                VLLM_GPU_MEM_UTIL="0.75"
+                export VLLM_GPU_MEM_UTIL
+            fi
+            # Context sub-prompt
+            _wizard_llm_ctx_qwen36
+            log_info "$(t wizard.llm_profile.log_qwen36_fp8)"
+            ;;
+        3)
+            # --- Profile 3: Qwen3.6-35B heretic NVFP4 + DFlash (LOUD WARNING) ---
+            log_warn "$(t wizard.llm_profile.heretic_warning)"
+            # Auto-fallback: if AEON image is unreachable, drop back to Gemma.
+            if ! docker image inspect "$_aeon_image" >/dev/null 2>&1 \
+               && ! timeout 15 docker manifest inspect "$_aeon_image" >/dev/null 2>&1; then
+                log_warn "$(t wizard.llm_profile.aeon_unavailable)"
+                _wizard_llm_profile_gemma
+                return
+            fi
+            AGMIND_LLM_PROFILE="qwen36-heretic"
+            VLLM_IMAGE="$_aeon_image"
+            VLLM_MODEL="AEON-7/Qwen3.6-35B-A3B-heretic-NVFP4"
+            VLLM_CUDA_SUFFIX=""
+            VLLM_CMD_PREFIX=""
+            # NOTE: NO --enable-auto-tool-choice / --tool-call-parser — BROKEN on heretic checkpoint.
+            VLLM_EXTRA_ARGS="--quantization compressed-tensors --reasoning-parser qwen3 --attention-backend flash_attn --speculative-config '{\"method\":\"dflash\",\"model\":\"z-lab/Qwen3.6-35B-A3B-DFlash\",\"num_speculative_tokens\":15}' --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching --trust-remote-code"
+            if [[ "${LLM_ON_PEER:-false}" == "true" ]]; then
+                VLLM_GPU_MEM_UTIL="0.75"
+                export VLLM_GPU_MEM_UTIL
+            fi
+            # Context sub-prompt
+            _wizard_llm_ctx_qwen36
+            log_info "$(t wizard.llm_profile.log_qwen36_heretic)"
+            ;;
+        *)
+            # --- Profile 1: Gemma 4 26B-A4B (DEFAULT) ---
+            _wizard_llm_profile_gemma
+            ;;
+    esac
+}
+
+# _wizard_llm_profile_gemma — set Gemma 4 26B vars (Profile 1 / default).
+# Vars are byte-identical to the pre-Path-A behavior.
+_wizard_llm_profile_gemma() {
+    AGMIND_LLM_PROFILE="gemma"
+    VLLM_IMAGE="vllm/vllm-openai:gemma4-cu130"
+    VLLM_MODEL="google/gemma-4-26B-A4B-it"
+    VLLM_CUDA_SUFFIX=""
+    VLLM_CMD_PREFIX=""
+    VLLM_EXTRA_ARGS="--kv-cache-dtype fp8 --enable-prefix-caching --enforce-eager"
+    # Context sub-prompt for Gemma (64K default / 128K opt-in)
+    local ctx_choice
+    if [[ "${NON_INTERACTIVE:-false}" == "true" ]]; then
+        VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-65536}"
+    else
+        ctx_choice=$(wt_menu \
+            "$(t wizard.llm_ctx.title)" \
+            "$(t wizard.llm_ctx.prompt)" \
+            "1" "$(t wizard.llm_ctx.gemma_64k)" \
+            "2" "$(t wizard.llm_ctx.gemma_128k)")
+        case "${ctx_choice:-1}" in
+            2) VLLM_MAX_MODEL_LEN="131072" ;;
+            *) VLLM_MAX_MODEL_LEN="65536" ;;
+        esac
+    fi
+    log_info "$(t wizard.llm_profile.log_gemma)"
+}
+
+# _wizard_llm_ctx_qwen36 — context sub-menu for qwen36 profiles (128K/256K/1M).
+_wizard_llm_ctx_qwen36() {
+    if [[ "${NON_INTERACTIVE:-false}" == "true" ]]; then
+        # Honor VLLM_MAX_MODEL_LEN env override; default to 128K for qwen36.
+        VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-131072}"
+        if [[ "${VLLM_MAX_MODEL_LEN}" == "1010000" ]]; then
+            VLLM_ALLOW_LONG_MAX_MODEL_LEN="1"
+            export VLLM_ALLOW_LONG_MAX_MODEL_LEN
+            _wizard_llm_ctx_append_yarn
+        fi
+        return
+    fi
+    local ctx_choice
+    ctx_choice=$(wt_menu \
+        "$(t wizard.llm_ctx.title)" \
+        "$(t wizard.llm_ctx.prompt)" \
+        "1" "$(t wizard.llm_ctx.qwen36_128k)" \
+        "2" "$(t wizard.llm_ctx.qwen36_256k)" \
+        "3" "$(t wizard.llm_ctx.qwen36_1m)")
+    case "${ctx_choice:-1}" in
+        2) VLLM_MAX_MODEL_LEN="262144" ;;
+        3)
+            VLLM_MAX_MODEL_LEN="1010000"
+            VLLM_ALLOW_LONG_MAX_MODEL_LEN="1"
+            export VLLM_ALLOW_LONG_MAX_MODEL_LEN
+            log_warn "$(t wizard.llm_ctx.yarn_warn)"
+            _wizard_llm_ctx_append_yarn
+            ;;
+        *) VLLM_MAX_MODEL_LEN="131072" ;;
+    esac
+}
+
+# Append YaRN rope scaling override to VLLM_EXTRA_ARGS for 1M context.
+_wizard_llm_ctx_append_yarn() {
+    VLLM_EXTRA_ARGS="${VLLM_EXTRA_ARGS} --rope-scaling '{\"rope_type\":\"yarn\",\"factor\":4.0,\"original_max_position_embeddings\":262144}'"
 }
 
 # Check if GPU is Blackwell architecture (compute capability >= 12.0)
@@ -397,17 +539,62 @@ _is_blackwell_gpu() {
     [[ "$major" -ge 12 ]] 2>/dev/null
 }
 
-# Auto-apply -cu130 suffix for Blackwell in non-interactive mode
+# Auto-apply -cu130 suffix for Blackwell in non-interactive mode.
+# DGX Spark path: mirrors _wizard_llm_profile via AGMIND_LLM_PROFILE env
+# (gemma [default] | qwen36-fp8 | qwen36-heretic).
+# Context override: VLLM_MAX_MODEL_LEN env respected if set.
 _apply_blackwell_cu130() {
     if [[ "$LLM_PROVIDER" == "vllm" ]] && _is_blackwell_gpu; then
         if [[ "${DETECTED_DGX_SPARK:-false}" == "true" ]]; then
-            VLLM_IMAGE="vllm/vllm-openai:gemma4-cu130"
-            VLLM_MODEL="google/gemma-4-26B-A4B-it"
-            VLLM_CUDA_SUFFIX=""
-            VLLM_CMD_PREFIX=""
-            VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-65536}"
-            VLLM_EXTRA_ARGS="--kv-cache-dtype fp8 --enable-prefix-caching --enforce-eager"
-            log_info "DGX Spark (NI) → Gemma 4 26B-A4B (${VLLM_IMAGE})"
+            local _aeon_image="${VLLM_AEON_IMAGE:-ghcr.io/aeon-7/vllm-spark-omni-q36:v1.2}"
+            case "${AGMIND_LLM_PROFILE:-gemma}" in
+                qwen36-fp8)
+                    AGMIND_LLM_PROFILE="qwen36-fp8"
+                    VLLM_IMAGE="$_aeon_image"
+                    VLLM_MODEL="Qwen/Qwen3.6-35B-A3B-FP8"
+                    VLLM_CUDA_SUFFIX=""
+                    VLLM_CMD_PREFIX=""
+                    VLLM_EXTRA_ARGS="--quantization compressed-tensors --enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3 --attention-backend flash_attn --speculative-config '{\"method\":\"dflash\",\"model\":\"z-lab/Qwen3.6-35B-A3B-DFlash\",\"num_speculative_tokens\":15}' --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching --trust-remote-code"
+                    VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-131072}"
+                    if [[ "${LLM_ON_PEER:-false}" == "true" ]]; then
+                        VLLM_GPU_MEM_UTIL="0.75"; export VLLM_GPU_MEM_UTIL
+                    fi
+                    if [[ "${VLLM_MAX_MODEL_LEN}" == "1010000" ]]; then
+                        VLLM_ALLOW_LONG_MAX_MODEL_LEN="1"; export VLLM_ALLOW_LONG_MAX_MODEL_LEN
+                        _wizard_llm_ctx_append_yarn
+                    fi
+                    log_info "DGX Spark (NI) → Qwen3.6-35B FP8 + DFlash (${VLLM_IMAGE})"
+                    ;;
+                qwen36-heretic)
+                    AGMIND_LLM_PROFILE="qwen36-heretic"
+                    VLLM_IMAGE="$_aeon_image"
+                    VLLM_MODEL="AEON-7/Qwen3.6-35B-A3B-heretic-NVFP4"
+                    VLLM_CUDA_SUFFIX=""
+                    VLLM_CMD_PREFIX=""
+                    # NOTE: NO --enable-auto-tool-choice / --tool-call-parser — BROKEN on heretic.
+                    VLLM_EXTRA_ARGS="--quantization compressed-tensors --reasoning-parser qwen3 --attention-backend flash_attn --speculative-config '{\"method\":\"dflash\",\"model\":\"z-lab/Qwen3.6-35B-A3B-DFlash\",\"num_speculative_tokens\":15}' --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching --trust-remote-code"
+                    VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-131072}"
+                    if [[ "${LLM_ON_PEER:-false}" == "true" ]]; then
+                        VLLM_GPU_MEM_UTIL="0.75"; export VLLM_GPU_MEM_UTIL
+                    fi
+                    if [[ "${VLLM_MAX_MODEL_LEN}" == "1010000" ]]; then
+                        VLLM_ALLOW_LONG_MAX_MODEL_LEN="1"; export VLLM_ALLOW_LONG_MAX_MODEL_LEN
+                        _wizard_llm_ctx_append_yarn
+                    fi
+                    log_warn "DGX Spark (NI) → heretic NVFP4: tool-calling BROKEN; uncensored"
+                    log_info "DGX Spark (NI) → Qwen3.6-35B heretic NVFP4 + DFlash (${VLLM_IMAGE})"
+                    ;;
+                gemma|*)
+                    AGMIND_LLM_PROFILE="gemma"
+                    VLLM_IMAGE="vllm/vllm-openai:gemma4-cu130"
+                    VLLM_MODEL="google/gemma-4-26B-A4B-it"
+                    VLLM_CUDA_SUFFIX=""
+                    VLLM_CMD_PREFIX=""
+                    VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-65536}"
+                    VLLM_EXTRA_ARGS="--kv-cache-dtype fp8 --enable-prefix-caching --enforce-eager"
+                    log_info "DGX Spark (NI) → Gemma 4 26B-A4B (${VLLM_IMAGE})"
+                    ;;
+            esac
         else
             VLLM_CUDA_SUFFIX="-cu130"
             log_info "Blackwell GPU (compute ${DETECTED_GPU_COMPUTE}) — автоматически выбран vLLM с CUDA 13.0"
@@ -1882,6 +2069,8 @@ run_wizard() {
     export ENABLE_RAGFLOW RAGFLOW_DEVICE
     export ENABLE_MINIO
     export AGMIND_LANG
+    export AGMIND_LLM_PROFILE
+    export VLLM_GPU_MEM_UTIL VLLM_ALLOW_LONG_MAX_MODEL_LEN
 }
 
 # Run if executed directly
