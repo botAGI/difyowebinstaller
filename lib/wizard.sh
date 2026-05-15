@@ -1016,6 +1016,14 @@ _wizard_llm_model() {
         # default assignment and VRAM guard below (BFIX-41)
     else
         # DGX Spark: спросить — хардкод-Gemma-4 (быстрый default) или общий список моделей.
+        # FIX 2026-05-15: when Path A `_wizard_llm_profile` already populated VLLM_MODEL
+        # (Gemma/Qwen36-FP8/heretic + context choice), this menu would re-ask and
+        # silently overwrite the profile pick (e.g. user picked Qwen3.6 then "Другая
+        # модель" here → ended up on Qwen2.5-32B-AWQ). Skip if profile already set vars.
+        if [[ "$LLM_PROVIDER" == "vllm" && "${DETECTED_DGX_SPARK:-false}" == "true" && -n "${VLLM_MODEL:-}" ]]; then
+            log_info "LLM-профиль выбран: ${VLLM_MODEL} (max-model-len=${VLLM_MAX_MODEL_LEN:-default})"
+            return 0
+        fi
         if [[ "$LLM_PROVIDER" == "vllm" && "${DETECTED_DGX_SPARK:-false}" == "true" ]]; then
             local spark_choice
             spark_choice=$(wt_menu "DGX Spark — выбор модели vLLM" \
@@ -1952,25 +1960,17 @@ _wizard_confirm() {
 }
 
 # ============================================================================
-# LANGUAGE — first interactive question; resolves AGMIND_LANG (en|ru)
-# Non-interactive: AGMIND_LANG already resolved at source time by lib/i18n.sh.
+# LANGUAGE — autodetect-only (no prompt). AGMIND_LANG resolved by lib/i18n.sh
+# at source time from $LC_ALL / $LC_MESSAGES / $LANG (ru* → ru, else en).
+# Override via env: `AGMIND_LANG=ru sudo bash install.sh`.
+# FIX 2026-05-15: was an interactive prompt — wrong on an arm-only DGX appliance
+# where 99% of users get the right language from system locale. Pure autodetect.
 # ============================================================================
 
 _wizard_language() {
-    if [[ "${NON_INTERACTIVE:-false}" == "true" ]]; then
-        # Already resolved by lib/i18n.sh at source time; just re-export for safety.
-        export AGMIND_LANG="${AGMIND_LANG:-en}"
-        return 0
-    fi
-
-    local _lang
-    _lang=$(wt_input "Language / Язык" "$(t wizard.language.prompt)" "${AGMIND_LANG:-en}")
-    _lang="${_lang,,}"  # lowercase
-    case "$_lang" in
-        en|ru) AGMIND_LANG="$_lang" ;;
-        *) AGMIND_LANG="${AGMIND_LANG:-en}" ;;
-    esac
-    export AGMIND_LANG
+    # i18n.sh already exported AGMIND_LANG at source time; just announce it.
+    export AGMIND_LANG="${AGMIND_LANG:-en}"
+    log_info "Language: ${AGMIND_LANG} (autodetected from \$LANG — override with AGMIND_LANG=en|ru)"
 }
 
 # ============================================================================
