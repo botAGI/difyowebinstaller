@@ -549,8 +549,13 @@ _wizard_llm_ctx_qwen36() {
 }
 
 # Append YaRN rope scaling override to VLLM_EXTRA_ARGS for 1M context.
+# NOTE 2026-05-15: NO single quotes around the JSON — same trap as the DFlash
+# --speculative-config arg (6d12b09). The JSON has no whitespace so argparse
+# splits cleanly on token boundary; surrounding single quotes would survive
+# into the .env line and break bash sourcing (the .env entry is single-quoted
+# by config.sh:584, so internal `'` chars would terminate the outer quoting).
 _wizard_llm_ctx_append_yarn() {
-    VLLM_EXTRA_ARGS="${VLLM_EXTRA_ARGS} --rope-scaling '{\"rope_type\":\"yarn\",\"factor\":4.0,\"original_max_position_embeddings\":262144}'"
+    VLLM_EXTRA_ARGS="${VLLM_EXTRA_ARGS} --rope-scaling {\"rope_type\":\"yarn\",\"factor\":4.0,\"original_max_position_embeddings\":262144}"
 }
 
 # Check if GPU is Blackwell architecture (compute capability >= 12.0)
