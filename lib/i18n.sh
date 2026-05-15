@@ -180,6 +180,9 @@ I18N_RU["wizard.summary.dbgpt"]="DB-GPT:"
 I18N_EN["wizard.summary.crawl4ai"]="Crawl4AI:"
 I18N_RU["wizard.summary.crawl4ai"]="Crawl4AI:"
 
+I18N_EN["wizard.summary.n8n"]="n8n:"
+I18N_RU["wizard.summary.n8n"]="n8n:"
+
 I18N_EN["wizard.summary.openwebui"]="Open WebUI:"
 I18N_RU["wizard.summary.openwebui"]="Open WebUI:"
 

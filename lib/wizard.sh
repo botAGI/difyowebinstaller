@@ -1848,7 +1848,7 @@ _wizard_summary() {
     if [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]]; then summary+="$(t wizard.summary.notebook) agmind-notebook.local\n"; fi
     if [[ "${ENABLE_DBGPT:-false}" == "true" ]]; then summary+="$(t wizard.summary.dbgpt)       agmind-dbgpt.local\n"; fi
     if [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]]; then summary+="$(t wizard.summary.crawl4ai)     agmind-crawl.local\n"; fi
-    if [[ "${ENABLE_N8N:-false}" == "true" ]]; then summary+="  n8n           http://<host>:${EXPOSE_N8N_PORT:-5678}\n"; fi
+    if [[ "${ENABLE_N8N:-false}" == "true" ]]; then summary+="$(t wizard.summary.n8n)         agmind-n8n.local\n"; fi
     if [[ "${ENABLE_OPENWEBUI:-false}" == "true" ]]; then summary+="$(t wizard.summary.openwebui)   agmind-chat.local\n"; fi
     if [[ "${ENABLE_RAGFLOW:-false}" == "true" ]]; then summary+="$(t wizard.summary.ragflow)      $(t wizard.summary.ragflow_val)\n"; fi
     if [[ "${ENABLE_DIFY_PREMIUM:-true}" == "true" ]]; then summary+="$(t wizard.summary.dify_premium) $(t wizard.summary.dify_premium_val)\n"; fi

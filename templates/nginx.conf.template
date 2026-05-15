@@ -265,6 +265,30 @@ http {
     #__LITELLM__    }
     #__LITELLM__}
 
+    #__N8N__# =============================================
+    #__N8N__# n8n — Workflow Automation (agmind-n8n.local)
+    #__N8N__# =============================================
+    #__N8N__server {
+    #__N8N__    listen 80;
+    #__N8N__    server_name agmind-n8n.local;
+    #__N8N__
+    #__N8N__    client_max_body_size 50M;
+    #__N8N__
+    #__N8N__    location / {
+    #__N8N__        set $u_n8n http://n8n:5678;
+    #__N8N__        proxy_pass $u_n8n;
+    #__N8N__        proxy_http_version 1.1;
+    #__N8N__        proxy_set_header Upgrade $http_upgrade;
+    #__N8N__        proxy_set_header Connection "upgrade";
+    #__N8N__        proxy_set_header Host $host;
+    #__N8N__        proxy_set_header X-Real-IP $remote_addr;
+    #__N8N__        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #__N8N__        proxy_set_header X-Forwarded-Proto $scheme;
+    #__N8N__        proxy_read_timeout 3600s;
+    #__N8N__        proxy_send_timeout 3600s;
+    #__N8N__    }
+    #__N8N__}
+
     #__DBGPT__# =============================================
     #__DBGPT__# DB-GPT — separate port (root-relative assets,
     #__DBGPT__# incompatible with sub-path reverse proxy)
