@@ -602,14 +602,37 @@ compose_start() {
 
     # --- Start DB first, ensure databases exist before other services ---
     log_info "Starting database..."
-    docker compose up -d $pull_flag db
+    # FIX 2026-05-15: redirect to fd 3 (saved original TTY before the tee
+    # pipe in install.sh main()) when available so `up -d` sees a real TTY
+    # via isatty(1) and renders compact in-place progress instead of the
+    # plain-text Downloading-line-per-update spam. Without the redirect,
+    # fd 1 is a pipe to tee → docker switches to verbose plain mode → user
+    # gets thousands of lines like "5622ab605b89 Downloading 190.3MB/298.6MB
+    # \n 5622ab605b89 Downloading 194.1MB/298.6MB \n ..." (bug-report
+    # 2026-05-15: "почему ушли от компактного стриминга пулинга?").
+    # Trade-off: install.log no longer captures per-layer download progress,
+    # but that's churn anyway — final image digests + start status still
+    # log fine via separate log_info / log_success calls.
+    if [[ -n "${ORIGINAL_TTY_FD:-}" ]] && { true >&"${ORIGINAL_TTY_FD}"; } 2>/dev/null; then
+        docker compose up -d $pull_flag db >&"${ORIGINAL_TTY_FD}" 2>&1
+    else
+        docker compose up -d $pull_flag db
+    fi
     create_plugin_db
 
     log_info "Starting containers (profiles: ${profiles:-core})..."
-    if [[ -n "$profiles" ]]; then
-        COMPOSE_PROFILES="$profiles" docker compose up -d $pull_flag
+    if [[ -n "${ORIGINAL_TTY_FD:-}" ]] && { true >&"${ORIGINAL_TTY_FD}"; } 2>/dev/null; then
+        if [[ -n "$profiles" ]]; then
+            COMPOSE_PROFILES="$profiles" docker compose up -d $pull_flag >&"${ORIGINAL_TTY_FD}" 2>&1
+        else
+            docker compose up -d $pull_flag >&"${ORIGINAL_TTY_FD}" 2>&1
+        fi
     else
-        docker compose up -d $pull_flag
+        if [[ -n "$profiles" ]]; then
+            COMPOSE_PROFILES="$profiles" docker compose up -d $pull_flag
+        else
+            docker compose up -d $pull_flag
+        fi
     fi
 
     # --- Post-up tasks ---
