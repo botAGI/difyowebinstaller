@@ -29,6 +29,13 @@ ALL_CHECKS=(
     # --- Vector Stores ---
     "Weaviate|WEAVIATE_VERSION|weaviate/weaviate|gh"
     "Qdrant|QDRANT_VERSION|qdrant/qdrant|gh"
+    # Milvus — opt-in 3rd vector store (VECTOR_STORE=milvus, auto-pulls minio). Dify-only;
+    # RAGFlow incompatible (PR #6367 closed). Tracks GitHub releases (vX.Y.Z tag format).
+    "Milvus|MILVUS_VERSION|milvus-io/milvus|gh"
+    # Milvus etcd — pinned to v3.5.x branch (what Milvus 2.x expects). etcd v3.6.x exists
+    # upstream but DO NOT bump under Milvus without Milvus' blessing — they validate
+    # specific etcd versions per Milvus release.
+    "Milvus etcd|MILVUS_ETCD_VERSION|etcd-io/etcd|gh"
     # --- ETL / AI Gateway ---
     "Docling|DOCLING_SERVE_VERSION|docling-project/docling-serve|gh"
     "LiteLLM|LITELLM_VERSION|BerriAI/litellm|gh"
@@ -38,12 +45,18 @@ ALL_CHECKS=(
     "DB-GPT|DBGPT_VERSION|eosphoros-ai/DB-GPT|gh"
     "Crawl4AI|CRAWL4AI_VERSION|unclecode/crawl4ai|gh"
     "SurrealDB|SURREALDB_VERSION|surrealdb/surrealdb|gh"
+    # n8n — opt-in workflow automation (ENABLE_N8N=true). GitHub `releases/latest` returns
+    # a moving channel marker ("stable"), not a semver tag — use Docker Hub instead.
+    "n8n|N8N_VERSION|n8nio/n8n|hub"
     # RAGFlow self-built (ar2r223/ragflow-spark@digest) from infiniflow upstream + Hendrik
     # patches (RAGFlow arm64 upstream specifics). Track infiniflow для rebuild signal.
     # ES + MySQL = pre-built Docker Hub images.
     "RAGFlow|RAGFLOW_VERSION|infiniflow/ragflow|gh"
     "RAGFlow ES|RAGFLOW_ES_VERSION|elasticsearch|hub"
     "RAGFlow MySQL|RAGFLOW_MYSQL_VERSION|mysql|hub"
+    # RAGFlow ES exporter — sidecar для ES метрик (native /_prometheus/metrics в ES 9.x
+    # требует X-Pack proprietary plugin, поэтому отдельный exporter).
+    "ES Exporter|ELASTICSEARCH_EXPORTER_VERSION|prometheus-community/elasticsearch_exporter|gh"
     # --- Storage ---
     "MinIO|MINIO_VERSION|minio/minio|hub"
     "MinIO Client|MC_VERSION|minio/mc|hub"
@@ -59,6 +72,9 @@ ALL_CHECKS=(
     "PostgreSQL|POSTGRES_VERSION|postgres|hub"
     "Redis|REDIS_VERSION|redis|hub"
     "Portainer|PORTAINER_VERSION|portainer/portainer-ce|hub"
+    # Docker Socket Proxy — read-only docker API proxy для cAdvisor + Alloy (SC1 hardening).
+    # GitHub releases используют v-prefix (v0.3.0), Docker Hub теги без — track Hub.
+    "Docker Socket Proxy|DOCKER_SOCKET_PROXY_VERSION|tecnativa/docker-socket-proxy|hub"
     # --- Monitoring ---
     "Prometheus|PROMETHEUS_VERSION|prometheus/prometheus|gh"
     "Alertmanager|ALERTMANAGER_VERSION|prometheus/alertmanager|gh"
