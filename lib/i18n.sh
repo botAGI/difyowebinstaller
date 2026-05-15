@@ -25,10 +25,6 @@ set -uo pipefail
 # Keys without an entry in I18N_RU will fall back to I18N_EN (see t()).
 declare -gA I18N_EN I18N_RU 2>/dev/null || true  # ignore if already declared
 
-# --- Language prompt ---
-I18N_EN["wizard.language.prompt"]="Language / Язык (en|ru)"
-I18N_RU["wizard.language.prompt"]="Язык / Language (en|ru)"
-
 # --- LLM provider menu ---
 I18N_EN["wizard.llm_provider.title"]="LLM Provider"
 I18N_RU["wizard.llm_provider.title"]="LLM-провайдер"
@@ -72,9 +68,6 @@ I18N_RU["wizard.llm_profile.log_qwen36_fp8"]="DGX Spark -> Qwen3.6-35B FP8 + DFl
 
 I18N_EN["wizard.llm_profile.log_qwen36_heretic"]="DGX Spark -> Qwen3.6-35B heretic NVFP4 + DFlash (opt-in, uncensored)"
 I18N_RU["wizard.llm_profile.log_qwen36_heretic"]="DGX Spark -> Qwen3.6-35B heretic NVFP4 + DFlash (opt-in, без цензуры)"
-
-I18N_EN["wizard.llm_profile.aeon_unavailable"]="AEON image unreachable — falling back to Gemma 4 26B (validated default)"
-I18N_RU["wizard.llm_profile.aeon_unavailable"]="AEON образ недоступен — откат на Gemma 4 26B (проверенный по умолчанию)"
 
 # --- LLM context sub-menu ---
 I18N_EN["wizard.llm_ctx.title"]="Context Length"
