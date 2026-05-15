@@ -46,9 +46,13 @@ generate_config() {
     generate_redis_config
     generate_sandbox_config
     _generate_squid_config
-    if [[ "${ENABLE_LITELLM:-true}" == "true" ]]; then
-        _generate_litellm_config
-    fi
+    # Always generate litellm-config.yaml — it's a bind mount in docker-compose
+    # regardless of whether the litellm container is started (compose profile
+    # gates the container, not the bind mount preflight). If ENABLE_LITELLM=false,
+    # the file is just a placeholder and never read. Skipping it was the cause
+    # of phase-6 "Bind mount file missing: litellm-config.yaml" on custom profile
+    # without LiteLLM (bug-report 2026-05-15).
+    _generate_litellm_config
     _generate_searxng_config "$template_dir"
 
     # Validate secrets
@@ -364,6 +368,16 @@ _generate_env_file() {
     local template_file="${template_dir}/env.${profile}.template"
     local env_file="${INSTALL_DIR}/docker/.env"
 
+    # Fallback: only env.lan.template ships; all profiles share the same env
+    # surface (LAN-based with granular toggles). Without this fallback the
+    # wizard's "custom" / "core" / "agents" etc. choices hit "Template not
+    # found" → .env left partially populated → REDIS_PASSWORD empty FATAL
+    # downstream (bug-report 2026-05-15).
+    if [[ ! -f "$template_file" && -f "${template_dir}/env.lan.template" ]]; then
+        log_info "Profile template ${profile} not present — falling back to env.lan.template"
+        template_file="${template_dir}/env.lan.template"
+    fi
+
     if [[ ! -f "$template_file" ]]; then
         log_error "Template not found: ${template_file}"
         return 1
@@ -561,7 +575,13 @@ _append_provider_vars() {
         # DGX Spark / vLLM embed/rerank vars (written regardless of LLM provider)
         if [[ -n "${VLLM_IMAGE:-}" ]]; then echo "VLLM_IMAGE=${VLLM_IMAGE}"; fi
         if [[ -n "${VLLM_CMD_PREFIX:-}" ]]; then echo "VLLM_CMD_PREFIX=${VLLM_CMD_PREFIX}"; fi
-        if [[ -n "${VLLM_EXTRA_ARGS:-}" ]]; then echo "VLLM_EXTRA_ARGS=\"${VLLM_EXTRA_ARGS}\""; fi
+        # Single-quote the value so embedded `"` from Qwen3.6 DFlash JSON
+        # (--speculative-config {"method":"dflash",...}) survives bash sourcing
+        # the .env. Double quotes would terminate at the first inner `"` and
+        # bash would parse the JSON keys as variable names (bug-report 2026-05-15:
+        # `unexpected character "\"" in variable name "method\":\"dflash\""`).
+        # Single-quote-safe: wizard.sh's VLLM_EXTRA_ARGS never contains `'`.
+        if [[ -n "${VLLM_EXTRA_ARGS:-}" ]]; then echo "VLLM_EXTRA_ARGS='${VLLM_EXTRA_ARGS}'"; fi
         if [[ "${EMBED_PROVIDER:-}" == "vllm-embed" ]]; then echo "EMBED_PROVIDER=vllm-embed"; fi
         if [[ -n "${VLLM_EMBED_MODEL:-}" && "${EMBED_PROVIDER:-}" == "vllm-embed" ]]; then echo "VLLM_EMBED_MODEL=${VLLM_EMBED_MODEL}"; fi
         if [[ "${RERANKER_PROVIDER:-tei}" == "vllm-rerank" ]]; then echo "RERANKER_PROVIDER=vllm-rerank"; fi
