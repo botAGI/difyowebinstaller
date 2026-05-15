@@ -462,10 +462,18 @@ _pull_with_progress() {
     # Auto-recover from "UFW just activated in phase 3 (Security) → docker daemon
     # FORWARD/DOCKER-USER chains in stale state → every `docker pull` fails with
     # `net/http: TLS handshake timeout`" (bug-report 2026-05-15 — single agmind-db
-    # came up because compose retried, the other 37 silently failed). When ready
-    # == 0 and we haven't retried yet, restart dockerd and re-pull once.
-    if [[ $ready -eq 0 && $total -gt 5 && "${_AGMIND_PULL_RETRIED:-0}" != "1" ]]; then
-        log_warn "Pulled 0/${total} images — likely dockerd iptables state stale after UFW reshuffle. Restarting docker daemon and retrying once..."
+    # came up because compose retried, the other 37 silently failed). The real
+    # fix lives in lib/security.sh::_setup_ufw (defensive docker restart RIGHT
+    # AFTER `ufw --force enable`). This is the belt-and-suspenders fallback:
+    # if for any reason phase 3 didn't restart docker AND lots of pulls fail,
+    # do it here. THRESHOLD: `ready < total/3` not `ready == 0` — the original
+    # ready==0 missed today's case where 1/38 pulled (one image cached from
+    # a prior partial run), test failed to fire, install proceeded with broken
+    # result. Heuristic: <1/3 pulled = dockerd wedged, not transient flakes.
+    local _recovery_threshold=$(( total / 3 ))
+    [[ $_recovery_threshold -lt 1 ]] && _recovery_threshold=1
+    if [[ $ready -lt $_recovery_threshold && $total -gt 5 && "${_AGMIND_PULL_RETRIED:-0}" != "1" ]]; then
+        log_warn "Pulled ${ready}/${total} images (< ${_recovery_threshold} threshold) — likely dockerd iptables state stale after UFW reshuffle. Restarting docker daemon and retrying once..."
         if systemctl restart docker 2>/dev/null; then
             sleep 5
             export _AGMIND_PULL_RETRIED=1
