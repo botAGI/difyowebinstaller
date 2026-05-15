@@ -168,7 +168,7 @@ declare -A NAMED_PROFILE_DESC=(
     [observability]="Prometheus + Grafana + Loki + exporters + Portainer"
     [security]="Authelia + fail2ban/hardening"
     [agents]="LiteLLM + Crawl4AI + SearXNG + dbGPT + Open WebUI + Notebook + n8n"
-    [full]="Everything (one of each XOR pair; excludes Milvus + Ollama)"
+    [full]="Everything: vLLM + Weaviate + Docling + monitoring + agents + n8n (Milvus skipped — XOR with Weaviate)"
     [dev]="Core + observability (fast iteration; no RAGFlow/agents/security)"
 )
 
