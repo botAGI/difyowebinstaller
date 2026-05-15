@@ -63,6 +63,8 @@ build_compose_profiles() {
                 # XOR: skip a vector-store profile that conflicts with VECTOR_STORE env override
                 if [[ "$_np" == "weaviate" && "${VECTOR_STORE:-}" == "qdrant" ]]; then continue; fi
                 if [[ "$_np" == "qdrant"   && "${VECTOR_STORE:-}" == "weaviate" ]]; then continue; fi
+                if [[ "$_np" == "weaviate" && "${VECTOR_STORE:-}" == "milvus" ]]; then continue; fi
+                if [[ "$_np" == "qdrant"   && "${VECTOR_STORE:-}" == "milvus" ]]; then continue; fi
                 if [[ ",${profiles}," != *",${_np},"* ]]; then
                     profiles="${profiles:+$profiles,}${_np}"
                 fi
@@ -84,6 +86,8 @@ build_compose_profiles() {
     if [[ $_np_active -eq 0 || -n "${VECTOR_STORE:-}" ]]; then
         if [[ "${VECTOR_STORE:-weaviate}" == "qdrant" ]]; then _add_prof qdrant; fi
         if [[ "${VECTOR_STORE:-weaviate}" == "weaviate" ]]; then _add_prof weaviate; fi
+        # Milvus needs MinIO (S3 backend for object data) — auto-pull both profiles.
+        if [[ "${VECTOR_STORE:-weaviate}" == "milvus" ]]; then _add_prof milvus; _add_prof minio; fi
     fi
     # Docling: check both wizard var (ENABLE_DOCLING) and .env var (ETL_TYPE) for resume support
     # Backward compat: ETL_ENHANCED=true without ENABLE_DOCLING → treat as ENABLE_DOCLING=true
@@ -122,6 +126,7 @@ build_compose_profiles() {
     if [[ "${ENABLE_DBGPT:-false}" == "true" ]]; then _add_prof dbgpt; fi
     if [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]]; then _add_prof crawl4ai; fi
     if [[ "${ENABLE_OPENWEBUI:-false}" == "true" ]]; then _add_prof openwebui; fi
+    if [[ "${ENABLE_N8N:-false}" == "true" ]]; then _add_prof n8n; fi
     if [[ "${ENABLE_MINIO:-false}" == "true" ]]; then _add_prof minio; fi
     # RAGFlow auto-pulls minio profile (shared bucket).
     if [[ "${ENABLE_RAGFLOW:-false}" == "true" ]]; then
@@ -753,6 +758,9 @@ create_plugin_db() {
     local enable_litellm
     enable_litellm="$(grep '^ENABLE_LITELLM=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "true")"
     if [[ "$enable_litellm" == "true" ]]; then required_dbs+=("litellm"); fi
+    local enable_n8n
+    enable_n8n="$(grep '^ENABLE_N8N=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+    if [[ "$enable_n8n" == "true" ]]; then required_dbs+=("n8n"); fi
 
     local attempts=0
     while [[ $attempts -lt 15 ]]; do

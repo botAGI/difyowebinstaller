@@ -988,6 +988,13 @@ _save_credentials() {
             echo "  API Docs:      http://${ip}:${EXPOSE_CRAWL4AI_PORT:-11235}/docs"
             echo "  Dify:          HTTP Request tool → POST http://agmind-crawl4ai:11235/crawl"
         fi
+        if [[ "${ENABLE_N8N:-false}" == "true" ]]; then
+            echo ""
+            echo "=== n8n (Workflow Automation) ==="
+            echo "  URL:           http://${ip}:${EXPOSE_N8N_PORT:-5678}"
+            echo "  DB:            shared agmind-db Postgres (database \"n8n\")"
+            echo "  При первом входе — создать owner account (email + password)."
+        fi
         if [[ "${ENABLE_DOCLING:-false}" == "true" ]]; then
             local _docling_mode="CPU"
             if [[ "${NVIDIA_VISIBLE_DEVICES:-}" == "all" ]]; then _docling_mode="GPU"; fi
