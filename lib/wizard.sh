@@ -157,8 +157,8 @@ _wizard_profile() {
             "ragflow"       "RAGFlow: RAGFlow + Elasticsearch + MySQL + MinIO" \
             "observability" "Мониторинг: Prometheus + Grafana + Loki + Portainer" \
             "security"      "Безопасность: Authelia + fail2ban / hardening" \
-            "agents"        "Агенты: LiteLLM + Crawl4AI + SearXNG + dbGPT + Open WebUI + Notebook" \
-            "full"          "Полный стек (по одному из каждой XOR-пары; без Milvus/Ollama)" \
+            "agents"        "Агенты: LiteLLM + Crawl4AI + SearXNG + dbGPT + Open WebUI + Notebook + n8n" \
+            "full"          "Полный стек: vLLM + Weaviate + Docling + monitoring + agents + n8n" \
             "dev"           "Dev: Core + мониторинг (быстрая итерация)" \
             "custom"        "Custom: детальный выбор каждого компонента")
         DEPLOY_PROFILE="${choice:-rag}"
