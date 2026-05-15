@@ -223,6 +223,16 @@ fi
 echo -e "${YELLOW}Removing ${INSTALL_DIR}...${NC}"
 rm -rf "${INSTALL_DIR}"
 
+# Reset cluster mode so the next install asks single/master/worker again.
+# Don't touch surrealdb_password.preserved (KEEP_MODELS path may have put it there).
+# FIX 2026-05-15: previously cluster.json survived uninstall → wizard's
+# cluster_mode_read returned stale value → single/cluster prompt silently
+# vanished on the "fresh" install. Bug-report 2026-05-15.
+if [[ -f /var/lib/agmind/state/cluster.json ]]; then
+    rm -f /var/lib/agmind/state/cluster.json
+    echo "  Cleared persisted cluster mode (next install will re-prompt)"
+fi
+
 # All done — clear stage so trap doesn't fire
 CLEANUP_STAGE=""
 

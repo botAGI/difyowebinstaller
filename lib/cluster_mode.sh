@@ -152,7 +152,13 @@ cluster_mode_select() {
             exit 1 ;;
     esac
 
-    # 2. Priority: persisted state (re-install idempotency)
+    # 2. Priority: persisted state (re-install idempotency, PEER-04 contract).
+    # NOTE 2026-05-15: if `rm -rf /opt/agmind` is used as a manual wipe (instead
+    # of `sudo agmind uninstall`), `cluster.json` lives under /var/lib/agmind/
+    # and survives — the prompt then silently vanishes on the "fresh" install.
+    # Proper full-reset path: `sudo agmind uninstall` (now cleans cluster.json
+    # while still preserving surrealdb_password.preserved). For manual wipers:
+    # also remove /var/lib/agmind/state/cluster.json.
     local saved
     saved="$(cluster_mode_read)"
     if [[ -n "$saved" ]]; then
