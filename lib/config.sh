@@ -196,6 +196,7 @@ _RAGFLOW_MYSQL_PASSWORD=""
 _RAGFLOW_ES_PASSWORD=""
 _RAGFLOW_MINIO_PASSWORD=""
 _PORTAINER_AGENT_SECRET=""
+_N8N_ENCRYPTION_KEY=""
 
 # _restore_secrets_from_backup — restore volume-bound secrets when PG data exists (IREL-03)
 # Returns 0 if any secrets were restored, 1 if nothing restored.
@@ -294,6 +295,12 @@ _generate_secrets() {
     fi
 
     _NOTEBOOK_ENCRYPTION_KEY="$(generate_random 32)"
+
+    # n8n encryption key — protects credentials stored in the n8n DB.
+    # On fresh install a fresh key is fine (no pre-existing encrypted creds).
+    # If you ever migrate an n8n DB volume across installs, persist this key
+    # (mirror the SurrealDB pattern above). Today: regenerated each install.
+    _N8N_ENCRYPTION_KEY="$(generate_random 32)"
 
     _MINIO_ROOT_USER="agmind-admin"
     _MINIO_ROOT_PASSWORD="$(generate_random 32)"
@@ -482,6 +489,8 @@ _generate_env_file() {
         -e "s|__SEARXNG_SECRET_KEY__|$(escape_sed "${_SEARXNG_SECRET_KEY}")|g" \
         -e "s|__SURREALDB_PASSWORD__|$(escape_sed "${_SURREALDB_PASSWORD}")|g" \
         -e "s|__NOTEBOOK_ENCRYPTION_KEY__|$(escape_sed "${_NOTEBOOK_ENCRYPTION_KEY}")|g" \
+        -e "s|__N8N_ENCRYPTION_KEY__|$(escape_sed "${_N8N_ENCRYPTION_KEY}")|g" \
+        -e "s|__ENABLE_N8N__|$(escape_sed "${ENABLE_N8N:-false}")|g" \
         -e "s|__ENABLE_MINIO__|$(escape_sed "${ENABLE_MINIO:-true}")|g" \
         -e "s|__MINIO_ROOT_USER__|${_MINIO_ROOT_USER}|g" \
         -e "s|__MINIO_ROOT_PASSWORD__|${_MINIO_ROOT_PASSWORD}|g" \

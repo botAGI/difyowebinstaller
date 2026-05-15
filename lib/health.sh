@@ -35,11 +35,11 @@ get_service_list() {
         # Vector store
         local vector_store
         vector_store="$(grep '^VECTOR_STORE=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "weaviate")"
-        if [[ "$vector_store" == "qdrant" ]]; then
-            services+=(qdrant)
-        else
-            services+=(weaviate)
-        fi
+        case "$vector_store" in
+            qdrant) services+=(qdrant) ;;
+            milvus) services+=(milvus-etcd milvus) ;;
+            *)      services+=(weaviate) ;;
+        esac
 
         # LLM/Embedding providers
         local llm_provider embed_provider
@@ -97,6 +97,11 @@ get_service_list() {
         if [[ "$enable_notebook" == "true" ]]; then services+=(surrealdb open-notebook); fi
         if [[ "$enable_dbgpt" == "true" ]]; then services+=(dbgpt); fi
         if [[ "$enable_crawl4ai" == "true" ]]; then services+=(crawl4ai); fi
+
+        # n8n (workflow automation, optional)
+        local enable_n8n
+        enable_n8n="$(grep '^ENABLE_N8N=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+        if [[ "$enable_n8n" == "true" ]]; then services+=(n8n); fi
 
         # Open WebUI
         local enable_openwebui
@@ -478,6 +483,12 @@ verify_services() {
         if [[ "$embed_prov" == "tei" ]]; then svc_checks+=("TEI|http://localhost:80/info|agmind-tei|tei"); fi
         if [[ "$vector_store" == "weaviate" ]]; then svc_checks+=("Weaviate|http://localhost:8080/v1/.well-known/ready|agmind-weaviate|weaviate"); fi
         if [[ "$vector_store" == "qdrant" ]]; then svc_checks+=("Qdrant|http://localhost:6333/readyz|agmind-qdrant|qdrant"); fi
+        if [[ "$vector_store" == "milvus" ]]; then svc_checks+=("Milvus|http://localhost:9091/healthz|agmind-milvus|milvus"); fi
+
+        # n8n (workflow automation, optional)
+        local _enable_n8n
+        _enable_n8n="$(grep '^ENABLE_N8N=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+        if [[ "$_enable_n8n" == "true" ]]; then svc_checks+=("n8n|http://localhost:5678/healthz|agmind-n8n|n8n"); fi
     fi
 
     # Global results array (accessible to caller)

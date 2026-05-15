@@ -85,6 +85,7 @@ _init_wizard_defaults() {
     ENABLE_NOTEBOOK="${ENABLE_NOTEBOOK:-false}"
     ENABLE_DBGPT="${ENABLE_DBGPT:-false}"
     ENABLE_CRAWL4AI="${ENABLE_CRAWL4AI:-false}"
+    ENABLE_N8N="${ENABLE_N8N:-false}"
     ENABLE_OPENWEBUI="${ENABLE_OPENWEBUI:-false}"
     ENABLE_DIFY_PREMIUM="${ENABLE_DIFY_PREMIUM:-true}"
     ENABLE_MINIO="${ENABLE_MINIO:-true}"
@@ -214,8 +215,10 @@ _wizard_vector_db_choice() {
     v=$(wt_menu "Vector DB" "Выберите векторную БД:" \
         "weaviate" "Weaviate [рекомендуется]" \
         "qdrant"   "Qdrant (легковесная)" \
-        "milvus"   "Milvus (экспериментально — не для production)")
+        "milvus"   "Milvus (экспериментально — для коллекций >50M chunks; нужен MinIO; только Dify, не RAGFlow)")
     VECTOR_STORE="${v:-weaviate}"
+    # Milvus needs MinIO (S3 backend) — auto-enable storage when chosen.
+    if [[ "$VECTOR_STORE" == "milvus" ]]; then ENABLE_MINIO="true"; export ENABLE_MINIO; fi
     export VECTOR_STORE
 }
 
@@ -253,10 +256,12 @@ _wizard_vector_store() {
     choice=$(wt_menu "Векторное хранилище" \
         "Выберите векторное хранилище:" \
         "1" "Weaviate -- стабильный, проверенный (по умолчанию)" \
-        "2" "Qdrant   -- быстрый, REST/gRPC API")
+        "2" "Qdrant   -- быстрый, REST/gRPC API" \
+        "3" "Milvus   -- experimental, для >50M chunks (нужен MinIO; не работает с RAGFlow)")
 
     case "$choice" in
         2) VECTOR_STORE="qdrant";;
+        3) VECTOR_STORE="milvus"; ENABLE_MINIO="true"; export ENABLE_MINIO;;
         *) VECTOR_STORE="weaviate";;
     esac
 }
@@ -1720,6 +1725,14 @@ _wizard_ragflow() {
     # Interactive handled by _wizard_optional_services
 }
 
+_wizard_n8n() {
+    if [[ "${NON_INTERACTIVE:-false}" == "true" ]]; then
+        ENABLE_N8N="${ENABLE_N8N:-false}"
+        return
+    fi
+    # Interactive handled by _wizard_optional_services
+}
+
 _wizard_optional_services() {
     # Handle NI mode via individual functions
     if [[ "${NON_INTERACTIVE:-false}" == "true" ]]; then
@@ -1729,6 +1742,7 @@ _wizard_optional_services() {
         _wizard_dbgpt
         _wizard_crawl4ai
         _wizard_ragflow
+        _wizard_n8n
         return 0
     fi
 
@@ -1743,7 +1757,8 @@ _wizard_optional_services() {
         "notebook" "Open Notebook -- [BROKEN v3.0.1 — не выбирать] SurrealDB auth"  "OFF" \
         "dbgpt"    "DB-GPT   -- AI-агент для анализа данных и SQL (~1 GB RAM)"      "OFF" \
         "crawl4ai" "Crawl4AI -- веб-краулер с REST API (~2 GB RAM)"                 "OFF" \
-        "ragflow"  "RAGFlow  -- deep doc parsing + retrieval engine (~13 GB RAM)"   "OFF")
+        "ragflow"  "RAGFlow  -- deep doc parsing + retrieval engine (~13 GB RAM)"   "OFF" \
+        "n8n"      "n8n      -- workflow automation, шарит agmind-db (~1 GB RAM)"   "OFF")
 
     local parsed
     parsed=$(wt_parse "$result")
@@ -1755,6 +1770,7 @@ _wizard_optional_services() {
     ENABLE_DBGPT="false"
     ENABLE_CRAWL4AI="false"
     ENABLE_RAGFLOW="false"
+    ENABLE_N8N="false"
 
     local item
     for item in $parsed; do
@@ -1765,6 +1781,7 @@ _wizard_optional_services() {
             dbgpt)    ENABLE_DBGPT="true";;
             crawl4ai) ENABLE_CRAWL4AI="true";;
             ragflow)  ENABLE_RAGFLOW="true";;
+            n8n)      ENABLE_N8N="true";;
         esac
     done
 }
@@ -1821,6 +1838,7 @@ _wizard_summary() {
     if [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]]; then summary+="$(t wizard.summary.notebook) agmind-notebook.local\n"; fi
     if [[ "${ENABLE_DBGPT:-false}" == "true" ]]; then summary+="$(t wizard.summary.dbgpt)       agmind-dbgpt.local\n"; fi
     if [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]]; then summary+="$(t wizard.summary.crawl4ai)     agmind-crawl.local\n"; fi
+    if [[ "${ENABLE_N8N:-false}" == "true" ]]; then summary+="  n8n           http://<host>:${EXPOSE_N8N_PORT:-5678}\n"; fi
     if [[ "${ENABLE_OPENWEBUI:-false}" == "true" ]]; then summary+="$(t wizard.summary.openwebui)   agmind-chat.local\n"; fi
     if [[ "${ENABLE_RAGFLOW:-false}" == "true" ]]; then summary+="$(t wizard.summary.ragflow)      $(t wizard.summary.ragflow_val)\n"; fi
     if [[ "${ENABLE_DIFY_PREMIUM:-true}" == "true" ]]; then summary+="$(t wizard.summary.dify_premium) $(t wizard.summary.dify_premium_val)\n"; fi
@@ -2063,7 +2081,7 @@ run_wizard() {
     export BACKUP_TARGET BACKUP_SCHEDULE BACKUP_DIR
     export REMOTE_BACKUP_HOST REMOTE_BACKUP_PORT REMOTE_BACKUP_USER REMOTE_BACKUP_KEY REMOTE_BACKUP_PATH
     export ADMIN_UI_OPEN
-    export ENABLE_LITELLM ENABLE_SEARXNG ENABLE_NOTEBOOK ENABLE_DBGPT ENABLE_CRAWL4AI
+    export ENABLE_LITELLM ENABLE_SEARXNG ENABLE_NOTEBOOK ENABLE_DBGPT ENABLE_CRAWL4AI ENABLE_N8N
     export ENABLE_OPENWEBUI
     export ENABLE_DIFY_PREMIUM
     export ENABLE_RAGFLOW RAGFLOW_DEVICE

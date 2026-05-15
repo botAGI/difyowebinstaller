@@ -51,6 +51,9 @@ declare -A NAME_TO_VERSION_KEY=(
     [dbgpt]=DBGPT_VERSION
     [crawl4ai]=CRAWL4AI_VERSION
     [minio]=MINIO_VERSION
+    [n8n]=N8N_VERSION
+    [milvus]=MILVUS_VERSION
+    [milvus-etcd]=MILVUS_ETCD_VERSION
 )
 
 # Short component name -> compose service name(s) to restart on update
@@ -94,6 +97,9 @@ declare -A NAME_TO_SERVICES=(
     [dbgpt]="dbgpt"
     [crawl4ai]="crawl4ai"
     [minio]="minio"
+    [n8n]="n8n"
+    [milvus]="milvus milvus-etcd"
+    [milvus-etcd]="milvus-etcd"
 )
 
 # WHY: Expanded from single [dify]= entry in Phase 2 (agmind status). Additive —
@@ -107,10 +113,10 @@ declare -A SERVICE_GROUPS=(
     [core]="db redis nginx ssrf_proxy"
     [dify]="api worker web sandbox plugin-daemon"
     [llm]="vllm vllm-embed vllm-rerank tei tei-rerank ollama litellm docling"
-    [rag]="weaviate qdrant"
+    [rag]="weaviate qdrant milvus milvus-etcd"
     [observability]="prometheus alertmanager loki alloy node-exporter cadvisor redis-exporter postgres-exporter nginx-exporter grafana portainer"
     [ragflow]="ragflow ragflow_mysql ragflow_es01"
-    [optional]="searxng minio authelia open-webui surrealdb open-notebook dbgpt crawl4ai"
+    [optional]="searxng minio authelia open-webui surrealdb open-notebook dbgpt crawl4ai n8n"
 )
 
 # Group display order for `agmind status` table (assoc arrays have no guaranteed order).
@@ -119,7 +125,7 @@ SERVICE_GROUP_ORDER="core dify llm rag ragflow observability optional"
 
 # All known compose profiles (for compose down --remove-orphans)
 # shellcheck disable=SC2034  # sourced global used by compose.sh _compose_down_all
-ALL_COMPOSE_PROFILES="monitoring,portainer,qdrant,weaviate,etl,authelia,ollama,vllm,tei,reranker,vllm-embed,vllm-rerank,docling,litellm,searxng,notebook,dbgpt,crawl4ai,openwebui,minio"
+ALL_COMPOSE_PROFILES="monitoring,portainer,qdrant,weaviate,milvus,etl,authelia,ollama,vllm,tei,reranker,vllm-embed,vllm-rerank,docling,litellm,searxng,notebook,dbgpt,crawl4ai,openwebui,minio,n8n"
 
 # ============================================================================
 # NAMED META-PROFILES (Phase 9) — 8 user-facing profiles over the ~20 raw profiles
@@ -148,8 +154,8 @@ declare -A NAMED_PROFILE_EXPANSION=(
     [ragflow]="minio"
     [observability]="monitoring,portainer"
     [security]="authelia"
-    [agents]="litellm,crawl4ai,searxng,dbgpt,openwebui,notebook"
-    [full]="vllm,litellm,weaviate,docling,vllm-embed,vllm-rerank,minio,monitoring,portainer,authelia,crawl4ai,searxng,dbgpt,openwebui,notebook"
+    [agents]="litellm,crawl4ai,searxng,dbgpt,openwebui,notebook,n8n"
+    [full]="vllm,litellm,weaviate,docling,vllm-embed,vllm-rerank,minio,monitoring,portainer,authelia,crawl4ai,searxng,dbgpt,openwebui,notebook,n8n"
     [dev]="vllm,litellm,weaviate,docling,monitoring,portainer"
 )
 
@@ -161,7 +167,7 @@ declare -A NAMED_PROFILE_DESC=(
     [ragflow]="RAGFlow + Elasticsearch + MySQL + MinIO"
     [observability]="Prometheus + Grafana + Loki + exporters + Portainer"
     [security]="Authelia + fail2ban/hardening"
-    [agents]="LiteLLM + Crawl4AI + SearXNG + dbGPT + Open WebUI + Notebook"
+    [agents]="LiteLLM + Crawl4AI + SearXNG + dbGPT + Open WebUI + Notebook + n8n"
     [full]="Everything (one of each XOR pair; excludes Milvus + Ollama)"
     [dev]="Core + observability (fast iteration; no RAGFlow/agents/security)"
 )
@@ -176,7 +182,7 @@ declare -A NAMED_PROFILE_IMPLIED=(
     [ragflow]="ENABLE_RAGFLOW=true ENABLE_MINIO=true"
     [observability]="MONITORING_MODE=local ENABLE_PORTAINER=true"
     [security]="ENABLE_AUTHELIA=true"
-    [agents]="ENABLE_LITELLM=true ENABLE_CRAWL4AI=true ENABLE_SEARXNG=true ENABLE_DBGPT=true ENABLE_OPENWEBUI=true ENABLE_NOTEBOOK=true"
-    [full]="LLM_PROVIDER=vllm ENABLE_LITELLM=true VECTOR_STORE=weaviate ENABLE_DOCLING=true EMBED_PROVIDER=vllm-embed ENABLE_RERANKER=true RERANKER_PROVIDER=vllm-rerank ENABLE_MINIO=true MONITORING_MODE=local ENABLE_PORTAINER=true ENABLE_AUTHELIA=true ENABLE_CRAWL4AI=true ENABLE_SEARXNG=true ENABLE_DBGPT=true ENABLE_OPENWEBUI=true ENABLE_NOTEBOOK=true"
+    [agents]="ENABLE_LITELLM=true ENABLE_CRAWL4AI=true ENABLE_SEARXNG=true ENABLE_DBGPT=true ENABLE_OPENWEBUI=true ENABLE_NOTEBOOK=true ENABLE_N8N=true"
+    [full]="LLM_PROVIDER=vllm ENABLE_LITELLM=true VECTOR_STORE=weaviate ENABLE_DOCLING=true EMBED_PROVIDER=vllm-embed ENABLE_RERANKER=true RERANKER_PROVIDER=vllm-rerank ENABLE_MINIO=true MONITORING_MODE=local ENABLE_PORTAINER=true ENABLE_AUTHELIA=true ENABLE_CRAWL4AI=true ENABLE_SEARXNG=true ENABLE_DBGPT=true ENABLE_OPENWEBUI=true ENABLE_NOTEBOOK=true ENABLE_N8N=true"
     [dev]="LLM_PROVIDER=vllm ENABLE_LITELLM=true VECTOR_STORE=weaviate ENABLE_DOCLING=true MONITORING_MODE=local ENABLE_PORTAINER=true"
 )
