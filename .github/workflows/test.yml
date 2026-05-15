@@ -89,6 +89,41 @@ jobs:
           echo "================================"
           exit $errors
 
+  unit-tests-arm64:
+    # Native arm64 unit-test lane. AGmind targets DGX Spark (aarch64) exclusively
+    # (x86_64 dropped 2026-04-25), so arm64 deserves a first-class CI lane next
+    # to the default amd64 one. Same script as unit-tests; only the runner differs.
+    # Not in branch-protection required checks yet — promote to required once it's
+    # been green for a few runs.
+    name: Unit Tests (arm64)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Run unit tests (arm64)
+        shell: bash --noprofile --norc {0}
+        run: |
+          set +e
+          # rc=77 = SKIP (same convention as the amd64 lane and tests/run_all.sh)
+          errors=0 passed=0 skipped=0
+          for t in tests/unit/*.sh; do
+            [[ -x "$t" ]] || chmod +x "$t"
+            echo "==> $t"
+            bash "$t"
+            rc=$?
+            case $rc in
+              0)  passed=$((passed+1)) ;;
+              77) echo "SKIP: $t (rc=77)"; skipped=$((skipped+1)) ;;
+              *)  echo "FAIL: $t (rc=$rc)"; errors=$((errors+1)) ;;
+            esac
+          done
+          echo "================================"
+          echo "  PASS: ${passed}   SKIP: ${skipped}   FAIL: ${errors}"
+          echo "================================"
+          exit $errors
+
   image-tags:
     name: Image tag existence (registry check)
     runs-on: ubuntu-latest
