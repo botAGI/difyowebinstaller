@@ -78,6 +78,21 @@ configure_ufw() {
     ufw --force enable
     log_success "UFW configured"
     ufw status numbered
+
+    # FIX 2026-05-15: UFW enable rewrites the netfilter ruleset (FORWARD policy
+    # → DROP, ufw-before-forward etc.) which leaves dockerd's previously-installed
+    # DOCKER-USER / DOCKER chains in a stale state. Symptom: every subsequent
+    # `docker pull` fails with `net/http: TLS handshake timeout`, install.sh
+    # phase 6 reports "Images ready: 1/38" and proceeds with broken result.
+    # Defensively restart docker NOW so it re-installs its iptables rules
+    # cleanly under the new UFW policy. ~3 seconds, idempotent — better than
+    # the compose_pull post-mortem retry which only fires at ready==0
+    # (1/N still triggered phase 6 to fall through with broken pulls).
+    if systemctl is-active docker >/dev/null 2>&1; then
+        log_info "Restarting docker daemon so iptables rules survive UFW reshuffle..."
+        systemctl restart docker 2>/dev/null || log_warn "docker restart failed — phase 6 pull may need manual retry"
+        sleep 3
+    fi
 }
 
 # ============================================================================
