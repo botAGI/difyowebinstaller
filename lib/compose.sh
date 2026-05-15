@@ -459,6 +459,44 @@ _pull_with_progress() {
         docker image inspect "$img" >/dev/null 2>&1 && ready=$((ready + 1))
     done
 
+    # Auto-recover from "UFW just activated in phase 3 (Security) → docker daemon
+    # FORWARD/DOCKER-USER chains in stale state → every `docker pull` fails with
+    # `net/http: TLS handshake timeout`" (bug-report 2026-05-15 — single agmind-db
+    # came up because compose retried, the other 37 silently failed). When ready
+    # == 0 and we haven't retried yet, restart dockerd and re-pull once.
+    if [[ $ready -eq 0 && $total -gt 5 && "${_AGMIND_PULL_RETRIED:-0}" != "1" ]]; then
+        log_warn "Pulled 0/${total} images — likely dockerd iptables state stale after UFW reshuffle. Restarting docker daemon and retrying once..."
+        if systemctl restart docker 2>/dev/null; then
+            sleep 5
+            export _AGMIND_PULL_RETRIED=1
+            log_info "Retrying pull after docker restart..."
+            if [[ -n "${ORIGINAL_TTY_FD:-}" ]] && { true >&"${ORIGINAL_TTY_FD}"; } 2>/dev/null; then
+                if [[ -n "$profiles" ]]; then
+                    COMPOSE_PROFILES="$profiles" docker compose pull >&"${ORIGINAL_TTY_FD}" 2>&1 || true
+                else
+                    docker compose pull >&"${ORIGINAL_TTY_FD}" 2>&1 || true
+                fi
+            else
+                local pull_log2="/tmp/agmind-pull-retry-$$.log"
+                : > "$pull_log2"
+                if [[ -n "$profiles" ]]; then
+                    COMPOSE_PROFILES="$profiles" docker compose pull > "$pull_log2" 2>&1 &
+                else
+                    docker compose pull > "$pull_log2" 2>&1 &
+                fi
+                _monitor_pull_inactivity "$!" "$pull_log2" || true
+                rm -f "$pull_log2"
+            fi
+            ready=0
+            for img in "${images[@]}"; do
+                docker image inspect "$img" >/dev/null 2>&1 && ready=$((ready + 1))
+            done
+            log_info "After docker restart + retry: ${ready}/${total} images ready"
+        else
+            log_warn "systemctl restart docker failed — falling through to standard handling"
+        fi
+    fi
+
     if [[ $ready -eq $total ]]; then
         log_success "Images ready: ${ready}/${total}"
     else
