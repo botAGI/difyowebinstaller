@@ -89,6 +89,9 @@ I18N_RU["wizard.llm_ctx.gemma_64k"]="64K — по умолчанию (реком
 I18N_EN["wizard.llm_ctx.gemma_128k"]="128K — not for single-node deployments"
 I18N_RU["wizard.llm_ctx.gemma_128k"]="128K — не для single-node установок"
 
+I18N_EN["wizard.llm_ctx.gemma_256k"]="256K — full native Gemma 4 context (peer-node only)"
+I18N_RU["wizard.llm_ctx.gemma_256k"]="256K — полный нативный контекст Gemma 4 (только на peer-ноде)"
+
 I18N_EN["wizard.llm_ctx.qwen36_128k"]="128K — balanced (default for qwen36)"
 I18N_RU["wizard.llm_ctx.qwen36_128k"]="128K — баланс (по умолчанию для qwen36)"
 

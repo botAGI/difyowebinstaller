@@ -431,13 +431,13 @@ _wizard_llm_profile() {
     case "${profile_choice}" in
         2)
             # --- Profile 2: Qwen3.6-35B FP8 + DFlash ---
-            # Auto-fallback: if AEON image is unreachable, drop back to Gemma.
-            if ! docker image inspect "$_aeon_image" >/dev/null 2>&1 \
-               && ! timeout 15 docker manifest inspect "$_aeon_image" >/dev/null 2>&1; then
-                log_warn "$(t wizard.llm_profile.aeon_unavailable)"
-                _wizard_llm_profile_gemma
-                return
-            fi
+            # NOTE: wizard-level AEON manifest pre-flight removed 2026-05-15.
+            # It produced false-positive fallbacks (registry transients during
+            # wizard timing caused silent Gemma override on the user's actual
+            # Qwen3.6 pick). The compose-pull layer already has auto-recovery
+            # (lib/compose.sh — restart dockerd + retry on 0/N pulls), and
+            # a genuine image-missing failure surfaces there with a clear
+            # error pointing at versions.env. Trust the user's profile choice.
             AGMIND_LLM_PROFILE="qwen36-fp8"
             VLLM_IMAGE="$_aeon_image"
             VLLM_MODEL="Qwen/Qwen3.6-35B-A3B-FP8"
@@ -455,13 +455,13 @@ _wizard_llm_profile() {
         3)
             # --- Profile 3: Qwen3.6-35B heretic NVFP4 + DFlash (LOUD WARNING) ---
             log_warn "$(t wizard.llm_profile.heretic_warning)"
-            # Auto-fallback: if AEON image is unreachable, drop back to Gemma.
-            if ! docker image inspect "$_aeon_image" >/dev/null 2>&1 \
-               && ! timeout 15 docker manifest inspect "$_aeon_image" >/dev/null 2>&1; then
-                log_warn "$(t wizard.llm_profile.aeon_unavailable)"
-                _wizard_llm_profile_gemma
-                return
-            fi
+            # NOTE: wizard-level AEON manifest pre-flight removed 2026-05-15.
+            # It produced false-positive fallbacks (registry transients during
+            # wizard timing caused silent Gemma override on the user's actual
+            # Qwen3.6 pick). The compose-pull layer already has auto-recovery
+            # (lib/compose.sh — restart dockerd + retry on 0/N pulls), and
+            # a genuine image-missing failure surfaces there with a clear
+            # error pointing at versions.env. Trust the user's profile choice.
             AGMIND_LLM_PROFILE="qwen36-heretic"
             VLLM_IMAGE="$_aeon_image"
             VLLM_MODEL="AEON-7/Qwen3.6-35B-A3B-heretic-NVFP4"
@@ -493,7 +493,10 @@ _wizard_llm_profile_gemma() {
     VLLM_CUDA_SUFFIX=""
     VLLM_CMD_PREFIX=""
     VLLM_EXTRA_ARGS="--kv-cache-dtype fp8 --enable-prefix-caching --enforce-eager"
-    # Context sub-prompt for Gemma (64K default / 128K opt-in)
+    # Context sub-prompt for Gemma (64K default / 128K / 256K — peer-only).
+    # 256K added 2026-05-15: native Gemma 4 context is 256K; safe on peer-node
+    # (dedicated GPU, no docling competition). Not safe on single-node where
+    # docling shares unified memory — KV cache at 256K can OOM compose.
     local ctx_choice
     if [[ "${NON_INTERACTIVE:-false}" == "true" ]]; then
         VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-65536}"
@@ -502,8 +505,10 @@ _wizard_llm_profile_gemma() {
             "$(t wizard.llm_ctx.title)" \
             "$(t wizard.llm_ctx.prompt)" \
             "1" "$(t wizard.llm_ctx.gemma_64k)" \
-            "2" "$(t wizard.llm_ctx.gemma_128k)")
+            "2" "$(t wizard.llm_ctx.gemma_128k)" \
+            "3" "$(t wizard.llm_ctx.gemma_256k)")
         case "${ctx_choice:-1}" in
+            3) VLLM_MAX_MODEL_LEN="262144" ;;
             2) VLLM_MAX_MODEL_LEN="131072" ;;
             *) VLLM_MAX_MODEL_LEN="65536" ;;
         esac
