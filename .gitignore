@@ -25,6 +25,7 @@ references/
 plugins/
 pipelines/
 documentation/
+benchmarks/
 
 # Claude Code local settings (machine-specific)
 .claude/settings.local.json
