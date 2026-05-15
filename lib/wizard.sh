@@ -404,6 +404,7 @@ _wizard_llm_profile() {
         case "${AGMIND_LLM_PROFILE:-}" in
             qwen36-fp8)     profile_choice="2" ;;
             qwen36-heretic) profile_choice="3" ;;
+            other)          profile_choice="4" ;;
             gemma|*)        profile_choice="1" ;;
         esac
     else
@@ -412,8 +413,19 @@ _wizard_llm_profile() {
             "$(t wizard.llm_profile.prompt)" \
             "1" "$(t wizard.llm_profile.opt_gemma)" \
             "2" "$(t wizard.llm_profile.opt_qwen36_fp8)" \
-            "3" "$(t wizard.llm_profile.opt_qwen36_heretic)")
+            "3" "$(t wizard.llm_profile.opt_qwen36_heretic)" \
+            "4" "Другая модель — список Qwen / Llama / Mistral / своя HF (без DGX Spark валидации)")
         profile_choice="${profile_choice:-1}"
+    fi
+
+    # Escape hatch: profile 4 → fall through to the generic vLLM model picker
+    # (Qwen3-8B-AWQ / Qwen2.5-14B / Mistral-7B / Llama-3.1-8B / custom HF).
+    # These are NOT DGX Spark-validated — user opts in knowingly.
+    if [[ "$profile_choice" == "4" ]]; then
+        AGMIND_LLM_PROFILE="other"
+        VLLM_IMAGE=""  # let _wizard_vllm_model / compose fallback choose default
+        _wizard_vllm_model
+        return
     fi
 
     case "${profile_choice}" in
@@ -1025,38 +1037,18 @@ _wizard_llm_model() {
             return 0
         fi
         if [[ "$LLM_PROVIDER" == "vllm" && "${DETECTED_DGX_SPARK:-false}" == "true" ]]; then
-            local spark_choice
-            spark_choice=$(wt_menu "DGX Spark — выбор модели vLLM" \
-                "Платформа: GB10 (128 GB unified memory). Образ: vllm/vllm-openai:gemma4-cu130\n\nВыбор:" \
-                "1" "Gemma 4 26B-A4B (рекомендуется — NVIDIA playbook, MoE 3.8B active)" \
-                "2" "Другая модель — список Qwen / Llama / Mistral / phi-4" \
-                "3" "Своя HuggingFace модель (org/model-name)")
-            spark_choice="${spark_choice:-1}"
-
-            case "$spark_choice" in
-                2)
-                    # Общий vLLM model picker — фильтрация под Spark уже внутри.
-                    _wizard_vllm_model
-                    ;;
-                3)
-                    local hf_model
-                    hf_model=$(wt_input "Своя модель vLLM" \
-                        "HuggingFace репозиторий (org/model-name).\nПример: meta-llama/Llama-3.1-70B-Instruct" \
-                        "")
-                    if [[ -n "$hf_model" ]]; then
-                        VLLM_MODEL="$hf_model"
-                        VLLM_IMAGE=""  # Используем upstream NGC, не Spark-specific image
-                    else
-                        wt_msg "Пусто" "Поле HF модели пустое — fallback на Gemma 4 26B-A4B"
-                        VLLM_MODEL="google/gemma-4-26B-A4B-it"
-                        VLLM_IMAGE="vllm/vllm-openai:gemma4-cu130"
-                    fi
-                    ;;
-                1|*)
-                    VLLM_MODEL="google/gemma-4-26B-A4B-it"
-                    VLLM_IMAGE="vllm/vllm-openai:gemma4-cu130"
-                    ;;
-            esac
+            # FIX 2026-05-15: Path A 3-way profile picker (Gemma / Qwen3.6 FP8 /
+            # heretic / Other) lives in _wizard_llm_profile. Previously it was
+            # only invoked from _wizard_llm_provider, which is SKIPPED for named
+            # profiles (core/rag/full/dev/…) that pre-imply LLM_PROVIDER=vllm.
+            # Result: named-profile users hit the legacy "Gemma / Другая / Своя
+            # HF" menu and never saw the curated Path A options (bug-report
+            # 2026-05-15: "где выбор наших забинженных, почему гемма только").
+            # Always run Path A here; profile 4 is the escape hatch to the
+            # legacy generic vLLM picker.
+            if declare -F _wizard_llm_profile >/dev/null 2>&1; then
+                _wizard_llm_profile
+            fi
 
             # Контекст — на dual-Spark (vLLM на peer, dedicated GPU) дефолт 128K
             # без вопроса. На single-Spark (vLLM шарит GPU с docling) — спросить.
