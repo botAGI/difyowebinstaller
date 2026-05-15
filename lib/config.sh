@@ -728,6 +728,15 @@ generate_nginx_config() {
         _atomic_sed "$nginx_conf" '/#__DBGPT__/d'
     fi
 
+    # n8n markers (FIX 2026-05-15: integration in 260513-5ep missed nginx vhost
+    # → agmind-n8n.local didn't resolve, summary showed `http://<host>:5678`
+    # while all other agmind-*.local services routed properly).
+    if [[ "${ENABLE_N8N:-false}" == "true" ]]; then
+        _atomic_sed "$nginx_conf" 's|#__N8N__||g'
+    else
+        _atomic_sed "$nginx_conf" '/#__N8N__/d'
+    fi
+
     # Open Notebook markers
     if [[ "${ENABLE_NOTEBOOK:-false}" == "true" ]]; then
         _atomic_sed "$nginx_conf" 's|#__NOTEBOOK__||g'
@@ -827,6 +836,7 @@ _register_local_dns() {
     [[ "${ENABLE_SEARXNG:-false}" == "true" ]] && names+=("agmind-search")
     [[ "${ENABLE_CRAWL4AI:-false}" == "true" ]] && names+=("agmind-crawl")
     [[ "${ENABLE_RAGFLOW:-false}" == "true" ]] && names+=("agmind-rag")
+    [[ "${ENABLE_N8N:-false}" == "true" ]] && names+=("agmind-n8n")
 
     local server_ip
     server_ip="$(_mdns_get_primary_ip)"

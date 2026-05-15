@@ -1380,6 +1380,9 @@ _show_final_summary() {
         if [[ "${ENABLE_CRAWL4AI:-false}"  == "true" ]]; then
             echo -e "  Crawl4AI           ${GREEN}http://agmind-crawl.local/docs${NC}"
         fi
+        if [[ "${ENABLE_N8N:-false}"       == "true" ]]; then
+            echo -e "  n8n                ${GREEN}http://agmind-n8n.local${NC}        (owner аккаунт при первом входе)"
+        fi
     fi
 
     # ── 3. ИНФРАСТРУКТУРА ──
