@@ -114,6 +114,18 @@ get_service_list() {
         local enable_ragflow
         enable_ragflow="$(grep '^ENABLE_RAGFLOW=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
         if [[ "$enable_ragflow" == "true" ]]; then services+=(ragflow_mysql ragflow_es01 ragflow); fi
+
+        # HEALTH-02A: MinIO — explicit toggle, OR implied by RAGFlow / Milvus.
+        # Without this, ENABLE_RAGFLOW=true or VECTOR_STORE=milvus deploys
+        # would never report MinIO in get_service_list, hiding a key dependency
+        # from health checks even though compose auto-includes it.
+        local enable_minio
+        enable_minio="$(grep '^ENABLE_MINIO=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+        if [[ "$enable_minio" == "true" \
+           || "$enable_ragflow" == "true" \
+           || "$vector_store" == "milvus" ]]; then
+            services+=(minio)
+        fi
     else
         services+=(weaviate)
     fi
