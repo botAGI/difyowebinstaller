@@ -301,10 +301,24 @@ _generate_secrets() {
     _NOTEBOOK_ENCRYPTION_KEY="$(generate_random 32)"
 
     # n8n encryption key — protects credentials stored in the n8n DB.
-    # On fresh install a fresh key is fine (no pre-existing encrypted creds).
-    # If you ever migrate an n8n DB volume across installs, persist this key
-    # (mirror the SurrealDB pattern above). Today: regenerated each install.
-    _N8N_ENCRYPTION_KEY="$(generate_random 32)"
+    # Persisted at /var/lib/agmind/state/n8n_encryption_key.preserved (mirrors
+    # the SurrealDB pattern above — survives `agmind uninstall` and
+    # `rm -rf /opt/agmind`). Required because the n8n named volume
+    # `agmind_n8n_data` is docker-managed at /var/lib/docker/volumes/ and
+    # survives /opt/agmind wipe; it stores the same key in
+    # /home/node/.n8n/config — a mismatch on next start = fatal "Mismatching
+    # encryption keys" boot error.
+    local _n8n_key_preserved="/var/lib/agmind/state/n8n_encryption_key.preserved"
+    if [[ -s "$_n8n_key_preserved" ]]; then
+        _N8N_ENCRYPTION_KEY="$(cat "$_n8n_key_preserved")"
+        log_info "n8n encryption key loaded from ${_n8n_key_preserved} (preserved across re-install)"
+    else
+        _N8N_ENCRYPTION_KEY="$(generate_random 32)"
+        mkdir -p "$(dirname "$_n8n_key_preserved")" 2>/dev/null || true
+        { printf '%s' "$_N8N_ENCRYPTION_KEY" > "$_n8n_key_preserved"; } 2>/dev/null || true
+        chmod 600 "$_n8n_key_preserved" 2>/dev/null || true
+        log_info "n8n encryption key generated and persisted: ${_n8n_key_preserved}"
+    fi
 
     _MINIO_ROOT_USER="agmind-admin"
     _MINIO_ROOT_PASSWORD="$(generate_random 32)"
