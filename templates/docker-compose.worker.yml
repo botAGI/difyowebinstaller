@@ -47,6 +47,12 @@ services:
       # Required when VLLM_MAX_MODEL_LEN > 1M (1M YaRN context, qwen36 opt-in).
       # Wizard sets VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 when 1M ctx is chosen.
       - VLLM_ALLOW_LONG_MAX_MODEL_LEN=${VLLM_ALLOW_LONG_MAX_MODEL_LEN:-0}
+    # Override image ENTRYPOINT (NGC nvidia_entrypoint.sh which does bare
+    # `exec "$@"`) so that `command:` becomes args to `vllm serve` instead
+    # of being exec'd directly. AEON-7 fork ships with CMD=[] and relies on
+    # the caller to prepend `vllm serve`; stock vllm/vllm-openai does the
+    # same. With this override the command list works identically for both.
+    entrypoint: ["vllm", "serve"]
     command: >-
       ${VLLM_CMD_PREFIX:-}
       --model ${VLLM_MODEL:-${VLLM_SPARK_MODEL:-google/gemma-4-26B-A4B-it}}
