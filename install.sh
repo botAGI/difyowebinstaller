@@ -595,8 +595,17 @@ _init_dify_admin() {
     init_password="$(grep '^INIT_PASSWORD=' "$env_file" 2>/dev/null | cut -d'=' -f2-)"
     if [[ -z "$init_password" ]]; then return 0; fi
 
-    local admin_password
-    admin_password="$(echo "$init_password" | base64 -d 2>/dev/null || echo "$init_password")"
+    # Admin password MUST satisfy Dify's validator (libs/password.py):
+    #   ^(?=.*[a-zA-Z])(?=.*\d).{8,}$  — letter + digit + len >= 8.
+    # Previously we used `init_password | base64 -d`, but random 18-byte
+    # decoded blobs occasionally contained zero digits → setup returned 422.
+    # The raw INIT_PASSWORD is itself a 24-char base64 string (alnum + +/=)
+    # with very high probability of containing at least one digit; we
+    # guarantee a digit by appending one before falling back.
+    local admin_password="$init_password"
+    if ! printf '%s' "$admin_password" | grep -qE '[0-9]'; then
+        admin_password="${admin_password}1"
+    fi
 
     # Wait for Dify API health only (don't check init endpoint — its codes vary by version)
     local attempts=0 max_attempts=120  # 120 × 5s = 10 min
