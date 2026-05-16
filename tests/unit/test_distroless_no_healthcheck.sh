@@ -49,6 +49,13 @@ DISTROLESS_PATTERNS=(
     "oliver006/redis_exporter"
     "nginx/nginx-prometheus-exporter"
     "grafana/alloy"
+    # ubuntu/squid:7.2-26.04_edge — verified distroless 2026-05-15:
+    # `docker run --rm --entrypoint /bin/sh ubuntu/squid:7.2-26.04_edge -c 'head'`
+    # → `/bin/sh: 1: head: not found`. No coreutils, no pgrep, no curl, no wget.
+    # Pebble manages squid as a sub-process, no standard /var/run/squid.pid →
+    # `squid -k check` fails too. Regression caught today's bug:
+    # ssrf_proxy unhealthy → 5 dependents blocked at phase 7.
+    "ubuntu/squid"
 )
 
 mapfile -t compose_files < <(find "${REPO_ROOT}/templates" -maxdepth 2 -name "docker-compose*.yml" -type f 2>/dev/null | sort)
