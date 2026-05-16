@@ -34,8 +34,8 @@ mkdir -p "$T/state" "$T/docker"
 # (mode 0600, byte-exact content via printf '%s'; no trailing newline beyond what
 # printf produces).
 printf '%s' 'surreal-pw-with-$dollar-and-#hash' > "$T/state/surrealdb_password.preserved"
-printf '%s' 'n8n-key-abc123-multiline
-segment2' > "$T/state/n8n_encryption_key.preserved"
+# n8n encryption key: hex/base64 style, no newline (matches lib/config.sh::_generate_secrets output)
+printf '%s' 'n8n-key-abc123-deadbeef-0123456789abcdef' > "$T/state/n8n_encryption_key.preserved"
 printf '%s' 'portainer-shared-secret-xyz' > "$T/state/portainer_agent_secret.preserved"
 chmod 0600 "$T/state"/*.preserved
 
