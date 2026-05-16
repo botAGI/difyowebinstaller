@@ -114,6 +114,18 @@ get_service_list() {
         local enable_ragflow
         enable_ragflow="$(grep '^ENABLE_RAGFLOW=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
         if [[ "$enable_ragflow" == "true" ]]; then services+=(ragflow_mysql ragflow_es01 ragflow); fi
+
+        # HEALTH-02A: MinIO — explicit toggle, OR implied by RAGFlow / Milvus.
+        # Without this, ENABLE_RAGFLOW=true or VECTOR_STORE=milvus deploys
+        # would never report MinIO in get_service_list, hiding a key dependency
+        # from health checks even though compose auto-includes it.
+        local enable_minio
+        enable_minio="$(grep '^ENABLE_MINIO=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+        if [[ "$enable_minio" == "true" \
+           || "$enable_ragflow" == "true" \
+           || "$vector_store" == "milvus" ]]; then
+            services+=(minio)
+        fi
     else
         services+=(weaviate)
     fi
@@ -141,19 +153,20 @@ check_container() {
     # Exact name match to avoid confusion with init-containers (BUG-V3-039)
     # e.g. "agmind-redis" must not match "agmind-redis-lock-cleaner"
     local status
-    status="$(docker ps -a --filter "name=^agmind-${cname}$" --format '{{.Status}}' 2>/dev/null | head -1)"
-    if [[ -z "$status" ]]; then status="not found"; fi
-
-    if echo "$status" | grep -qi "up\|healthy"; then
-        echo -e "  ${GREEN}[OK]${NC}  ${name}"
-        return 0
-    elif echo "$status" | grep -qi "starting"; then
-        echo -e "  ${YELLOW}[..]${NC}  ${name} (starting)"
-        return 1
-    else
-        echo -e "  ${RED}[!!]${NC}  ${name} (${status})"
-        return 1
-    fi
+    # HEALTH-01: distinguish healthy from unhealthy via docker inspect.
+    # `docker ps` Status column ("Up 5 minutes (unhealthy)") matches
+    # `grep -qi "up\|healthy"` and gave false-OK for unhealthy containers.
+    status="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "agmind-${cname}" 2>/dev/null || echo not-found)"
+    case "$status" in
+        healthy|running)
+            echo -e "  ${GREEN}[OK]${NC}  ${name}"; return 0 ;;
+        starting|created|restarting)
+            echo -e "  ${YELLOW}[..]${NC}  ${name} (${status})"; return 1 ;;
+        unhealthy|exited|dead|paused|removing|not-found)
+            echo -e "  ${RED}[!!]${NC}  ${name} (${status})"; return 1 ;;
+        *)
+            echo -e "  ${RED}[!!]${NC}  ${name} (unknown:${status})"; return 1 ;;
+    esac
 }
 
 # ============================================================================
@@ -292,7 +305,10 @@ wait_healthy() {
                     continue
                 fi
             fi
-            if ! echo "$status" | grep -qi "up\|healthy"; then
+            # HEALTH-01: inspect-based check distinguishes unhealthy from running.
+            local _state
+            _state="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$(docker compose -f "$compose_file" ps -q "$svc" 2>/dev/null | head -1)" 2>/dev/null || echo not-found)"
+            if [[ "$_state" != "healthy" && "$_state" != "running" ]]; then
                 all_ok=false
                 break
             fi
@@ -381,12 +397,14 @@ wait_healthy() {
         if [[ "$gpu_done" == *" $svc "* ]]; then continue; fi
         # Container still alive — it's loading, not broken
         local status
-        status="$(docker compose -f "$compose_file" ps --format '{{.Status}}' "$svc" 2>/dev/null || echo "")"
-        if echo "$status" | grep -qi "up\|starting"; then
+        # HEALTH-01: GPU still-loading check via inspect (distinguishes states).
+        local _gstate
+        _gstate="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$(docker compose -f "$compose_file" ps -q "$svc" 2>/dev/null | head -1)" 2>/dev/null || echo not-found)"
+        if [[ "$_gstate" == "running" || "$_gstate" == "starting" || "$_gstate" == "healthy" ]]; then
             still_loading="${still_loading:+${still_loading}, }${svc}"
         else
             optional_exited="${optional_exited} ${svc} "
-            log_warn "GPU service '${svc}' is not running (${status})"
+            log_warn "GPU service '${svc}' is not running (${_gstate})"
         fi
     done
 

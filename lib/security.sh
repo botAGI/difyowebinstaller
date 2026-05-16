@@ -46,6 +46,18 @@ pin_nvidia_driver_dgx_spark() {
 # UFW FIREWALL
 # ============================================================================
 
+# SEC-UFW-01: Add a UFW rule only if an equivalent agmind-tagged rule is
+# absent. Avoids `ufw --force reset` which silently wipes admin-managed
+# rules outside our control.
+# Signature: _ufw_add_or_keep <tag> <ufw-args...>
+_ufw_add_or_keep() {
+    local tag="$1"; shift
+    if ufw status 2>/dev/null | grep -qE "(^|[[:space:]#])${tag}([[:space:]]|$)"; then
+        return 0
+    fi
+    ufw "$@"
+}
+
 configure_ufw() {
     if [[ "${ENABLE_UFW:-false}" != "true" ]]; then return 0; fi
 
@@ -54,30 +66,71 @@ configure_ufw() {
         return 0
     fi
 
-    log_info "Configuring UFW firewall..."
+    log_info "Configuring UFW firewall (append-only)..."
 
-    # Backup existing rules
-    if ufw status 2>/dev/null | grep -q "active"; then
-        ufw status numbered > "/tmp/ufw-backup-$(date +%s).txt" 2>/dev/null || true
+    local ufw_active=0
+    if ufw status 2>/dev/null | grep -q "Status: active"; then
+        ufw_active=1
     fi
 
-    ufw --force reset
-    ufw default deny incoming
-    ufw default allow outgoing
-    ufw allow ssh comment "SSH"
-    ufw allow 80/tcp comment "AGMind HTTP"
-    ufw allow 443/tcp comment "AGMind HTTPS"
+    # SEC-UFW-01: full reset only on explicit opt-in. Default mode is
+    # append-only — admin's existing rules (custom SSH on 2222, k8s nodeport
+    # allowlists, etc) survive. Backup is always written when active.
+    if [[ "${AGMIND_UFW_RESET:-false}" == "true" ]]; then
+        log_warn "AGMIND_UFW_RESET=true — backing up and resetting firewall"
+        mkdir -p /var/backups/agmind
+        ufw status numbered > "/var/backups/agmind/ufw-rules-$(date +%s).txt" 2>/dev/null || true
+        ufw --force reset
+        ufw_active=0
+    elif [[ $ufw_active -eq 1 ]]; then
+        # Still snapshot active rules — gives us a diff to point at if append fails.
+        mkdir -p /var/backups/agmind
+        ufw status numbered > "/var/backups/agmind/ufw-rules-$(date +%s).txt" 2>/dev/null || true
+    fi
 
-    # LAN profile (always since 2026-04-25, VPS dropped): allow internal subnet.
-    ufw allow from "${LAN_SUBNET:-192.168.0.0/16}" comment "LAN access"
+    # Defaults: only set when UFW was inactive (fresh setup or explicit reset).
+    # On already-active UFW we respect the admin's existing default policy.
+    if [[ $ufw_active -eq 0 ]]; then
+        ufw default deny incoming
+        ufw default allow outgoing
+    else
+        log_info "UFW already active — leaving default policies unchanged"
+    fi
+
+    # Always-needed rules, tagged for selective uninstall.
+    _ufw_add_or_keep agmind-ssh    allow ssh    comment agmind-ssh
+    _ufw_add_or_keep agmind-http   allow 80/tcp comment agmind-http
+    _ufw_add_or_keep agmind-https  allow 443/tcp comment agmind-https
+
+    # SEC-UFW-02: LAN rules restricted to HTTP/HTTPS, not the whole subnet.
+    # Previous `ufw allow from $LAN_SUBNET` opened EVERY internal port on
+    # a /16 default — Postgres :5432, Redis :6379, vLLM :8000, etc.
+    # We now narrow each LAN allow to a specific port + proto.
+    # Also tightening LAN_SUBNET default from /16 to /24 so unset deploys
+    # don't accidentally invite a guest VLAN.
+    local _lan_subnet="${LAN_SUBNET:-192.168.1.0/24}"
+    _ufw_add_or_keep agmind-http-lan  allow from "$_lan_subnet" to any port 80  proto tcp comment agmind-http-lan
+    _ufw_add_or_keep agmind-https-lan allow from "$_lan_subnet" to any port 443 proto tcp comment agmind-https-lan
+
     if [[ "${MONITORING_MODE:-none}" == "local" ]]; then
-        ufw allow 3001/tcp comment "Grafana"
-        ufw allow 9443/tcp comment "Portainer"
+        # SEC-UFW-02: monitoring ports gated behind explicit opt-in.
+        # Default is loopback-only — admins access via SSH tunnel or
+        # nginx vhost (agmind-monitor.local once that ships).
+        if [[ "${EXPOSE_GRAFANA_LAN:-false}" == "true" ]]; then
+            _ufw_add_or_keep agmind-grafana-lan   allow from "$_lan_subnet" to any port 3001 proto tcp comment agmind-grafana-lan
+        fi
+        if [[ "${EXPOSE_PORTAINER_LAN:-false}" == "true" ]]; then
+            _ufw_add_or_keep agmind-portainer-lan allow from "$_lan_subnet" to any port 9443 proto tcp comment agmind-portainer-lan
+        fi
     fi
 
-    ufw --force enable
-    log_success "UFW configured"
-    ufw status numbered
+    if [[ $ufw_active -eq 0 ]]; then
+        ufw --force enable
+    fi
+
+    local ufw_msg="append-only mode"
+    [[ $ufw_active -eq 1 ]] && ufw_msg+=", host was active before us"
+    log_success "UFW configured (${ufw_msg})"
 
     # FIX 2026-05-15: UFW enable rewrites the netfilter ruleset (FORWARD policy
     # → DROP, ufw-before-forward etc.) which leaves dockerd's previously-installed
@@ -86,13 +139,28 @@ configure_ufw() {
     # phase 6 reports "Images ready: 1/38" and proceeds with broken result.
     # Defensively restart docker NOW so it re-installs its iptables rules
     # cleanly under the new UFW policy. ~3 seconds, idempotent — better than
-    # the compose_pull post-mortem retry which only fires at ready==0
-    # (1/N still triggered phase 6 to fall through with broken pulls).
+    # the compose_pull post-mortem retry which only fires at ready==0.
     if systemctl is-active docker >/dev/null 2>&1; then
         log_info "Restarting docker daemon so iptables rules survive UFW reshuffle..."
         systemctl restart docker 2>/dev/null || log_warn "docker restart failed — phase 6 pull may need manual retry"
         sleep 3
     fi
+}
+
+# SEC-UFW-01: clean up only AGmind-tagged rules. UFW numbered output:
+#   [ 1] 22/tcp                    ALLOW IN    Anywhere                   # agmind-ssh
+#   [12] 192.168.1.0/24 80/tcp     ALLOW IN    192.168.1.0/24             # agmind-http-lan
+# Extract numbers, sort reverse-numeric so deletions don't shift indices.
+uninstall_agmind_ufw_rules() {
+    command -v ufw >/dev/null 2>&1 || return 0
+    local nums
+    nums="$(ufw status numbered 2>/dev/null \
+        | awk -F'[][]' '/agmind-/ {gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2}' \
+        | sort -rn)"
+    [[ -z "$nums" ]] && return 0
+    while IFS= read -r n; do
+        [[ -n "$n" ]] && ufw --force delete "$n"
+    done <<< "$nums"
 }
 
 # ============================================================================

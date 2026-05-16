@@ -40,7 +40,7 @@ create_openwebui_admin() {
     fi
     if [[ -z "$admin_password" ]]; then
         log_warn "No admin password found, generating random"
-        admin_password="$(head -c 256 /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z0-9' | head -c 16)"
+        admin_password="$(generate_random 16)"
     fi
 
     log_info "Creating Open WebUI admin account..."
