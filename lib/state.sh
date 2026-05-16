@@ -238,3 +238,194 @@ _state_set_secret_body() {
     log_info "state: secrets.env::${name} set"
     return 0
 }
+
+# ────────────────────────────────────────────────────────────────────────────
+# UPGRADE CLI — Phase 11, STATE-06 / STATE-07 / STATE-08
+# ────────────────────────────────────────────────────────────────────────────
+# upgrade_run [--check|--apply|--rollback <N>] [args...]
+#   Default action: --check (read-only).
+#   Exit codes (mirror `agmind doctor`):
+#     0 = up-to-date / success
+#     1 = pending / actionable
+#     2 = blocked / error / corrupt state
+upgrade_run() {
+    local mode="--check"
+    case "${1:-}" in
+        --check|--apply|--rollback) mode="$1"; shift ;;
+        "")                          ;;
+        -h|--help)                   _upgrade_usage; return 0 ;;
+        *)                           echo "agmind upgrade: unknown action: $1" >&2; _upgrade_usage >&2; return 2 ;;
+    esac
+    case "$mode" in
+        --check)    upgrade_check    "$@" ;;
+        --apply)    upgrade_apply    "$@" ;;
+        --rollback) upgrade_rollback "$@" ;;
+    esac
+}
+
+_upgrade_usage() {
+    cat <<'USAGE'
+Usage: agmind upgrade [--check | --apply | --rollback <schema>] [--yes]
+
+  --check               Report current schema and pending migrations (read-only). [default]
+                          exit 0 = up-to-date · 1 = pending · 2 = blocked
+  --apply [--target N]  Apply pending migrations atomically (tar-backup + bump schema).
+                          Prompts unless --yes is passed.
+  --rollback <schema>   Restore state-dir from pre-migration tarball.
+                          Always prompts (Q-10) unless --yes.
+
+Flags:
+  --yes, -y     Skip interactive confirmation (CI / scripted use).
+USAGE
+}
+
+# upgrade_check — exit 0/1/2 per Phase 11 contract.
+# OQ-1 lock-in: LIGHT variant — schema/migration status only.
+# versions.env diff is deferred to Phase 16.
+upgrade_check() {
+    local f="${STATE_DIR}/secrets.env" current marker_n first_line
+    current="$(state_schema_version)"
+    if [[ -f "$f" ]]; then
+        first_line="$(head -1 "$f" 2>/dev/null || true)"
+        if [[ "$first_line" =~ ^#[[:space:]]*schema=([0-9]+)[[:space:]]*$ ]]; then
+            marker_n="${BASH_REMATCH[1]}"
+            if [[ "$marker_n" != "$current" ]]; then
+                log_error "schema mismatch: schema_version=${current}, secrets.env marker=${marker_n}"
+                log_error "run 'agmind upgrade --rollback ${current}' to restore"
+                return 2
+            fi
+        fi
+    fi
+
+    if ! command -v migrations_pending >/dev/null 2>&1; then
+        log_error "migrations module not loaded — source lib/migrations.sh first"
+        return 2
+    fi
+    local pending
+    pending="$(migrations_pending)"
+    echo "Current schema: ${current}"
+    if [[ -z "$pending" ]]; then
+        echo "Status: up-to-date"
+        return 0
+    fi
+    echo "Pending migrations:"
+    # shellcheck disable=SC2086  # intentional word-splitting on newline-separated list
+    printf '  %s\n' $pending
+    return 1
+}
+
+# upgrade_apply [--target N] [--yes]
+# Q-10 contract: prompts unless --yes. Non-blocking flock on upgrade.lock
+# (T-11-03-01 mitigation — concurrent --apply gets exit 2).
+upgrade_apply() {
+    local target_arg=() yes=0
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --target) shift; target_arg=(--target "${1:-latest}"); shift ;;
+            --yes|-y) yes=1; shift ;;
+            *) echo "upgrade --apply: unknown arg: $1" >&2; return 2 ;;
+        esac
+    done
+
+    install -d -m 0700 "${STATE_DIR}/.locks" 2>/dev/null || true
+    local lockfile="${STATE_DIR}/.locks/upgrade.lock"
+    local fd
+    exec {fd}>"$lockfile" || { log_error "cannot open ${lockfile}"; return 2; }
+    if ! flock -n -x "$fd"; then
+        log_error "agmind upgrade --apply already running (lock held)"
+        exec {fd}>&-
+        return 2
+    fi
+
+    local pending
+    pending="$(migrations_pending)"
+    if [[ -z "$pending" ]]; then
+        echo "Already up-to-date (schema=$(state_schema_version))"
+        exec {fd}>&-
+        return 0
+    fi
+
+    if [[ "$yes" -ne 1 ]]; then
+        echo "Pending migrations:"
+        # shellcheck disable=SC2086
+        printf '  %s\n' $pending
+        read -rp "Apply? (yes/no): " ans
+        if [[ "$ans" != "yes" ]]; then
+            echo "Cancelled."
+            exec {fd}>&-
+            return 0
+        fi
+    fi
+
+    local rc=0
+    migrations_apply --yes "${target_arg[@]}" || rc=$?
+    exec {fd}>&-
+    if [[ "$rc" -eq 0 ]]; then
+        echo "Applied — schema=$(state_schema_version)"
+    fi
+    return "$rc"
+}
+
+# upgrade_rollback <target_schema> [--yes]
+# Q-10 contract: ALWAYS prompts unless --yes. Safe-rename pattern with
+# rollback-of-rollback on extract failure. Retains last 3 .broken-* dirs.
+upgrade_rollback() {
+    local target="${1:-}"
+    if [[ -z "$target" ]] || ! [[ "$target" =~ ^[0-9]+$ ]]; then
+        echo "upgrade --rollback: target schema (non-negative integer) required" >&2
+        return 2
+    fi
+    shift
+    local yes=0
+    [[ "${1:-}" == "--yes" || "${1:-}" == "-y" ]] && yes=1
+
+    local restore_num backup_dir tarball
+    restore_num="$(printf '%03d' "$((target + 1))")"
+    backup_dir="${BACKUP_BASE:-/var/backups/agmind}"
+    tarball="$(ls -1t "${backup_dir}/state-pre-${restore_num}-"*.tar.gz 2>/dev/null | head -1)"
+    if [[ -z "$tarball" || ! -f "$tarball" ]]; then
+        log_error "no backup tarball for rolling back to schema=${target}"
+        log_error "expected file: ${backup_dir}/state-pre-${restore_num}-*.tar.gz"
+        return 2
+    fi
+
+    if [[ "$yes" -ne 1 ]]; then
+        echo "Rolling back state from schema=$(state_schema_version) → schema=${target}"
+        echo "Source: $tarball"
+        echo "Current state ${STATE_DIR} will be moved aside as ${STATE_DIR}.broken-<ts> and replaced."
+        read -rp "Proceed? (yes/no): " ans
+        [[ "$ans" == "yes" ]] || { echo "Cancelled."; return 0; }
+    fi
+
+    install -d -m 0700 "${STATE_DIR}/.locks" 2>/dev/null || true
+    local lockfile="${STATE_DIR}/.locks/upgrade.lock"
+    local fd
+    exec {fd}>"$lockfile" || { log_error "cannot open ${lockfile}"; return 2; }
+    if ! flock -n -x "$fd"; then
+        log_error "another upgrade in flight"
+        exec {fd}>&-
+        return 2
+    fi
+    exec {fd}>&-
+
+    local ts broken parent base
+    ts="$(date +%Y%m%dT%H%M%S)"
+    parent="$(dirname "$STATE_DIR")"
+    base="$(basename "$STATE_DIR")"
+    broken="${parent}/${base}.broken-${ts}"
+
+    mv "$STATE_DIR" "$broken" || { log_error "rename ${STATE_DIR} → ${broken} failed"; return 1; }
+    install -d -m 0700 "$STATE_DIR" || { log_error "recreate ${STATE_DIR} failed"; return 1; }
+    if ! tar xzf "$tarball" -C "$parent"; then
+        log_error "tar extract failed — restoring previous state"
+        rm -rf "$STATE_DIR"
+        mv "$broken" "$STATE_DIR"
+        return 1
+    fi
+
+    # shellcheck disable=SC2012  # ls -t is intentional for mtime sort
+    ls -1dt "${parent}/${base}.broken-"* 2>/dev/null | tail -n +4 | xargs -r rm -rf 2>/dev/null || true
+
+    echo "Rolled back to schema=$(state_schema_version)"
+    return 0
+}
