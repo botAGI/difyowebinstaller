@@ -245,9 +245,9 @@ safe_write_file() {
 # ============================================================================
 # ENV FILE PARSING
 # ============================================================================
-# Two helpers replace ad-hoc `grep '^X=' file | cut -d'=' -f2-` patterns,
-# which silently truncate multiline values and cannot distinguish "missing
-# key" from "key=empty". Choose by value type:
+# Two helpers replace ad-hoc one-liners that read a single env-file key via
+# `grep` piped to `cut`, which silently truncate multiline values and cannot
+# distinguish "missing key" from "key=empty". Choose by value type:
 #
 #   _env_get      — source-based; strips quotes, joins multiline, drops
 #                   trailing `# comment` after whitespace. USE FOR:
