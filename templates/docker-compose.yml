@@ -897,7 +897,11 @@ services:
       start_period: 10s
     depends_on:
       ssrf_proxy:
-        condition: service_healthy
+        # FIX 2026-05-15: was `service_healthy` but ssrf_proxy is distroless
+        # (no shell/utils for CMD-SHELL healthcheck) → healthcheck removed
+        # → use service_started. squid binds 3128 within 2-3s of start, so
+        # sandbox connecting to it racing is a non-issue in practice.
+        condition: service_started
     networks:
       - ssrf-network
 
@@ -917,12 +921,14 @@ services:
       - NET_RAW
     volumes:
       - ./volumes/ssrf_proxy/squid.conf:/etc/squid/squid.conf:ro
+    # FIX 2026-05-15: ubuntu/squid:7.2-26.04_edge is distroless-style
+    # (pebble init + squid only — no /usr/bin/head, no /usr/bin/which, no
+    # standard PID file → `squid -k check` from CMD-SHELL always exits
+    # non-zero even when squid is actively serving). Matches the
+    # CLAUDE.md §8 distroless pattern → drop healthcheck, dependents
+    # use `service_started` instead of `service_healthy` (sandbox below).
     healthcheck:
-      test: ["CMD-SHELL", "squid -k check 2>/dev/null || exit 1"]
-      interval: ${HEALTHCHECK_INTERVAL:-30s}
-      timeout: 10s
-      retries: ${HEALTHCHECK_RETRIES:-5}
-      start_period: 10s
+      test: ["NONE"]
     networks:
       - ssrf-network
       - agmind-backend
@@ -1243,6 +1249,13 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     read_only: true
+    # FIX 2026-05-15: image's docker-entrypoint.sh writes a generated haproxy.cfg
+    # to /usr/local/etc/haproxy/haproxy.cfg on every start. With read_only: true
+    # the container rootfs is RO → entrypoint fails with "Read-only file system"
+    # → restart loop. Mount a tiny tmpfs there so only the haproxy config dir
+    # is writable. Keeps the rest of rootfs read-only for SC1 hardening.
+    tmpfs:
+      - /usr/local/etc/haproxy:size=1m,uid=99,gid=99,mode=0755
     security_opt:
       - no-new-privileges:true
     networks:
