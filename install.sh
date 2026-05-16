@@ -52,6 +52,10 @@ source "${INSTALLER_DIR}/lib/airgapped.sh"
 source "${INSTALLER_DIR}/lib/bundle.sh"
 # shellcheck source=lib/phases.sh
 source "${INSTALLER_DIR}/lib/phases.sh"
+# shellcheck source=lib/state.sh
+source "${INSTALLER_DIR}/lib/state.sh"
+# shellcheck source=lib/migrations.sh
+source "${INSTALLER_DIR}/lib/migrations.sh"
 
 # Fallback shim: if lib/airgapped.sh failed to source for any reason,
 # define a minimal airgapped_guard so the callers below don't error out.
@@ -375,7 +379,29 @@ _ensure_es_sysctl() {
 
 phase_wizard()      { run_wizard; }
 phase_docker()      { setup_docker; }
-phase_config()      { ensure_bind_mount_files; export INSTALL_DIR; generate_config "$DEPLOY_PROFILE" "$TEMPLATE_DIR"; enable_gpu_compose; setup_security; if [[ "$ENABLE_AUTHELIA" == "true" ]]; then configure_authelia "$TEMPLATE_DIR"; fi; _copy_runtime_files; }
+phase_config() {
+    ensure_bind_mount_files
+    export INSTALL_DIR
+    generate_config "$DEPLOY_PROFILE" "$TEMPLATE_DIR"
+    enable_gpu_compose
+    setup_security
+    if [[ "$ENABLE_AUTHELIA" == "true" ]]; then
+        configure_authelia "$TEMPLATE_DIR"
+    fi
+    _copy_runtime_files
+    # Phase 11 — state-store substrate bootstrap. Substrate ships DORMANT in v3.2.0:
+    # state-store is populated but no live consumer reads from it yet (Phase 14 migrates
+    # consumers). Failures here are non-fatal — they degrade `agmind upgrade --check` but
+    # do not block install.
+    if state_init_dir; then
+        if ! MIGRATIONS_DIR="${INSTALL_DIR}/scripts/migrations" migrations_apply --yes; then
+            log_warn "state-store: migrations_apply failed — agmind upgrade --check may report blocked"
+            log_warn "  Run 'agmind upgrade --check' post-install to diagnose"
+        fi
+    else
+        log_warn "state-store: state_init_dir failed — Phase 11 substrate unavailable"
+    fi
+}
 phase_pull()        {
     # WHY: when airgapped, images are already loaded locally via bundle_install.
     # Calling compose_pull would reach public registries — blocked by airgapped_guard.
@@ -530,6 +556,16 @@ _copy_runtime_files() {
     # restore.sh → restore-lib.sh: scripts/restore.sh is the thin exec entrypoint (glob-copied
     # above); agmind.sh sources this lib for restore_verify/restore_list/_resolve_backup_dir.
     cp "${INSTALLER_DIR}/lib/restore.sh"   "${INSTALL_DIR}/scripts/restore-lib.sh" 2>/dev/null || true
+    # Phase 11 — state-store substrate (STATE-01..STATE-10). `agmind upgrade` CLI sources these
+    # as ${SCRIPTS_DIR}/state.sh + scripts/migrations.sh; test_copy_runtime_files.sh enforces
+    # this wiring. Migration scripts live in a subdirectory — cp -r preserves the layout.
+    cp "${INSTALLER_DIR}/lib/state.sh"      "${INSTALL_DIR}/scripts/state.sh"      2>/dev/null || true
+    cp "${INSTALLER_DIR}/lib/migrations.sh" "${INSTALL_DIR}/scripts/migrations.sh" 2>/dev/null || true
+    if [[ -d "${INSTALLER_DIR}/lib/migrations" ]]; then
+        mkdir -p "${INSTALL_DIR}/scripts/migrations"
+        cp -r "${INSTALLER_DIR}/lib/migrations/." "${INSTALL_DIR}/scripts/migrations/"
+        chmod +x "${INSTALL_DIR}/scripts/migrations/"*.sh 2>/dev/null || true
+    fi
     chmod +x "${INSTALL_DIR}/scripts/"*.sh 2>/dev/null || true
 }
 
@@ -1322,6 +1358,20 @@ _verify_post_install_smoke() {
 
     # PEER-06: if cluster.json mode=master, peer vLLM MUST respond /v1/models.
     _smoke_peer_vllm_check || strict_fail=$((strict_fail + 1))
+
+    # Phase 11 — state-store schema MUST be >=1 after fresh install (migration 001 ran).
+    local schema_ver=0
+    if command -v state_schema_version >/dev/null 2>&1; then
+        schema_ver="$(state_schema_version 2>/dev/null || echo 0)"
+    fi
+    if [[ "$schema_ver" -lt 1 ]]; then
+        log_error "FATAL smoke: state-store schema=${schema_ver}, expected >=1"
+        log_error "  Run 'agmind upgrade --check' to diagnose"
+        log_error "  If pending: 'sudo agmind upgrade --apply --yes'"
+        strict_fail=$((strict_fail + 1))
+    else
+        log_success "post-install smoke: state-store schema=${schema_ver}"
+    fi
 
     # --- Result ---
 
