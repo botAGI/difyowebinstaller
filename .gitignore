@@ -52,3 +52,4 @@ logs/
 !tests/fixtures/creds/credentials.txt
 !tests/fixtures/creds/.admin_password
 !tests/fixtures/security_audit/credentials.txt
+agmind-handoff-fixed.zip
