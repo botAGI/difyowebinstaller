@@ -244,24 +244,50 @@ _deploy_image_to_peer() {
     fi
 
     # 2. Prefer peer-side direct pull (saves 10+ GB SSH transfer if peer has WAN).
-    log_info "Attempting peer-side pull of ${image} (peer has WAN via wifi)..."
-    # shellcheck disable=SC2086
-    if ssh $ssh_opts "${peer_user}@${peer_ip}" \
-            "sudo -n docker pull ${image}" 2>&1 | tail -5; then
+    # FIX 2026-05-15: GHCR rate-limit / transient TLS handshake timeouts hit
+    # us here repeatedly — both peer wifi flakes AND master fallback failed on
+    # first attempt, aborting phase 8. Retry both with exponential backoff
+    # (15s / 60s / 180s) — covers transient registry hiccups + lets peer
+    # wifi/DNS settle. Total worst case: ~4 min before bailing.
+    local _attempt _delay _peer_ok=0
+    for _attempt in 1 2 3; do
+        log_info "Attempting peer-side pull of ${image} (peer has WAN via wifi, attempt ${_attempt}/3)..."
         # shellcheck disable=SC2086
         if ssh $ssh_opts "${peer_user}@${peer_ip}" \
-                "sudo -n docker image inspect ${image} >/dev/null 2>&1"; then
-            log_success "Peer pulled ${image} directly"
-            return 0
+                "sudo -n docker pull ${image}" 2>&1 | tail -5; then
+            # shellcheck disable=SC2086
+            if ssh $ssh_opts "${peer_user}@${peer_ip}" \
+                    "sudo -n docker image inspect ${image} >/dev/null 2>&1"; then
+                log_success "Peer pulled ${image} directly"
+                _peer_ok=1
+                break
+            fi
         fi
-    fi
-    log_warn "Peer-side pull failed — falling back to master save|load transfer"
+        if [[ $_attempt -lt 3 ]]; then
+            _delay=$(( _attempt * 60 - 45 ))  # 15s, 75s — let registry/wifi recover
+            log_warn "Peer-side pull attempt ${_attempt}/3 failed — sleeping ${_delay}s before retry..."
+            sleep "$_delay"
+        fi
+    done
+    [[ $_peer_ok -eq 1 ]] && return 0
+    log_warn "Peer-side pull failed after 3 attempts — falling back to master save|load transfer"
 
     # 3. Fallback: master must have image locally to save. Pull if absent.
+    # Also retry the master-side pull — GHCR rate-limit hits both nodes equally.
     if ! docker image inspect "${image}" >/dev/null 2>&1; then
-        log_info "Pulling ${image} on master for transfer..."
-        if ! docker pull "${image}"; then
-            log_error "Master pull of ${image} failed — cannot transfer to peer"
+        local _master_ok=0
+        for _attempt in 1 2 3; do
+            log_info "Pulling ${image} on master for transfer (attempt ${_attempt}/3)..."
+            if docker pull "${image}"; then _master_ok=1; break; fi
+            if [[ $_attempt -lt 3 ]]; then
+                _delay=$(( _attempt * 60 - 45 ))
+                log_warn "Master pull attempt ${_attempt}/3 failed — sleeping ${_delay}s before retry..."
+                sleep "$_delay"
+            fi
+        done
+        if [[ $_master_ok -ne 1 ]]; then
+            log_error "Master pull of ${image} failed after 3 attempts — cannot transfer to peer"
+            log_error "  Diagnose: docker manifest inspect ${image}   (check GHCR reachability)"
             return 1
         fi
     fi
