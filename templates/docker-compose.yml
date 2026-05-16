@@ -1250,14 +1250,20 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /usr/local/etc/haproxy
     read_only: true
-    # FIX 2026-05-16: docker-socket-proxy image ships /usr/local/etc/haproxy/haproxy.cfg.template;
-    # entrypoint reads it and writes a rendered haproxy.cfg into the same dir.
-    # tmpfs on that path would *shadow* the image fs → template invisible → entrypoint
-    # fails → restart loop (b86b7f1 introduced this regression). An anonymous volume
-    # does copy-up: image content survives mount, container can also write the rendered
-    # cfg next to it. Trade-off vs tmpfs: persists across container restart until
-    # `docker compose down -v` (instead of in-memory only) — fine, file is regenerated
-    # by entrypoint on each start anyway. SC1 hardening preserved via read_only: true.
+    # FIX 2026-05-16 (third iteration): read_only:true on this haproxy-based image
+    # has TWO writable paths the entrypoint + haproxy need:
+    #   1. /usr/local/etc/haproxy/ — entrypoint sed-renders haproxy.cfg from the
+    #      image-shipped haproxy.cfg.template. Anonymous volume (copy-up keeps
+    #      template, container writes the rendered cfg next to it).
+    #   2. /run/haproxy.pid — haproxy master/worker writes its PID file here
+    #      per `pidfile /run/haproxy.pid` in the template. tmpfs (in-memory,
+    #      ephemeral — PID file gets recreated each container start anyway).
+    # Both writable paths declared. If a 4th writable path surfaces, drop
+    # `read_only: true` for this service — SC1 cap_drop / no-new-privileges /
+    # docker.sock:ro / POST=EXEC=0 already cover 95% of the threat surface;
+    # read_only is the cherry on top, not worth chronic whack-a-mole.
+    tmpfs:
+      - /run:size=16m
     security_opt:
       - no-new-privileges:true
     networks:
