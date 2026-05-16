@@ -36,6 +36,12 @@ for t in tests/unit/*.sh; do
     _run "unit: $t" bash "$t"
 done
 
+# ── lint tests ────────────────────────────────────────────────────────────────
+for t in tests/lint/*.sh; do
+    [[ -x "$t" ]] || continue
+    _run "lint: $t" bash "$t"
+done
+
 # ── integration tests ─────────────────────────────────────────────────────────
 for t in tests/integration/*.sh; do
     [[ -x "$t" ]] || continue

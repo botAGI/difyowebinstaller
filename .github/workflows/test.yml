@@ -31,7 +31,7 @@ jobs:
       - name: Bash syntax check (lib + scripts + tests)
         run: |
           errors=0
-          for f in lib/*.sh scripts/*.sh install.sh tests/run_all.sh tests/unit/*.sh tests/integration/*.sh tests/compose/*.sh; do
+          for f in lib/*.sh scripts/*.sh install.sh tests/run_all.sh tests/unit/*.sh tests/lint/*.sh tests/integration/*.sh tests/compose/*.sh; do
             [[ -f "$f" ]] || continue
             if ! bash -n "$f"; then
               echo "FAIL: $f"
@@ -53,7 +53,7 @@ jobs:
       - name: ShellCheck lib + scripts + install.sh
         run: shellcheck -S warning lib/*.sh scripts/*.sh install.sh
       - name: ShellCheck tests
-        run: shellcheck -S warning tests/run_all.sh tests/unit/*.sh tests/integration/*.sh tests/mocks/* tests/compose/*.sh
+        run: shellcheck -S warning tests/run_all.sh tests/unit/*.sh tests/lint/*.sh tests/integration/*.sh tests/mocks/* tests/compose/*.sh
 
   unit-tests:
     name: Unit Tests (with mocks)
@@ -73,7 +73,8 @@ jobs:
           # resources like pipelines/ which is intentionally out of git, root, etc).
           # Same convention as tests/run_all.sh. Don't treat SKIP as FAIL.
           errors=0 passed=0 skipped=0
-          for t in tests/unit/*.sh; do
+          for t in tests/unit/*.sh tests/lint/*.sh; do
+            [[ -e "$t" ]] || continue
             [[ -x "$t" ]] || chmod +x "$t"
             echo "==> $t"
             bash "$t"
@@ -108,7 +109,8 @@ jobs:
           set +e
           # rc=77 = SKIP (same convention as the amd64 lane and tests/run_all.sh)
           errors=0 passed=0 skipped=0
-          for t in tests/unit/*.sh; do
+          for t in tests/unit/*.sh tests/lint/*.sh; do
+            [[ -e "$t" ]] || continue
             [[ -x "$t" ]] || chmod +x "$t"
             echo "==> $t"
             bash "$t"
