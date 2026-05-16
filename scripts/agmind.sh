@@ -105,6 +105,26 @@ cmd_doctor() {
 }
 
 # ============================================================================
+# UPGRADE (Phase 11 — state-store CLI)
+# ============================================================================
+
+cmd_upgrade() {
+    # Thin wrapper. Logic lives in lib/state.sh::upgrade_run (Phase 11 STATE-06..08).
+    # Runtime copies: scripts/state.sh + scripts/migrations.sh (populated by
+    # _copy_runtime_files in install.sh — wired in Plan 11-05). Fallback to repo lib/
+    # paths for dev mode (mirrors cmd_doctor pattern).
+    # shellcheck source=/dev/null
+    source "${SCRIPTS_DIR}/state.sh" 2>/dev/null \
+        || source "${AGMIND_DIR}/lib/state.sh" 2>/dev/null \
+        || { echo -e "${RED}state module missing — reinstall AGmind${NC}" >&2; return 1; }
+    # shellcheck source=/dev/null
+    source "${SCRIPTS_DIR}/migrations.sh" 2>/dev/null \
+        || source "${AGMIND_DIR}/lib/migrations.sh" 2>/dev/null \
+        || { echo -e "${RED}migrations module missing — reinstall AGmind${NC}" >&2; return 1; }
+    upgrade_run "$@"
+}
+
+# ============================================================================
 # TROUBLESHOOT
 # ============================================================================
 # Prints a section of docs/troubleshooting.md to stdout (no pager).
@@ -1671,8 +1691,9 @@ Commands:
     validate [--json]      Check installed .env (placeholders, required keys), versions<->manifest sync,
                            compose schema validity, no :latest/mutating tags
     diff [--release]       Preview version changes 'agmind update' would make (no root; no changes made)
-                           Note: 'agmind upgrade --diff' shows pinned-in-.env vs actually-running-container
+                           Note: 'agmind upgrade-diff' shows pinned-in-.env vs actually-running-container
                            drift (a different axis from 'config diff' which shows current-pinned vs target-release)
+                           ('agmind upgrade' itself is Phase 11 state-store schema migration CLI)
   update [options]       Update AGMind stack (root)
     --check                Check for new bundle release (GitHub Releases)
     --dry-run              Preview what update would do (no root; no changes made) — same as 'config diff'
@@ -1684,7 +1705,11 @@ Commands:
     --auto                 Skip all confirmation prompts
     --scripts-only         Update scripts/configs only (skip docker pull)
     --release              Pull from legacy 'release' branch (default = 'main' since 2026-04)
-  upgrade [--diff]   Compare pinned versions.env vs live containers (read-only)
+  upgrade [--check|--apply|--rollback <N>] [--yes]   State-store schema migrations (Phase 11)
+    (no args / --check)    Read-only schema status; exit 0=up-to-date · 1=pending · 2=blocked
+    --apply [--target N]   Apply pending migrations atomically (tar-backup → bump schema)
+    --rollback <schema>    Restore state-dir from pre-migration tarball (always prompts unless --yes)
+  upgrade-diff       Compare pinned versions.env vs live containers (read-only)
   plugins <sub>      Dify plugin daemon marketplace toggle (root for online/offline)
     online               Enable marketplace.dify.ai (default — рекомендуется)
     offline              Disable marketplace (только локальные .difypkg)
@@ -1727,6 +1752,7 @@ case "${1:-help}" in
     status)         shift; cmd_status "$@" ;;
     doctor)         shift; cmd_doctor "$@" ;;
     health)         shift; cmd_doctor "$@" ;;   # deprecated alias: agmind health [--peer] [--json]
+    upgrade)        shift; cmd_upgrade "$@" ;;
     stop)           cmd_stop ;;
     start)          cmd_start ;;
     restart)        cmd_restart ;;
@@ -1776,14 +1802,7 @@ case "${1:-help}" in
         fi
         exec "${SCRIPTS_DIR}/update.sh" "$@"
         ;;
-    upgrade)        shift
-                    case "${1:-}" in
-                        --diff|diff|""|--help|-h) cmd_upgrade_diff ;;
-                        *) echo "Usage: agmind upgrade [--diff]" >&2
-                           echo "  --diff   Show pinned vs live drift (read-only, default)" >&2
-                           echo "Apply: rerun install.sh OR edit /opt/agmind/docker/.env + docker compose up -d" >&2
-                           exit 1 ;;
-                    esac ;;
+    upgrade-diff)   shift; cmd_upgrade_diff ;;
     config)
         shift
         case "${1:-}" in
