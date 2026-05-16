@@ -16,6 +16,7 @@ When code comments need to point at a decision rationale, they reference
 | [0007](0007-force-recreate-trap.md) | Never force-recreate Dify Worker/API During Active Indexing | Accepted |
 | [0008](0008-nginx-variable-proxy.md) | nginx proxy_pass Must Use Variable Form with resolver | Accepted |
 | [0009](0009-cadvisor-minio-arm64-holds.md) | cAdvisor and MinIO Version Holds for arm64 | Accepted |
+| [0011](0011-state-store-architecture.md) | State Store Substrate (Versioned + Atomic + Migration-Driven) | Accepted |
 
 > More decisions are recorded as inline `# WHY:` comments at the relevant code site
 > or in `../troubleshooting.md`; not every operational note warrants a dedicated ADR.
