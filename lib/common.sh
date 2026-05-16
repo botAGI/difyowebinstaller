@@ -158,13 +158,40 @@ validate_hostname() {
 # Usage: generate_random [length]   (default: 32)
 generate_random() {
     local length="${1:-32}"
-    local result
-    result="$(head -c 256 /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z0-9' | head -c "$length")"
-    if [[ -z "$result" ]]; then
-        log_error "FATAL: /dev/urandom produced empty output"
+    if [[ ! "$length" =~ ^[1-9][0-9]*$ ]]; then
+        log_error "generate_random: invalid length: ${length}"
         return 1
     fi
-    printf '%s' "$result"
+
+    # Prefer python3 — uses secrets module (CSPRNG, exact-length output).
+    if command -v python3 >/dev/null 2>&1; then
+        python3 - "$length" <<'PY'
+import secrets, string, sys
+n = int(sys.argv[1])
+print(''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(n)), end='')
+PY
+        return $?
+    fi
+
+    # Bash-only fallback. dd reads fixed blocks; tr filters from regular file
+    # (no pipe — SIGPIPE-safe under `set -o pipefail`). Retry up to 100 times
+    # so `generate_random 1` doesn't false-abort on an unlucky block.
+    local out="" block tmpf attempts=0
+    local block_size=$(( length * 8 ))
+    [[ $block_size -lt 64 ]] && block_size=64
+    tmpf="$(mktemp)"
+    trap 'rm -f "$tmpf"' RETURN
+    while [[ ${#out} -lt $length ]]; do
+        attempts=$((attempts + 1))
+        if [[ $attempts -gt 100 ]]; then
+            log_error "generate_random: failed to produce ${length} chars in 100 attempts"
+            return 1
+        fi
+        dd if=/dev/urandom of="$tmpf" bs="$block_size" count=1 2>/dev/null
+        block="$(LC_ALL=C tr -dc 'a-zA-Z0-9' < "$tmpf")"
+        out+="$block"
+    done
+    printf '%s' "${out:0:length}"
 }
 
 # ============================================================================

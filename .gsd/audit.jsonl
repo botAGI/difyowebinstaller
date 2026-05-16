@@ -1,3 +1,7 @@
 {"ts":"2026-05-16T15:29:01Z","finding":"LIC-DIFY-01","action":"precondition_ok","sites_total":4}
 {"ts":"2026-05-16T15:29:01Z","finding":"LIC-DIFY-01","action":"apply_ok","files_changed":2,"sites_changed":4}
 {"ts":"2026-05-16T15:29:03Z","finding":"LIC-DIFY-01","action":"postcondition_ok","files_changed":2,"sites_changed":4}
+{"ts":"2026-05-16T15:31:43Z","finding":"GEN-01","action":"precondition_ok","old_marker":true}
+{"ts":"2026-05-16T15:31:43Z","finding":"GEN-01","action":"postcondition_ok","def_count":1}
+{"ts":"2026-05-16T15:33:29Z","finding":"GEN-01","action":"precondition_ok","old_marker":true}
+{"ts":"2026-05-16T15:33:29Z","finding":"GEN-01","action":"postcondition_ok","def_count":1,"openwebui_inline_fixed":true}
