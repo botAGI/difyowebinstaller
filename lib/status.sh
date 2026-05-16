@@ -322,7 +322,7 @@ _status_service_url() {
         portainer)
             echo "https://agmind-portainer.local:9443" ;;
         ragflow)
-            echo "http://agmind-ragflow.local" ;;
+            echo "http://agmind-rag.local" ;;
         minio)
             echo "http://$(hostname -I 2>/dev/null | awk '{print $1}'):9001" ;;
         litellm)
@@ -722,7 +722,7 @@ data = {
         'dify': 'http://agmind-dify.local',
         'webui': 'http://agmind-chat.local',
         'grafana': 'http://agmind-grafana.local',
-        'ragflow': 'http://agmind-ragflow.local',
+        'ragflow': 'http://agmind-rag.local',
     },
 }
 print(json.dumps(data))
@@ -736,7 +736,7 @@ print(json.dumps(data))
         ov_e="$(_status_json_escape "$overall")"
         gpu_e="$(_status_json_escape "$gpu_type")"
         gn_e="$(_status_json_escape "$gpu_note")"
-        printf '{"generated_at":"%s","hostname":"%s","arch":"%s","overall":"%s","services":[%s],"gpu":{"type":"%s","note":"%s"},"endpoints":{"dify":"http://agmind-dify.local","webui":"http://agmind-chat.local","grafana":"http://agmind-grafana.local","ragflow":"http://agmind-ragflow.local"}}\n' \
+        printf '{"generated_at":"%s","hostname":"%s","arch":"%s","overall":"%s","services":[%s],"gpu":{"type":"%s","note":"%s"},"endpoints":{"dify":"http://agmind-dify.local","webui":"http://agmind-chat.local","grafana":"http://agmind-grafana.local","ragflow":"http://agmind-rag.local"}}\n' \
             "$ts_e" "$hn_e" "$ar_e" "$ov_e" "$services_json" "$gpu_e" "$gn_e"
     fi
 }
