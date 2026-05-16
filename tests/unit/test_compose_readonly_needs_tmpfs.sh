@@ -1,18 +1,20 @@
 #!/usr/bin/env bash
 # test_compose_readonly_needs_tmpfs.sh — Every service with `read_only: true`
-# in templates/docker-compose.yml MUST have a `tmpfs:` block (or be in the
-# documented WHITELIST_NO_TMPFS for services that genuinely write nothing).
+# in templates/docker-compose.yml MUST have at least one writable mount
+# declared — either `tmpfs:` (in-memory) OR `volumes:` (anonymous or named,
+# Docker copy-up brings image-shipped content into the mount on first start).
 #
-# Precedent (2026-05-15, bug-report 3 phase-7/8 cascades):
-#   docker-socket-proxy had `read_only: true` but no tmpfs → its entrypoint
-#   tried to write a generated haproxy.cfg to /usr/local/etc/haproxy/
-#   → `can't create haproxy.cfg: Read-only file system` → restart loop →
-#   blocked monitoring profile. Fix: add tmpfs:/usr/local/etc/haproxy.
+# Precedent 2026-05-15 (b86b7f1): docker-socket-proxy got `read_only: true`
+# without ANY writable mount → entrypoint's haproxy.cfg write failed → restart
+# loop. Added tmpfs. 2026-05-16: tmpfs *shadowed* the image-shipped
+# haproxy.cfg.template → entrypoint fails differently. Fix: anonymous volume
+# (copy-up keeps the template, container writes the rendered cfg next to it).
 #
-# This test enforces the contract going forward: if you bump an image whose
-# entrypoint writes to ANY path, you must either (a) declare a tmpfs for that
-# path, (b) add the service to WHITELIST_NO_TMPFS with a one-line rationale,
-# or (c) remove read_only:true (degrades SC1 hardening — last resort).
+# This test enforces the contract going forward: if you flip read_only:true on
+# a service, declare a writable mount where the entrypoint needs to write —
+# `tmpfs:` for fully in-memory paths, `volumes:` for image-shipped content that
+# the entrypoint reads + augments. If the image truly writes nothing, add the
+# service to WHITELIST_NO_WRITABLE with a one-line rationale.
 #
 # Exit: 0 = pass, 1 = fail, 77 = skip.
 set -uo pipefail
@@ -30,9 +32,9 @@ echo "## test_compose_readonly_needs_tmpfs"
 PASS=0; FAIL=0
 
 # Services that legitimately need no writable paths (verified by reading image
-# entrypoint). Empty today — every current read_only service has tmpfs. Add
-# entries with a one-line "why" comment if a future bump truly needs nothing.
-WHITELIST_NO_TMPFS=()
+# entrypoint). Empty today — every current read_only service has a writable mount.
+# Add entries with a one-line "why" comment if a future bump truly needs nothing.
+WHITELIST_NO_WRITABLE=()
 
 mapfile -t compose_files < <(find "${REPO_ROOT}/templates" -maxdepth 2 -name "docker-compose*.yml" -type f 2>/dev/null | sort)
 
@@ -40,7 +42,7 @@ for f in "${compose_files[@]}"; do
     relpath="${f#${REPO_ROOT}/}"
 
     # Per-service walk: find services with read_only:true, check for tmpfs key.
-    result="$(python3 - "$f" "${WHITELIST_NO_TMPFS[@]}" <<'PY'
+    result="$(python3 - "$f" "${WHITELIST_NO_WRITABLE[@]}" <<'PY'
 import sys, yaml
 
 path = sys.argv[1]
@@ -54,8 +56,8 @@ for name, svc in services.items():
         continue
     if svc.get('read_only') is not True:
         continue
-    has_tmpfs = 'tmpfs' in svc and svc['tmpfs']
-    if has_tmpfs:
+    has_writable = bool(svc.get('tmpfs')) or bool(svc.get('volumes'))
+    if has_writable:
         print(f"OK\t{name}")
     elif name in whitelist:
         print(f"WHITELIST\t{name}")
@@ -69,16 +71,16 @@ PY
     while IFS=$'\t' read -r status svc; do
         case "$status" in
             OK)
-                echo "  [PASS] ${svc} (in ${relpath}): read_only:true + tmpfs declared"
+                echo "  [PASS] ${svc} (in ${relpath}): read_only:true + writable mount declared (tmpfs or volumes)"
                 PASS=$((PASS+1))
                 ;;
             WHITELIST)
-                echo "  [PASS] ${svc} (in ${relpath}): in WHITELIST_NO_TMPFS (no writes expected)"
+                echo "  [PASS] ${svc} (in ${relpath}): in WHITELIST_NO_WRITABLE (no writes expected)"
                 PASS=$((PASS+1))
                 ;;
             FAIL)
-                echo "  [FAIL] ${svc} (in ${relpath}): read_only:true WITHOUT tmpfs — entrypoint writes will fail"
-                echo "         Fix: declare \`tmpfs:\` for the writable path(s), OR add to WHITELIST_NO_TMPFS."
+                echo "  [FAIL] ${svc} (in ${relpath}): read_only:true WITHOUT a writable mount — entrypoint writes will fail"
+                echo "         Fix: declare \`tmpfs:\` for in-memory paths, OR \`volumes:\` for image-shipped content that the entrypoint reads + augments, OR add to WHITELIST_NO_WRITABLE."
                 FAIL=$((FAIL+1))
                 ;;
         esac
