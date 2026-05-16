@@ -159,7 +159,10 @@ _assert_eq "TC1: AGMIND_LLM_PROFILE=gemma" \
     "gemma" "$(_get AGMIND_LLM_PROFILE "$out")"
 
 # ============================================================================
-# TC2: AGMIND_LLM_PROFILE=qwen36-fp8 → AEON image, Qwen FP8 model, DFlash args
+# TC2: AGMIND_LLM_PROFILE=qwen36-fp8 → AEON image, Qwen FP8 model
+# Note: FP8 model MUST NOT have --quantization arg (HF config.json declares fp8
+# already; explicit override triggers pydantic ValidationError).
+# Note: --speculative-config dropped pending file-mount restoration (BACKLOG).
 # ============================================================================
 echo ""
 echo "--- TC2: qwen36-fp8 profile ---"
@@ -170,8 +173,8 @@ _assert_eq "TC2: VLLM_MODEL=Qwen3.6-35B-A3B-FP8" \
     "Qwen/Qwen3.6-35B-A3B-FP8" "$(_get VLLM_MODEL "$out")"
 _assert_eq "TC2: VLLM_MAX_MODEL_LEN=131072 (default for qwen36)" \
     "131072" "$(_get VLLM_MAX_MODEL_LEN "$out")"
-_assert_contains "TC2: EXTRA_ARGS contains dflash" \
-    "dflash" "$(_get VLLM_EXTRA_ARGS "$out")"
+_assert_not_contains "TC2: EXTRA_ARGS has NO --quantization (FP8 auto-detect)" \
+    "--quantization" "$(_get VLLM_EXTRA_ARGS "$out")"
 _assert_contains "TC2: EXTRA_ARGS contains --tool-call-parser qwen3_coder" \
     "--tool-call-parser qwen3_coder" "$(_get VLLM_EXTRA_ARGS "$out")"
 _assert_contains "TC2: EXTRA_ARGS contains --reasoning-parser qwen3" \
@@ -192,7 +195,7 @@ _assert_eq "TC3: VLLM_MODEL=Qwen3.6-35B-A3B-FP8" \
 
 # ============================================================================
 # TC4: AGMIND_LLM_PROFILE=qwen36-heretic → heretic model, no tool-call-parser,
-#       has reasoning-parser + dflash
+#       has reasoning-parser + --quantization compressed-tensors (NVFP4 format).
 # ============================================================================
 echo ""
 echo "--- TC4: qwen36-heretic profile ---"
@@ -205,8 +208,8 @@ _assert_not_contains "TC4: EXTRA_ARGS NO --enable-auto-tool-choice" \
     "--enable-auto-tool-choice" "$(_get VLLM_EXTRA_ARGS "$out")"
 _assert_contains "TC4: EXTRA_ARGS has --reasoning-parser qwen3" \
     "--reasoning-parser qwen3" "$(_get VLLM_EXTRA_ARGS "$out")"
-_assert_contains "TC4: EXTRA_ARGS has dflash" \
-    "dflash" "$(_get VLLM_EXTRA_ARGS "$out")"
+_assert_contains "TC4: EXTRA_ARGS has --quantization compressed-tensors (NVFP4)" \
+    "--quantization compressed-tensors" "$(_get VLLM_EXTRA_ARGS "$out")"
 _assert_eq "TC4: AGMIND_LLM_PROFILE=qwen36-heretic" \
     "qwen36-heretic" "$(_get AGMIND_LLM_PROFILE "$out")"
 
