@@ -507,7 +507,7 @@ _generate_env_file() {
         -e "s|__ENABLE_DBGPT__|$(escape_sed "${ENABLE_DBGPT:-false}")|g" \
         -e "s|__ENABLE_CRAWL4AI__|$(escape_sed "${ENABLE_CRAWL4AI:-false}")|g" \
         -e "s|__ENABLE_OPENWEBUI__|$(escape_sed "${ENABLE_OPENWEBUI:-false}")|g" \
-        -e "s|__ENABLE_DIFY_PREMIUM__|$(escape_sed "${ENABLE_DIFY_PREMIUM:-true}")|g" \
+        -e "s|__ENABLE_DIFY_PREMIUM__|$(escape_sed "${ENABLE_DIFY_PREMIUM:-false}")|g" \
         -e "s|__ENABLE_RAGFLOW__|$(escape_sed "${ENABLE_RAGFLOW:-false}")|g" \
         -e "s|__RAGFLOW_DEVICE__|$(escape_sed "${RAGFLOW_DEVICE:-cuda}")|g" \
         -e "s|__RAGFLOW_MYSQL_PASSWORD__|${_RAGFLOW_MYSQL_PASSWORD}|g" \
