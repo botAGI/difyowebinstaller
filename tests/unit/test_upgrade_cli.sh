@@ -39,6 +39,12 @@ source "${REPO_ROOT}/lib/common.sh"
 source "${REPO_ROOT}/lib/state.sh"
 # shellcheck source=/dev/null
 source "${REPO_ROOT}/lib/migrations.sh"
+# common.sh forces `set -euo pipefail` — disable -e here because the test
+# deliberately exercises non-zero exit codes via `cmd >/dev/null 2>&1; rc=$?`.
+# Keep -u and pipefail.
+set +e
+set -u
+set -o pipefail
 
 state_init_dir
 
@@ -62,8 +68,20 @@ rc=$?
 [[ "$rc" -eq 0 ]] && [[ "$out" == *"Usage:"* ]] && _ok "-h exit 0 + usage" || _fail "-h rc=${rc} out=${out:0:60}"
 
 # 4. Add 1 pending migration → upgrade_check exits 1
+# Realistic migration: writes a key + bumps the `# schema=N` marker on line 1 to N=1.
+# (upgrade_check enforces marker ↔ schema_version invariant; production migrations
+# that touch secrets.env update the marker, mirroring 001-initial.sh pattern.)
 cat > "${MIGRATIONS_DIR}/001-test.sh" <<'EOF'
-migration_1_up() { state_set_secret TEST_KEY "test-001" || return 1; return 0; }
+migration_1_up() {
+    state_set_secret TEST_KEY "test-001" || return 1
+    # Sync marker on line 1 to new schema (mirrors 001-initial.sh semantics)
+    local f="${STATE_DIR}/secrets.env" tmp
+    tmp="$(mktemp)" || return 1
+    { echo '# schema=1'; tail -n +2 "$f"; } > "$tmp" || { rm -f "$tmp"; return 1; }
+    mv "$tmp" "$f" || { rm -f "$tmp"; return 1; }
+    chmod 0600 "$f" 2>/dev/null || true
+    return 0
+}
 EOF
 upgrade_check >/dev/null 2>&1
 rc=$?
@@ -120,20 +138,32 @@ rc=$?
 
 # 11. Concurrent --apply: hold upgrade.lock in background, second invocation = exit 2.
 # WARNING #2 FIX: `sleep 0.5` to wait for background lock-acquire was FLAKY under CI
-# load — the foreground upgrade_apply may run before the background flock actually
-# grabs the FD. Touch-file sync marker mechanism: background subshell signals via
+# load — foreground upgrade_apply may run before the background flock actually grabs
+# the FD. Touch-file sync marker mechanism: background subshell signals via
 # ${STATE_DIR}/.lock_acquired AFTER flock returns, foreground polls until it sees
 # the file (5s max, 100ms poll = 50 iterations).
+#
+# Lifecycle:  the holder is structured around a "release marker" file
+# (.lock_release). Foreground writes the marker → holder polls and exits cleanly,
+# releasing the flock via natural exit. SIGKILL via `kill` leaves a kernel-side
+# flock race (kernel may not have published the close-on-exit before our retry
+# observes the lockfile), so we use cooperative termination instead.
 install -d -m 0700 "${STATE_DIR}/.locks" 2>/dev/null
 lockfile="${STATE_DIR}/.locks/upgrade.lock"
 sync_marker="${STATE_DIR}/.lock_acquired"
-rm -f "$sync_marker"
+release_marker="${STATE_DIR}/.lock_release"
+rm -f "$sync_marker" "$release_marker"
 (
+    exec 9>"$lockfile"
     flock -x 9
     touch "$sync_marker"
-    sleep 5
+    # Hold until parent signals release (or 10s safety timeout)
+    for _ in $(seq 1 100); do
+        [[ -f "$release_marker" ]] && break
+        sleep 0.1
+    done
     rm -f "$sync_marker"
-) 9>"$lockfile" &
+) &
 holder_pid=$!
 # Wait for background to actually hold the lock (5s timeout)
 for _ in $(seq 1 50); do
@@ -142,13 +172,15 @@ for _ in $(seq 1 50); do
 done
 if [[ ! -f "$sync_marker" ]]; then
     _fail "concurrent apply: background lock holder did not acquire within 5s — flaky env, test inconclusive"
-    kill "$holder_pid" 2>/dev/null
+    touch "$release_marker"
     wait "$holder_pid" 2>/dev/null
 else
     upgrade_apply --yes >/dev/null 2>&1
     rc=$?
     [[ "$rc" -eq 2 ]] && _ok "concurrent apply blocked (exit 2)" || _fail "concurrent apply rc=${rc} (expected 2 due to flock)"
-    kill "$holder_pid" 2>/dev/null
+    # Cooperative release: signal holder via marker file, then wait for natural exit.
+    # This avoids the kill+kernel-flock-release race that left assertion #12 flaky.
+    touch "$release_marker"
     wait "$holder_pid" 2>/dev/null
 fi
 
