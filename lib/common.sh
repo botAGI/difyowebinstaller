@@ -243,6 +243,85 @@ safe_write_file() {
 }
 
 # ============================================================================
+# ENV FILE PARSING
+# ============================================================================
+# Two helpers replace ad-hoc `grep '^X=' file | cut -d'=' -f2-` patterns,
+# which silently truncate multiline values and cannot distinguish "missing
+# key" from "key=empty". Choose by value type:
+#
+#   _env_get      — source-based; strips quotes, joins multiline, drops
+#                   trailing `# comment` after whitespace. USE FOR:
+#                   booleans, numeric ranges, slugs, single-token strings.
+#                   DO NOT USE FOR SECRETS containing `$` — bash expands
+#                   `$foo` → "" silently. Use _env_get_raw instead.
+#
+#   _env_get_raw  — awk; byte-exact within the matched line. Preserves
+#                   quotes, $, inline #, trailing whitespace. USE FOR:
+#                   passwords, tokens, keys — anything where shell
+#                   interpretation would corrupt the value.
+#                   Trailing LF from `awk print` is consumed by the
+#                   standard `var="$(_env_get_raw ...)"` pattern.
+#
+# Both return 1 if file unreadable. _env_get returns 0 with empty stdout
+# for missing key; _env_get_raw returns 1 for missing key (distinguishable
+# from key=empty which is 0 + empty stdout).
+#
+# Phase 10 lands these DORMANT — zero callsite migration in v3.2.0.
+# Phase 14 (ENV-03b canary + ENV-03c bulk) migrates the 123 legacy
+# `grep|cut` callsites in batches: booleans → numerics → secrets.
+# ============================================================================
+
+# _env_get KEY ENV_FILE
+# Read a value from a KEY=VALUE env file using bash source semantics.
+# Handles quoted strings, multiline values, trailing comments correctly.
+# Returns 1 if file unreadable. Otherwise 0 — empty stdout means
+# "key not found OR key is empty" (use _env_get_raw to distinguish).
+# Caller MUST use _env_get_raw for SECRETS containing `$` (bash expands
+# `$bar` → "").  Runs source inside subshell with `set +u; set +e` so a
+# malformed env file won't crash the caller.
+_env_get() {
+    local key="$1" file="$2"
+    [[ -r "$file" ]] || return 1
+    (
+        set +u
+        set +e
+        # shellcheck disable=SC1090
+        source "$file" >/dev/null 2>&1 || true
+        printf '%s' "${!key:-}"
+    )
+}
+
+# _env_get_raw KEY ENV_FILE
+# Byte-exact read of a KEY=VALUE line — preserves quotes, $-signs, trailing
+# whitespace, inline `#`. Use for SECRETS (passwords, tokens, keys) where
+# shell interpretation would corrupt the value. First-match-wins.
+# awk adds trailing newline via `print` — stripped by usual
+# `var="$(_env_get_raw ...)"` command-substitution.
+# Returns 1 if file unreadable OR key not found.
+_env_get_raw() {
+    local key="$1" file="$2"
+    [[ -r "$file" ]] || return 1
+    awk -v k="$key" '
+        BEGIN { FS = "="; found = 0 }
+        /^[[:space:]]*#/ { next }
+        /^[[:space:]]*$/ { next }
+        {
+            line = $0
+            sub(/^[[:space:]]+/, "", line)
+            eq = index(line, "=")
+            if (eq == 0) next
+            name = substr(line, 1, eq - 1)
+            if (name != k) next
+            val = substr(line, eq + 1)
+            print val
+            found = 1
+            exit
+        }
+        END { exit (found ? 0 : 1) }
+    ' "$file"
+}
+
+# ============================================================================
 # BIND MOUNT SAFETY
 # ============================================================================
 
