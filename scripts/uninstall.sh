@@ -233,6 +233,21 @@ if [[ -f /var/lib/agmind/state/cluster.json ]]; then
     echo "  Cleared persisted cluster mode (next install will re-prompt)"
 fi
 
+# Phase 11 — state-store cleanup (OQ-3 contract).
+# KEEP_MODELS=true: preserve secrets.env (state spans installs — mirrors .preserved behavior).
+# KEEP_MODELS=false: clean slate — remove secrets.env + schema_version so next install
+#   re-bootstraps via migration 001. Legacy .preserved files are NEVER touched here
+#   (Phase 14 STATE-11 + migration 002-cleanup-preserved.sh will retire them).
+if [[ "$KEEP_MODELS" != "true" ]]; then
+    if [[ -f /var/lib/agmind/state/secrets.env ]]; then
+        rm -f /var/lib/agmind/state/secrets.env
+        echo "  Removed state-store secrets.env (clean uninstall — next install will rebuild)"
+    fi
+    if [[ -f /var/lib/agmind/state/schema_version ]]; then
+        rm -f /var/lib/agmind/state/schema_version
+    fi
+fi
+
 # All done — clear stage so trap doesn't fire
 CLEANUP_STAGE=""
 
