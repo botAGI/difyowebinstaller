@@ -25,6 +25,108 @@ command -v log_warn    >/dev/null 2>&1 || log_warn()    { echo -e "  ! $*" >&2; 
 command -v log_error   >/dev/null 2>&1 || log_error()   { echo -e "  x $*" >&2; }
 
 # ============================================================================
+# PRIVATE HELPERS — master-side (run on master, not via ssh)
+# ============================================================================
+
+# Stage master-side MASQUERADE NAT so the peer COULD route 192.168.100.0/24 →
+# master's WAN via QSFP gateway (master IP 192.168.100.1). Idempotent.
+# Phase A only: just enables forwarding + adds one POSTROUTING rule + persists.
+# Phase B (peer default route swap to 192.168.100.1) is BACKLOG 999.12 — too risky
+# to auto-toggle (could break wifi-WAN fallback on the peer side).
+#
+# Detection rules:
+# - WAN interface = output of `ip route get 1.1.1.1` (the dev that leaves the box)
+# - REFUSE if WAN interface IS the QSFP itself (192.168.100.x subnet) — that
+#   would NAT through the destination of the route, which is nonsense
+# - REFUSE if WAN interface is loopback or empty (no internet on master)
+#
+# Persistence:
+# - sysctl: /etc/sysctl.d/99-agmind-peer-nat.conf  (survives reboot)
+# - iptables: prefer netfilter-persistent (apt-get install -y if absent),
+#   fallback to a tiny systemd oneshot that restores /etc/agmind/peer-nat.rules
+#   at boot.
+#
+# Non-fatal: failure logs a warn and returns 1; caller (_deploy_image_to_peer)
+# treats it as best-effort and continues with the existing wifi-WAN pull path.
+_setup_master_nat() {
+    local _qsfp_subnet="${AGMIND_CLUSTER_SUBNET:-192.168.100.0/24}"
+    local _wan_if
+    _wan_if="$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1); exit}}')"
+    if [[ -z "$_wan_if" || "$_wan_if" == "lo" ]]; then
+        log_warn "Master NAT: cannot detect a WAN interface (route to 1.1.1.1 missing/lo) — skipping"
+        return 1
+    fi
+    # Refuse to MASQUERADE through the QSFP subnet itself (would be the destination).
+    local _wan_addr
+    _wan_addr="$(ip -4 -o addr show "$_wan_if" 2>/dev/null | awk '{print $4}' | head -1)"
+    if [[ "$_wan_addr" == 192.168.100.* ]]; then
+        log_warn "Master NAT: WAN interface ${_wan_if} is on the QSFP subnet (${_wan_addr}) — refusing to MASQUERADE through cluster fabric"
+        return 1
+    fi
+
+    # 1. ip_forward (immediate + persistent)
+    sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 \
+        || { log_warn "Master NAT: sysctl ip_forward=1 failed (need root)"; return 1; }
+    local _sysctl_persist="/etc/sysctl.d/99-agmind-peer-nat.conf"
+    if [[ ! -f "$_sysctl_persist" ]] || ! grep -q "^net.ipv4.ip_forward[[:space:]]*=[[:space:]]*1" "$_sysctl_persist" 2>/dev/null; then
+        { printf 'net.ipv4.ip_forward = 1\n' > "$_sysctl_persist"; } 2>/dev/null \
+            || log_warn "Master NAT: could not persist sysctl to ${_sysctl_persist}"
+        chmod 644 "$_sysctl_persist" 2>/dev/null || true
+    fi
+
+    # 2. iptables POSTROUTING MASQUERADE — check-or-add (idempotent)
+    if ! iptables -t nat -C POSTROUTING -s "$_qsfp_subnet" -o "$_wan_if" -j MASQUERADE 2>/dev/null; then
+        if ! iptables -t nat -A POSTROUTING -s "$_qsfp_subnet" -o "$_wan_if" -j MASQUERADE 2>/dev/null; then
+            log_warn "Master NAT: iptables POSTROUTING MASQUERADE add failed"
+            return 1
+        fi
+    fi
+
+    # 3. Persist iptables across reboot — prefer netfilter-persistent, else systemd oneshot.
+    if command -v netfilter-persistent >/dev/null 2>&1; then
+        netfilter-persistent save >/dev/null 2>&1 \
+            || log_warn "Master NAT: netfilter-persistent save returned non-zero (rule still active until reboot)"
+    elif command -v apt-get >/dev/null 2>&1 && [[ "${AGMIND_AUTOINSTALL_NETFILTER:-true}" == "true" ]]; then
+        # Best-effort install (Ubuntu/Debian; DGX OS is Ubuntu-based). Non-fatal.
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends iptables-persistent >/dev/null 2>&1 \
+            && netfilter-persistent save >/dev/null 2>&1 \
+            || log_warn "Master NAT: iptables-persistent install/save best-effort failed — falling back to systemd oneshot"
+    fi
+    # Fallback: if netfilter-persistent still absent, write a systemd oneshot that
+    # restores rules on boot. Self-contained, no apt dependency.
+    if ! command -v netfilter-persistent >/dev/null 2>&1; then
+        local _rules_dir="/etc/agmind" _rules_file="/etc/agmind/peer-nat.rules"
+        local _unit="/etc/systemd/system/agmind-peer-nat.service"
+        mkdir -p "$_rules_dir" 2>/dev/null || true
+        { iptables-save -t nat 2>/dev/null > "$_rules_file"; } 2>/dev/null \
+            || log_warn "Master NAT: iptables-save failed"
+        chmod 644 "$_rules_file" 2>/dev/null || true
+        if [[ ! -f "$_unit" ]]; then
+            cat > "$_unit" <<'UNIT'
+[Unit]
+Description=AGmind peer NAT (restore MASQUERADE rules for QSFP cluster)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/iptables-restore --noflush /etc/agmind/peer-nat.rules
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+            chmod 644 "$_unit" 2>/dev/null || true
+            systemctl daemon-reload >/dev/null 2>&1 || true
+            systemctl enable agmind-peer-nat.service >/dev/null 2>&1 || true
+        fi
+    fi
+
+    log_success "Master NAT staged: ${_qsfp_subnet} → MASQUERADE via ${_wan_if}, ip_forward persistent"
+    return 0
+}
+
+# ============================================================================
 # PUBLIC API
 # ============================================================================
 
@@ -235,6 +337,11 @@ _deploy_image_to_peer() {
     # Peer user NOT in docker group → all docker commands на peer use `sudo -n docker`.
     # NOPASSWD sudo pre-configured on DGX Spark peer (see project_spark_cluster memory).
 
+    # Stage master-side MASQUERADE so the peer COULD route via master QSFP if its
+    # own WAN flakes. Phase A only — peer route swap is BACKLOG 999.12 (manual).
+    # Non-fatal: skip on failure (existing wifi-WAN pull path still works).
+    _setup_master_nat || log_warn "Master NAT setup had issues — peer may need own WAN"
+
     # 1. If peer already has image locally — skip (idempotent).
     # shellcheck disable=SC2086
     if ssh $ssh_opts "${peer_user}@${peer_ip}" \
@@ -251,7 +358,7 @@ _deploy_image_to_peer() {
     # wifi/DNS settle. Total worst case: ~4 min before bailing.
     local _attempt _delay _peer_ok=0
     for _attempt in 1 2 3; do
-        log_info "Attempting peer-side pull of ${image} (peer has WAN via wifi, attempt ${_attempt}/3)..."
+        log_info "Attempting peer-side pull of ${image} (peer pull via its WAN; master NAT staged, manual peer route via 192.168.100.1 if needed — see BACKLOG 999.12, attempt ${_attempt}/3)..."
         # shellcheck disable=SC2086
         if ssh $ssh_opts "${peer_user}@${peer_ip}" \
                 "sudo -n docker pull ${image}" 2>&1 | tail -5; then
