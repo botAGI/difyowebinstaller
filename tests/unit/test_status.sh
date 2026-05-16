@@ -357,7 +357,7 @@ assert 'hostname' in d, 'missing hostname'
     [[ "$u_grafana"  == "http://agmind-grafana.local" ]]       || { echo "FAIL: grafana url='${u_grafana}'" >&2; exit 1; }
     [[ "$u_webui"    == "http://agmind-chat.local" ]]          || { echo "FAIL: open-webui url='${u_webui}'" >&2; exit 1; }
     [[ "$u_portainer" == "https://agmind-portainer.local:9443" ]] || { echo "FAIL: portainer url='${u_portainer}'" >&2; exit 1; }
-    [[ "$u_ragflow"  == "http://agmind-ragflow.local" ]]       || { echo "FAIL: ragflow url='${u_ragflow}'" >&2; exit 1; }
+    [[ "$u_ragflow"  == "http://agmind-rag.local" ]]           || { echo "FAIL: ragflow url='${u_ragflow}'" >&2; exit 1; }
     [[ "$u_vllm"     == "—" ]]  || { echo "FAIL: vllm url='${u_vllm}' want —"     >&2; exit 1; }
     [[ "$u_db"       == "—" ]]  || { echo "FAIL: db url='${u_db}' want —"          >&2; exit 1; }
     [[ "$u_weaviate" == "—" ]]  || { echo "FAIL: weaviate url='${u_weaviate}' want —" >&2; exit 1; }
