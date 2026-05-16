@@ -358,7 +358,7 @@ _deploy_image_to_peer() {
     # wifi/DNS settle. Total worst case: ~4 min before bailing.
     local _attempt _delay _peer_ok=0
     for _attempt in 1 2 3; do
-        log_info "Attempting peer-side pull of ${image} (peer pull via its WAN; master NAT staged, manual peer route via 192.168.100.1 if needed — see BACKLOG 999.12, attempt ${_attempt}/3)..."
+        log_info "Attempting peer-side pull of ${image} (attempt ${_attempt}/3 — peer's own WAN; master NAT staged, peer can manually route via 192.168.100.1 if needed)..."
         # shellcheck disable=SC2086
         if ssh $ssh_opts "${peer_user}@${peer_ip}" \
                 "sudo -n docker pull ${image}" 2>&1 | tail -5; then
