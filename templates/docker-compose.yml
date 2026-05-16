@@ -1877,11 +1877,12 @@ services:
       ragflow_es01:
         condition: service_healthy
     ports:
-      # Expose UI for first-time admin signup. RAGFlow UI = nginx :80 inside container.
-      # Default 0.0.0.0 — LAN profile (DGX Spark за NAT, single-tenant), как Open WebUI/Dify.
-      # Race для admin signup закрыта тем что after first signup signup endpoint disabled.
-      # Override `RAGFLOW_BIND_ADDR=127.0.0.1` если deploy в multi-tenant среде.
-      - "${RAGFLOW_BIND_ADDR:-0.0.0.0}:${EXPOSE_RAGFLOW_PORT:-9380}:80"
+      # SEC-RAGFLOW-01: default bind 127.0.0.1 — admin-signup race is open
+      # until the first user registers, so a LAN-exposed UI lets anyone on
+      # the network claim the admin account on a fresh deploy. The wizard
+      # flips this to 0.0.0.0 only after explicit user opt-in. Nginx vhost
+      # `agmind-rag.local` proxies the local port for normal LAN access.
+      - "${RAGFLOW_BIND_ADDR:-127.0.0.1}:${EXPOSE_RAGFLOW_PORT:-9380}:80"
     expose:
       - "9380"   # Main API + /api/v1/dify/retrieval (External KB compatibility) — internal
       - "9381"   # admin

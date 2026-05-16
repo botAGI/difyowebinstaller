@@ -7,7 +7,7 @@
 set -euo pipefail
 trap 'echo "ERROR at line $LINENO: $BASH_COMMAND" >&2' ERR
 
-VERSION="${VERSION:-3.1.1}"   # keep in sync with RELEASE / README / templates/release-manifest.json
+VERSION="${VERSION:-3.1.2}"   # keep in sync with RELEASE / README / templates/release-manifest.json
 TOTAL_PHASES=0   # sentinel — overwritten by phases_count() after sourcing lib/phases.sh (so _cleanup_on_failure's $TOTAL_PHASES is always defined, even if a source fails)
 INSTALLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
@@ -1203,8 +1203,9 @@ GPUCRON
     local health_dir="${INSTALL_DIR}/docker/nginx/health"
     mkdir -p "$health_dir"
     # Clean up legacy layout: if previous deploy used file-mount, docker may have
-    # created ${INSTALL_DIR}/docker/nginx/health.json as a directory — remove it.
-    local legacy_path="${INSTALL_DIR}/docker/nginx/health.json"
+    # created ${INSTALL_DIR}/docker/nginx/health.json as a directory — remove it.  # LEGACY_NGINX_HEALTH_CLEANUP_OK
+    # LEGACY_NGINX_HEALTH_CLEANUP_OK — allowlisted in NGINX-HEALTH-01 grep gate.
+    local legacy_path="${INSTALL_DIR}/docker/nginx/health.json"  # LEGACY_NGINX_HEALTH_CLEANUP_OK
     if [[ -e "$legacy_path" ]]; then rm -rf "$legacy_path"; fi
     if [[ ! -f "${health_dir}/health.json" ]]; then
         echo '{"status": "starting", "timestamp": "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}' > "${health_dir}/health.json"
