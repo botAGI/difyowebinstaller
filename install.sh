@@ -1203,8 +1203,9 @@ GPUCRON
     local health_dir="${INSTALL_DIR}/docker/nginx/health"
     mkdir -p "$health_dir"
     # Clean up legacy layout: if previous deploy used file-mount, docker may have
-    # created ${INSTALL_DIR}/docker/nginx/health.json as a directory — remove it.
-    local legacy_path="${INSTALL_DIR}/docker/nginx/health.json"
+    # created ${INSTALL_DIR}/docker/nginx/health.json as a directory — remove it.  # LEGACY_NGINX_HEALTH_CLEANUP_OK
+    # LEGACY_NGINX_HEALTH_CLEANUP_OK — allowlisted in NGINX-HEALTH-01 grep gate.
+    local legacy_path="${INSTALL_DIR}/docker/nginx/health.json"  # LEGACY_NGINX_HEALTH_CLEANUP_OK
     if [[ -e "$legacy_path" ]]; then rm -rf "$legacy_path"; fi
     if [[ ! -f "${health_dir}/health.json" ]]; then
         echo '{"status": "starting", "timestamp": "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}' > "${health_dir}/health.json"

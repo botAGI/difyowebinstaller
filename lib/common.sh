@@ -257,7 +257,7 @@ ensure_bind_mount_files() {
         "monitoring/loki-config.yml"
         "monitoring/alloy-config.river"
         "nginx/nginx.conf"
-        "nginx/health.json"
+        "nginx/health/health.json"
         "volumes/redis/redis.conf"
         "volumes/ssrf_proxy/squid.conf"
         "volumes/sandbox/conf/config.yaml"
@@ -299,6 +299,7 @@ preflight_bind_mount_check() {
     # Verify all bind-mount source files exist
     local all_bind_files=(
         "nginx/nginx.conf"
+        "nginx/health/health.json"
         "volumes/redis/redis.conf"
         "volumes/ssrf_proxy/squid.conf"
         "volumes/sandbox/conf/config.yaml"
