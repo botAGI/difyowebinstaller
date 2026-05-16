@@ -5,3 +5,9 @@
 {"ts":"2026-05-16T15:31:43Z","finding":"GEN-01","action":"postcondition_ok","def_count":1}
 {"ts":"2026-05-16T15:33:29Z","finding":"GEN-01","action":"precondition_ok","old_marker":true}
 {"ts":"2026-05-16T15:33:29Z","finding":"GEN-01","action":"postcondition_ok","def_count":1,"openwebui_inline_fixed":true}
+{"ts":"2026-05-16T15:36:32Z","finding":"HEALTH-01","action":"precondition_ok","identical":true,"sites":3}
+{"ts":"2026-05-16T15:36:32Z","finding":"HEALTH-01","action":"postcondition_fail","reason":"stale_up_healthy"}
+{"ts":"2026-05-16T15:36:32Z","finding":"HEALTH-01","action":"rollback","reason":"postcondition_stale_up_healthy"}
+{"ts":"2026-05-16T15:37:53Z","finding":"HEALTH-01","action":"precondition_ok","identical":true,"sites":3}
+{"ts":"2026-05-16T15:37:53Z","finding":"HEALTH-01","action":"postcondition_fail","reason":"stale_up_healthy"}
+{"ts":"2026-05-16T15:37:53Z","finding":"HEALTH-01","action":"rollback","reason":"postcondition_stale_up_healthy"}
