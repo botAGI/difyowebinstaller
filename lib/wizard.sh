@@ -443,7 +443,7 @@ _wizard_llm_profile() {
             VLLM_MODEL="Qwen/Qwen3.6-35B-A3B-FP8"
             VLLM_CUDA_SUFFIX=""
             VLLM_CMD_PREFIX=""
-            VLLM_EXTRA_ARGS="--quantization compressed-tensors --enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3 --attention-backend flash_attn --speculative-config {\"method\":\"dflash\",\"model\":\"z-lab/Qwen3.6-35B-A3B-DFlash\",\"num_speculative_tokens\":15} --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching --trust-remote-code"
+            VLLM_EXTRA_ARGS="--quantization compressed-tensors --enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3 --attention-backend flash_attn --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching --trust-remote-code"
             if [[ "${LLM_ON_PEER:-false}" == "true" ]]; then
                 VLLM_GPU_MEM_UTIL="0.75"
                 export VLLM_GPU_MEM_UTIL
@@ -468,7 +468,7 @@ _wizard_llm_profile() {
             VLLM_CUDA_SUFFIX=""
             VLLM_CMD_PREFIX=""
             # NOTE: NO --enable-auto-tool-choice / --tool-call-parser — BROKEN on heretic checkpoint.
-            VLLM_EXTRA_ARGS="--quantization compressed-tensors --reasoning-parser qwen3 --attention-backend flash_attn --speculative-config {\"method\":\"dflash\",\"model\":\"z-lab/Qwen3.6-35B-A3B-DFlash\",\"num_speculative_tokens\":15} --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching --trust-remote-code"
+            VLLM_EXTRA_ARGS="--quantization compressed-tensors --reasoning-parser qwen3 --attention-backend flash_attn --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching --trust-remote-code"
             if [[ "${LLM_ON_PEER:-false}" == "true" ]]; then
                 VLLM_GPU_MEM_UTIL="0.75"
                 export VLLM_GPU_MEM_UTIL
@@ -581,7 +581,7 @@ _apply_blackwell_cu130() {
                     VLLM_MODEL="Qwen/Qwen3.6-35B-A3B-FP8"
                     VLLM_CUDA_SUFFIX=""
                     VLLM_CMD_PREFIX=""
-                    VLLM_EXTRA_ARGS="--quantization compressed-tensors --enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3 --attention-backend flash_attn --speculative-config {\"method\":\"dflash\",\"model\":\"z-lab/Qwen3.6-35B-A3B-DFlash\",\"num_speculative_tokens\":15} --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching --trust-remote-code"
+                    VLLM_EXTRA_ARGS="--quantization compressed-tensors --enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3 --attention-backend flash_attn --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching --trust-remote-code"
                     VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-131072}"
                     if [[ "${LLM_ON_PEER:-false}" == "true" ]]; then
                         VLLM_GPU_MEM_UTIL="0.75"; export VLLM_GPU_MEM_UTIL
@@ -599,7 +599,7 @@ _apply_blackwell_cu130() {
                     VLLM_CUDA_SUFFIX=""
                     VLLM_CMD_PREFIX=""
                     # NOTE: NO --enable-auto-tool-choice / --tool-call-parser — BROKEN on heretic.
-                    VLLM_EXTRA_ARGS="--quantization compressed-tensors --reasoning-parser qwen3 --attention-backend flash_attn --speculative-config {\"method\":\"dflash\",\"model\":\"z-lab/Qwen3.6-35B-A3B-DFlash\",\"num_speculative_tokens\":15} --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching --trust-remote-code"
+                    VLLM_EXTRA_ARGS="--quantization compressed-tensors --reasoning-parser qwen3 --attention-backend flash_attn --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching --trust-remote-code"
                     VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-131072}"
                     if [[ "${LLM_ON_PEER:-false}" == "true" ]]; then
                         VLLM_GPU_MEM_UTIL="0.75"; export VLLM_GPU_MEM_UTIL
