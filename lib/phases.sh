@@ -48,7 +48,7 @@ PHASES=(
     "Configuration${SEP}phase_config${SEP}0${SEP}"
     "Pull${SEP}phase_pull${SEP}0${SEP}"
     "Start${SEP}phase_start${SEP}${TIMEOUT_START:-300}${SEP}"
-    "Deploy Peer${SEP}peer_deploy${SEP}1800${SEP}optional,master-only"
+    "Deploy Peer${SEP}peer_deploy${SEP}3600${SEP}optional,master-only"
     "Health${SEP}phase_health${SEP}0${SEP}"
     "Models${SEP}phase_models_graceful${SEP}0${SEP}graceful"
     "Backups${SEP}phase_backups${SEP}0${SEP}"
