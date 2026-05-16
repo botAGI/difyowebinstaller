@@ -87,7 +87,7 @@ _init_wizard_defaults() {
     ENABLE_CRAWL4AI="${ENABLE_CRAWL4AI:-false}"
     ENABLE_N8N="${ENABLE_N8N:-false}"
     ENABLE_OPENWEBUI="${ENABLE_OPENWEBUI:-false}"
-    ENABLE_DIFY_PREMIUM="${ENABLE_DIFY_PREMIUM:-true}"
+    ENABLE_DIFY_PREMIUM="${ENABLE_DIFY_PREMIUM:-false}"
     ENABLE_MINIO="${ENABLE_MINIO:-true}"
     ENABLE_RAGFLOW="${ENABLE_RAGFLOW:-false}"
     # GPU by default (vLLM на peer → master GPU свободен ~95 GiB).
@@ -1804,7 +1804,7 @@ _wizard_optional_services() {
 
 _wizard_dify_premium() {
     if [[ "${NON_INTERACTIVE:-false}" == "true" ]]; then
-        ENABLE_DIFY_PREMIUM="${ENABLE_DIFY_PREMIUM:-true}"
+        ENABLE_DIFY_PREMIUM="${ENABLE_DIFY_PREMIUM:-false}"
         return
     fi
 
@@ -1857,7 +1857,7 @@ _wizard_summary() {
     if [[ "${ENABLE_N8N:-false}" == "true" ]]; then summary+="$(t wizard.summary.n8n)         agmind-n8n.local\n"; fi
     if [[ "${ENABLE_OPENWEBUI:-false}" == "true" ]]; then summary+="$(t wizard.summary.openwebui)   agmind-chat.local\n"; fi
     if [[ "${ENABLE_RAGFLOW:-false}" == "true" ]]; then summary+="$(t wizard.summary.ragflow)      $(t wizard.summary.ragflow_val)\n"; fi
-    if [[ "${ENABLE_DIFY_PREMIUM:-true}" == "true" ]]; then summary+="$(t wizard.summary.dify_premium) $(t wizard.summary.dify_premium_val)\n"; fi
+    if [[ "${ENABLE_DIFY_PREMIUM:-false}" == "true" ]]; then summary+="$(t wizard.summary.dify_premium) $(t wizard.summary.dify_premium_val)\n"; fi
     summary+="$(t wizard.summary.backups)       ${BACKUP_TARGET} (${BACKUP_SCHEDULE})\n"
 
     # VRAM plan (only for vLLM — Ollama manages VRAM internally)
