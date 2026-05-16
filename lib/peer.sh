@@ -235,6 +235,17 @@ peer_deploy() {
         cluster_status_update "failed" 2>/dev/null || true
         return 1
     }
+    # SEC-PEER-01: lock down secrets. scp preserves umask of $peer_user (typically
+    # 022 → mode 0644), leaving every secret in the worker .env world-readable
+    # for any account that gains shell on peer. Force 0600 root:root immediately.
+    # shellcheck disable=SC2086
+    ssh $ssh_opts "${peer_user}@${peer_ip}" \
+        "sudo -n chmod 600 ${peer_dir}/.env && sudo -n chown root:root ${peer_dir}/.env" \
+        >/dev/null 2>&1 || {
+        log_error "Failed to lock down peer .env permissions"
+        cluster_status_update "failed" 2>/dev/null || true
+        return 1
+    }
 
     # 6. Install gpu-metrics.sh on peer + cron + textfile dir.
     # Feeds peer node-exporter textfile collector (enabled via compose volume +
