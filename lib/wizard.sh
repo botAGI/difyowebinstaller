@@ -1800,6 +1800,22 @@ _wizard_optional_services() {
             n8n)      ENABLE_N8N="true";;
         esac
     done
+
+    # SEC-RAGFLOW-01: opt-in for binding RAGFlow port to 0.0.0.0 (LAN).
+    # Default is 127.0.0.1 (loopback). Admin signup is a race window
+    # until the first user registers, so direct LAN exposure of :9380
+    # lets anyone on the network claim the admin account on a fresh
+    # deploy. Nginx vhost agmind-rag.local proxies the local port for
+    # normal LAN access without the direct-port race.
+    if [[ "${ENABLE_RAGFLOW:-false}" == "true" ]]; then
+        if wt_yesno "RAGFlow Direct Port Access" \
+            "Открыть порт RAGFlow :9380 напрямую в LAN?\n\nВНИМАНИЕ: пока админ не зарегистрирован, любой в сети может занять админ-аккаунт.\nПо умолчанию доступ только через nginx-проксирование (agmind-rag.local) — безопаснее.\n\nОткрыть :9380 напрямую?"; then
+            RAGFLOW_BIND_ADDR="0.0.0.0"
+        else
+            RAGFLOW_BIND_ADDR="127.0.0.1"
+        fi
+        export RAGFLOW_BIND_ADDR
+    fi
 }
 
 _wizard_dify_premium() {
@@ -2092,7 +2108,7 @@ run_wizard() {
     export ENABLE_LITELLM ENABLE_SEARXNG ENABLE_NOTEBOOK ENABLE_DBGPT ENABLE_CRAWL4AI ENABLE_N8N
     export ENABLE_OPENWEBUI
     export ENABLE_DIFY_PREMIUM
-    export ENABLE_RAGFLOW RAGFLOW_DEVICE
+    export ENABLE_RAGFLOW RAGFLOW_DEVICE RAGFLOW_BIND_ADDR
     export ENABLE_MINIO
     export AGMIND_LANG
     export AGMIND_LLM_PROFILE
