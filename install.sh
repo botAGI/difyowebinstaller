@@ -602,8 +602,11 @@ _copy_runtime_files() {
 # Safe to run anytime: DEL by pattern, no FLUSHDB (Redis ACL blocks it anyway).
 _clean_stale_celery_state() {
     # Plan 14-06: _env_get_raw for secret.
+    # Plan 14-08 STATE-11: state-store has precedence; .env is defence-in-depth
+    # fallback for pre-Phase-11 installs.
     local pw
-    pw="$(_env_get_raw REDIS_PASSWORD "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
+    pw="$(state_get_secret REDIS_PASSWORD 2>/dev/null || true)"
+    [[ -z "$pw" ]] && pw="$(_env_get_raw REDIS_PASSWORD "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
     [[ -z "$pw" ]] && return 0
     docker ps --filter 'name=agmind-redis' --filter 'status=running' --format '{{.Names}}' \
         | grep -q agmind-redis || return 0
@@ -832,9 +835,11 @@ _init_ragflow_minio_user() {
     log_info "Provisioning MinIO bucket+user for RAGFlow..."
     # Plan 14-06: passwords via _env_get_raw (byte-exact); usernames + mc tag
     # keep _env_get (Plan 14-04/14-05).
+    # Plan 14-08 STATE-11: MINIO_ROOT_PASSWORD via state-store-first fallback.
     local user pass mc_version ragflow_user ragflow_pass
     user="$(_env_get MINIO_ROOT_USER "${INSTALL_DIR}/docker/.env")"
-    pass="$(_env_get_raw MINIO_ROOT_PASSWORD "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
+    pass="$(state_get_secret MINIO_ROOT_PASSWORD 2>/dev/null || true)"
+    [[ -z "$pass" ]] && pass="$(_env_get_raw MINIO_ROOT_PASSWORD "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
     ragflow_user="$(_env_get RAGFLOW_MINIO_USER "${INSTALL_DIR}/docker/.env")"
     ragflow_user="${ragflow_user:-ragflow}"
     ragflow_pass="$(_env_get_raw RAGFLOW_MINIO_PASSWORD "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
@@ -872,9 +877,11 @@ _init_minio_bucket() {
     [[ "${ENABLE_MINIO:-false}" == "true" ]] || return 0
     log_info "Creating MinIO bucket..."
     # Plan 14-06: MINIO_ROOT_PASSWORD via _env_get_raw (byte-exact secret).
+    # Plan 14-08 STATE-11: MINIO_ROOT_PASSWORD + S3 keys via state-store-first.
     local user pass bucket mc_version
     user="$(_env_get MINIO_ROOT_USER "${INSTALL_DIR}/docker/.env")"
-    pass="$(_env_get_raw MINIO_ROOT_PASSWORD "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
+    pass="$(state_get_secret MINIO_ROOT_PASSWORD 2>/dev/null || true)"
+    [[ -z "$pass" ]] && pass="$(_env_get_raw MINIO_ROOT_PASSWORD "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
     bucket="$(_env_get S3_BUCKET_NAME "${INSTALL_DIR}/docker/.env")"
     bucket="${bucket:-dify-storage}"
     mc_version="$(_env_get MC_VERSION "${INSTALL_DIR}/docker/.env")"
@@ -904,9 +911,12 @@ _init_minio_bucket() {
     # which are DIFFERENT from MINIO_ROOT_USER/_PASSWORD. Without a service account
     # bound to those keys, Dify init fails with "InvalidAccessKeyId" on PutObject.
     # Plan 14-06: S3 access/secret keys via _env_get_raw (byte-exact).
+    # Plan 14-08 STATE-11: state-store-first fallback for both S3 keys.
     local s3_ak s3_sk
-    s3_ak="$(_env_get_raw S3_ACCESS_KEY "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
-    s3_sk="$(_env_get_raw S3_SECRET_KEY "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
+    s3_ak="$(state_get_secret S3_ACCESS_KEY 2>/dev/null || true)"
+    [[ -z "$s3_ak" ]] && s3_ak="$(_env_get_raw S3_ACCESS_KEY "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
+    s3_sk="$(state_get_secret S3_SECRET_KEY 2>/dev/null || true)"
+    [[ -z "$s3_sk" ]] && s3_sk="$(_env_get_raw S3_SECRET_KEY "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
     if [[ -n "$s3_ak" && -n "$s3_sk" && "$s3_ak" != "$user" ]]; then
         docker run --rm --network "$net" \
             -e "MC_HOST_local=http://${user}:${pass}@agmind-minio:9000" \
@@ -1086,9 +1096,11 @@ _save_credentials() {
         fi
         if [[ "${ENABLE_MINIO:-false}" == "true" ]]; then
             # Plan 14-06: MINIO_ROOT_PASSWORD via _env_get_raw (byte-exact secret).
+            # Plan 14-08 STATE-11: state-store-first fallback.
             local _minio_user _minio_pass
             _minio_user="$(_env_get MINIO_ROOT_USER "${INSTALL_DIR}/docker/.env")"
-            _minio_pass="$(_env_get_raw MINIO_ROOT_PASSWORD "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
+            _minio_pass="$(state_get_secret MINIO_ROOT_PASSWORD 2>/dev/null || true)"
+            [[ -z "$_minio_pass" ]] && _minio_pass="$(_env_get_raw MINIO_ROOT_PASSWORD "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
             echo ""
             echo "=== MinIO (S3 Object Storage) ==="
             echo "  Console: http://${ip}:9001"

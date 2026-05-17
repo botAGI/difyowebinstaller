@@ -141,7 +141,11 @@ _copy_ragflow_templates() {
     # contain `$` (random_named base64-alphabet output can include $-adjacent
     # chars in expansion contexts); source-based reader would corrupt them.
     # Trailing `|| true` preserves legacy semantic: missing key → empty stdout.
-    _v_redis_pw="$(_env_get_raw REDIS_PASSWORD "$env_file" 2>/dev/null || true)"
+    # Plan 14-08 STATE-11: REDIS_PASSWORD via state-store-first fallback (D-11).
+    # RAGFLOW_* slugs stay on _env_get_raw — they use the .preserved-file pattern,
+    # not state-store namespace (D-12).
+    _v_redis_pw="$(state_get_secret REDIS_PASSWORD 2>/dev/null || true)"
+    [[ -z "$_v_redis_pw" ]] && _v_redis_pw="$(_env_get_raw REDIS_PASSWORD "$env_file" 2>/dev/null || true)"
     _v_ragflow_mysql_pw="$(_env_get_raw RAGFLOW_MYSQL_PASSWORD "$env_file" 2>/dev/null || true)"
     _v_ragflow_es_pw="$(_env_get_raw RAGFLOW_ES_PASSWORD "$env_file" 2>/dev/null || true)"
     _v_ragflow_minio_user="$(_env_get RAGFLOW_MINIO_USER "$env_file")"
@@ -206,6 +210,46 @@ _RAGFLOW_MINIO_PASSWORD=""
 _PORTAINER_AGENT_SECRET=""
 _N8N_ENCRYPTION_KEY=""
 
+# _state_get_or_generate SLUG LENGTH
+# Plan 14-08 STATE-11 helper. Reads the secret from the Phase 11 state store
+# (${STATE_DIR}/secrets.env via state_get_secret). If absent, generates a fresh
+# value via Phase 13 name-based RNG (generate_random_named SLUG LENGTH) AND
+# persists it to the state store so subsequent invocations return the same
+# bytes. This closes BACKUP-01: re-running install.sh never rotates a secret.
+#
+# Test isolation: golden harness + integration tests set AGMIND_STATE_DIR
+# (lib/config.sh convention). We propagate it to STATE_DIR (lib/state.sh
+# convention — verified ADR-0011) for the duration of the state call. The
+# state module is sourced once at install.sh top-level (line 56), but stand-
+# alone callers (e.g. golden harness sourcing only lib/common.sh + lib/config.sh)
+# may not have it — soft-detect via `command -v` and fall back to pure RNG so
+# golden byte-identical contract (D-13) holds for those callers too.
+_state_get_or_generate() {
+    local slug="$1" length="$2" val
+    if command -v state_get_secret >/dev/null 2>&1; then
+        # Pin STATE_DIR to AGMIND_STATE_DIR for this call without leaking the
+        # mutation back to the caller (subshell scope).
+        val="$(STATE_DIR="${AGMIND_STATE_DIR:-${STATE_DIR:-/var/lib/agmind/state}}" \
+               state_get_secret "$slug" 2>/dev/null || true)"
+        if [[ -n "$val" ]]; then
+            printf '%s' "$val"
+            return 0
+        fi
+    fi
+    # Not in state (or state module not loaded) — generate deterministic-under-
+    # seed bytes via Phase 13 RNG.
+    val="$(generate_random_named "$slug" "$length")"
+    # Best-effort persistence. Soft-fail if state-set rejects (e.g. state dir
+    # not writable in some test scaffolds, or state module not loaded at all)
+    # — the generator value still flows to the caller, golden tests still
+    # see byte-identical output for the rendered .env.
+    if command -v state_set_secret >/dev/null 2>&1; then
+        STATE_DIR="${AGMIND_STATE_DIR:-${STATE_DIR:-/var/lib/agmind/state}}" \
+            state_set_secret "$slug" "$val" >/dev/null 2>&1 || true
+    fi
+    printf '%s' "$val"
+}
+
 # _restore_secrets_from_backup — restore volume-bound secrets when PG data exists (IREL-03)
 # Returns 0 if any secrets were restored, 1 if nothing restored.
 # Must be called AFTER fresh secrets are generated so they serve as a safe fallback.
@@ -232,22 +276,48 @@ _restore_secrets_from_backup() {
     # any parser drift on a saved password would silently regenerate secrets on
     # reinstall. Trailing `|| true` keeps legacy missing-key semantic (empty
     # stdout → `[[ -n "$saved_X" ]]` falls through).
+    #
+    # Plan 14-08 STATE-11: state-store value (Phase 11 secrets.env) takes
+    # precedence over the .env backup for the three slugs that flow through
+    # state. _generate_secrets has already run before this function (see fatal
+    # check at function tail), so by now the state already holds the canonical
+    # values via _state_get_or_generate. The .env backup remains as a
+    # defence-in-depth fallback for the case where state is empty/corrupt but
+    # a legacy .env.backup survived from a pre-Phase-11 install.
     local saved_db_pass
-    saved_db_pass="$(_env_get_raw DB_PASSWORD "$latest_backup" 2>/dev/null || true)"
+    if command -v state_get_secret >/dev/null 2>&1; then
+        saved_db_pass="$(STATE_DIR="${AGMIND_STATE_DIR:-${STATE_DIR:-/var/lib/agmind/state}}" \
+                         state_get_secret DB_PASSWORD 2>/dev/null || true)"
+    fi
+    if [[ -z "${saved_db_pass:-}" ]]; then
+        saved_db_pass="$(_env_get_raw DB_PASSWORD "$latest_backup" 2>/dev/null || true)"
+    fi
     if [[ -n "$saved_db_pass" ]]; then
         _DB_PASSWORD="$saved_db_pass"
         restored=true
     fi
 
     local saved_redis_pass
-    saved_redis_pass="$(_env_get_raw REDIS_PASSWORD "$latest_backup" 2>/dev/null || true)"
+    if command -v state_get_secret >/dev/null 2>&1; then
+        saved_redis_pass="$(STATE_DIR="${AGMIND_STATE_DIR:-${STATE_DIR:-/var/lib/agmind/state}}" \
+                            state_get_secret REDIS_PASSWORD 2>/dev/null || true)"
+    fi
+    if [[ -z "${saved_redis_pass:-}" ]]; then
+        saved_redis_pass="$(_env_get_raw REDIS_PASSWORD "$latest_backup" 2>/dev/null || true)"
+    fi
     if [[ -n "$saved_redis_pass" ]]; then
         _REDIS_PASSWORD="$saved_redis_pass"
         restored=true
     fi
 
     local saved_secret_key
-    saved_secret_key="$(_env_get_raw SECRET_KEY "$latest_backup" 2>/dev/null || true)"
+    if command -v state_get_secret >/dev/null 2>&1; then
+        saved_secret_key="$(STATE_DIR="${AGMIND_STATE_DIR:-${STATE_DIR:-/var/lib/agmind/state}}" \
+                            state_get_secret SECRET_KEY 2>/dev/null || true)"
+    fi
+    if [[ -z "${saved_secret_key:-}" ]]; then
+        saved_secret_key="$(_env_get_raw SECRET_KEY "$latest_backup" 2>/dev/null || true)"
+    fi
     if [[ -n "$saved_secret_key" ]]; then
         _SECRET_KEY="$saved_secret_key"
         restored=true
@@ -260,14 +330,19 @@ _restore_secrets_from_backup() {
 }
 
 _generate_secrets() {
-    _SECRET_KEY="$(generate_random_named SECRET_KEY 64)"
-    _DB_PASSWORD="$(generate_random_named DB_PASSWORD 32)"
-    _REDIS_PASSWORD="$(generate_random_named REDIS_PASSWORD 32)"
-    _SANDBOX_API_KEY="dify-sandbox-$(generate_random_named SANDBOX_API_KEY 16)"
-    _PLUGIN_DAEMON_KEY="$(generate_random_named PLUGIN_DAEMON_KEY 48)"
-    _PLUGIN_INNER_API_KEY="$(generate_random_named PLUGIN_INNER_API_KEY 48)"
-    _WEAVIATE_API_KEY="$(generate_random_named WEAVIATE_API_KEY 32)"
-    _QDRANT_API_KEY="$(generate_random_named QDRANT_API_KEY 32)"
+    # Plan 14-08 STATE-11: 11 secret slugs read via state-store-first helper
+    # (_state_get_or_generate). Closes BACKUP-01 — re-install never rotates
+    # secrets. Other slugs below (GRAFANA/AUTHELIA/LITELLM/SEARXNG/NOTEBOOK +
+    # SurrealDB/N8N/Portainer/RAGFlow which use their own .preserved-file
+    # pattern) stay on direct generate_random_named per CONTEXT D-12.
+    _SECRET_KEY="$(_state_get_or_generate SECRET_KEY 64)"
+    _DB_PASSWORD="$(_state_get_or_generate DB_PASSWORD 32)"
+    _REDIS_PASSWORD="$(_state_get_or_generate REDIS_PASSWORD 32)"
+    _SANDBOX_API_KEY="dify-sandbox-$(_state_get_or_generate SANDBOX_API_KEY 16)"
+    _PLUGIN_DAEMON_KEY="$(_state_get_or_generate PLUGIN_DAEMON_KEY 48)"
+    _PLUGIN_INNER_API_KEY="$(_state_get_or_generate PLUGIN_INNER_API_KEY 48)"
+    _WEAVIATE_API_KEY="$(_state_get_or_generate WEAVIATE_API_KEY 32)"
+    _QDRANT_API_KEY="$(_state_get_or_generate QDRANT_API_KEY 32)"
     _GRAFANA_ADMIN_PASSWORD="$(generate_random_named GRAFANA_ADMIN_PASSWORD 16)"
     _AUTHELIA_JWT_SECRET="$(generate_random_named AUTHELIA_JWT_SECRET 64)"
     _AUTHELIA_SESSION_SECRET="$(generate_random_named AUTHELIA_SESSION_SECRET 64)"
@@ -333,9 +408,10 @@ _generate_secrets() {
     fi
 
     _MINIO_ROOT_USER="agmind-admin"
-    _MINIO_ROOT_PASSWORD="$(generate_random_named MINIO_ROOT_PASSWORD 32)"
-    _S3_ACCESS_KEY="$(generate_random_named S3_ACCESS_KEY 20)"
-    _S3_SECRET_KEY="$(generate_random_named S3_SECRET_KEY 40)"
+    # Plan 14-08 STATE-11: MinIO + S3 secret slugs read via state-store helper.
+    _MINIO_ROOT_PASSWORD="$(_state_get_or_generate MINIO_ROOT_PASSWORD 32)"
+    _S3_ACCESS_KEY="$(_state_get_or_generate S3_ACCESS_KEY 20)"
+    _S3_SECRET_KEY="$(_state_get_or_generate S3_SECRET_KEY 40)"
 
     # RAGFlow secrets (BACKLOG #999.7) — generated even если ENABLE_RAGFLOW=false,
     # placeholders в .env остаются stub значениями но не пустыми (избегаем "пустой пароль" errors).
@@ -1052,8 +1128,10 @@ generate_redis_config() {
     # Plan 14-06: _env_get_raw for secret. `|| true` instead of `|| echo ""` —
     # _env_get_raw returns rc=1 on missing key with empty stdout, which matches
     # the legacy `|| echo ""` behavior of producing empty stdout.
+    # Plan 14-08 STATE-11: state-store-first fallback chain.
     local redis_pass
-    redis_pass="$(_env_get_raw REDIS_PASSWORD "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
+    redis_pass="$(state_get_secret REDIS_PASSWORD 2>/dev/null || true)"
+    [[ -z "$redis_pass" ]] && redis_pass="$(_env_get_raw REDIS_PASSWORD "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
     if [[ -z "$redis_pass" ]]; then
         log_error "FATAL: REDIS_PASSWORD empty in .env"
         return 1
@@ -1118,8 +1196,16 @@ SANDBOXEOF
     # Plan 14-06: _env_get_raw for secret. Two-statement default fallback per
     # Plan 14-04/14-05 precedent — preserves byte-identical legacy output for
     # both missing-key and key=empty cases.
+    # Plan 14-08 STATE-11: SANDBOX_API_KEY stored in state as bare random suffix;
+    # the rendered .env wraps it as "dify-sandbox-<suffix>". Read .env first
+    # (already wrapped), fall back to state (re-wrap), then fall back to default.
     local sandbox_key
     sandbox_key="$(_env_get_raw SANDBOX_API_KEY "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
+    if [[ -z "$sandbox_key" ]]; then
+        local _sandbox_suffix
+        _sandbox_suffix="$(state_get_secret SANDBOX_API_KEY 2>/dev/null || true)"
+        [[ -n "$_sandbox_suffix" ]] && sandbox_key="dify-sandbox-${_sandbox_suffix}"
+    fi
     [[ -z "$sandbox_key" ]] && sandbox_key="dify-sandbox"
     _atomic_sed "$sandbox_conf" "s|__will_be_replaced__|${sandbox_key}|g"
 }
