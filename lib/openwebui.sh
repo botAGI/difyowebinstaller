@@ -32,9 +32,11 @@ create_openwebui_admin() {
         return 0
     fi
 
-    # Read admin password
-    local admin_password
-    admin_password="$(grep '^INIT_PASSWORD=' "$env_file" 2>/dev/null | cut -d'=' -f2- | base64 -d 2>/dev/null || true)"
+    # Read admin password (Plan 14-06: _env_get_raw — byte-exact preservation
+    # of base64 alphabet; _env_get would source-expand `$` if present).
+    local admin_password _init_password
+    _init_password="$(_env_get_raw INIT_PASSWORD "$env_file" 2>/dev/null || true)"
+    admin_password="$(printf '%s' "$_init_password" | base64 -d 2>/dev/null || true)"
     if [[ -z "$admin_password" ]]; then
         admin_password="$(cat "${INSTALL_DIR}/.admin_password" 2>/dev/null || true)"
     fi

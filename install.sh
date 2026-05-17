@@ -593,8 +593,9 @@ _copy_runtime_files() {
 # on wrong channels → new tasks hang. See docs/adr/0007-force-recreate-trap.
 # Safe to run anytime: DEL by pattern, no FLUSHDB (Redis ACL blocks it anyway).
 _clean_stale_celery_state() {
+    # Plan 14-06: _env_get_raw for secret.
     local pw
-    pw="$(grep '^REDIS_PASSWORD=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2-)"
+    pw="$(_env_get_raw REDIS_PASSWORD "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
     [[ -z "$pw" ]] && return 0
     docker ps --filter 'name=agmind-redis' --filter 'status=running' --format '{{.Names}}' \
         | grep -q agmind-redis || return 0
@@ -645,8 +646,10 @@ _init_dify_admin() {
     if [[ -f "${INSTALL_DIR}/.dify_initialized" ]]; then log_info "Dify already initialized"; return 0; fi
 
     local env_file="${INSTALL_DIR}/docker/.env"
+    # Plan 14-06: _env_get_raw — INIT_PASSWORD is base64 alphabet, defensive
+    # against any `$`-bearing custom override.
     local init_password
-    init_password="$(grep '^INIT_PASSWORD=' "$env_file" 2>/dev/null | cut -d'=' -f2-)"
+    init_password="$(_env_get_raw INIT_PASSWORD "$env_file" 2>/dev/null || true)"
     if [[ -z "$init_password" ]]; then return 0; fi
 
     # Admin password MUST satisfy Dify's validator (libs/password.py):
@@ -785,8 +788,9 @@ _sync_grafana_admin_password() {
     docker ps --filter 'name=agmind-grafana' --filter 'status=running' --format '{{.Names}}' \
         | grep -q agmind-grafana || return 0
 
+    # Plan 14-06: _env_get_raw for secret.
     local pw
-    pw="$(grep '^GRAFANA_ADMIN_PASSWORD=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2-)"
+    pw="$(_env_get_raw GRAFANA_ADMIN_PASSWORD "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
     [[ -z "$pw" ]] && return 0
 
     # Wait for /api/health — grafana.db must be migrated & unlocked
@@ -818,12 +822,14 @@ _init_ragflow_minio_user() {
     }
 
     log_info "Provisioning MinIO bucket+user for RAGFlow..."
+    # Plan 14-06: passwords via _env_get_raw (byte-exact); usernames + mc tag
+    # keep _env_get (Plan 14-04/14-05).
     local user pass mc_version ragflow_user ragflow_pass
     user="$(_env_get MINIO_ROOT_USER "${INSTALL_DIR}/docker/.env")"
-    pass="$(grep '^MINIO_ROOT_PASSWORD=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
+    pass="$(_env_get_raw MINIO_ROOT_PASSWORD "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
     ragflow_user="$(_env_get RAGFLOW_MINIO_USER "${INSTALL_DIR}/docker/.env")"
     ragflow_user="${ragflow_user:-ragflow}"
-    ragflow_pass="$(grep '^RAGFLOW_MINIO_PASSWORD=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
+    ragflow_pass="$(_env_get_raw RAGFLOW_MINIO_PASSWORD "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
     mc_version="$(_env_get MC_VERSION "${INSTALL_DIR}/docker/.env")"
     [[ -z "$mc_version" ]] && mc_version="RELEASE.2025-08-13T08-35-41Z"
 
@@ -857,9 +863,10 @@ _init_ragflow_minio_user() {
 _init_minio_bucket() {
     [[ "${ENABLE_MINIO:-false}" == "true" ]] || return 0
     log_info "Creating MinIO bucket..."
+    # Plan 14-06: MINIO_ROOT_PASSWORD via _env_get_raw (byte-exact secret).
     local user pass bucket mc_version
     user="$(_env_get MINIO_ROOT_USER "${INSTALL_DIR}/docker/.env")"
-    pass="$(grep '^MINIO_ROOT_PASSWORD=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
+    pass="$(_env_get_raw MINIO_ROOT_PASSWORD "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
     bucket="$(_env_get S3_BUCKET_NAME "${INSTALL_DIR}/docker/.env")"
     bucket="${bucket:-dify-storage}"
     mc_version="$(_env_get MC_VERSION "${INSTALL_DIR}/docker/.env")"
@@ -888,9 +895,10 @@ _init_minio_bucket() {
     # v3.0 hotfix (2026-04-19): Dify writes to MinIO via S3_ACCESS_KEY/S3_SECRET_KEY,
     # which are DIFFERENT from MINIO_ROOT_USER/_PASSWORD. Without a service account
     # bound to those keys, Dify init fails with "InvalidAccessKeyId" on PutObject.
+    # Plan 14-06: S3 access/secret keys via _env_get_raw (byte-exact).
     local s3_ak s3_sk
-    s3_ak="$(grep '^S3_ACCESS_KEY=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
-    s3_sk="$(grep '^S3_SECRET_KEY=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
+    s3_ak="$(_env_get_raw S3_ACCESS_KEY "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
+    s3_sk="$(_env_get_raw S3_SECRET_KEY "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
     if [[ -n "$s3_ak" && -n "$s3_sk" && "$s3_ak" != "$user" ]]; then
         docker run --rm --network "$net" \
             -e "MC_HOST_local=http://${user}:${pass}@agmind-minio:9000" \
@@ -1069,9 +1077,10 @@ _save_credentials() {
             echo "  Dify Tool:     HTTP Request → POST http://agmind-docling:8765/v1/convert"
         fi
         if [[ "${ENABLE_MINIO:-false}" == "true" ]]; then
+            # Plan 14-06: MINIO_ROOT_PASSWORD via _env_get_raw (byte-exact secret).
             local _minio_user _minio_pass
             _minio_user="$(_env_get MINIO_ROOT_USER "${INSTALL_DIR}/docker/.env")"
-            _minio_pass="$(grep '^MINIO_ROOT_PASSWORD=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
+            _minio_pass="$(_env_get_raw MINIO_ROOT_PASSWORD "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
             echo ""
             echo "=== MinIO (S3 Object Storage) ==="
             echo "  Console: http://${ip}:9001"

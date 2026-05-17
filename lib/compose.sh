@@ -16,6 +16,32 @@ command -v _env_get >/dev/null 2>&1 || _env_get() {
     grep "^${1}=" "$2" 2>/dev/null | cut -d'=' -f2-
 }
 
+# Fallback _env_get_raw — byte-exact awk parser mirror of lib/common.sh:370-391.
+# Used by Plan 14-06 secret-grade reads (DB_PASSWORD). Returns rc=1 on missing
+# file OR missing key (distinct from _env_get which always returns rc=0).
+command -v _env_get_raw >/dev/null 2>&1 || _env_get_raw() {
+    local key="$1" file="$2"
+    [[ -r "$file" ]] || return 1
+    awk -v k="$key" '
+        BEGIN { FS = "="; found = 0 }
+        /^[[:space:]]*#/ { next }
+        /^[[:space:]]*$/ { next }
+        {
+            line = $0
+            sub(/^[[:space:]]+/, "", line)
+            eq = index(line, "=")
+            if (eq == 0) next
+            name = substr(line, 1, eq - 1)
+            if (name != k) next
+            val = substr(line, eq + 1)
+            print val
+            found = 1
+            exit
+        }
+        END { exit (found ? 0 : 1) }
+    ' "$file"
+}
+
 # ============================================================================
 # BUILD PROFILES
 # ============================================================================
@@ -769,7 +795,11 @@ sync_db_password() {
     local env_file="${INSTALL_DIR}/docker/.env"
     local db_pass db_user
 
-    db_pass="$(grep '^DB_PASSWORD=' "$env_file" 2>/dev/null | cut -d'=' -f2-)"
+    # Plan 14-06: _env_get_raw (byte-exact awk) — DB_PASSWORD may contain `$`
+    # which would be source-expanded by _env_get. Trailing `|| true` preserves
+    # legacy semantic where missing key → empty stdout (no rc=1 propagation
+    # under set -e). Existing validators on next lines handle empty case.
+    db_pass="$(_env_get_raw DB_PASSWORD "$env_file" 2>/dev/null || true)"
     if [[ -z "$db_pass" ]]; then return 0; fi
 
     db_user="$(_env_get DB_USERNAME "$env_file")"

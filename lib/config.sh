@@ -137,12 +137,16 @@ _copy_ragflow_templates() {
     # pipe → весь generate_config умирает (BUG-V3-FIX 2026-04-26 phase 4 abort).
     local _v_redis_pw _v_ragflow_mysql_pw _v_ragflow_es_pw _v_ragflow_minio_user _v_ragflow_minio_pw
     local _v_vllm_model _v_vllm_embed _v_vllm_rerank
-    _v_redis_pw="$( { grep '^REDIS_PASSWORD=' "$env_file" || true; } | cut -d= -f2-)"
-    _v_ragflow_mysql_pw="$( { grep '^RAGFLOW_MYSQL_PASSWORD=' "$env_file" || true; } | cut -d= -f2-)"
-    _v_ragflow_es_pw="$( { grep '^RAGFLOW_ES_PASSWORD=' "$env_file" || true; } | cut -d= -f2-)"
+    # Plan 14-06: secret reads via _env_get_raw (byte-exact awk). Secrets may
+    # contain `$` (random_named base64-alphabet output can include $-adjacent
+    # chars in expansion contexts); source-based reader would corrupt them.
+    # Trailing `|| true` preserves legacy semantic: missing key → empty stdout.
+    _v_redis_pw="$(_env_get_raw REDIS_PASSWORD "$env_file" 2>/dev/null || true)"
+    _v_ragflow_mysql_pw="$(_env_get_raw RAGFLOW_MYSQL_PASSWORD "$env_file" 2>/dev/null || true)"
+    _v_ragflow_es_pw="$(_env_get_raw RAGFLOW_ES_PASSWORD "$env_file" 2>/dev/null || true)"
     _v_ragflow_minio_user="$(_env_get RAGFLOW_MINIO_USER "$env_file")"
     _v_ragflow_minio_user="${_v_ragflow_minio_user:-ragflow}"
-    _v_ragflow_minio_pw="$( { grep '^RAGFLOW_MINIO_PASSWORD=' "$env_file" || true; } | cut -d= -f2-)"
+    _v_ragflow_minio_pw="$(_env_get_raw RAGFLOW_MINIO_PASSWORD "$env_file" 2>/dev/null || true)"
     _v_vllm_model="$(_env_get VLLM_SPARK_MODEL "$env_file")"
     _v_vllm_model="${_v_vllm_model:-google/gemma-4-26B-A4B-it}"
     _v_vllm_embed="$(_env_get VLLM_EMBED_MODEL "$env_file")"
@@ -224,22 +228,26 @@ _restore_secrets_from_backup() {
 
     local restored=false
 
+    # Plan 14-06: byte-exact secret restore via _env_get_raw. BACKUP-01 territory:
+    # any parser drift on a saved password would silently regenerate secrets on
+    # reinstall. Trailing `|| true` keeps legacy missing-key semantic (empty
+    # stdout → `[[ -n "$saved_X" ]]` falls through).
     local saved_db_pass
-    saved_db_pass="$(grep '^DB_PASSWORD=' "$latest_backup" | cut -d'=' -f2-)"
+    saved_db_pass="$(_env_get_raw DB_PASSWORD "$latest_backup" 2>/dev/null || true)"
     if [[ -n "$saved_db_pass" ]]; then
         _DB_PASSWORD="$saved_db_pass"
         restored=true
     fi
 
     local saved_redis_pass
-    saved_redis_pass="$(grep '^REDIS_PASSWORD=' "$latest_backup" | cut -d'=' -f2-)"
+    saved_redis_pass="$(_env_get_raw REDIS_PASSWORD "$latest_backup" 2>/dev/null || true)"
     if [[ -n "$saved_redis_pass" ]]; then
         _REDIS_PASSWORD="$saved_redis_pass"
         restored=true
     fi
 
     local saved_secret_key
-    saved_secret_key="$(grep '^SECRET_KEY=' "$latest_backup" | cut -d'=' -f2-)"
+    saved_secret_key="$(_env_get_raw SECRET_KEY "$latest_backup" 2>/dev/null || true)"
     if [[ -n "$saved_secret_key" ]]; then
         _SECRET_KEY="$saved_secret_key"
         restored=true
@@ -1041,8 +1049,11 @@ generate_redis_config() {
     local redis_conf="${INSTALL_DIR}/docker/volumes/redis/redis.conf"
     safe_write_file "$redis_conf"
 
+    # Plan 14-06: _env_get_raw for secret. `|| true` instead of `|| echo ""` —
+    # _env_get_raw returns rc=1 on missing key with empty stdout, which matches
+    # the legacy `|| echo ""` behavior of producing empty stdout.
     local redis_pass
-    redis_pass="$(grep '^REDIS_PASSWORD=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "")"
+    redis_pass="$(_env_get_raw REDIS_PASSWORD "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
     if [[ -z "$redis_pass" ]]; then
         log_error "FATAL: REDIS_PASSWORD empty in .env"
         return 1
@@ -1104,8 +1115,12 @@ python_path: ""
 enable_network: false
 SANDBOXEOF
 
+    # Plan 14-06: _env_get_raw for secret. Two-statement default fallback per
+    # Plan 14-04/14-05 precedent — preserves byte-identical legacy output for
+    # both missing-key and key=empty cases.
     local sandbox_key
-    sandbox_key="$(grep '^SANDBOX_API_KEY=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "dify-sandbox")"
+    sandbox_key="$(_env_get_raw SANDBOX_API_KEY "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
+    [[ -z "$sandbox_key" ]] && sandbox_key="dify-sandbox"
     _atomic_sed "$sandbox_conf" "s|__will_be_replaced__|${sandbox_key}|g"
 }
 
