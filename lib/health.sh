@@ -59,27 +59,37 @@ resolve_active_services() {
 # _resolve_active_services_uncached — fresh compute path. Reads env file
 # through legacy grep|cut probes (Plans 14-03..06 will migrate these to
 # _env_get / _env_get_raw helpers). Plan 14-01 = wrap-only (byte-identical).
+# Plan 14-03 = ENV-03b canary: VECTOR_STORE / LLM_PROVIDER / EMBED_PROVIDER
+# reads migrated to _env_get (cosmetic-only blast radius per D-09).
 _resolve_active_services_uncached() {
     local env_file="$1"
     local services=(db redis sandbox ssrf_proxy api worker web plugin_daemon nginx)
 
+    # Plan 14-03 canary: defensive _env_get fallback if common.sh not in scope
+    # (mirrors lib/health.sh:11 `command -v log_info` pattern; production
+    # callers source common.sh via install.sh / agmind.sh entrypoints).
+    if ! command -v _env_get >/dev/null 2>&1; then
+        _env_get() { grep "^${1}=" "$2" 2>/dev/null | cut -d'=' -f2-; }
+    fi
+
     if [[ -f "$env_file" ]]; then
         # Phase 14-03..06 will migrate the `grep ^X= | cut -d=` reads below
-        # to _env_get / _env_get_raw helpers. Plan 14-01 = wrap-only.
+        # to _env_get / _env_get_raw helpers. Plan 14-03 = canary (3 callsites).
 
-        # Vector store
+        # Vector store (Plan 14-03 canary — _env_get migrated)
         local vector_store
-        vector_store="$(grep '^VECTOR_STORE=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "weaviate")"
+        vector_store="$(_env_get VECTOR_STORE "$env_file")"
+        [[ -z "$vector_store" ]] && vector_store="weaviate"
         case "$vector_store" in
             qdrant) services+=(qdrant) ;;
             milvus) services+=(milvus-etcd milvus) ;;
             *)      services+=(weaviate) ;;
         esac
 
-        # LLM/Embedding providers
+        # LLM/Embedding providers (Plan 14-03 canary — _env_get migrated)
         local llm_provider embed_provider
-        llm_provider="$(grep '^LLM_PROVIDER=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "")"
-        embed_provider="$(grep '^EMBED_PROVIDER=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "")"
+        llm_provider="$(_env_get LLM_PROVIDER "$env_file")"
+        embed_provider="$(_env_get EMBED_PROVIDER "$env_file")"
         if [[ "$llm_provider" == "ollama" || "$embed_provider" == "ollama" ]]; then
             services+=(ollama)
         fi
