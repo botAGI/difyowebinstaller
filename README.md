@@ -619,6 +619,45 @@ agmind troubleshoot memory     # OOM / unified memory → §10
 
 ## 🤝 Contributing
 
+### Development setup
+
+One-time, on a contributor machine — install pre-commit hooks as a local guard
+that runs the same checks `.github/workflows/test.yml` enforces on push:
+
+```bash
+pip install pre-commit
+pre-commit install --hook-type pre-commit --hook-type commit-msg
+```
+
+What runs (16 hooks after Phase 13):
+
+- **pre-commit stage (~3-8s warm cache):** 14 existing — `shellcheck`,
+  `yamllint`, `gitleaks`, `markdownlint`, `trailing-whitespace`, `check-yaml`,
+  `check-added-large-files`, `check-merge-conflict`, plus the standard
+  hygiene set; + 1 new — `golden-update-guard` triggers on `commit-msg`.
+- **commit-msg stage:** `golden-update-guard` rejects any commit whose staged
+  diff touches `tests/golden/expected/**` unless the message has a trailer
+  `golden-accept-reason: <≥10 graphic chars>` explaining the snapshot bump.
+  See [`tests/golden/UPDATE.md`](tests/golden/UPDATE.md) for the runbook.
+- **manual stage (opt-in):** `ascii-only-bash` flags non-ASCII bytes in
+  `lib/*.sh`, `scripts/*.sh`, `install.sh`, `tests/golden/run.sh`. Currently
+  gated to manual invocation because the codebase legitimately uses RU
+  comments (project policy) and UI glyphs in logger output; flip to
+  `pre-commit` stage after a dedicated cleanup pass. Run on demand:
+  `pre-commit run --hook-stage manual ascii-only-bash`.
+
+Local regression suite (no CI required):
+
+```bash
+bash tests/run_all.sh                         # All categories — ~30s
+bash tests/golden/run.sh --all                # 5 golden scenarios
+make golden-test                              # alias for the above
+make landmines-check                          # rendered-config landmine sweep
+make help                                     # all Makefile targets
+```
+
+### Contribution rules
+
 - Work on `main` only — no feature branches, no merge commits. PRs are cut
   from `main` on demand.
 - Use the `Makefile` task runner: `make lint` (shellcheck), `make test`

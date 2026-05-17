@@ -74,3 +74,39 @@ repos:
           - '--disable=MD033'  # inline HTML — мы используем для badge layout
           - '--disable=MD041'  # first line h1 — не везде нужно
         exclude: '^(\.github|node_modules|\.planning)'
+
+  # --- Phase 13 additions ---
+  - repo: local
+    hooks:
+      # D-15: commit-msg trailer required when staged diff touches
+      # tests/golden/expected/**. Wraps the standalone bash guard shipped by
+      # Plan 13-04 (tests/golden/_commit_msg_guard.sh) so pre-commit and
+      # CI share the same enforcement script.
+      - id: golden-update-guard
+        name: Require golden-accept-reason trailer when tests/golden/expected/ changes
+        entry: bash tests/golden/_commit_msg_guard.sh
+        language: system
+        stages: [commit-msg]
+
+      # D-16: ASCII-only bash enforcement. Installed in stages: [manual] (opt-in)
+      # because the codebase historically contains non-ASCII bytes in bash source:
+      # RU comments per CLAUDE.md §1 (response_language=RU is project policy) and
+      # UI glyphs (logger arrows like '->', section markers like '#') that are
+      # intentional UX. Running the hook on the default pre-commit stage today
+      # would block every commit until lib/*, scripts/*, install.sh, and the
+      # existing tests/golden + tests/lint helpers are bulk-purged of those
+      # bytes — out of scope for Plan 13-05 (TEST-09 ships the gate, not the
+      # purge). Opt-in invocation:
+      #
+      #     pre-commit run --hook-stage manual ascii-only-bash
+      #
+      # Phase 14 cleanup pass (or a dedicated future plan) can flip stages to
+      # [pre-commit] once the offenders are normalized. See 13-05-SUMMARY.md
+      # "Deviations from Plan" for the architectural rationale (Rule 4).
+      - id: ascii-only-bash
+        name: Forbid non-ASCII bytes in bash source files (opt-in / manual)
+        entry: bash -c 'LC_ALL=C grep -l "[^[:print:][:space:]]" "$@" && exit 1 || exit 0' --
+        language: system
+        stages: [manual]
+        types: [shell]
+        files: '^(lib/|scripts/|install\.sh|tests/golden/run\.sh)'
