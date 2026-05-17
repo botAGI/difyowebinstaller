@@ -566,7 +566,25 @@ _copy_runtime_files() {
         cp -r "${INSTALLER_DIR}/lib/migrations/." "${INSTALL_DIR}/scripts/migrations/"
         chmod +x "${INSTALL_DIR}/scripts/migrations/"*.sh 2>/dev/null || true
     fi
+    # Phase 12 — Service Registry (REG-01..REG-09, docs/adr/0012-service-registry-codegen.md).
+    # Runtime needs:
+    #   lib/registry.sh             → scripts/registry.sh             (YAML API; sourced by Phase 14 RESOLVER)
+    #   lib/_registry.indexed.sh    → scripts/_registry.indexed.sh    (indexed bash arrays sourced by service-map.sh)
+    #   templates/services/registry.yaml → templates/services/registry.yaml (data file read by registry.sh)
+    # The codegen script (scripts/codegen/) is dev/CI-only — NOT copied to runtime.
+    cp "${INSTALLER_DIR}/lib/registry.sh"           "${INSTALL_DIR}/scripts/registry.sh"           2>/dev/null || true
+    cp "${INSTALLER_DIR}/lib/_registry.indexed.sh"  "${INSTALL_DIR}/scripts/_registry.indexed.sh"  2>/dev/null || true
+    # registry.yaml stays under templates/ runtime path so lib/registry.sh's default
+    # REGISTRY_FILE relative resolution finds it. Pattern mirrors templates/init-dify-plugin-db.sql.
+    if [[ -d "${INSTALLER_DIR}/templates/services" ]]; then
+        mkdir -p "${INSTALL_DIR}/templates/services"
+        cp "${INSTALLER_DIR}/templates/services/registry.yaml" "${INSTALL_DIR}/templates/services/registry.yaml" 2>/dev/null || true
+    fi
     chmod +x "${INSTALL_DIR}/scripts/"*.sh 2>/dev/null || true
+    # Phase 12 normalization: _registry.indexed.sh is a sourceable data file, NOT an executable.
+    # Override the broad chmod +x above — repo mode is 100644, runtime must match
+    # (see docs/adr/0012-service-registry-codegen.md — Air-gap compatibility section).
+    chmod 0644 "${INSTALL_DIR}/scripts/_registry.indexed.sh" 2>/dev/null || true
 }
 
 # Cleans stale Redis state left by prior force-recreate of api/worker.
