@@ -26,10 +26,7 @@
 #   7. ^[[:space:]]*ALL_COMPOSE_PROFILES=    (scalar, line-anchored)
 #   8. ^[[:space:]]*SERVICE_GROUP_ORDER=     (scalar, line-anchored)
 #
-# Pattern anchoring: all patterns use ^[[:space:]]* so that comment lines
-# (which start with '#') do NOT match. A line like
-#   # declare -A SERVICE_GROUPS=(...)
-# begins with '#', not whitespace-then-declare, and is correctly skipped.
+# Pattern anchoring: ^[[:space:]]* skips comment lines (starting with '#').
 #
 # Exit: 0 = no hand-edited lists outside allowlist; N>0 = forbidden match count.
 set -uo pipefail
