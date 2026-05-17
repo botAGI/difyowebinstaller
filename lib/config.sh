@@ -252,20 +252,20 @@ _restore_secrets_from_backup() {
 }
 
 _generate_secrets() {
-    _SECRET_KEY="$(generate_random 64)"
-    _DB_PASSWORD="$(generate_random 32)"
-    _REDIS_PASSWORD="$(generate_random 32)"
-    _SANDBOX_API_KEY="dify-sandbox-$(generate_random 16)"
-    _PLUGIN_DAEMON_KEY="$(generate_random 48)"
-    _PLUGIN_INNER_API_KEY="$(generate_random 48)"
-    _WEAVIATE_API_KEY="$(generate_random 32)"
-    _QDRANT_API_KEY="$(generate_random 32)"
-    _GRAFANA_ADMIN_PASSWORD="$(generate_random 16)"
-    _AUTHELIA_JWT_SECRET="$(generate_random 64)"
-    _AUTHELIA_SESSION_SECRET="$(generate_random 64)"
-    _AUTHELIA_STORAGE_KEY="$(generate_random 64)"
-    _LITELLM_MASTER_KEY="sk-$(generate_random 32)"
-    _SEARXNG_SECRET_KEY="$(generate_random 32)"
+    _SECRET_KEY="$(generate_random_named SECRET_KEY 64)"
+    _DB_PASSWORD="$(generate_random_named DB_PASSWORD 32)"
+    _REDIS_PASSWORD="$(generate_random_named REDIS_PASSWORD 32)"
+    _SANDBOX_API_KEY="dify-sandbox-$(generate_random_named SANDBOX_API_KEY 16)"
+    _PLUGIN_DAEMON_KEY="$(generate_random_named PLUGIN_DAEMON_KEY 48)"
+    _PLUGIN_INNER_API_KEY="$(generate_random_named PLUGIN_INNER_API_KEY 48)"
+    _WEAVIATE_API_KEY="$(generate_random_named WEAVIATE_API_KEY 32)"
+    _QDRANT_API_KEY="$(generate_random_named QDRANT_API_KEY 32)"
+    _GRAFANA_ADMIN_PASSWORD="$(generate_random_named GRAFANA_ADMIN_PASSWORD 16)"
+    _AUTHELIA_JWT_SECRET="$(generate_random_named AUTHELIA_JWT_SECRET 64)"
+    _AUTHELIA_SESSION_SECRET="$(generate_random_named AUTHELIA_SESSION_SECRET 64)"
+    _AUTHELIA_STORAGE_KEY="$(generate_random_named AUTHELIA_STORAGE_KEY 64)"
+    _LITELLM_MASTER_KEY="sk-$(generate_random_named LITELLM_MASTER_KEY 32)"
+    _SEARXNG_SECRET_KEY="$(generate_random_named SEARXNG_SECRET_KEY 32)"
 
     # SurrealDB password must persist across re-installs (BACKLOG #999.1):
     # SurrealDB CLI args `--user root --pass X` пишут ROOT creds в rocksdb
@@ -292,13 +292,13 @@ _generate_secrets() {
         _SURREALDB_PASSWORD="$(cat "$_sdb_pw_file")"
         log_info "SurrealDB password loaded from ${_sdb_pw_file} (preserved across re-install)"
     else
-        _SURREALDB_PASSWORD="$(generate_random 24)"
+        _SURREALDB_PASSWORD="$(generate_random_named SURREALDB_PASSWORD 24)"
         printf '%s' "$_SURREALDB_PASSWORD" > "$_sdb_pw_file"
         chmod 600 "$_sdb_pw_file"
         log_info "SurrealDB password generated and persisted: ${_sdb_pw_file}"
     fi
 
-    _NOTEBOOK_ENCRYPTION_KEY="$(generate_random 32)"
+    _NOTEBOOK_ENCRYPTION_KEY="$(generate_random_named NOTEBOOK_ENCRYPTION_KEY 32)"
 
     # n8n encryption key — protects credentials stored in the n8n DB.
     # Persisted at /var/lib/agmind/state/n8n_encryption_key.preserved (mirrors
@@ -313,7 +313,7 @@ _generate_secrets() {
         _N8N_ENCRYPTION_KEY="$(cat "$_n8n_key_preserved")"
         log_info "n8n encryption key loaded from ${_n8n_key_preserved} (preserved across re-install)"
     else
-        _N8N_ENCRYPTION_KEY="$(generate_random 32)"
+        _N8N_ENCRYPTION_KEY="$(generate_random_named N8N_ENCRYPTION_KEY 32)"
         mkdir -p "$(dirname "$_n8n_key_preserved")" 2>/dev/null || true
         { printf '%s' "$_N8N_ENCRYPTION_KEY" > "$_n8n_key_preserved"; } 2>/dev/null || true
         chmod 600 "$_n8n_key_preserved" 2>/dev/null || true
@@ -321,15 +321,15 @@ _generate_secrets() {
     fi
 
     _MINIO_ROOT_USER="agmind-admin"
-    _MINIO_ROOT_PASSWORD="$(generate_random 32)"
-    _S3_ACCESS_KEY="$(generate_random 20)"
-    _S3_SECRET_KEY="$(generate_random 40)"
+    _MINIO_ROOT_PASSWORD="$(generate_random_named MINIO_ROOT_PASSWORD 32)"
+    _S3_ACCESS_KEY="$(generate_random_named S3_ACCESS_KEY 20)"
+    _S3_SECRET_KEY="$(generate_random_named S3_SECRET_KEY 40)"
 
     # RAGFlow secrets (BACKLOG #999.7) — generated even если ENABLE_RAGFLOW=false,
     # placeholders в .env остаются stub значениями но не пустыми (избегаем "пустой пароль" errors).
-    _RAGFLOW_MYSQL_PASSWORD="$(generate_random 32)"
-    _RAGFLOW_ES_PASSWORD="$(generate_random 32)"
-    _RAGFLOW_MINIO_PASSWORD="$(generate_random 32)"
+    _RAGFLOW_MYSQL_PASSWORD="$(generate_random_named RAGFLOW_MYSQL_PASSWORD 32)"
+    _RAGFLOW_ES_PASSWORD="$(generate_random_named RAGFLOW_ES_PASSWORD 32)"
+    _RAGFLOW_MINIO_PASSWORD="$(generate_random_named RAGFLOW_MINIO_PASSWORD 32)"
 
     # Portainer Agent secret — shared между master Portainer и peer agent.
     # Persistent в /var/lib/agmind/state чтобы переживать uninstall --keep-models
@@ -347,13 +347,13 @@ _generate_secrets() {
     if [[ -s "$_portainer_secret_file" ]]; then
         _PORTAINER_AGENT_SECRET="$(cat "$_portainer_secret_file")"
     else
-        _PORTAINER_AGENT_SECRET="$(generate_random 32)"
+        _PORTAINER_AGENT_SECRET="$(generate_random_named PORTAINER_AGENT_SECRET 32)"
         printf '%s' "$_PORTAINER_AGENT_SECRET" > "$_portainer_secret_file"
         chmod 600 "$_portainer_secret_file"
         log_info "Portainer agent secret generated and persisted: ${_portainer_secret_file}"
     fi
 
-    _ADMIN_PASSWORD_PLAIN="$(generate_random 16)"
+    _ADMIN_PASSWORD_PLAIN="$(generate_random_named ADMIN_PASSWORD_PLAIN 16)"
     _ADMIN_PASSWORD_B64="$(echo -n "$_ADMIN_PASSWORD_PLAIN" | base64)"
 
     # Override volume-bound secrets from backup if PG data exists (IREL-03)

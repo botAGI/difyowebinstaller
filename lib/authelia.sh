@@ -34,7 +34,7 @@ configure_authelia() {
         admin_password="$(cat "${INSTALL_DIR}/.admin_password" 2>/dev/null || true)"
     fi
     if [[ -z "$admin_password" ]]; then
-        admin_password="$(generate_random 16)"
+        admin_password="$(generate_random_named AUTHELIA_ADMIN_PASSWORD 16)"
     fi
 
     # Generate argon2 hash
@@ -47,7 +47,7 @@ configure_authelia() {
 
     # Generate JWT secret
     local jwt_secret
-    jwt_secret="$(generate_random 64)"
+    jwt_secret="$(generate_random_named AUTHELIA_LOCAL_JWT_SECRET 64)"
 
     # Escape user-controlled values for sed
     local safe_domain safe_company
