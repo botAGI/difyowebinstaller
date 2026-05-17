@@ -1,0 +1,7 @@
+# AGmind golden test scenarios — TSV: name<TAB>profile<TAB>seed<TAB>description
+# DO NOT EDIT WITHOUT updating both inputs/<scenario>.env AND expected/<scenario>/
+minimal_lan	lan	minimal_lan:13:v1	Minimum viable LAN install (weaviate, no monitoring, no minio)
+full_lan	lan	full_lan:13:v1	Typical demo LAN install (weaviate + minio + monitoring + reranker + docling + authelia)
+rag_milvus	lan	rag_milvus:13:v1	Alternative vector store path (milvus + auto-minio)
+ragflow	lan	ragflow:13:v1	RAGFlow profile activated (service_conf.yaml generated)
+cluster_peer	lan	cluster_peer:13:v1	LLM_ON_PEER=true cluster mode (vllm not on master)
