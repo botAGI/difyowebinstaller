@@ -5,7 +5,8 @@
 SHELL := /bin/bash
 
 .PHONY: help lint test test-unit test-integration compose-config \
-        manifest-check image-check release-check
+        manifest-check image-check release-check \
+        registry-codegen registry-verify
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | \
@@ -37,3 +38,9 @@ image-check: manifest-check ## Alias for manifest-check
 
 release-check: ## Check VERSION/RELEASE/release-manifest.json consistency
 	python3 scripts/check-manifest-versions.py
+
+registry-codegen: ## Regenerate lib/_registry.indexed.sh from templates/services/registry.yaml
+	bash scripts/codegen/registry-to-indexed.sh
+
+registry-verify: ## CI gate — run codegen, fail if generated artifact has drift
+	bash tests/integration/test_registry_codegen_drift.sh
