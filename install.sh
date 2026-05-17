@@ -824,8 +824,8 @@ _init_ragflow_minio_user() {
     ragflow_user="$(_env_get RAGFLOW_MINIO_USER "${INSTALL_DIR}/docker/.env")"
     ragflow_user="${ragflow_user:-ragflow}"
     ragflow_pass="$(grep '^RAGFLOW_MINIO_PASSWORD=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
-    mc_version="$(grep '^MC_VERSION=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
-    mc_version="${mc_version:-RELEASE.2025-08-13T08-35-41Z}"
+    mc_version="$(_env_get MC_VERSION "${INSTALL_DIR}/docker/.env")"
+    [[ -z "$mc_version" ]] && mc_version="RELEASE.2025-08-13T08-35-41Z"
 
     if [[ -z "$ragflow_pass" ]]; then
         log_warn "RAGFLOW_MINIO_PASSWORD empty — skip RAGFlow MinIO setup"
@@ -862,8 +862,8 @@ _init_minio_bucket() {
     pass="$(grep '^MINIO_ROOT_PASSWORD=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
     bucket="$(_env_get S3_BUCKET_NAME "${INSTALL_DIR}/docker/.env")"
     bucket="${bucket:-dify-storage}"
-    mc_version="$(grep '^MC_VERSION=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
-    mc_version="${mc_version:-RELEASE.2025-08-13T08-35-41Z}"
+    mc_version="$(_env_get MC_VERSION "${INSTALL_DIR}/docker/.env")"
+    [[ -z "$mc_version" ]] && mc_version="RELEASE.2025-08-13T08-35-41Z"
     export MC_VERSION="$mc_version"
 
     # Wait for MinIO container to be running (healthcheck may take longer)

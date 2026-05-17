@@ -724,7 +724,7 @@ send_alert() {
         telegram)
             local tg_token tg_chat_id
             tg_token="$(grep '^ALERT_TELEGRAM_TOKEN=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "")"
-            tg_chat_id="$(grep '^ALERT_TELEGRAM_CHAT_ID=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "")"
+            tg_chat_id="$(_env_get ALERT_TELEGRAM_CHAT_ID "$env_file")"
             if [[ -n "$tg_token" && -n "$tg_chat_id" ]]; then
                 # Escape HTML special chars for Telegram parse_mode=HTML.
                 # & must be escaped FIRST to avoid double-escaping.
