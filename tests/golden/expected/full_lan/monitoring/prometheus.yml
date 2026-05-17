@@ -45,8 +45,8 @@ scrape_configs:
   - job_name: 'vllm'
     static_configs:
       # __LLM_LOCAL_BEGIN__ — commented out by _configure_peer_monitoring when AGMIND_MODE=master
-      # - targets: ['agmind-vllm:8000']
-        # labels: {service: 'llm'}
+      - targets: ['agmind-vllm:8000']
+        labels: {service: 'llm'}
       # __LLM_LOCAL_END__
       - targets: ['agmind-vllm-embed:8000']
         labels: {service: 'embed'}
@@ -77,12 +77,12 @@ scrape_configs:
   # PEER_IP is substituted by lib/config.sh::_configure_peer_monitoring when AGMIND_MODE=master.
   # If AGMIND_MODE != master, these jobs are commented out at install time.
   # __PEER_SCRAPE_BEGIN__
-  - job_name: 'peer-node-exporter'
-    static_configs:
-      - targets: ['192.168.100.2:9100']
-        labels: {instance: 'spark-worker', role: 'peer', node: 'spark-69a2'}
-  - job_name: 'peer-vllm'
-    static_configs:
-      - targets: ['192.168.100.2:8000']
-        labels: {service: 'peer-llm', instance: 'spark-worker', role: 'peer'}
+  # - job_name: 'peer-node-exporter'
+  #   static_configs:
+  #     - targets: ['__PEER_IP__:9100']
+  #       labels: {instance: 'spark-worker', role: 'peer', node: 'spark-69a2'}
+  # - job_name: 'peer-vllm'
+  #   static_configs:
+  #     - targets: ['__PEER_IP__:8000']
+  #       labels: {service: 'peer-llm', instance: 'spark-worker', role: 'peer'}
   # __PEER_SCRAPE_END__

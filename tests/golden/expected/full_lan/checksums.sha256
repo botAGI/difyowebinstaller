@@ -19,5 +19,5 @@ e27b8a5461c16dcbf9664ae1826072108443958bf47353e871c8f46991874238  ./monitoring/g
 13ab124e3da250b609b7f0476d7716276436f9e7222640c6b4531d1ec245a6e5  ./monitoring/grafana/provisioning/datasources/prometheus.yml
 176ada478ded428de14e9edc17f60d19a19f812b6e5d18186987d03ff40cd5af  ./monitoring/loki-config.yml
 b5e30ab222748b2fe4a92d050ead6172955c2e401e09ec3cd87e8c3daf51e9d9  ./monitoring/peer-offline.yml
-7b7a81b2c68fd7724ba65b8489ff1d087b00400e8689af23dd31ee266ed8ed13  ./monitoring/prometheus.yml
+f76a736470827f98f4561947e57495c0ab4cd665940c5a1ce7d056a5e5d7f6e1  ./monitoring/prometheus.yml
 a13e2be34f6863432e2af2a488506b9dcd227e5c9c571ac55ff2f324cd7c4977  ./nginx.conf

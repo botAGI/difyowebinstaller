@@ -128,13 +128,22 @@ else
     _fail "REG_BACKEND should be populated after API call"
 fi
 
-# Test 11: PyYAML fallback via clean PATH — hides yq from auto-detection.
-# This proves _reg_load's yq-absent code path falls through to python.
-# Caveat: on hosts where yq isn't installed anywhere, this trivially executes
-# the python branch without actually exercising the "yq is rejected" logic.
-# Test 11b below covers the explicit-override path independent of host state.
+# Test 11: PyYAML fallback via yq-stub PATH override — exercises the actual
+# "yq exists but rejected as non-mikefarah-v4" code path в _reg_load (lines 60-67).
+# Originally PATH=/usr/bin:/bin tried to hide yq, but ubuntu-latest CI runners
+# have /usr/bin/yq (mikefarah v4) preinstalled → real yq still found → wrong
+# backend chosen. Fix: PATH-prepend a tmp dir containing a `yq` stub that prints
+# a version string FAILING the `mikefarah|v?4.` grep, so _reg_load falls through
+# to the python branch. Real coreutils (dirname, etc.) stay reachable via
+# /usr/bin in the suffix of PATH.
 if python3 -c "import yaml" 2>/dev/null; then
-    out=$(env -i HOME="$HOME" PATH="/usr/bin:/bin" bash -c "
+    _yq_stub_dir="$(mktemp -d)"
+    cat > "$_yq_stub_dir/yq" <<'YQ_STUB'
+#!/usr/bin/env bash
+echo 'yq 3.0.0 (test stub — Test 11 forces python fallback)'
+YQ_STUB
+    chmod +x "$_yq_stub_dir/yq"
+    out=$(env -i HOME="$HOME" PATH="$_yq_stub_dir:/usr/bin:/bin" bash -c "
         cd '$REPO_ROOT'
         unset REG_BACKEND _REGISTRY_LOADED
         source lib/registry.sh
@@ -142,8 +151,9 @@ if python3 -c "import yaml" 2>/dev/null; then
         reg_get_healthcheck loki
         echo \"BACKEND=\$REG_BACKEND\"
     " 2>&1)
+    rm -rf "$_yq_stub_dir"
     if echo "$out" | grep -q 'BACKEND=python' && echo "$out" | grep -q '^vllm$' && echo "$out" | grep -q 'distroless-no-health'; then
-        _ok "PyYAML fallback works (forced via clean PATH)"
+        _ok "PyYAML fallback works (yq-stub PATH override)"
     else
         _fail "PyYAML fallback failed. Output: $out"
     fi

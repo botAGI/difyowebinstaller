@@ -131,6 +131,13 @@ _render_scenario() {
         # files → generate_random_named fills the key, byte-drift). Per-scenario
         # tmp state dir gives generate_random_named ownership over the key.
         export AGMIND_STATE_DIR="${INSTALL_DIR}/state"
+        # Cluster state isolation — same root cause as AGMIND_STATE_DIR. lib/config.sh:1597
+        # _configure_peer_monitoring reads /var/lib/agmind/state/cluster.json when
+        # AGMIND_MODE env unset; dev box has cluster.json from prior cluster setup
+        # (mode=master) → leaks into expected/. Per-scenario cluster.json file
+        # path in INSTALL_DIR/state — non-existent unless scenario provides it.
+        export AGMIND_CLUSTER_STATE_FILE="${INSTALL_DIR}/state/cluster.json"
+        export AGMIND_CLUSTER_STATE_DIR="${INSTALL_DIR}/state"
         # Neutralize host docker.sock GID drift — dev box ≠ CI runner.
         # lib/config.sh:619 detects DOCKER_GID via `stat -c %g /var/run/docker.sock`;
         # mock returns fixed value so snapshot is host-agnostic.
