@@ -6,7 +6,9 @@ SHELL := /bin/bash
 
 .PHONY: help lint test test-unit test-integration compose-config \
         manifest-check image-check release-check \
-        registry-codegen registry-verify
+        registry-codegen registry-verify \
+        golden-test golden-update golden-update-all \
+        landmines-check landmines-sync
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | \
@@ -44,3 +46,24 @@ registry-codegen: ## Regenerate lib/_registry.indexed.sh from templates/services
 
 registry-verify: ## CI gate — run codegen, fail if generated artifact has drift
 	bash tests/integration/test_registry_codegen_drift.sh
+
+golden-test: ## Run all 5 golden scenarios (hermetic — no docker daemon needed)
+	bash tests/golden/run.sh --all
+
+golden-update: ## Interactive golden snapshot update for one scenario (usage: make golden-update SCENARIO=<name>)
+	@if [[ -z "$$SCENARIO" ]]; then \
+	  echo "Usage: make golden-update SCENARIO=<name>"; \
+	  echo "Available scenarios: $$(awk -F'\t' 'NR>0 && $$1!="" && !/^#/ {print $$1}' tests/golden/scenarios.list | tr '\n' ' ')"; \
+	  exit 2; \
+	fi; \
+	AGMIND_GOLDEN_ACCEPT=$${AGMIND_GOLDEN_ACCEPT:-1} bash tests/golden/run.sh --update "$$SCENARIO"; \
+	python3 scripts/golden-diff-summary.py tests/golden/.last-update.diff || true
+
+golden-update-all: ## Bulk update all golden scenarios (requires AGMIND_GOLDEN_ACCEPT=1)
+	AGMIND_GOLDEN_ACCEPT=1 bash tests/golden/run.sh --update --update-all
+
+landmines-check: ## Run landmine enforcer against tests/golden/expected/
+	bash tests/unit/test_golden_no_known_landmines.sh
+
+landmines-sync: ## Regenerate tests/lint/LANDMINES.tsv from LANDMINES.md
+	bash scripts/landmines-sync.sh
