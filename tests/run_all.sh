@@ -69,6 +69,12 @@ for t in tests/integration/*.sh; do
     _run "integration: $t" bash "$t"
 done
 
+# ── perf tests (D-04 gates — Plan 14-02) ──────────────────────────────────────
+for t in tests/perf/*.sh; do
+    [[ -x "$t" ]] || continue
+    _run "perf: $t" bash "$t"
+done
+
 # ── golden tests (smoke только — full --all лежит в CI matrix; локально не таймаутим) ──
 if [[ -x tests/golden/run.sh ]]; then
     _run "golden: minimal_lan smoke" bash tests/golden/run.sh minimal_lan
