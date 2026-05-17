@@ -277,7 +277,10 @@ _generate_secrets() {
     # пароль больше не нужен).
     local _sdb_secrets_dir="${INSTALL_DIR}/.secrets"
     local _sdb_pw_file="${_sdb_secrets_dir}/surrealdb_password"
-    local _sdb_pw_preserved="/var/lib/agmind/state/surrealdb_password.preserved"
+    # AGMIND_STATE_DIR — env override для test isolation (golden harness).
+    # Defaults to canonical production path; production callers unaffected.
+    local _agmind_state_dir="${AGMIND_STATE_DIR:-/var/lib/agmind/state}"
+    local _sdb_pw_preserved="${_agmind_state_dir}/surrealdb_password.preserved"
     mkdir -p "$_sdb_secrets_dir" 2>/dev/null || true
     chmod 700 "$_sdb_secrets_dir" 2>/dev/null || true
     # Restore from uninstall --keep-models stash if INSTALL_DIR was wiped
@@ -308,7 +311,8 @@ _generate_secrets() {
     # survives /opt/agmind wipe; it stores the same key in
     # /home/node/.n8n/config — a mismatch on next start = fatal "Mismatching
     # encryption keys" boot error.
-    local _n8n_key_preserved="/var/lib/agmind/state/n8n_encryption_key.preserved"
+    # Same AGMIND_STATE_DIR override applies (test isolation).
+    local _n8n_key_preserved="${_agmind_state_dir}/n8n_encryption_key.preserved"
     if [[ -s "$_n8n_key_preserved" ]]; then
         _N8N_ENCRYPTION_KEY="$(cat "$_n8n_key_preserved")"
         log_info "n8n encryption key loaded from ${_n8n_key_preserved} (preserved across re-install)"
