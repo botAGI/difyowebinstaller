@@ -111,6 +111,12 @@ _render_scenario() {
         return 1
     fi
 
+    # Save real PATH before any subshell — needed for `docker compose config`
+    # which must run against the real CLI (mock docker doesn't parse `-f X -p Y
+    # --env-file Z config` argv shape — and `compose config` is intentionally
+    # hermetic at the daemon level, so calling the real binary is safe).
+    local real_path="$PATH"
+
     (
         export PATH="$mock_path"
         export INSTALL_DIR="$tmpdir/install"
@@ -135,20 +141,42 @@ _render_scenario() {
         # shellcheck source=/dev/null
         source "${REPO_ROOT}/lib/config.sh"
 
-        # Run the real rendering pipeline
-        if ! generate_config "$SCENARIO_PROFILE" "$template_dir" >/dev/null 2>&1; then
-            echo "${RED}ERROR: generate_config упал для scenario=$scenario${NC}" >&2
+        # Run the real rendering pipeline. set +e так как config.sh может
+        # бросать non-fatal warnings (например mkdir на /var/lib/agmind/state
+        # без root) — это не должно валить весь рендер. Главный сигнал успеха —
+        # наличие .env и docker-compose.yml после возврата.
+        set +e
+        generate_config "$SCENARIO_PROFILE" "$template_dir" >/dev/null 2>&1
+        if [[ ! -s "$INSTALL_DIR/docker/.env" ]] || [[ ! -s "$INSTALL_DIR/docker/docker-compose.yml" ]]; then
+            echo "${RED}ERROR: generate_config не создал .env или docker-compose.yml для scenario=$scenario${NC}" >&2
             exit 1
         fi
 
-        # Capture fully-interpolated compose (Pitfall 7: pass -p agmind to fix `name:`)
-        if ! docker compose -f "$INSTALL_DIR/docker/docker-compose.yml" \
+        # Capture fully-interpolated compose (Pitfall 7: pass -p agmind to fix `name:`).
+        # Use REAL docker binary (not mock) — mock argv parser doesn't handle the
+        # full `-f ... -p ... --env-file ... config` shape, and `compose config`
+        # is hermetic by design (parser-only, no daemon).
+        if ! PATH="$real_path" docker compose -f "$INSTALL_DIR/docker/docker-compose.yml" \
                 -p agmind \
                 --env-file "$INSTALL_DIR/docker/.env" \
                 config 2>/dev/null > "$INSTALL_DIR/docker/docker-compose.rendered.yml"; then
             echo "${RED}ERROR: docker compose config упал для scenario=$scenario${NC}" >&2
             exit 1
         fi
+        if [[ ! -s "$INSTALL_DIR/docker/docker-compose.rendered.yml" ]]; then
+            echo "${RED}ERROR: docker compose config дал пустой output для scenario=$scenario${NC}" >&2
+            exit 1
+        fi
+
+        # Normalize tmpdir path в bind-mount `source:` строках → __INSTALL_DIR__.
+        # Docker Compose резолвит относительные пути в абсолютные используя
+        # текущий INSTALL_DIR, что вносит non-determinism (mktemp suffix). После
+        # этой замены rendered YAML стабилен между запусками. Удаление этого
+        # шага = double-render guard будет ловить tmpdir-leak (verified).
+        local _esc_install_dir
+        _esc_install_dir="$(printf '%s\n' "$INSTALL_DIR" | sed 's|[][\\/.*^$]|\\&|g')"
+        sed -i "s|${_esc_install_dir}|__INSTALL_DIR__|g" \
+            "$INSTALL_DIR/docker/docker-compose.rendered.yml"
 
         mkdir -p "$out_dir"
         cp "$INSTALL_DIR/docker/.env" "$out_dir/.env.rendered"
