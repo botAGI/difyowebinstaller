@@ -458,7 +458,8 @@ preflight_bind_mount_check() {
         "monitoring/alloy-config.river"
     )
     local enable_litellm
-    enable_litellm="$(grep '^ENABLE_LITELLM=' "${docker_dir}/.env" 2>/dev/null | cut -d'=' -f2- || echo "true")"
+    enable_litellm="$(_env_get ENABLE_LITELLM "${docker_dir}/.env")"
+    [[ -z "$enable_litellm" ]] && enable_litellm="true"
     if [[ "$enable_litellm" == "true" ]]; then all_bind_files+=("litellm-config.yaml"); fi
     for f in "${all_bind_files[@]}"; do
         local full="${docker_dir}/${f}"

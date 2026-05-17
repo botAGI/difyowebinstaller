@@ -25,19 +25,19 @@ cd "$REPO_ROOT" || { echo "FAIL: cannot cd to ${REPO_ROOT}"; exit 1; }
 # Phase 14 (ENV-03b canary + ENV-03c bulk) will ratchet these numbers DOWN
 # as callsites migrate to _env_get / _env_get_raw from lib/common.sh.
 declare -A BASELINE=(
-    [lib/health.sh]=28
-    [scripts/health.sh]=28
-    [install.sh]=16
-    [lib/config.sh]=13
+    [lib/health.sh]=3
+    [scripts/health.sh]=3
+    [install.sh]=11
+    [lib/config.sh]=9
     [scripts/agmind.sh]=7
-    [lib/compose.sh]=6
+    [lib/compose.sh]=1
     [scripts/backup.sh]=5
     [scripts/update.sh]=4
     [scripts/rotate_secrets.sh]=3
     [lib/authelia.sh]=1
-    [lib/common.sh]=1
+    [lib/common.sh]=0
     [lib/openwebui.sh]=1
-    [lib/restore.sh]=1
+    [lib/restore.sh]=0
     [scripts/dr-drill.sh]=1
     [scripts/uninstall.sh]=1
     [scripts/import-dify-workflow.sh]=1
