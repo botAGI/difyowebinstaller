@@ -1,0 +1,52 @@
+// Grafana Alloy config — replaces Promtail (deprecated 2026).
+// Migrated from monitoring/promtail-config.yml 2026-04-25 (BACKLOG #999.5).
+// Docs: https://grafana.com/docs/alloy/latest/reference/components/loki/
+//
+// Behavior parity with Promtail:
+//   - Discover all docker containers via docker-socket-proxy (read-only TCP API)
+//   - Tail their logs (docker-socket-proxy TCP → loki.source.docker)
+//   - Relabel: __meta_docker_container_name → container,
+//              compose service/project labels propagated
+//   - Push to Loki at http://loki:3100/loki/api/v1/push
+//
+// SC1 hardening (2026-05-12): raw unix socket replaced by docker-socket-proxy TCP API.
+// Alloy River components use the literal `host` arg — DOCKER_HOST env is NOT consulted.
+// arm64 manifest verified for grafana/alloy:v1.16.0 (2026-04-25).
+
+discovery.docker "agmind" {
+	host             = "tcp://docker-socket-proxy:2375"
+	refresh_interval = "5s"
+}
+
+discovery.relabel "agmind" {
+	targets = []
+
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = "/(.*)"
+		target_label  = "container"
+	}
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		target_label  = "service"
+	}
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+		target_label  = "project"
+	}
+}
+
+loki.source.docker "agmind" {
+	host          = "tcp://docker-socket-proxy:2375"
+	targets       = discovery.docker.agmind.targets
+	forward_to    = [loki.write.loki.receiver]
+	relabel_rules = discovery.relabel.agmind.rules
+}
+
+loki.write "loki" {
+	endpoint {
+		url = "http://loki:3100/loki/api/v1/push"
+	}
+}
