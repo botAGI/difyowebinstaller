@@ -53,7 +53,10 @@ jobs:
       - name: ShellCheck lib + scripts + install.sh
         run: shellcheck -S warning lib/*.sh scripts/*.sh install.sh
       - name: ShellCheck tests
-        run: shellcheck -S warning tests/run_all.sh tests/unit/*.sh tests/lint/*.sh tests/integration/*.sh tests/mocks/* tests/compose/*.sh
+        # tests/mocks/ contains executable bash mocks (no .sh extension) plus README.md (Plan 13-05).
+        # find excludes the markdown documentation so shellcheck only sees bash sources.
+        run: |
+          shellcheck -S warning tests/run_all.sh tests/unit/*.sh tests/lint/*.sh tests/integration/*.sh tests/compose/*.sh $(find tests/mocks/ -maxdepth 1 -type f ! -name '*.md')
 
   unit-tests:
     name: Unit Tests (with mocks)

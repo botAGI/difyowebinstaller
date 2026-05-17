@@ -178,6 +178,27 @@ _render_scenario() {
         sed -i "s|${_esc_install_dir}|__INSTALL_DIR__|g" \
             "$INSTALL_DIR/docker/docker-compose.rendered.yml"
 
+        # Cross-version normalization: docker compose v2 emits implicit defaults
+        # explicitly в новых патчах ("bind:\n  create_host_path: true"), старые
+        # эмитят compact form ("bind: {}"). Семантика identical (create_host_path
+        # default = true). Collapse explicit form → compact чтобы snapshot был
+        # cross-version stable (CI runner ≠ dev box compose version).
+        python3 - "$INSTALL_DIR/docker/docker-compose.rendered.yml" <<'PY'
+import re, sys
+path = sys.argv[1]
+with open(path, 'r', encoding='utf-8') as f:
+    content = f.read()
+# "bind:\n  create_host_path: true" → "bind: {}"
+content = re.sub(
+    r'^([ \t]+)bind:\n[ \t]+create_host_path: true$',
+    r'\1bind: {}',
+    content,
+    flags=re.MULTILINE,
+)
+with open(path, 'w', encoding='utf-8') as f:
+    f.write(content)
+PY
+
         mkdir -p "$out_dir"
         cp "$INSTALL_DIR/docker/.env" "$out_dir/.env.rendered"
         cp "$INSTALL_DIR/docker/docker-compose.rendered.yml" "$out_dir/"
