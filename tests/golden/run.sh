@@ -124,6 +124,17 @@ _render_scenario() {
         local template_dir="${REPO_ROOT}/templates"
         export AGMIND_TEST_SEED="$SCENARIO_SEED"
         export AGMIND_ALLOW_TEST_SEED=true
+        # Isolate from host state — `*.preserved` files in /var/lib/agmind/state/
+        # from prior real installs would otherwise leak into the snapshot
+        # (e.g. dev box has n8n_encryption_key.preserved → empty cat by non-root
+        # user → empty key in expected/, while CI runners have no preserved
+        # files → generate_random_named fills the key, byte-drift). Per-scenario
+        # tmp state dir gives generate_random_named ownership over the key.
+        export AGMIND_STATE_DIR="${INSTALL_DIR}/state"
+        # Neutralize host docker.sock GID drift — dev box ≠ CI runner.
+        # lib/config.sh:619 detects DOCKER_GID via `stat -c %g /var/run/docker.sock`;
+        # mock returns fixed value so snapshot is host-agnostic.
+        export MOCK_STAT_GID_FIXTURE=988
 
         # Load scenario .env (self-contained per D-03)
         set -a
