@@ -819,9 +819,9 @@ _init_ragflow_minio_user() {
 
     log_info "Provisioning MinIO bucket+user for RAGFlow..."
     local user pass mc_version ragflow_user ragflow_pass
-    user="$(grep '^MINIO_ROOT_USER=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
+    user="$(_env_get MINIO_ROOT_USER "${INSTALL_DIR}/docker/.env")"
     pass="$(grep '^MINIO_ROOT_PASSWORD=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
-    ragflow_user="$(grep '^RAGFLOW_MINIO_USER=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
+    ragflow_user="$(_env_get RAGFLOW_MINIO_USER "${INSTALL_DIR}/docker/.env")"
     ragflow_user="${ragflow_user:-ragflow}"
     ragflow_pass="$(grep '^RAGFLOW_MINIO_PASSWORD=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
     mc_version="$(grep '^MC_VERSION=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
@@ -858,9 +858,9 @@ _init_minio_bucket() {
     [[ "${ENABLE_MINIO:-false}" == "true" ]] || return 0
     log_info "Creating MinIO bucket..."
     local user pass bucket mc_version
-    user="$(grep '^MINIO_ROOT_USER=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
+    user="$(_env_get MINIO_ROOT_USER "${INSTALL_DIR}/docker/.env")"
     pass="$(grep '^MINIO_ROOT_PASSWORD=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
-    bucket="$(grep '^S3_BUCKET_NAME=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
+    bucket="$(_env_get S3_BUCKET_NAME "${INSTALL_DIR}/docker/.env")"
     bucket="${bucket:-dify-storage}"
     mc_version="$(grep '^MC_VERSION=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
     mc_version="${mc_version:-RELEASE.2025-08-13T08-35-41Z}"
@@ -1070,7 +1070,7 @@ _save_credentials() {
         fi
         if [[ "${ENABLE_MINIO:-false}" == "true" ]]; then
             local _minio_user _minio_pass
-            _minio_user="$(grep '^MINIO_ROOT_USER=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
+            _minio_user="$(_env_get MINIO_ROOT_USER "${INSTALL_DIR}/docker/.env")"
             _minio_pass="$(grep '^MINIO_ROOT_PASSWORD=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
             echo ""
             echo "=== MinIO (S3 Object Storage) ==="

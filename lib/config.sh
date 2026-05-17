@@ -140,14 +140,14 @@ _copy_ragflow_templates() {
     _v_redis_pw="$( { grep '^REDIS_PASSWORD=' "$env_file" || true; } | cut -d= -f2-)"
     _v_ragflow_mysql_pw="$( { grep '^RAGFLOW_MYSQL_PASSWORD=' "$env_file" || true; } | cut -d= -f2-)"
     _v_ragflow_es_pw="$( { grep '^RAGFLOW_ES_PASSWORD=' "$env_file" || true; } | cut -d= -f2-)"
-    _v_ragflow_minio_user="$( { grep '^RAGFLOW_MINIO_USER=' "$env_file" || true; } | cut -d= -f2-)"
+    _v_ragflow_minio_user="$(_env_get RAGFLOW_MINIO_USER "$env_file")"
     _v_ragflow_minio_user="${_v_ragflow_minio_user:-ragflow}"
     _v_ragflow_minio_pw="$( { grep '^RAGFLOW_MINIO_PASSWORD=' "$env_file" || true; } | cut -d= -f2-)"
-    _v_vllm_model="$( { grep '^VLLM_SPARK_MODEL=' "$env_file" || true; } | cut -d= -f2-)"
+    _v_vllm_model="$(_env_get VLLM_SPARK_MODEL "$env_file")"
     _v_vllm_model="${_v_vllm_model:-google/gemma-4-26B-A4B-it}"
-    _v_vllm_embed="$( { grep '^VLLM_EMBED_MODEL=' "$env_file" || true; } | cut -d= -f2-)"
+    _v_vllm_embed="$(_env_get VLLM_EMBED_MODEL "$env_file")"
     _v_vllm_embed="${_v_vllm_embed:-deepvk/USER-bge-m3}"
-    _v_vllm_rerank="$( { grep '^VLLM_RERANK_MODEL=' "$env_file" || true; } | cut -d= -f2-)"
+    _v_vllm_rerank="$(_env_get VLLM_RERANK_MODEL "$env_file")"
     _v_vllm_rerank="${_v_vllm_rerank:-BAAI/bge-reranker-v2-m3}"
 
     sed \
