@@ -28,7 +28,22 @@ _run "shellcheck lib/*.sh scripts/*.sh install.sh" \
     shellcheck -S warning lib/*.sh scripts/*.sh install.sh
 
 _run "shellcheck tests/unit/*.sh tests/integration/*.sh tests/mocks/* tests/run_all.sh" \
-    bash -c 'shellcheck -S warning tests/unit/*.sh tests/integration/*.sh tests/mocks/* tests/run_all.sh'
+    bash -c '
+        # tests/mocks/ may contain non-bash artifacts (README.md inventory doc per
+        # Phase 13 TEST-08). Glob only files that look like bash sources: those
+        # carrying a shebang line OR with .sh extension.
+        mock_targets=()
+        for f in tests/mocks/*; do
+            [[ -f "$f" ]] || continue
+            case "$f" in
+                *.md) continue ;;
+            esac
+            if [[ "$f" == *.sh ]] || head -n1 "$f" 2>/dev/null | grep -q "^#!.*\(bash\|sh\)\b"; then
+                mock_targets+=("$f")
+            fi
+        done
+        shellcheck -S warning tests/unit/*.sh tests/integration/*.sh "${mock_targets[@]}" tests/run_all.sh
+    '
 
 # ── unit tests ────────────────────────────────────────────────────────────────
 for t in tests/unit/*.sh; do

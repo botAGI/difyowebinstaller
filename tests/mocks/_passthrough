@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# tests/mocks/_passthrough — Phase 13 D-19 optional shared mock helper.
+#
+# Sourced from a mock script:
+#   . "$(dirname "$0")/_passthrough" <real-bin-path> "$@"
+#
+# Behavior: if MOCK_<UPPER_BIN>_FIXTURE env var set + readable file → cat
+# fixture + exit code from MOCK_<UPPER_BIN>_EXIT (default 0); else exec
+# real binary. <UPPER_BIN> = basename of real-bin in UPPER_SNAKE_CASE,
+# with `.` and `-` collapsed to `_`.
+#
+# Existing 28 mocks are NOT refactored to use this — they're opt-in
+# only for new mocks (A7 in RESEARCH.md: refactoring may change stdout
+# newline-handling, breaking golden snapshots).
+set -uo pipefail
+
+_passthrough_real_bin() {
+    local real="$1"; shift
+    local base
+    base="$(basename "$real")"
+    local up
+    up="$(echo "$base" | tr 'a-z.-' 'A-Z__')"
+    local fixture_var="MOCK_${up}_FIXTURE"
+    local exit_var="MOCK_${up}_EXIT"
+    local fixture="${!fixture_var:-}"
+    local exit_code="${!exit_var:-0}"
+
+    if [[ -n "$fixture" && -f "$fixture" ]]; then
+        cat "$fixture"
+        exit "$exit_code"
+    fi
+    exec "$real" "$@"
+}
+
+# When sourced like `. _passthrough /usr/bin/example "$@"` — invoke immediately.
+if [[ -n "${1:-}" ]]; then
+    _passthrough_real_bin "$@"
+fi
