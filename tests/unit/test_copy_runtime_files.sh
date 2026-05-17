@@ -68,6 +68,78 @@ while IFS= read -r line; do
     fi
 done < <(grep -E 'cp "\$\{INSTALLER_DIR\}/lib/[A-Za-z0-9_.-]+\.sh" *"\$\{INSTALL_DIR\}/scripts/' "$INSTALL_SH")
 
+# ---------------------------------------------------------------------------
+# 4. Symlink preservation (Plan 14-07 / DUP-03)
+# ---------------------------------------------------------------------------
+# scripts/health.sh and scripts/detect.sh are symlinks → ../lib/X.sh per
+# docs/lib-scripts-pairs.md. install.sh::_copy_runtime_files MUST preserve
+# them during the glob copy step. Default `cp` dereferences source symlinks
+# and writes regular files at the destination, silently breaking the
+# single-source-of-truth contract on every install.
+#
+# Regression history (DUP-03, 2026-05-17):
+#   Before Plan 14-07 Task 4, install.sh:533 used plain `cp ... scripts/*.sh ...`
+#   followed by explicit `cp lib/health.sh scripts/health.sh` (line 544). The
+#   net effect was: scripts/health.sh on a fresh-installed host = REGULAR FILE
+#   (not symlink). Plan 14-07 changed the glob to `cp -P` and removed the
+#   redundant explicit copies. This block enforces that fix going forward.
+check_symlink_preservation() {
+    local sp_pass=0 sp_fail=0
+    echo "  -- symlink preservation (DUP-03) --"
+
+    # 4a. The glob copy line MUST use cp -P (or cp -a / --preserve=links)
+    if grep -qE 'cp[[:space:]]+(-P|-a|--preserve=links)[[:space:]]+.*\$\{INSTALLER_DIR\}/scripts/.*\*\.sh' "$INSTALL_SH"; then
+        _ok "install.sh uses cp -P (or -a) for scripts glob copy"
+        sp_pass=$((sp_pass + 1))
+    else
+        _fail "install.sh scripts glob copy does not preserve symlinks (need cp -P)"
+        sp_fail=$((sp_fail + 1))
+    fi
+
+    # 4b. No explicit overwrite of symlinked pairs (would re-introduce DUP-03 bug)
+    if grep -qE 'cp[[:space:]]+.*lib/health\.sh.*scripts/health\.sh' "$INSTALL_SH"; then
+        _fail "install.sh has explicit cp lib/health.sh -> scripts/health.sh, which would overwrite the symlink (DUP-03 regression)"
+        sp_fail=$((sp_fail + 1))
+    else
+        _ok "install.sh does not redundantly overwrite scripts/health.sh symlink"
+        sp_pass=$((sp_pass + 1))
+    fi
+    if grep -qE 'cp[[:space:]]+.*lib/detect\.sh.*scripts/detect\.sh' "$INSTALL_SH"; then
+        _fail "install.sh has explicit cp lib/detect.sh -> scripts/detect.sh, which would overwrite the symlink (DUP-03 regression)"
+        sp_fail=$((sp_fail + 1))
+    else
+        _ok "install.sh does not redundantly overwrite scripts/detect.sh symlink"
+        sp_pass=$((sp_pass + 1))
+    fi
+
+    # 4c. Live simulation — actually exercise cp -P semantic against tmp dirs.
+    # This catches future regressions where someone swaps -P for something
+    # that no longer preserves symlinks (e.g., reverting to plain cp).
+    local tmp_src tmp_dst
+    tmp_src="$(mktemp -d)"
+    tmp_dst="$(mktemp -d)"
+    mkdir -p "${tmp_src}/lib" "${tmp_src}/scripts" "${tmp_dst}/scripts"
+    echo "# fake-lib" > "${tmp_src}/lib/health.sh"
+    (cd "${tmp_src}/scripts" && ln -s ../lib/health.sh health.sh)
+    echo "# fake-script" > "${tmp_src}/scripts/agmind.sh"
+
+    cp -P "${tmp_src}/scripts/"*.sh "${tmp_dst}/scripts/" 2>/dev/null || true
+
+    local sim_target
+    sim_target="$(readlink "${tmp_dst}/scripts/health.sh" 2>/dev/null || echo "NOT-A-SYMLINK")"
+    if [[ -L "${tmp_dst}/scripts/health.sh" ]] && [[ "$sim_target" == "../lib/health.sh" ]]; then
+        _ok "cp -P simulation preserves symlink (target=$sim_target)"
+        sp_pass=$((sp_pass + 1))
+    else
+        _fail "cp -P simulation lost symlink semantic (target=$sim_target — expected ../lib/health.sh)"
+        sp_fail=$((sp_fail + 1))
+    fi
+    rm -rf "${tmp_src}" "${tmp_dst}"
+
+    echo "  -- symlink preservation: $sp_pass ok, $sp_fail fail --"
+}
+check_symlink_preservation
+
 if [[ $fail -ne 0 ]]; then
     echo "## test_copy_runtime_files: FAIL"
     exit 1
