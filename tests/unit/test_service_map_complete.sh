@@ -33,7 +33,7 @@ fail=0
 pass=0
 
 # Whitelist — version vars intentionally NOT in NAME_TO_VERSION_KEY
-WHITELIST_REGEX='^(RAGFLOW_|MILVUS_|MC_VERSION$|REDIS_EXPORTER_VERSION$|POSTGRES_EXPORTER_VERSION$|NGINX_EXPORTER_VERSION$|ELASTICSEARCH_EXPORTER_VERSION$|SOPS_VERSION$|K6_VERSION$|CRAWL4AI_VERSION$|PROMETHEUS_VERSION$|VLLM_NGC_VERSION$|VLLM_SPARK|PORTAINER_AGENT_VERSION$)'
+WHITELIST_REGEX='^(RAGFLOW_|MILVUS_|MC_VERSION$|REDIS_EXPORTER_VERSION$|POSTGRES_EXPORTER_VERSION$|NGINX_EXPORTER_VERSION$|ELASTICSEARCH_EXPORTER_VERSION$|SOPS_VERSION$|K6_VERSION$|CRAWL4AI_VERSION$|PROMETHEUS_VERSION$|VLLM_NGC_VERSION$|VLLM_SPARK|PORTAINER_AGENT_VERSION$|TEI_VERSION$)'
 # Notes:
 #   - per-service exporters / k6 / sops / crawl4ai / prometheus: may or may not
 #     be in NAME_TO_VERSION_KEY — whitelist generously; test's value is catching
@@ -41,13 +41,19 @@ WHITELIST_REGEX='^(RAGFLOW_|MILVUS_|MC_VERSION$|REDIS_EXPORTER_VERSION$|POSTGRES
 #   - PORTAINER_AGENT_VERSION: lives in env.lan.template (cluster-only worker.yml),
 #     must always equal PORTAINER_VERSION (§8 TLS handshake) — tracked implicitly
 #     via portainer. (If ever moved to versions.env, drop from this whitelist.)
+#   - TEI_VERSION: fallback-only default in compose (`${TEI_EMBED_VERSION:-${TEI_VERSION:-...}}`);
+#     primary key tracked via TEI_EMBED_VERSION. Keep as documented legacy fallback.
 
 # Collect *_VERSION vars referenced in compose image: lines
 mapfile -t compose_files < <(find "${REPO_ROOT}/templates" -maxdepth 2 -name "docker-compose*.yml" -type f 2>/dev/null | sort)
 mapfile -t version_vars < <(grep -hoE '\$\{[A-Z_]+_VERSION' "${compose_files[@]}" 2>/dev/null | sed 's/^\${//' | sort -u)
 
-# Collect NAME_TO_VERSION_KEY values from service-map.sh
-mapfile -t mapped_keys < <(grep -oE '\]=[A-Z_]+_VERSION' "$SERVICE_MAP" 2>/dev/null | sed 's/^\]=//' | sort -u)
+# Collect NAME_TO_VERSION_KEY values by sourcing service-map.sh in a subshell.
+# Post ADR-0012 the assoc-array data lives in lib/_registry.indexed.sh
+# (auto-generated from templates/services/registry.yaml); service-map.sh sources
+# it. Grepping for `]=*_VERSION` in service-map.sh no longer works — inspect
+# the in-memory contract, which is what consumers actually use.
+mapfile -t mapped_keys < <(bash -c "source '$SERVICE_MAP' && printf '%s\n' \"\${NAME_TO_VERSION_KEY[@]}\"" 2>/dev/null | sort -u)
 
 unmapped=()
 for v in "${version_vars[@]}"; do

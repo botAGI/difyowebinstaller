@@ -29,12 +29,19 @@ for svc in (compose.get('services') or {}).values():
     for p in (svc.get('profiles') or []):
         compose_profiles.add(p)
 
-src = (root / 'lib/service-map.sh').read_text()
-m = re.search(r'ALL_COMPOSE_PROFILES="([^"]+)"', src)
-if not m:
-    print("  [FAIL] ALL_COMPOSE_PROFILES var not found in lib/service-map.sh")
+# Post ADR-0012: ALL_COMPOSE_PROFILES is auto-generated in lib/_registry.indexed.sh
+# and re-exported via lib/service-map.sh. Inspect the in-memory contract by sourcing
+# service-map.sh in a bash subshell — that is what consumers actually use.
+import subprocess
+res = subprocess.run(
+    ['bash', '-c', f"source '{root}/lib/service-map.sh' && printf '%s' \"$ALL_COMPOSE_PROFILES\""],
+    capture_output=True, text=True
+)
+if res.returncode != 0 or not res.stdout.strip():
+    print("  [FAIL] ALL_COMPOSE_PROFILES not exported by lib/service-map.sh")
+    print(f"    stderr: {res.stderr.strip()}")
     sys.exit(1)
-var_profiles = set(p.strip() for p in m.group(1).split(',') if p.strip())
+var_profiles = set(p.strip() for p in res.stdout.split(',') if p.strip())
 
 missing = compose_profiles - var_profiles
 stale = var_profiles - compose_profiles
