@@ -1,0 +1,479 @@
+# Authoritative service catalog — single source of truth for AGmind.
+# Edit this file; lib/_registry.indexed.sh is GENERATED — do not hand-edit.
+# Run `make registry-codegen` after changes; CI gate `git diff --exit-code
+# lib/_registry.indexed.sh` enforces regeneration.
+# See docs/adr/0012-service-registry-codegen.md for design rationale.
+#
+# Schema:
+#   schema_version (int)               — bootstrap = 1; bumps require ADR addendum
+#   services (dict)                    — keys = compose service names verbatim
+#     image_key (str)                  — versions.env variable holding the tag
+#     group (str)                      — display group for `agmind status`
+#     profiles (list[str])             — raw compose profiles; empty = always-on
+#     healthcheck (enum)               — present | absent | distroless-no-health
+#     mem_limit (str, optional)        — compose mem_limit default value; omit if compose has none
+#     services_for_restart (list[str], optional) — multi-service restart bundle
+#     aliases (list[str], optional)    — extra short names accepted by `agmind update`
+#                                        CLI (backward-compat for v3.1.x users).
+#                                        Codegen emits one NAME_TO_VERSION_KEY entry
+#                                        per alias in addition to the service name.
+#   profile_expansions (dict)          — 8 named meta-profiles → CSV of raw profiles
+#   profile_descriptions (dict)        — 8 named meta-profiles → human one-liner
+#   profile_implied (dict)             — 8 named meta-profiles → implied ENABLE_*=
+#   group_order (list)                 — 7 group labels, display order
+#   all_compose_profiles (list)        — 24 raw profile labels for `compose down`
+
+schema_version: 1
+
+services:
+  # ============================== Core ==============================
+  db:
+    image_key: POSTGRES_VERSION
+    group: core
+    profiles: []
+    healthcheck: present
+    mem_limit: "4g"
+    aliases: [postgres]   # `agmind update postgres` → compose service `db`
+
+  nginx:
+    image_key: NGINX_VERSION
+    group: core
+    profiles: []
+    healthcheck: present
+    mem_limit: "256m"
+
+  redis:
+    image_key: REDIS_VERSION
+    group: core
+    profiles: []
+    healthcheck: present
+    mem_limit: "1g"
+
+  redis-lock-cleaner:
+    image_key: REDIS_VERSION
+    group: core
+    profiles: []
+    healthcheck: absent
+    mem_limit: "64m"
+
+  ssrf_proxy:
+    image_key: SQUID_VERSION
+    group: core
+    profiles: []
+    healthcheck: distroless-no-health   # ubuntu/squid — verified distroless (no /bin/sh, no coreutils)
+    mem_limit: "256m"
+    aliases: [squid]   # `agmind update squid` → compose service `ssrf_proxy`
+
+  # ============================== Dify ==============================
+  api:
+    image_key: DIFY_VERSION
+    group: dify
+    profiles: []
+    healthcheck: present
+    mem_limit: "2g"
+    services_for_restart: [api, worker, web, sandbox, plugin_daemon]
+    aliases: [dify-api]   # backward-compat for `agmind update dify-api` (CLI contract)
+
+  plugin_daemon:
+    image_key: PLUGIN_DAEMON_VERSION
+    group: dify
+    profiles: []
+    healthcheck: present
+    mem_limit: "4g"
+    services_for_restart: [api, worker, web, sandbox, plugin_daemon]
+    aliases: [plugin-daemon]   # historical hyphen variant accepted by CLI
+
+  sandbox:
+    image_key: SANDBOX_VERSION
+    group: dify
+    profiles: []
+    healthcheck: present
+    mem_limit: "1g"
+    services_for_restart: [api, worker, web, sandbox, plugin_daemon]
+
+  web:
+    image_key: DIFY_VERSION
+    group: dify
+    profiles: []
+    healthcheck: present
+    mem_limit: "512m"
+    services_for_restart: [api, worker, web, sandbox, plugin_daemon]
+    aliases: [dify-web]
+
+  worker:
+    image_key: DIFY_VERSION
+    group: dify
+    profiles: []
+    healthcheck: present
+    mem_limit: "2g"
+    services_for_restart: [api, worker, web, sandbox, plugin_daemon]
+    aliases: [dify-worker]
+
+  # ============================== LLM ==============================
+  docling:
+    image_key: DOCLING_SERVE_VERSION
+    group: llm
+    profiles: [docling]
+    healthcheck: present
+    mem_limit: "8g"
+
+  litellm:
+    image_key: LITELLM_VERSION
+    group: llm
+    profiles: [litellm]
+    healthcheck: present
+    mem_limit: "1g"
+
+  ollama:
+    image_key: OLLAMA_VERSION
+    group: llm
+    profiles: [ollama]
+    healthcheck: present
+    mem_limit: "8g"
+
+  tei:
+    image_key: TEI_EMBED_VERSION
+    group: llm
+    profiles: [tei]
+    healthcheck: present
+    mem_limit: "8g"
+    aliases: [tei-embed]   # `agmind update tei-embed` → compose service `tei`
+
+  tei-rerank:
+    image_key: TEI_RERANK_VERSION
+    group: llm
+    profiles: [reranker]
+    healthcheck: present
+    mem_limit: "12g"
+
+  vllm:
+    image_key: VLLM_VERSION
+    group: llm
+    profiles: [vllm]
+    healthcheck: present
+    mem_limit: "96g"
+
+  vllm-embed:
+    image_key: VLLM_NGC_VERSION
+    group: llm
+    profiles: [vllm-embed]
+    healthcheck: present
+    mem_limit: "3g"
+
+  vllm-rerank:
+    image_key: VLLM_NGC_VERSION
+    group: llm
+    profiles: [vllm-rerank]
+    healthcheck: present
+    mem_limit: "2g"
+
+  # ============================== RAG ==============================
+  milvus:
+    image_key: MILVUS_VERSION
+    group: rag
+    profiles: [milvus]
+    healthcheck: present
+    mem_limit: "16g"
+    services_for_restart: [milvus, milvus-etcd]
+
+  milvus-etcd:
+    image_key: MILVUS_ETCD_VERSION
+    group: rag
+    profiles: [milvus]
+    healthcheck: present
+    mem_limit: "1g"
+
+  milvus-init:
+    image_key: MC_VERSION
+    group: rag
+    profiles: [milvus]
+    healthcheck: absent
+    # No mem_limit in compose — one-shot init container
+
+  qdrant:
+    image_key: QDRANT_VERSION
+    group: rag
+    profiles: [qdrant]
+    healthcheck: present
+    mem_limit: "2g"
+
+  weaviate:
+    image_key: WEAVIATE_VERSION
+    group: rag
+    profiles: [weaviate]
+    healthcheck: present
+    mem_limit: "4g"
+
+  # ============================== RAGFlow ==============================
+  ragflow:
+    image_key: RAGFLOW_VERSION
+    group: ragflow
+    profiles: [ragflow]
+    healthcheck: present
+    mem_limit: "8g"
+
+  ragflow_es01:
+    image_key: RAGFLOW_ES_VERSION
+    group: ragflow
+    profiles: [ragflow]
+    healthcheck: present
+    mem_limit: "4g"
+
+  ragflow_es_exporter:
+    image_key: ELASTICSEARCH_EXPORTER_VERSION
+    group: ragflow
+    profiles: [ragflow]
+    healthcheck: absent
+    mem_limit: "128m"
+
+  ragflow_mysql:
+    image_key: RAGFLOW_MYSQL_VERSION
+    group: ragflow
+    profiles: [ragflow]
+    healthcheck: present
+    mem_limit: "1g"
+
+  # ============================== Observability ==============================
+  alertmanager:
+    image_key: ALERTMANAGER_VERSION
+    group: observability
+    profiles: [monitoring]
+    healthcheck: present
+    mem_limit: "256m"
+
+  alloy:
+    image_key: ALLOY_VERSION
+    group: observability
+    profiles: [monitoring]
+    healthcheck: distroless-no-health   # grafana/alloy — distroless (no /bin/sh)
+    mem_limit: "256m"
+
+  cadvisor:
+    image_key: CADVISOR_VERSION
+    group: observability
+    profiles: [monitoring]
+    healthcheck: present
+    mem_limit: "512m"
+
+  docker-socket-proxy:
+    image_key: DOCKER_SOCKET_PROXY_VERSION
+    group: observability
+    profiles: [monitoring]
+    healthcheck: absent
+    mem_limit: "64m"
+
+  grafana:
+    image_key: GRAFANA_VERSION
+    group: observability
+    profiles: [monitoring]
+    healthcheck: present
+    mem_limit: "512m"
+
+  loki:
+    image_key: LOKI_VERSION
+    group: observability
+    profiles: [monitoring]
+    healthcheck: distroless-no-health   # grafana/loki — distroless (no /bin/sh)
+    mem_limit: "1g"
+
+  nginx-exporter:
+    image_key: NGINX_EXPORTER_VERSION
+    group: observability
+    profiles: [monitoring]
+    healthcheck: distroless-no-health   # nginx/nginx-prometheus-exporter — distroless
+    mem_limit: "64m"
+
+  node-exporter:
+    image_key: NODE_EXPORTER_VERSION
+    group: observability
+    profiles: [monitoring]
+    healthcheck: present
+    mem_limit: "128m"
+
+  portainer:
+    image_key: PORTAINER_VERSION
+    group: observability
+    profiles: [portainer]
+    healthcheck: present
+    mem_limit: "256m"
+
+  postgres-exporter:
+    image_key: POSTGRES_EXPORTER_VERSION
+    group: observability
+    profiles: [monitoring]
+    healthcheck: present
+    mem_limit: "128m"
+
+  prometheus:
+    image_key: PROMETHEUS_VERSION
+    group: observability
+    profiles: [monitoring]
+    healthcheck: present
+    mem_limit: "1g"
+
+  redis-exporter:
+    image_key: REDIS_EXPORTER_VERSION
+    group: observability
+    profiles: [monitoring]
+    healthcheck: distroless-no-health   # oliver006/redis_exporter — distroless
+    mem_limit: "64m"
+
+  # ============================== Optional ==============================
+  authelia:
+    image_key: AUTHELIA_VERSION
+    group: optional
+    profiles: [authelia]
+    healthcheck: present
+    mem_limit: "256m"
+
+  certbot:
+    image_key: CERTBOT_VERSION
+    group: optional
+    profiles: [vps]
+    healthcheck: present
+    mem_limit: "128m"
+
+  crawl4ai:
+    image_key: CRAWL4AI_VERSION
+    group: optional
+    profiles: [crawl4ai]
+    healthcheck: present
+    mem_limit: "2g"
+
+  dbgpt:
+    image_key: DBGPT_VERSION
+    group: optional
+    profiles: [dbgpt]
+    healthcheck: present
+    mem_limit: "1g"
+
+  k6:
+    image_key: K6_VERSION
+    group: optional
+    profiles: [loadtest]
+    healthcheck: absent
+    mem_limit: "256m"
+
+  minio:
+    image_key: MINIO_VERSION
+    group: optional
+    profiles: [minio]
+    healthcheck: present
+    mem_limit: "2g"
+
+  n8n:
+    image_key: N8N_VERSION
+    group: optional
+    profiles: [n8n]
+    healthcheck: present
+    mem_limit: "1g"
+
+  open-notebook:
+    image_key: OPEN_NOTEBOOK_VERSION
+    group: optional
+    profiles: [notebook]
+    healthcheck: present
+    mem_limit: "512m"
+
+  open-webui:
+    image_key: OPENWEBUI_VERSION
+    group: optional
+    profiles: [openwebui]
+    healthcheck: present
+    mem_limit: "2g"
+    aliases: [openwebui]   # `agmind update openwebui` → compose service `open-webui`
+
+  searxng:
+    image_key: SEARXNG_VERSION
+    group: optional
+    profiles: [searxng]
+    healthcheck: present
+    mem_limit: "256m"
+
+  surrealdb:
+    image_key: SURREALDB_VERSION
+    group: optional
+    profiles: [notebook]
+    healthcheck: present
+    mem_limit: "256m"
+
+# ============================================================================
+# NAMED META-PROFILES (8 user-facing named profiles over the ~24 raw profiles)
+# Verbatim copy of lib/service-map.sh::NAMED_PROFILE_EXPANSION (lines 151-160).
+# Named meta-profile → comma-separated raw compose profiles.
+# ============================================================================
+profile_expansions:
+  core: "vllm,litellm"
+  rag: "vllm,litellm,weaviate,docling,vllm-embed"
+  ragflow: "minio"
+  observability: "monitoring,portainer"
+  security: "authelia"
+  agents: "litellm,crawl4ai,searxng,dbgpt,openwebui,notebook,n8n"
+  full: "vllm,litellm,weaviate,docling,vllm-embed,vllm-rerank,minio,monitoring,portainer,authelia,crawl4ai,searxng,dbgpt,openwebui,notebook,n8n"
+  dev: "vllm,litellm,weaviate,docling,monitoring,portainer"
+
+# Human-readable one-line description per named profile (for `agmind profiles`).
+# Verbatim copy of lib/service-map.sh::NAMED_PROFILE_DESC (lines 164-173).
+profile_descriptions:
+  core: "Dify core + vLLM + LiteLLM (minimal — no RAG)"
+  rag: "Core + Weaviate + Docling + vLLM-embed (recommended full RAG stack)"
+  ragflow: "RAGFlow + Elasticsearch + MySQL + MinIO"
+  observability: "Prometheus + Grafana + Loki + exporters + Portainer"
+  security: "Authelia + fail2ban/hardening"
+  agents: "LiteLLM + Crawl4AI + SearXNG + dbGPT + Open WebUI + Notebook + n8n"
+  full: "Everything: vLLM + Weaviate + Docling + monitoring + agents + n8n (Milvus skipped — XOR with Weaviate)"
+  dev: "Core + observability (fast iteration; no RAGFlow/agents/security)"
+
+# Implied ENABLE_*/<X>_PROVIDER defaults per named profile, as space-separated
+# VAR=val list. build_compose_profiles applies these with := (env-override wins).
+# Verbatim copy of lib/service-map.sh::NAMED_PROFILE_IMPLIED (lines 179-188).
+profile_implied:
+  core: "LLM_PROVIDER=vllm ENABLE_LITELLM=true"
+  rag: "LLM_PROVIDER=vllm ENABLE_LITELLM=true VECTOR_STORE=weaviate ENABLE_DOCLING=true EMBED_PROVIDER=vllm-embed"
+  ragflow: "ENABLE_RAGFLOW=true ENABLE_MINIO=true"
+  observability: "MONITORING_MODE=local ENABLE_PORTAINER=true"
+  security: "ENABLE_AUTHELIA=true"
+  agents: "ENABLE_LITELLM=true ENABLE_CRAWL4AI=true ENABLE_SEARXNG=true ENABLE_DBGPT=true ENABLE_OPENWEBUI=true ENABLE_NOTEBOOK=true ENABLE_N8N=true"
+  full: "LLM_PROVIDER=vllm ENABLE_LITELLM=true VECTOR_STORE=weaviate ENABLE_DOCLING=true EMBED_PROVIDER=vllm-embed ENABLE_RERANKER=true RERANKER_PROVIDER=vllm-rerank ENABLE_MINIO=true MONITORING_MODE=local ENABLE_PORTAINER=true ENABLE_AUTHELIA=true ENABLE_CRAWL4AI=true ENABLE_SEARXNG=true ENABLE_DBGPT=true ENABLE_OPENWEBUI=true ENABLE_NOTEBOOK=true ENABLE_N8N=true"
+  dev: "LLM_PROVIDER=vllm ENABLE_LITELLM=true VECTOR_STORE=weaviate ENABLE_DOCLING=true MONITORING_MODE=local ENABLE_PORTAINER=true"
+
+# Group display order for `agmind status` table.
+# Matches lib/service-map.sh::SERVICE_GROUP_ORDER (line 124).
+group_order:
+  - core
+  - dify
+  - llm
+  - rag
+  - ragflow
+  - observability
+  - optional
+
+# All known compose profile labels.
+# CSV value of ALL_COMPOSE_PROFILES (lib/service-map.sh:128) — used by
+# compose_down --remove-orphans to enumerate every profile so no service
+# is left behind on `down`.
+all_compose_profiles:
+  - monitoring
+  - portainer
+  - qdrant
+  - weaviate
+  - milvus
+  - authelia
+  - ollama
+  - vllm
+  - tei
+  - reranker
+  - vllm-embed
+  - vllm-rerank
+  - docling
+  - litellm
+  - searxng
+  - notebook
+  - dbgpt
+  - crawl4ai
+  - openwebui
+  - minio
+  - n8n
+  - ragflow
+  - loadtest
+  - vps
