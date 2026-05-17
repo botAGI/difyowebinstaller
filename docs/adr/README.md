@@ -17,6 +17,7 @@ When code comments need to point at a decision rationale, they reference
 | [0008](0008-nginx-variable-proxy.md) | nginx proxy_pass Must Use Variable Form with resolver | Accepted |
 | [0009](0009-cadvisor-minio-arm64-holds.md) | cAdvisor and MinIO Version Holds for arm64 | Accepted |
 | [0011](0011-state-store-architecture.md) | State Store Substrate (Versioned + Atomic + Migration-Driven) | Accepted |
+| [0012](0012-service-registry-codegen.md) | Service Registry as Single Source of Truth (YAML + Build-Time Codegen) | Accepted |
 
 > More decisions are recorded as inline `# WHY:` comments at the relevant code site
 > or in `../troubleshooting.md`; not every operational note warrants a dedicated ADR.
