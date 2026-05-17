@@ -25,23 +25,34 @@ cd "$REPO_ROOT" || { echo "FAIL: cannot cd to ${REPO_ROOT}"; exit 1; }
 # Phase 14 (ENV-03b canary + ENV-03c bulk) will ratchet these numbers DOWN
 # as callsites migrate to _env_get / _env_get_raw from lib/common.sh.
 declare -A BASELINE=(
-    [lib/health.sh]=2
-    [scripts/health.sh]=2
-    [install.sh]=9
-    [lib/config.sh]=9
-    [scripts/agmind.sh]=7
-    [lib/compose.sh]=1
+    [lib/health.sh]=0
+    [scripts/health.sh]=0
+    [install.sh]=0
+    [lib/config.sh]=0
+    [scripts/agmind.sh]=1
+    [lib/compose.sh]=0
     [scripts/backup.sh]=5
     [scripts/update.sh]=4
     [scripts/rotate_secrets.sh]=3
-    [lib/authelia.sh]=1
+    [lib/authelia.sh]=0
     [lib/common.sh]=0
-    [lib/openwebui.sh]=1
+    [lib/openwebui.sh]=0
     [lib/restore.sh]=0
     [scripts/dr-drill.sh]=1
     [scripts/uninstall.sh]=1
     [scripts/import-dify-workflow.sh]=1
 )
+# Plan 14-06 (ENV-03c batch 3) ratchet:
+#   - lib/{health,config,compose,authelia,openwebui}.sh: -2,-9,-1,-1,-1
+#   - install.sh: -9, scripts/agmind.sh: 7→1 (justified-divergence at :1033,
+#     sudo-n privileged read of mode-600 .env when current user can't read it;
+#     `_env_get_raw` is a shell function and cannot pass through `sudo`)
+#   - scripts/health.sh symlink → lib/health.sh, mirrors to 0
+#   - ENV-PARSE-01 closure achieved for the lib/+install.sh+agmind.sh secret
+#     surface. Remaining 14 callsites in scripts/{backup,update,rotate_secrets,
+#     dr-drill,uninstall,import-dify-workflow}.sh are scripts/-only entrypoints
+#     outside the Plan 14-06 scope (CONTEXT.md D-06 boundary); they would be
+#     migrated in a future hygiene pass if/when needed.
 
 # Regex matches `grep '^KEY=...'  ... cut -d` (the legacy parse pattern).
 # Word boundary `[[:space:]]+` after grep/cut to skip false positives like

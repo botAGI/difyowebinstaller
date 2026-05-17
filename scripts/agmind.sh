@@ -1030,6 +1030,13 @@ cmd_plugins() {
             if [[ -r "$ENV_FILE" ]]; then
                 current="$(_read_env MARKETPLACE_ENABLED "true")"
             else
+                # Plan 14-06 justified-divergence: privileged read of mode-600
+                # .env. `_env_get_raw` is a shell function — cannot be invoked
+                # through `sudo -n` (functions are not exported). Inline
+                # grep|cut here is the only path that picks up NOPASSWD when
+                # the file is unreadable as the current user. Non-secret value
+                # (boolean enum) so byte-exact preservation is not required.
+                # lint: legacy-env-parse-allowed (justified-divergence)
                 current="$(sudo -n grep '^MARKETPLACE_ENABLED=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- || echo 'unknown')"
                 [[ -z "$current" ]] && current="unknown"
             fi
@@ -1360,15 +1367,16 @@ cmd_init_dify() {
         return 0
     fi
 
+    # Plan 14-06: _env_get_raw for secret read.
     local init_password
-    init_password="$(grep '^INIT_PASSWORD=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2-)"
+    init_password="$(_env_get_raw INIT_PASSWORD "$ENV_FILE" 2>/dev/null || true)"
     if [[ -z "$init_password" ]]; then
         echo -e "${RED}INIT_PASSWORD not found in .env${NC}" >&2
         return 1
     fi
 
     local admin_password
-    admin_password="$(echo "$init_password" | base64 -d 2>/dev/null || echo "$init_password")"
+    admin_password="$(printf '%s' "$init_password" | base64 -d 2>/dev/null || printf '%s' "$init_password")"
 
     # Check API health
     echo "Checking Dify API health..."
@@ -1536,9 +1544,11 @@ cmd_ragflow() {
         query)
             local q="${1:-}"
             [[ -z "$q" ]] && { echo "Usage: agmind ragflow query <text>" >&2; exit 1; }
+            # Plan 14-06: _env_get_raw — RAGFLOW_API_KEY is secret-grade;
+            # RAGFLOW_DATASET_ID is identifier (atomic auth-block grouping).
             local key dset
-            key="$(grep '^RAGFLOW_API_KEY=' "${ENV_FILE}" 2>/dev/null | cut -d'=' -f2-)"
-            dset="$(grep '^RAGFLOW_DATASET_ID=' "${ENV_FILE}" 2>/dev/null | cut -d'=' -f2-)"
+            key="$(_env_get_raw RAGFLOW_API_KEY "${ENV_FILE}" 2>/dev/null || true)"
+            dset="$(_env_get_raw RAGFLOW_DATASET_ID "${ENV_FILE}" 2>/dev/null || true)"
             if [[ -z "$key" || -z "$dset" ]]; then
                 echo "RAGFLOW_API_KEY и RAGFLOW_DATASET_ID должны быть в ${ENV_FILE}." >&2
                 echo "Создай через RAGFlow UI → Profile → API → API Keys, прописать в .env." >&2
@@ -1553,9 +1563,11 @@ cmd_ragflow() {
             ;;
         keys)
             # Diagnostic: show whether key+dataset prописаны (без значений секретов).
+            # Plan 14-06: _env_get_raw for byte-exact preservation; only the
+            # SET/UNSET boolean is printed — values never logged (anti-leak).
             local key dset
-            key="$(grep '^RAGFLOW_API_KEY=' "${ENV_FILE}" 2>/dev/null | cut -d'=' -f2-)"
-            dset="$(grep '^RAGFLOW_DATASET_ID=' "${ENV_FILE}" 2>/dev/null | cut -d'=' -f2-)"
+            key="$(_env_get_raw RAGFLOW_API_KEY "${ENV_FILE}" 2>/dev/null || true)"
+            dset="$(_env_get_raw RAGFLOW_DATASET_ID "${ENV_FILE}" 2>/dev/null || true)"
             echo "RAGFLOW_API_KEY:    $([[ -n "$key" ]] && echo SET || echo UNSET)"
             echo "RAGFLOW_DATASET_ID: $([[ -n "$dset" ]] && echo SET || echo UNSET)"
             ;;
@@ -1569,8 +1581,9 @@ cmd_ragflow() {
             exec "${SCRIPTS_DIR}/backup.sh" --component ragflow "$@"
             ;;
         es-health)
+            # Plan 14-06: _env_get_raw for secret read.
             local pw
-            pw="$(grep '^RAGFLOW_ES_PASSWORD=' "${ENV_FILE}" 2>/dev/null | cut -d'=' -f2-)"
+            pw="$(_env_get_raw RAGFLOW_ES_PASSWORD "${ENV_FILE}" 2>/dev/null || true)"
             [[ -z "$pw" ]] && { echo "RAGFLOW_ES_PASSWORD missing" >&2; exit 1; }
             docker exec agmind-ragflow-es curl -fsS -u "elastic:${pw}" \
                 "http://localhost:9200/_cluster/health?pretty" 2>/dev/null \

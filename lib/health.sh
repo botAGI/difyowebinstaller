@@ -22,6 +22,33 @@ command -v _env_get >/dev/null 2>&1 || _env_get() {
     grep "^${1}=" "$2" 2>/dev/null | cut -d'=' -f2-
 }
 
+# Fallback _env_get_raw — byte-exact awk parser mirror of lib/common.sh:370-391.
+# Used by Plan 14-06 secret-grade reads (ALERT_WEBHOOK_URL may embed bearer
+# token; ALERT_TELEGRAM_TOKEN is a bot API key). Returns rc=1 on missing file
+# OR missing key (distinct from _env_get which always returns rc=0).
+command -v _env_get_raw >/dev/null 2>&1 || _env_get_raw() {
+    local key="$1" file="$2"
+    [[ -r "$file" ]] || return 1
+    awk -v k="$key" '
+        BEGIN { FS = "="; found = 0 }
+        /^[[:space:]]*#/ { next }
+        /^[[:space:]]*$/ { next }
+        {
+            line = $0
+            sub(/^[[:space:]]+/, "", line)
+            eq = index(line, "=")
+            if (eq == 0) next
+            name = substr(line, 1, eq - 1)
+            if (name != k) next
+            val = substr(line, eq + 1)
+            print val
+            found = 1
+            exit
+        }
+        END { exit (found ? 0 : 1) }
+    ' "$file"
+}
+
 # Fallback colors
 RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
 CYAN="${CYAN:-\033[0;36m}"; BOLD="${BOLD:-\033[1m}"; NC="${NC:-\033[0m}"
@@ -710,8 +737,10 @@ send_alert() {
 
     case "$alert_mode" in
         webhook)
+            # Plan 14-06: _env_get_raw — webhook URLs may embed bearer tokens
+            # (Slack/Teams/Discord shape). Source-based parser would expand `$`.
             local webhook_url
-            webhook_url="$(grep '^ALERT_WEBHOOK_URL=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "")"
+            webhook_url="$(_env_get_raw ALERT_WEBHOOK_URL "$env_file" 2>/dev/null || true)"
             if [[ -n "$webhook_url" ]]; then
                 local escaped_message
                 escaped_message="$(echo "$message" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\t/\\t/g')"
@@ -722,8 +751,11 @@ send_alert() {
             fi
             ;;
         telegram)
+            # Plan 14-06: _env_get_raw for TOKEN (bot API key — secret-grade).
+            # CHAT_ID stays on _env_get (digits-only routing identifier per
+            # Plan 14-05 D-2).
             local tg_token tg_chat_id
-            tg_token="$(grep '^ALERT_TELEGRAM_TOKEN=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "")"
+            tg_token="$(_env_get_raw ALERT_TELEGRAM_TOKEN "$env_file" 2>/dev/null || true)"
             tg_chat_id="$(_env_get ALERT_TELEGRAM_CHAT_ID "$env_file")"
             if [[ -n "$tg_token" && -n "$tg_chat_id" ]]; then
                 # Escape HTML special chars for Telegram parse_mode=HTML.
