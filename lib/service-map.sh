@@ -53,3 +53,14 @@ fi
 # SERVICE_GROUP_ORDER, ALL_COMPOSE_PROFILES, NAMED_PROFILE_EXPANSION,
 # NAMED_PROFILE_DESC, NAMED_PROFILE_IMPLIED) are now defined by the sourced
 # indexed file. Consumers see the same names + types as before Phase 12.
+
+# ============================================================================
+# RESOLVE_ACTIVE_SERVICES session cache (Plan 14-01 / RESOLVER-01 / D-03)
+# ============================================================================
+# Memoization keys for resolve_active_services() in lib/health.sh.
+# Cache key = "${env_file}:$(stat -c %Y "$env_file")"; invalidated on mtime change.
+# In-memory only — dies between install.sh invocations. NOT persisted to disk.
+# See PITFALLS.md "Pitfall 4" (resolver perf collapse) for rationale.
+: "${_AGMIND_SVC_CACHE_KEY:=}"
+: "${_AGMIND_SVC_CACHE_VAL:=}"
+export _AGMIND_SVC_CACHE_KEY _AGMIND_SVC_CACHE_VAL
