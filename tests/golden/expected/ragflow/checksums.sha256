@@ -19,7 +19,7 @@ e27b8a5461c16dcbf9664ae1826072108443958bf47353e871c8f46991874238  ./monitoring/g
 13ab124e3da250b609b7f0476d7716276436f9e7222640c6b4531d1ec245a6e5  ./monitoring/grafana/provisioning/datasources/prometheus.yml
 176ada478ded428de14e9edc17f60d19a19f812b6e5d18186987d03ff40cd5af  ./monitoring/loki-config.yml
 b5e30ab222748b2fe4a92d050ead6172955c2e401e09ec3cd87e8c3daf51e9d9  ./monitoring/peer-offline.yml
-7b7a81b2c68fd7724ba65b8489ff1d087b00400e8689af23dd31ee266ed8ed13  ./monitoring/prometheus.yml
+f76a736470827f98f4561947e57495c0ab4cd665940c5a1ce7d056a5e5d7f6e1  ./monitoring/prometheus.yml
 54c442f466c5a9ebd9c8c329859350b898b58a091274c66651bee809b6034174  ./nginx.conf
 56be23d5ed9b03a4e411e6e2fd4e8b136ba7e9419b62dee8c5612a6dd859aa3d  ./ragflow/nginx/empty.conf
 3e8aca384fac05cedb27c1bfd0f5f8832fb64e2eb2ec4e1f0eea5076ee7e710b  ./ragflow/nginx/proxy.conf
