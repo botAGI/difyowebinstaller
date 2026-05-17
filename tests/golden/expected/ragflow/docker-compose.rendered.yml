@@ -1,0 +1,1140 @@
+name: agmind
+services:
+  api:
+    cap_drop:
+      - AUDIT_CONTROL
+      - AUDIT_READ
+      - AUDIT_WRITE
+      - BLOCK_SUSPEND
+      - BPF
+      - CHECKPOINT_RESTORE
+      - DAC_READ_SEARCH
+      - FSETID
+      - IPC_LOCK
+      - IPC_OWNER
+      - KILL
+      - LEASE
+      - LINUX_IMMUTABLE
+      - MAC_ADMIN
+      - MAC_OVERRIDE
+      - MKNOD
+      - NET_ADMIN
+      - NET_BROADCAST
+      - PERFMON
+      - SYS_BOOT
+      - SYS_MODULE
+      - SYS_NICE
+      - SYS_PACCT
+      - SYS_PTRACE
+      - SYS_RAWIO
+      - SYS_RESOURCE
+      - SYS_TIME
+      - SYS_TTY_CONFIG
+      - SYSLOG
+      - WAKE_ALARM
+    container_name: agmind-api
+    depends_on:
+      db:
+        condition: service_healthy
+        required: true
+      redis:
+        condition: service_healthy
+        required: true
+      sandbox:
+        condition: service_healthy
+        required: true
+    environment:
+      APP_API_URL: ""
+      APP_WEB_URL: ""
+      BATCH_UPLOAD_LIMIT: "100"
+      BROKER_USE_SSL: "false"
+      CELERY_ACKS_LATE: "false"
+      CELERY_BROKER_URL: redis://:njayATvHns2Ua1MQULuKM7Ctg3WmtOHg@redis:6379/1
+      CELERY_WORKER_AMOUNT: "1"
+      CELERY_WORKER_POOL: gevent
+      CHECK_UPDATE_URL: https://updates.dify.ai
+      CODE_EXECUTION_API_KEY: dify-sandbox-ORTOPLNSbkWApUA2
+      CODE_EXECUTION_ENDPOINT: http://sandbox:8194
+      CODE_MAX_DEPTH: "5"
+      CODE_MAX_NUMBER: "9223372036854775807"
+      CODE_MAX_NUMBER_ARRAY_LENGTH: "1000"
+      CODE_MAX_OBJECT_ARRAY_LENGTH: "30"
+      CODE_MAX_PRECISION: "20"
+      CODE_MAX_STRING_ARRAY_LENGTH: "30"
+      CODE_MAX_STRING_LENGTH: "80000"
+      CODE_MIN_NUMBER: "-9223372036854775808"
+      CONSOLE_API_URL: ""
+      CONSOLE_WEB_URL: ""
+      DB_DATABASE: dify
+      DB_HOST: db
+      DB_PASSWORD: UsdEny0HwjTvgtPfltFwpch77nJIijcZ
+      DB_PORT: "5432"
+      DB_USERNAME: postgres
+      DEPLOY_ENV: PRODUCTION
+      EDITION: SELF_HOSTED
+      ENABLE_COLLABORATION_MODE: "false"
+      ETL_TYPE: Unstructured
+      FILES_ACCESS_TIMEOUT: "300"
+      FILES_URL: http://172.17.0.1
+      HTTP_REQUEST_NODE_MAX_BINARY_SIZE: "104857600"
+      HTTP_REQUEST_NODE_MAX_TEXT_SIZE: "104857600"
+      INDEXING_MAX_SEGMENTATION_TOKENS_LENGTH: "4000"
+      INIT_PASSWORD: cmJZY3lhUVkzTzl3cmpxNg==
+      INNER_API_KEY_FOR_PLUGIN: GSh4YQTBlRTAbIl6Qmk6aaaUEj1Pg4VeIts6P7fdrasfObjR
+      LOG_LEVEL: INFO
+      MAIL_DEFAULT_SEND_FROM: ""
+      MAIL_TYPE: ""
+      MARKETPLACE_ENABLED: "true"
+      MIGRATION_ENABLED: "true"
+      MILVUS_ANALYZER_PARAMS: ""
+      MILVUS_DATABASE: agmind
+      MILVUS_ENABLE_HYBRID_SEARCH: "true"
+      MILVUS_PASSWORD: ""
+      MILVUS_TOKEN: ""
+      MILVUS_URI: http://milvus:19530
+      MILVUS_USER: root
+      MODE: api
+      OLLAMA_API_BASE: http://ollama:11434
+      PLUGIN_DAEMON_KEY: nEZQlyKhWJ3m6keg0NcOV2CyQyqkUqxYLxj28xnrM6wim4dY
+      PLUGIN_DAEMON_TIMEOUT: "1800"
+      PLUGIN_DAEMON_URL: http://plugin_daemon:5002
+      QDRANT_API_KEY: 0aGSGSdxGHXvlomi7nRdDfMOQd9MsazN
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: "6333"
+      REDIS_DB: "0"
+      REDIS_HOST: redis
+      REDIS_PASSWORD: njayATvHns2Ua1MQULuKM7Ctg3WmtOHg
+      REDIS_PORT: "6379"
+      REDIS_USE_SSL: "false"
+      S3_ACCESS_KEY: iWjLKGQvTR7W77Su2sPb
+      S3_BUCKET_NAME: dify-storage
+      S3_ENDPOINT: http://minio:9000
+      S3_REGION: us-east-1
+      S3_SECRET_KEY: 30OGn6F08Q9zmcqnsUD41igLgQEgU9bL2jm58UTl
+      S3_USE_AWS_MANAGED_IAM: "false"
+      SECRET_KEY: UWsNJXuGndNNT5BicWyHFZmRPXsdqDK29S86Q6y4J2Td4x4cW1VJVMOgd2tZiJg5
+      SERVICE_API_URL: ""
+      SQLALCHEMY_ECHO: "false"
+      SQLALCHEMY_POOL_RECYCLE: "3600"
+      SQLALCHEMY_POOL_SIZE: "30"
+      SSRF_DEFAULT_READ_TIME_OUT: "60"
+      SSRF_PROXY_HTTP_URL: http://ssrf_proxy:3128
+      SSRF_PROXY_HTTPS_URL: http://ssrf_proxy:3128
+      STORAGE_LOCAL_PATH: /app/api/storage
+      STORAGE_TYPE: s3
+      TEMPLATE_TRANSFORM_MAX_LENGTH: "80000"
+      UNSTRUCTURED_API_URL: http://docling:8765
+      UPLOAD_FILE_BATCH_LIMIT: "50"
+      UPLOAD_FILE_SIZE_LIMIT: "500"
+      VECTOR_STORE: weaviate
+      WEAVIATE_API_KEY: CtjLygPdcLcGmILWkWrTkGm7HHz7tbdl
+      WEAVIATE_ENDPOINT: http://weaviate:8080
+      WORKFLOW_FILE_UPLOAD_LIMIT: "50"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -sf http://localhost:5001/health 2>/dev/null || wget -qO- http://localhost:5001/health 2>/dev/null || exit 1
+      timeout: 10s
+      interval: 30s
+      retries: 5
+      start_period: 1m0s
+    image: langgenius/dify-api:1.14.1
+    logging:
+      driver: json-file
+      options:
+        max-file: "5"
+        max-size: 10m
+    mem_limit: "2147483648"
+    networks:
+      agmind-backend: null
+      ssrf-network: null
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "1"
+    volumes:
+      - type: bind
+        source: __INSTALL_DIR__/docker/volumes/app/storage
+        target: /app/api/storage
+        bind: {}
+  db:
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+      - FOWNER
+    cap_drop:
+      - AUDIT_CONTROL
+      - AUDIT_READ
+      - AUDIT_WRITE
+      - BLOCK_SUSPEND
+      - BPF
+      - CHECKPOINT_RESTORE
+      - DAC_READ_SEARCH
+      - FSETID
+      - IPC_LOCK
+      - IPC_OWNER
+      - KILL
+      - LEASE
+      - LINUX_IMMUTABLE
+      - MAC_ADMIN
+      - MAC_OVERRIDE
+      - MKNOD
+      - NET_ADMIN
+      - NET_BROADCAST
+      - PERFMON
+      - SYS_BOOT
+      - SYS_MODULE
+      - SYS_NICE
+      - SYS_PACCT
+      - SYS_PTRACE
+      - SYS_RAWIO
+      - SYS_RESOURCE
+      - SYS_TIME
+      - SYS_TTY_CONFIG
+      - SYSLOG
+      - WAKE_ALARM
+    command:
+      - postgres
+      - -c
+      - max_connections=128
+      - -c
+      - shared_buffers=4GB
+      - -c
+      - work_mem=128MB
+      - -c
+      - maintenance_work_mem=1GB
+      - -c
+      - effective_cache_size=32GB
+      - -c
+      - password_encryption=scram-sha-256
+      - -c
+      - log_connections=on
+      - -c
+      - log_disconnections=on
+      - -c
+      - log_statement=ddl
+      - -c
+      - log_min_duration_statement=1000
+    container_name: agmind-db
+    environment:
+      PGDATA: /var/lib/postgresql/data/pgdata
+      PGUSER: postgres
+      POSTGRES_DB: dify
+      POSTGRES_PASSWORD: UsdEny0HwjTvgtPfltFwpch77nJIijcZ
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U postgres
+      timeout: 5s
+      interval: 10s
+      retries: 5
+      start_period: 30s
+    image: postgres:16-alpine3.23
+    logging:
+      driver: json-file
+      options:
+        max-file: "5"
+        max-size: 10m
+    mem_limit: "4294967296"
+    networks:
+      agmind-backend: null
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "1"
+    volumes:
+      - type: bind
+        source: __INSTALL_DIR__/docker/volumes/db/data
+        target: /var/lib/postgresql/data
+        bind: {}
+      - type: bind
+        source: __INSTALL_DIR__/templates/init-dify-plugin-db.sql
+        target: /docker-entrypoint-initdb.d/01-create-plugin-db.sql
+        read_only: true
+        bind: {}
+      - type: bind
+        source: __INSTALL_DIR__/templates/init-litellm-db.sql
+        target: /docker-entrypoint-initdb.d/02-create-litellm-db.sql
+        read_only: true
+        bind: {}
+  nginx:
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - NET_BIND_SERVICE
+    cap_drop:
+      - AUDIT_CONTROL
+      - AUDIT_READ
+      - AUDIT_WRITE
+      - BLOCK_SUSPEND
+      - BPF
+      - CHECKPOINT_RESTORE
+      - DAC_READ_SEARCH
+      - FSETID
+      - IPC_LOCK
+      - IPC_OWNER
+      - KILL
+      - LEASE
+      - LINUX_IMMUTABLE
+      - MAC_ADMIN
+      - MAC_OVERRIDE
+      - MKNOD
+      - NET_ADMIN
+      - NET_BROADCAST
+      - PERFMON
+      - SYS_BOOT
+      - SYS_MODULE
+      - SYS_NICE
+      - SYS_PACCT
+      - SYS_PTRACE
+      - SYS_RAWIO
+      - SYS_RESOURCE
+      - SYS_TIME
+      - SYS_TTY_CONFIG
+      - SYSLOG
+      - WAKE_ALARM
+    container_name: agmind-nginx
+    depends_on:
+      api:
+        condition: service_healthy
+        required: true
+      plugin_daemon:
+        condition: service_healthy
+        required: true
+      web:
+        condition: service_healthy
+        required: true
+    environment:
+      NGINX_HTTPS_ENABLED: "false"
+      NGINX_PORT: "80"
+      NGINX_SERVER_NAME: _
+      NGINX_SSL_PORT: "443"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -sf http://localhost:80/health && curl -sf http://localhost:3000/ || exit 1
+      timeout: 10s
+      interval: 30s
+      retries: 5
+      start_period: 10s
+    image: nginx:1.30.0-alpine
+    logging:
+      driver: json-file
+      options:
+        max-file: "5"
+        max-size: 10m
+    mem_limit: "268435456"
+    networks:
+      agmind-backend: null
+      agmind-frontend: null
+    ports:
+      - mode: ingress
+        target: 80
+        published: "80"
+        protocol: tcp
+      - mode: ingress
+        target: 443
+        published: "443"
+        protocol: tcp
+      - mode: ingress
+        target: 3000
+        published: "3000"
+        protocol: tcp
+      - mode: ingress
+        target: 4001
+        published: "4001"
+        protocol: tcp
+      - mode: ingress
+        target: 5670
+        published: "5670"
+        protocol: tcp
+      - mode: ingress
+        target: 8502
+        published: "8502"
+        protocol: tcp
+      - mode: ingress
+        target: 5055
+        published: "5055"
+        protocol: tcp
+      - mode: ingress
+        target: 8888
+        published: "8888"
+        protocol: tcp
+      - mode: ingress
+        target: 11235
+        published: "11235"
+        protocol: tcp
+    read_only: true
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "1"
+    tmpfs:
+      - /tmp:size=64m
+      - /var/cache/nginx:size=128m
+      - /var/run:size=16m
+      - /var/log/nginx:size=32m
+    volumes:
+      - type: bind
+        source: __INSTALL_DIR__/docker/nginx/nginx.conf
+        target: /etc/nginx/nginx.conf
+        read_only: true
+        bind: {}
+      - type: bind
+        source: __INSTALL_DIR__/docker/nginx/health
+        target: /etc/nginx/health
+        read_only: true
+        bind: {}
+      - type: bind
+        source: __INSTALL_DIR__/docker/volumes/certbot/conf
+        target: /etc/letsencrypt
+        read_only: true
+        bind: {}
+      - type: bind
+        source: __INSTALL_DIR__/docker/volumes/certbot/www
+        target: /var/www/certbot
+        read_only: true
+        bind: {}
+      - type: bind
+        source: __INSTALL_DIR__/docker/volumes/certbot/ssl
+        target: /etc/nginx/ssl
+        read_only: true
+        bind: {}
+  plugin_daemon:
+    container_name: agmind-plugin-daemon
+    depends_on:
+      db:
+        condition: service_healthy
+        required: true
+      redis:
+        condition: service_healthy
+        required: true
+      redis-lock-cleaner:
+        condition: service_completed_successfully
+        required: true
+    environment:
+      APP_API_URL: ""
+      APP_WEB_URL: ""
+      BATCH_UPLOAD_LIMIT: "100"
+      BROKER_USE_SSL: "false"
+      CELERY_ACKS_LATE: "false"
+      CELERY_BROKER_URL: redis://:njayATvHns2Ua1MQULuKM7Ctg3WmtOHg@redis:6379/1
+      CELERY_WORKER_AMOUNT: "1"
+      CELERY_WORKER_POOL: gevent
+      CHECK_UPDATE_URL: https://updates.dify.ai
+      CODE_EXECUTION_API_KEY: dify-sandbox-ORTOPLNSbkWApUA2
+      CODE_EXECUTION_ENDPOINT: http://sandbox:8194
+      CODE_MAX_DEPTH: "5"
+      CODE_MAX_NUMBER: "9223372036854775807"
+      CODE_MAX_NUMBER_ARRAY_LENGTH: "1000"
+      CODE_MAX_OBJECT_ARRAY_LENGTH: "30"
+      CODE_MAX_PRECISION: "20"
+      CODE_MAX_STRING_ARRAY_LENGTH: "30"
+      CODE_MAX_STRING_LENGTH: "80000"
+      CODE_MIN_NUMBER: "-9223372036854775808"
+      CONSOLE_API_URL: ""
+      CONSOLE_WEB_URL: ""
+      DB_DATABASE: dify_plugin
+      DB_HOST: db
+      DB_PASSWORD: UsdEny0HwjTvgtPfltFwpch77nJIijcZ
+      DB_PORT: "5432"
+      DB_SSL_MODE: disable
+      DB_USERNAME: postgres
+      DEPLOY_ENV: PRODUCTION
+      DIFY_INNER_API_KEY: GSh4YQTBlRTAbIl6Qmk6aaaUEj1Pg4VeIts6P7fdrasfObjR
+      DIFY_INNER_API_URL: http://api:5001
+      DOCLING_NUM_THREADS: "8"
+      DOCLING_VLM_AREA_THRESHOLD: "0.05"
+      DOCLING_VLM_MAX_TOKENS: "200"
+      DOCLING_VLM_MODEL: google/gemma-4-26B-A4B-it
+      DOCLING_VLM_PROMPT: Опиши кратко что изображено на картинке. 1-2 предложения на русском.
+      DOCLING_VLM_TIMEOUT: "120"
+      DOCLING_VLM_URL: http://vllm:8000/v1/chat/completions
+      EDITION: SELF_HOSTED
+      ENABLE_COLLABORATION_MODE: "false"
+      ETL_TYPE: Unstructured
+      FILES_ACCESS_TIMEOUT: "300"
+      FILES_URL: http://172.17.0.1
+      FORCE_VERIFYING_SIGNATURE: "true"
+      HTTP_REQUEST_NODE_MAX_BINARY_SIZE: "104857600"
+      HTTP_REQUEST_NODE_MAX_TEXT_SIZE: "104857600"
+      INDEXING_MAX_SEGMENTATION_TOKENS_LENGTH: "4000"
+      INIT_PASSWORD: cmJZY3lhUVkzTzl3cmpxNg==
+      INNER_API_KEY_FOR_PLUGIN: GSh4YQTBlRTAbIl6Qmk6aaaUEj1Pg4VeIts6P7fdrasfObjR
+      LOG_LEVEL: INFO
+      MAIL_DEFAULT_SEND_FROM: ""
+      MAIL_TYPE: ""
+      MARKETPLACE_ENABLED: "true"
+      MAX_PLUGIN_PACKAGE_SIZE: "52428800"
+      MIGRATION_ENABLED: "true"
+      MILVUS_ANALYZER_PARAMS: ""
+      MILVUS_DATABASE: agmind
+      MILVUS_ENABLE_HYBRID_SEARCH: "true"
+      MILVUS_PASSWORD: ""
+      MILVUS_TOKEN: ""
+      MILVUS_URI: http://milvus:19530
+      MILVUS_USER: root
+      OLLAMA_API_BASE: http://ollama:11434
+      PIP_MIRROR_URL: ""
+      PLUGIN_DAEMON_KEY: nEZQlyKhWJ3m6keg0NcOV2CyQyqkUqxYLxj28xnrM6wim4dY
+      PLUGIN_DAEMON_TIMEOUT: "1800"
+      PLUGIN_DAEMON_URL: http://plugin_daemon:5002
+      PLUGIN_INSTALLED_PATH: plugin
+      PLUGIN_MAX_EXECUTION_TIMEOUT: "900"
+      PLUGIN_MEDIA_CACHE_PATH: assets
+      PLUGIN_PACKAGE_CACHE_PATH: plugin_packages
+      PLUGIN_REMOTE_INSTALLING_HOST: 0.0.0.0
+      PLUGIN_REMOTE_INSTALLING_PORT: "5003"
+      PLUGIN_STDIO_BUFFER_SIZE: "1024"
+      PLUGIN_STDIO_MAX_BUFFER_SIZE: "5242880"
+      PLUGIN_STORAGE_LOCAL_ROOT: /app/storage
+      PLUGIN_STORAGE_TYPE: local
+      PLUGIN_WORKING_PATH: /app/storage/cwd
+      PPROF_ENABLED: "false"
+      PYTHON_ENV_INIT_TIMEOUT: "900"
+      QDRANT_API_KEY: 0aGSGSdxGHXvlomi7nRdDfMOQd9MsazN
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: "6333"
+      REDIS_DB: "0"
+      REDIS_HOST: redis
+      REDIS_PASSWORD: njayATvHns2Ua1MQULuKM7Ctg3WmtOHg
+      REDIS_PORT: "6379"
+      REDIS_USE_SSL: "false"
+      S3_ACCESS_KEY: iWjLKGQvTR7W77Su2sPb
+      S3_BUCKET_NAME: dify-storage
+      S3_ENDPOINT: http://minio:9000
+      S3_REGION: us-east-1
+      S3_SECRET_KEY: 30OGn6F08Q9zmcqnsUD41igLgQEgU9bL2jm58UTl
+      S3_USE_AWS_MANAGED_IAM: "false"
+      SECRET_KEY: UWsNJXuGndNNT5BicWyHFZmRPXsdqDK29S86Q6y4J2Td4x4cW1VJVMOgd2tZiJg5
+      SENTRY_DSN: ""
+      SENTRY_ENABLED: "false"
+      SERVER_KEY: nEZQlyKhWJ3m6keg0NcOV2CyQyqkUqxYLxj28xnrM6wim4dY
+      SERVER_PORT: "5002"
+      SERVICE_API_URL: ""
+      SQLALCHEMY_ECHO: "false"
+      SQLALCHEMY_POOL_RECYCLE: "3600"
+      SQLALCHEMY_POOL_SIZE: "30"
+      SSRF_DEFAULT_READ_TIME_OUT: "60"
+      SSRF_PROXY_HTTP_URL: http://ssrf_proxy:3128
+      SSRF_PROXY_HTTPS_URL: http://ssrf_proxy:3128
+      STORAGE_LOCAL_PATH: /app/api/storage
+      STORAGE_TYPE: s3
+      TEMPLATE_TRANSFORM_MAX_LENGTH: "80000"
+      UNSTRUCTURED_API_URL: http://docling:8765
+      UPLOAD_FILE_BATCH_LIMIT: "50"
+      UPLOAD_FILE_SIZE_LIMIT: "500"
+      VECTOR_STORE: weaviate
+      WEAVIATE_API_KEY: CtjLygPdcLcGmILWkWrTkGm7HHz7tbdl
+      WEAVIATE_ENDPOINT: http://weaviate:8080
+      WORKFLOW_FILE_UPLOAD_LIMIT: "50"
+    extra_hosts:
+      - cas-bridge.xethub.hf.co=3.164.68.28
+      - cdn-lfs-cn-1.modelscope.cn=163.181.225.49
+      - huggingface.co=52.222.136.92
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -sf http://localhost:5002/health/check 2>/dev/null || wget -qO- http://localhost:5002/health/check 2>/dev/null || exit 1
+      timeout: 10s
+      interval: 30s
+      retries: 5
+      start_period: 15s
+    image: langgenius/dify-plugin-daemon:0.6.0-local
+    logging:
+      driver: json-file
+      options:
+        max-file: "5"
+        max-size: 10m
+    mem_limit: "4294967296"
+    networks:
+      agmind-backend: null
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "1"
+    volumes:
+      - type: bind
+        source: __INSTALL_DIR__/docker/volumes/plugin_daemon
+        target: /app/storage
+        bind: {}
+  redis:
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+    cap_drop:
+      - AUDIT_CONTROL
+      - AUDIT_READ
+      - AUDIT_WRITE
+      - BLOCK_SUSPEND
+      - BPF
+      - CHECKPOINT_RESTORE
+      - DAC_READ_SEARCH
+      - FSETID
+      - IPC_LOCK
+      - IPC_OWNER
+      - KILL
+      - LEASE
+      - LINUX_IMMUTABLE
+      - MAC_ADMIN
+      - MAC_OVERRIDE
+      - MKNOD
+      - NET_ADMIN
+      - NET_BROADCAST
+      - PERFMON
+      - SYS_BOOT
+      - SYS_MODULE
+      - SYS_NICE
+      - SYS_PACCT
+      - SYS_PTRACE
+      - SYS_RAWIO
+      - SYS_RESOURCE
+      - SYS_TIME
+      - SYS_TTY_CONFIG
+      - SYSLOG
+      - WAKE_ALARM
+    command:
+      - redis-server
+      - /etc/redis/redis.conf
+    container_name: agmind-redis
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - REDISCLI_AUTH='njayATvHns2Ua1MQULuKM7Ctg3WmtOHg' redis-cli ping
+      timeout: 5s
+      interval: 10s
+      retries: 5
+      start_period: 10s
+    image: redis:7.4.8-alpine
+    logging:
+      driver: json-file
+      options:
+        max-file: "5"
+        max-size: 10m
+    mem_limit: "1073741824"
+    networks:
+      agmind-backend: null
+    read_only: true
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "1"
+    tmpfs:
+      - /tmp:size=64m
+    volumes:
+      - type: bind
+        source: __INSTALL_DIR__/docker/volumes/redis/data
+        target: /data
+        bind: {}
+      - type: bind
+        source: __INSTALL_DIR__/docker/volumes/redis/redis.conf
+        target: /etc/redis/redis.conf
+        read_only: true
+        bind: {}
+  redis-lock-cleaner:
+    container_name: agmind-redis-lock-cleaner
+    depends_on:
+      redis:
+        condition: service_healthy
+        required: true
+    entrypoint:
+      - sh
+      - /cleanup.sh
+    environment:
+      REDIS_HOST: redis
+      REDIS_PASSWORD: njayATvHns2Ua1MQULuKM7Ctg3WmtOHg
+      REDIS_PORT: "6379"
+    image: redis:7.4.8-alpine
+    mem_limit: "67108864"
+    networks:
+      agmind-backend: null
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - type: bind
+        source: __INSTALL_DIR__/scripts/redis-lock-cleanup.sh
+        target: /cleanup.sh
+        read_only: true
+        bind: {}
+  sandbox:
+    cap_add:
+      - SETUID
+      - SETGID
+      - SYS_ADMIN
+    container_name: agmind-sandbox
+    depends_on:
+      ssrf_proxy:
+        condition: service_started
+        required: true
+    environment:
+      API_KEY: dify-sandbox-ORTOPLNSbkWApUA2
+      ENABLE_NETWORK: "true"
+      GIN_MODE: release
+      HTTP_PROXY: http://ssrf_proxy:3128
+      HTTPS_PROXY: http://ssrf_proxy:3128
+      SANDBOX_PORT: "8194"
+      WORKER_TIMEOUT: "15"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -sf http://localhost:8194/health 2>/dev/null || wget -qO- http://localhost:8194/health 2>/dev/null || exit 1
+      timeout: 10s
+      interval: 30s
+      retries: 5
+      start_period: 10s
+    image: langgenius/dify-sandbox:0.2.15
+    logging:
+      driver: json-file
+      options:
+        max-file: "5"
+        max-size: 10m
+    mem_limit: "1073741824"
+    networks:
+      ssrf-network: null
+    restart: always
+    volumes:
+      - type: bind
+        source: __INSTALL_DIR__/docker/volumes/sandbox/conf
+        target: /conf
+        read_only: true
+        bind: {}
+  ssrf_proxy:
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - NET_RAW
+    cap_drop:
+      - AUDIT_CONTROL
+      - AUDIT_READ
+      - AUDIT_WRITE
+      - BLOCK_SUSPEND
+      - BPF
+      - CHECKPOINT_RESTORE
+      - DAC_READ_SEARCH
+      - FSETID
+      - IPC_LOCK
+      - IPC_OWNER
+      - KILL
+      - LEASE
+      - LINUX_IMMUTABLE
+      - MAC_ADMIN
+      - MAC_OVERRIDE
+      - MKNOD
+      - NET_ADMIN
+      - NET_BROADCAST
+      - PERFMON
+      - SYS_BOOT
+      - SYS_MODULE
+      - SYS_NICE
+      - SYS_PACCT
+      - SYS_PTRACE
+      - SYS_RAWIO
+      - SYS_RESOURCE
+      - SYS_TIME
+      - SYS_TTY_CONFIG
+      - SYSLOG
+      - WAKE_ALARM
+    container_name: agmind-ssrf-proxy
+    healthcheck:
+      test:
+        - NONE
+    image: ubuntu/squid:7.2-26.04_edge
+    logging:
+      driver: json-file
+      options:
+        max-file: "5"
+        max-size: 10m
+    mem_limit: "268435456"
+    networks:
+      agmind-backend: null
+      ssrf-network: null
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "1"
+    volumes:
+      - type: bind
+        source: __INSTALL_DIR__/docker/volumes/ssrf_proxy/squid.conf
+        target: /etc/squid/squid.conf
+        read_only: true
+        bind: {}
+  web:
+    cap_drop:
+      - AUDIT_CONTROL
+      - AUDIT_READ
+      - AUDIT_WRITE
+      - BLOCK_SUSPEND
+      - BPF
+      - CHECKPOINT_RESTORE
+      - DAC_READ_SEARCH
+      - FSETID
+      - IPC_LOCK
+      - IPC_OWNER
+      - KILL
+      - LEASE
+      - LINUX_IMMUTABLE
+      - MAC_ADMIN
+      - MAC_OVERRIDE
+      - MKNOD
+      - NET_ADMIN
+      - NET_BROADCAST
+      - PERFMON
+      - SYS_BOOT
+      - SYS_MODULE
+      - SYS_NICE
+      - SYS_PACCT
+      - SYS_PTRACE
+      - SYS_RAWIO
+      - SYS_RESOURCE
+      - SYS_TIME
+      - SYS_TTY_CONFIG
+      - SYSLOG
+      - WAKE_ALARM
+    container_name: agmind-web
+    depends_on:
+      api:
+        condition: service_healthy
+        required: true
+    environment:
+      APP_API_URL: ""
+      CONSOLE_API_URL: ""
+      HOSTNAME: 0.0.0.0
+      NEXT_TELEMETRY_DISABLED: "1"
+      SENTRY_DSN: ""
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -qO- http://127.0.0.1:3000 || exit 1
+      timeout: 10s
+      interval: 30s
+      retries: 5
+      start_period: 15s
+    image: langgenius/dify-web:1.14.1
+    logging:
+      driver: json-file
+      options:
+        max-file: "5"
+        max-size: 10m
+    mem_limit: "536870912"
+    networks:
+      agmind-backend: null
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "1"
+  worker:
+    cap_drop:
+      - AUDIT_CONTROL
+      - AUDIT_READ
+      - AUDIT_WRITE
+      - BLOCK_SUSPEND
+      - BPF
+      - CHECKPOINT_RESTORE
+      - DAC_READ_SEARCH
+      - FSETID
+      - IPC_LOCK
+      - IPC_OWNER
+      - KILL
+      - LEASE
+      - LINUX_IMMUTABLE
+      - MAC_ADMIN
+      - MAC_OVERRIDE
+      - MKNOD
+      - NET_ADMIN
+      - NET_BROADCAST
+      - PERFMON
+      - SYS_BOOT
+      - SYS_MODULE
+      - SYS_NICE
+      - SYS_PACCT
+      - SYS_PTRACE
+      - SYS_RAWIO
+      - SYS_RESOURCE
+      - SYS_TIME
+      - SYS_TTY_CONFIG
+      - SYSLOG
+      - WAKE_ALARM
+    container_name: agmind-worker
+    depends_on:
+      db:
+        condition: service_healthy
+        required: true
+      redis:
+        condition: service_healthy
+        required: true
+      sandbox:
+        condition: service_healthy
+        required: true
+    environment:
+      APP_API_URL: ""
+      APP_WEB_URL: ""
+      BATCH_UPLOAD_LIMIT: "100"
+      BROKER_USE_SSL: "false"
+      CELERY_ACKS_LATE: "false"
+      CELERY_BROKER_URL: redis://:njayATvHns2Ua1MQULuKM7Ctg3WmtOHg@redis:6379/1
+      CELERY_WORKER_AMOUNT: "1"
+      CELERY_WORKER_POOL: gevent
+      CHECK_UPDATE_URL: https://updates.dify.ai
+      CODE_EXECUTION_API_KEY: dify-sandbox-ORTOPLNSbkWApUA2
+      CODE_EXECUTION_ENDPOINT: http://sandbox:8194
+      CODE_MAX_DEPTH: "5"
+      CODE_MAX_NUMBER: "9223372036854775807"
+      CODE_MAX_NUMBER_ARRAY_LENGTH: "1000"
+      CODE_MAX_OBJECT_ARRAY_LENGTH: "30"
+      CODE_MAX_PRECISION: "20"
+      CODE_MAX_STRING_ARRAY_LENGTH: "30"
+      CODE_MAX_STRING_LENGTH: "80000"
+      CODE_MIN_NUMBER: "-9223372036854775808"
+      CONSOLE_API_URL: ""
+      CONSOLE_WEB_URL: ""
+      DB_DATABASE: dify
+      DB_HOST: db
+      DB_PASSWORD: UsdEny0HwjTvgtPfltFwpch77nJIijcZ
+      DB_PORT: "5432"
+      DB_USERNAME: postgres
+      DEPLOY_ENV: PRODUCTION
+      EDITION: SELF_HOSTED
+      ENABLE_COLLABORATION_MODE: "false"
+      ETL_TYPE: Unstructured
+      FILES_ACCESS_TIMEOUT: "300"
+      FILES_URL: http://172.17.0.1
+      HTTP_REQUEST_NODE_MAX_BINARY_SIZE: "104857600"
+      HTTP_REQUEST_NODE_MAX_TEXT_SIZE: "104857600"
+      INDEXING_MAX_SEGMENTATION_TOKENS_LENGTH: "4000"
+      INIT_PASSWORD: cmJZY3lhUVkzTzl3cmpxNg==
+      INNER_API_KEY_FOR_PLUGIN: GSh4YQTBlRTAbIl6Qmk6aaaUEj1Pg4VeIts6P7fdrasfObjR
+      LOG_LEVEL: INFO
+      MAIL_DEFAULT_SEND_FROM: ""
+      MAIL_TYPE: ""
+      MARKETPLACE_ENABLED: "true"
+      MIGRATION_ENABLED: "true"
+      MILVUS_ANALYZER_PARAMS: ""
+      MILVUS_DATABASE: agmind
+      MILVUS_ENABLE_HYBRID_SEARCH: "true"
+      MILVUS_PASSWORD: ""
+      MILVUS_TOKEN: ""
+      MILVUS_URI: http://milvus:19530
+      MILVUS_USER: root
+      MODE: worker
+      OLLAMA_API_BASE: http://ollama:11434
+      PLUGIN_DAEMON_KEY: nEZQlyKhWJ3m6keg0NcOV2CyQyqkUqxYLxj28xnrM6wim4dY
+      PLUGIN_DAEMON_TIMEOUT: "1800"
+      PLUGIN_DAEMON_URL: http://plugin_daemon:5002
+      QDRANT_API_KEY: 0aGSGSdxGHXvlomi7nRdDfMOQd9MsazN
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: "6333"
+      REDIS_DB: "0"
+      REDIS_HOST: redis
+      REDIS_PASSWORD: njayATvHns2Ua1MQULuKM7Ctg3WmtOHg
+      REDIS_PORT: "6379"
+      REDIS_USE_SSL: "false"
+      S3_ACCESS_KEY: iWjLKGQvTR7W77Su2sPb
+      S3_BUCKET_NAME: dify-storage
+      S3_ENDPOINT: http://minio:9000
+      S3_REGION: us-east-1
+      S3_SECRET_KEY: 30OGn6F08Q9zmcqnsUD41igLgQEgU9bL2jm58UTl
+      S3_USE_AWS_MANAGED_IAM: "false"
+      SECRET_KEY: UWsNJXuGndNNT5BicWyHFZmRPXsdqDK29S86Q6y4J2Td4x4cW1VJVMOgd2tZiJg5
+      SERVICE_API_URL: ""
+      SQLALCHEMY_ECHO: "false"
+      SQLALCHEMY_POOL_RECYCLE: "3600"
+      SQLALCHEMY_POOL_SIZE: "30"
+      SSRF_DEFAULT_READ_TIME_OUT: "60"
+      SSRF_PROXY_HTTP_URL: http://ssrf_proxy:3128
+      SSRF_PROXY_HTTPS_URL: http://ssrf_proxy:3128
+      STORAGE_LOCAL_PATH: /app/api/storage
+      STORAGE_TYPE: s3
+      TEMPLATE_TRANSFORM_MAX_LENGTH: "80000"
+      UNSTRUCTURED_API_URL: http://docling:8765
+      UPLOAD_FILE_BATCH_LIMIT: "50"
+      UPLOAD_FILE_SIZE_LIMIT: "500"
+      VECTOR_STORE: weaviate
+      WEAVIATE_API_KEY: CtjLygPdcLcGmILWkWrTkGm7HHz7tbdl
+      WEAVIATE_ENDPOINT: http://weaviate:8080
+      WORKFLOW_FILE_UPLOAD_LIMIT: "50"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - celery -A app.celery inspect ping -d celery@$$HOSTNAME 2>/dev/null || exit 1
+      timeout: 15s
+      interval: 30s
+      retries: 5
+      start_period: 30s
+    image: langgenius/dify-api:1.14.1
+    logging:
+      driver: json-file
+      options:
+        max-file: "5"
+        max-size: 10m
+    mem_limit: "2147483648"
+    networks:
+      agmind-backend: null
+      ssrf-network: null
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "1"
+    volumes:
+      - type: bind
+        source: __INSTALL_DIR__/docker/volumes/app/storage
+        target: /app/api/storage
+        bind: {}
+networks:
+  agmind-backend:
+    name: agmind_agmind-backend
+    driver: bridge
+  agmind-frontend:
+    name: agmind_agmind-frontend
+    driver: bridge
+  ssrf-network:
+    name: agmind_ssrf-network
+    driver: bridge
+    internal: true
+x-logging-defaults:
+  logging:
+    driver: json-file
+    options:
+      max-file: "5"
+      max-size: 10m
+  sysctls:
+    - net.ipv6.conf.all.disable_ipv6=1
+x-security-defaults:
+  cap_drop:
+    - AUDIT_CONTROL
+    - AUDIT_READ
+    - AUDIT_WRITE
+    - BLOCK_SUSPEND
+    - BPF
+    - CHECKPOINT_RESTORE
+    - DAC_READ_SEARCH
+    - FSETID
+    - IPC_LOCK
+    - IPC_OWNER
+    - KILL
+    - LEASE
+    - LINUX_IMMUTABLE
+    - MAC_ADMIN
+    - MAC_OVERRIDE
+    - MKNOD
+    - NET_ADMIN
+    - NET_BROADCAST
+    - PERFMON
+    - SYS_BOOT
+    - SYS_MODULE
+    - SYS_NICE
+    - SYS_PACCT
+    - SYS_PTRACE
+    - SYS_RAWIO
+    - SYS_RESOURCE
+    - SYS_TIME
+    - SYS_TTY_CONFIG
+    - SYSLOG
+    - WAKE_ALARM
+  logging:
+    driver: json-file
+    options:
+      max-file: "5"
+      max-size: 10m
+  sysctls:
+    - net.ipv6.conf.all.disable_ipv6=1
+x-shared-env:
+  APP_API_URL: ""
+  APP_WEB_URL: ""
+  BATCH_UPLOAD_LIMIT: "100"
+  BROKER_USE_SSL: "false"
+  CELERY_ACKS_LATE: "false"
+  CELERY_BROKER_URL: redis://:njayATvHns2Ua1MQULuKM7Ctg3WmtOHg@redis:6379/1
+  CELERY_WORKER_AMOUNT: "1"
+  CELERY_WORKER_POOL: gevent
+  CHECK_UPDATE_URL: https://updates.dify.ai
+  CODE_EXECUTION_API_KEY: dify-sandbox-ORTOPLNSbkWApUA2
+  CODE_EXECUTION_ENDPOINT: http://sandbox:8194
+  CODE_MAX_DEPTH: "5"
+  CODE_MAX_NUMBER: "9223372036854775807"
+  CODE_MAX_NUMBER_ARRAY_LENGTH: "1000"
+  CODE_MAX_OBJECT_ARRAY_LENGTH: "30"
+  CODE_MAX_PRECISION: "20"
+  CODE_MAX_STRING_ARRAY_LENGTH: "30"
+  CODE_MAX_STRING_LENGTH: "80000"
+  CODE_MIN_NUMBER: "-9223372036854775808"
+  CONSOLE_API_URL: ""
+  CONSOLE_WEB_URL: ""
+  DB_DATABASE: dify
+  DB_HOST: db
+  DB_PASSWORD: UsdEny0HwjTvgtPfltFwpch77nJIijcZ
+  DB_PORT: "5432"
+  DB_USERNAME: postgres
+  DEPLOY_ENV: PRODUCTION
+  EDITION: SELF_HOSTED
+  ENABLE_COLLABORATION_MODE: "false"
+  ETL_TYPE: Unstructured
+  FILES_ACCESS_TIMEOUT: "300"
+  FILES_URL: http://172.17.0.1
+  HTTP_REQUEST_NODE_MAX_BINARY_SIZE: "104857600"
+  HTTP_REQUEST_NODE_MAX_TEXT_SIZE: "104857600"
+  INDEXING_MAX_SEGMENTATION_TOKENS_LENGTH: "4000"
+  INIT_PASSWORD: cmJZY3lhUVkzTzl3cmpxNg==
+  INNER_API_KEY_FOR_PLUGIN: GSh4YQTBlRTAbIl6Qmk6aaaUEj1Pg4VeIts6P7fdrasfObjR
+  LOG_LEVEL: INFO
+  MAIL_DEFAULT_SEND_FROM: ""
+  MAIL_TYPE: ""
+  MARKETPLACE_ENABLED: "true"
+  MIGRATION_ENABLED: "true"
+  MILVUS_ANALYZER_PARAMS: ""
+  MILVUS_DATABASE: agmind
+  MILVUS_ENABLE_HYBRID_SEARCH: "true"
+  MILVUS_PASSWORD: ""
+  MILVUS_TOKEN: ""
+  MILVUS_URI: http://milvus:19530
+  MILVUS_USER: root
+  OLLAMA_API_BASE: http://ollama:11434
+  PLUGIN_DAEMON_KEY: nEZQlyKhWJ3m6keg0NcOV2CyQyqkUqxYLxj28xnrM6wim4dY
+  PLUGIN_DAEMON_TIMEOUT: "1800"
+  PLUGIN_DAEMON_URL: http://plugin_daemon:5002
+  QDRANT_API_KEY: 0aGSGSdxGHXvlomi7nRdDfMOQd9MsazN
+  QDRANT_HOST: qdrant
+  QDRANT_PORT: "6333"
+  REDIS_DB: "0"
+  REDIS_HOST: redis
+  REDIS_PASSWORD: njayATvHns2Ua1MQULuKM7Ctg3WmtOHg
+  REDIS_PORT: "6379"
+  REDIS_USE_SSL: "false"
+  S3_ACCESS_KEY: iWjLKGQvTR7W77Su2sPb
+  S3_BUCKET_NAME: dify-storage
+  S3_ENDPOINT: http://minio:9000
+  S3_REGION: us-east-1
+  S3_SECRET_KEY: 30OGn6F08Q9zmcqnsUD41igLgQEgU9bL2jm58UTl
+  S3_USE_AWS_MANAGED_IAM: "false"
+  SECRET_KEY: UWsNJXuGndNNT5BicWyHFZmRPXsdqDK29S86Q6y4J2Td4x4cW1VJVMOgd2tZiJg5
+  SERVICE_API_URL: ""
+  SQLALCHEMY_ECHO: "false"
+  SQLALCHEMY_POOL_RECYCLE: "3600"
+  SQLALCHEMY_POOL_SIZE: "30"
+  SSRF_DEFAULT_READ_TIME_OUT: "60"
+  SSRF_PROXY_HTTP_URL: http://ssrf_proxy:3128
+  SSRF_PROXY_HTTPS_URL: http://ssrf_proxy:3128
+  STORAGE_LOCAL_PATH: /app/api/storage
+  STORAGE_TYPE: s3
+  TEMPLATE_TRANSFORM_MAX_LENGTH: "80000"
+  UNSTRUCTURED_API_URL: http://docling:8765
+  UPLOAD_FILE_BATCH_LIMIT: "50"
+  UPLOAD_FILE_SIZE_LIMIT: "500"
+  VECTOR_STORE: weaviate
+  WEAVIATE_API_KEY: CtjLygPdcLcGmILWkWrTkGm7HHz7tbdl
+  WEAVIATE_ENDPOINT: http://weaviate:8080
+  WORKFLOW_FILE_UPLOAD_LIMIT: "50"

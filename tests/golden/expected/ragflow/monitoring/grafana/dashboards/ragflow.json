@@ -1,0 +1,135 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "title": "AGmind — RAGFlow",
+  "uid": "agmind-ragflow",
+  "tags": ["agmind", "ragflow"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "title": "RAGFlow API up?",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "up{job=\"ragflow\"}", "legendFormat": "ragflow", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+          ]
+        }
+      }
+    },
+    {
+      "title": "ES cluster health",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "targets": [
+        { "expr": "elasticsearch_cluster_health_status{color=\"green\"}", "legendFormat": "green", "refId": "A" },
+        { "expr": "elasticsearch_cluster_health_status{color=\"yellow\"}", "legendFormat": "yellow", "refId": "B" },
+        { "expr": "elasticsearch_cluster_health_status{color=\"red\"}", "legendFormat": "red", "refId": "C" }
+      ]
+    },
+    {
+      "title": "ES indices (count)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "elasticsearch_cluster_health_number_of_indices", "legendFormat": "indices", "refId": "A" }
+      ]
+    },
+    {
+      "title": "ES docs (total)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "targets": [
+        { "expr": "sum(elasticsearch_indices_docs)", "legendFormat": "docs", "refId": "A" }
+      ]
+    },
+    {
+      "title": "RAGFlow container memory (MiB)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [
+        {
+          "expr": "container_memory_working_set_bytes{name=~\"agmind-ragflow.*\"} / 1024 / 1024",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "decmbytes" } }
+    },
+    {
+      "title": "RAGFlow container CPU (%)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        {
+          "expr": "rate(container_cpu_usage_seconds_total{name=~\"agmind-ragflow.*\"}[1m]) * 100",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent" } }
+    },
+    {
+      "title": "ES JVM heap used (%)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "targets": [
+        {
+          "expr": "elasticsearch_jvm_memory_used_bytes{area=\"heap\"} / elasticsearch_jvm_memory_max_bytes{area=\"heap\"} * 100",
+          "legendFormat": "heap",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent", "max": 100, "min": 0 } }
+    },
+    {
+      "title": "ES indexing/search rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "targets": [
+        {
+          "expr": "rate(elasticsearch_indices_indexing_index_total[1m])",
+          "legendFormat": "index ops/s",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(elasticsearch_indices_search_query_total[1m])",
+          "legendFormat": "search ops/s",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "title": "Active alerts (RAGFlow)",
+      "type": "table",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 20 },
+      "targets": [
+        {
+          "expr": "ALERTS{alertstate=\"firing\", alertname=~\"RAGFlow.*\"}",
+          "legendFormat": "",
+          "refId": "A",
+          "format": "table",
+          "instant": true
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+# RAGFlow service config — overrides defaults to talk to AGmind shared services.
+# Rendered at install time via lib/config.sh::_copy_ragflow_templates (sed substitution
+# of ${VAR} placeholders to actual values from .env), then mounted as
+# /ragflow/docker/service_conf.yaml inside container (where RAGFlow's symlink
+# /ragflow/conf/service_conf.yaml points). Entrypoint.sh does NOT do env subst.
+#
+# Reuse strategy:
+#   - mysql/es: dedicated containers (ragflow_mysql/ragflow_es01)
+#   - minio:    shared с Dify, isolated bucket "ragflow-storage" + user "ragflow"
+#   - redis:    shared, dedicated DB=2 (Dify uses 0,1)
+#   - llm/embed/rerank: shared vLLM stack (peer для chat, master для embed/rerank)
+
+ragflow:
+  host: 0.0.0.0
+  http_port: 9380
+
+mysql:
+  name: '${MYSQL_DBNAME:-rag_flow}'
+  user: 'root'
+  password: '${MYSQL_PASSWORD}'
+  host: '${MYSQL_HOST:-ragflow_mysql}'
+  port: 3306
+  max_connections: 100
+  stale_timeout: 30
+
+minio:
+  user: '${MINIO_USER:-ragflow}'
+  password: '${MINIO_PASSWORD}'
+  host: '${MINIO_HOST:-minio}:${MINIO_PORT:-9000}'
+
+es:
+  hosts: 'http://${ES_HOST:-ragflow_es01}:${ES_PORT:-9200}'
+  username: 'elastic'
+  password: '${ELASTIC_PASSWORD}'
+
+redis:
+  db: 2
+  password: '${REDIS_PASSWORD}'
+  host: '${REDIS_HOST:-redis}:${REDIS_PORT:-6379}'
+
+# LLM/embed/rerank — через LiteLLM gateway если ENABLE_LITELLM=true,
+# иначе напрямую в vllm services. Прописывается AGmind installer'ом.
+user_default_llm:
+  factory: 'OpenAI-API-Compatible'
+  api_key: 'agmind-internal'
+  base_url: 'http://litellm:4000/v1'
+
+default_models:
+  chat: '${VLLM_SPARK_MODEL:-google/gemma-4-26B-A4B-it}'
+  embedding: '${VLLM_EMBED_MODEL:-deepvk/USER-bge-m3}'
+  rerank: '${VLLM_RERANK_MODEL:-BAAI/bge-reranker-v2-m3}'
+
+# MCP server enabled через --enable-mcpserver в compose command (отсутствует пока,
+# планируется Phase 999.7.2). API key для MCP доступа поверх nginx.
+mcp:
+  enabled: false
+
+# OAuth не используется (LAN profile). Для VPS path удалён 2026-04-25.
+oauth:
+  github: {}
+
+# Telemetry — выключено (соответствует политике AGmind).
+telemetry:
+  enabled: false

@@ -1,0 +1,191 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"fillOpacity": 20, "lineWidth": 1, "drawStyle": "line"},
+          "unit": "short"
+        }
+      },
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 0},
+      "id": 1,
+      "title": "Peer vLLM — requests running / waiting",
+      "type": "timeseries",
+      "targets": [
+        {"expr": "vllm:num_requests_running{job=\"peer-vllm\"}", "legendFormat": "running", "refId": "A"},
+        {"expr": "vllm:num_requests_waiting{job=\"peer-vllm\"}", "legendFormat": "waiting", "refId": "B"}
+      ]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"fillOpacity": 20, "lineWidth": 1, "drawStyle": "line"},
+          "unit": "percentunit"
+        }
+      },
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 0},
+      "id": 2,
+      "title": "Peer vLLM — GPU KV cache + prefix hit rate",
+      "type": "timeseries",
+      "targets": [
+        {"expr": "vllm:kv_cache_usage_perc{job=\"peer-vllm\"}", "legendFormat": "KV cache %", "refId": "A"},
+        {"expr": "rate(vllm:prefix_cache_hits_total{job=\"peer-vllm\"}[5m]) / clamp_min(rate(vllm:prefix_cache_queries_total{job=\"peer-vllm\"}[5m]), 0.001)", "legendFormat": "prefix hit rate", "refId": "B"}
+      ]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"fillOpacity": 10, "lineWidth": 1, "drawStyle": "line"},
+          "unit": "reqps"
+        }
+      },
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 6},
+      "id": 3,
+      "title": "Peer vLLM — request rate (success/s)",
+      "type": "timeseries",
+      "targets": [
+        {"expr": "rate(vllm:request_success_total{job=\"peer-vllm\"}[1m])", "legendFormat": "{{finished_reason}}", "refId": "A"}
+      ]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"fillOpacity": 10, "lineWidth": 1, "drawStyle": "line"},
+          "unit": "s"
+        }
+      },
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 6},
+      "id": 4,
+      "title": "Peer vLLM — p50/p95 e2e latency",
+      "type": "timeseries",
+      "targets": [
+        {"expr": "histogram_quantile(0.50, sum(rate(vllm:e2e_request_latency_seconds_bucket{job=\"peer-vllm\"}[5m])) by (le))", "legendFormat": "p50", "refId": "A"},
+        {"expr": "histogram_quantile(0.95, sum(rate(vllm:e2e_request_latency_seconds_bucket{job=\"peer-vllm\"}[5m])) by (le))", "legendFormat": "p95", "refId": "B"}
+      ]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"fillOpacity": 10, "lineWidth": 1, "drawStyle": "line"},
+          "unit": "percentunit"
+        }
+      },
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 12},
+      "id": 5,
+      "title": "Peer CPU utilization",
+      "type": "timeseries",
+      "targets": [
+        {"expr": "1 - avg(rate(node_cpu_seconds_total{job=\"peer-node-exporter\",mode=\"idle\"}[1m]))", "legendFormat": "CPU util", "refId": "A"}
+      ]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"fillOpacity": 10, "lineWidth": 1, "drawStyle": "line"},
+          "unit": "bytes"
+        }
+      },
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 12},
+      "id": 6,
+      "title": "Peer RAM (total / available / swap used)",
+      "type": "timeseries",
+      "targets": [
+        {"expr": "node_memory_MemTotal_bytes{job=\"peer-node-exporter\"}", "legendFormat": "total", "refId": "A"},
+        {"expr": "node_memory_MemAvailable_bytes{job=\"peer-node-exporter\"}", "legendFormat": "available", "refId": "B"},
+        {"expr": "node_memory_SwapTotal_bytes{job=\"peer-node-exporter\"} - node_memory_SwapFree_bytes{job=\"peer-node-exporter\"}", "legendFormat": "swap used", "refId": "C"}
+      ]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"fillOpacity": 10, "lineWidth": 1, "drawStyle": "line"},
+          "unit": "Bps"
+        }
+      },
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 12},
+      "id": 7,
+      "title": "Peer network I/O (QSFP + wifi)",
+      "type": "timeseries",
+      "targets": [
+        {"expr": "rate(node_network_receive_bytes_total{job=\"peer-node-exporter\",device!~\"lo|veth.*|docker.*\"}[1m])", "legendFormat": "rx {{device}}", "refId": "A"},
+        {"expr": "rate(node_network_transmit_bytes_total{job=\"peer-node-exporter\",device!~\"lo|veth.*|docker.*\"}[1m])", "legendFormat": "tx {{device}}", "refId": "B"}
+      ]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "red", "value": null},
+            {"color": "green", "value": 1}
+          ]},
+          "unit": "short"
+        }
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 18},
+      "id": 8,
+      "title": "Peer online",
+      "type": "stat",
+      "targets": [
+        {"expr": "up{job=~\"peer-.*\"}", "legendFormat": "{{job}}", "refId": "A"}
+      ]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"},
+      "fieldConfig": {"defaults": {"unit": "bytes"}},
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 18},
+      "id": 9,
+      "title": "Peer disk free",
+      "type": "stat",
+      "targets": [
+        {"expr": "node_filesystem_avail_bytes{job=\"peer-node-exporter\",mountpoint=\"/\"}", "legendFormat": "root free", "refId": "A"}
+      ]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"},
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "gridPos": {"h": 4, "w": 12, "x": 12, "y": 18},
+      "id": 10,
+      "title": "Peer load avg 1m / 5m / 15m",
+      "type": "timeseries",
+      "targets": [
+        {"expr": "node_load1{job=\"peer-node-exporter\"}", "legendFormat": "1m", "refId": "A"},
+        {"expr": "node_load5{job=\"peer-node-exporter\"}", "legendFormat": "5m", "refId": "B"},
+        {"expr": "node_load15{job=\"peer-node-exporter\"}", "legendFormat": "15m", "refId": "C"}
+      ]
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["agmind", "peer", "worker"],
+  "templating": {"list": []},
+  "time": {"from": "now-15m", "to": "now"},
+  "timepicker": {},
+  "timezone": "",
+  "title": "AGmind — Worker Node (peer Spark)",
+  "uid": "agmind-peer-worker",
+  "version": 1,
+  "weekStart": ""
+}
