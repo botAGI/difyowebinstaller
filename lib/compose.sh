@@ -799,7 +799,9 @@ sync_db_password() {
     # which would be source-expanded by _env_get. Trailing `|| true` preserves
     # legacy semantic where missing key → empty stdout (no rc=1 propagation
     # under set -e). Existing validators on next lines handle empty case.
-    db_pass="$(_env_get_raw DB_PASSWORD "$env_file" 2>/dev/null || true)"
+    # Plan 14-08 STATE-11: state-store-first; .env defence-in-depth fallback.
+    db_pass="$(state_get_secret DB_PASSWORD 2>/dev/null || true)"
+    [[ -z "$db_pass" ]] && db_pass="$(_env_get_raw DB_PASSWORD "$env_file" 2>/dev/null || true)"
     if [[ -z "$db_pass" ]]; then return 0; fi
 
     db_user="$(_env_get DB_USERNAME "$env_file")"
