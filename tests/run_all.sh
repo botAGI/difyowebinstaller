@@ -42,6 +42,12 @@ for t in tests/lint/*.sh; do
     _run "lint: $t" bash "$t"
 done
 
+# ── compose tests (hermetic — pure YAML, no docker daemon) ────────────────────
+for t in tests/compose/*.sh; do
+    [[ -x "$t" ]] || continue
+    _run "compose: $t" bash "$t"
+done
+
 # ── integration tests ─────────────────────────────────────────────────────────
 for t in tests/integration/*.sh; do
     [[ -x "$t" ]] || continue
