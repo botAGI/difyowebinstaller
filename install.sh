@@ -530,7 +530,13 @@ _copy_runtime_files() {
     # Glob-copy — no whitelist. Whitelist protukaet every time a new script is
     # added; classes of regression include docling-bench.sh, loadtest/ etc.
     if [[ "$INSTALLER_DIR" != "$INSTALL_DIR" ]]; then
-        cp "${INSTALLER_DIR}/scripts/"*.sh "${INSTALL_DIR}/scripts/" 2>/dev/null || true
+        # cp -P: preserve source symlinks (scripts/health.sh, scripts/detect.sh
+        # are symlinks → ../lib/X.sh per docs/lib-scripts-pairs.md DUP-02 inventory).
+        # Plain `cp` would DEREFERENCE the symlink and write a regular file at the
+        # destination, breaking the single-source-of-truth contract on every install.
+        # See tests/compose/test_lib_scripts_parity.sh + tests/unit/test_copy_runtime_files.sh
+        # for the regression gates.
+        cp -P "${INSTALLER_DIR}/scripts/"*.sh "${INSTALL_DIR}/scripts/" 2>/dev/null || true
         # Subdirectories — explicit list (directories are less common additions)
         local script_subdirs=(loadtest demo)
         for d in "${script_subdirs[@]}"; do
@@ -540,9 +546,11 @@ _copy_runtime_files() {
             fi
         done
     fi
-    # lib/ → scripts/ copy: different subdirs, always safe even in self-install
-    cp "${INSTALLER_DIR}/lib/health.sh"    "${INSTALL_DIR}/scripts/health.sh"    2>/dev/null || true
-    cp "${INSTALLER_DIR}/lib/detect.sh"   "${INSTALL_DIR}/scripts/detect.sh"   2>/dev/null || true
+    # lib/ → scripts/ copy: regular-file pairs only (byte-identical-copy type).
+    # health.sh and detect.sh are SYMLINKED (see docs/lib-scripts-pairs.md);
+    # they survive the glob copy above via cp -P (NOT a separate cp here, that
+    # would overwrite the symlink with a dereferenced regular-file copy).
+    # tests/compose/test_lib_scripts_parity.sh enforces this contract.
     cp "${INSTALLER_DIR}/lib/i18n.sh"     "${INSTALL_DIR}/scripts/i18n.sh"     2>/dev/null || true
     cp "${INSTALLER_DIR}/lib/creds.sh"      "${INSTALL_DIR}/scripts/creds.sh"      2>/dev/null || true
     cp "${INSTALLER_DIR}/lib/security.sh"  "${INSTALL_DIR}/scripts/security.sh"  2>/dev/null || true
