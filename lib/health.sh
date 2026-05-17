@@ -26,12 +26,47 @@ source "${_HEALTH_SCRIPT_DIR}/service-map.sh"
 # SERVICE LIST (dynamic based on .env)
 # ============================================================================
 
-get_service_list() {
-    local compose_dir="${INSTALL_DIR}/docker"
-    local env_file="${compose_dir}/.env"
+# resolve_active_services — single source of truth for the active service list
+# under current ${INSTALL_DIR}/docker/.env state. Memoized per session via
+# mtime-keyed cache (PITFALLS-4 explicit pattern, Plan 14-01 / RESOLVER-01).
+#
+# Cache vars (_AGMIND_SVC_CACHE_KEY/_VAL) live in lib/service-map.sh.
+# NO docker shellout, NO yq — registry data comes pre-indexed via Phase 12
+# _registry.indexed.sh (already sourced by lib/service-map.sh transitively).
+#
+# Output format: single line, space-separated service names (byte-identical
+# to pre-Plan-14-01 get_service_list output — 65+ existing tests depend on
+# this exact shape, Pitfall 5).
+resolve_active_services() {
+    local env_file="${INSTALL_DIR}/docker/.env"
+    local mtime
+    mtime="$(stat -c %Y "$env_file" 2>/dev/null || echo 0)"
+    local cache_key="${env_file}:${mtime}"
+
+    if [[ "${_AGMIND_SVC_CACHE_KEY:-}" == "$cache_key" \
+       && -n "${_AGMIND_SVC_CACHE_VAL:-}" ]]; then
+        printf '%s' "$_AGMIND_SVC_CACHE_VAL"
+        return 0
+    fi
+
+    local result
+    result="$(_resolve_active_services_uncached "$env_file")"
+    _AGMIND_SVC_CACHE_KEY="$cache_key"
+    _AGMIND_SVC_CACHE_VAL="$result"
+    printf '%s' "$result"
+}
+
+# _resolve_active_services_uncached — fresh compute path. Reads env file
+# through legacy grep|cut probes (Plans 14-03..06 will migrate these to
+# _env_get / _env_get_raw helpers). Plan 14-01 = wrap-only (byte-identical).
+_resolve_active_services_uncached() {
+    local env_file="$1"
     local services=(db redis sandbox ssrf_proxy api worker web plugin_daemon nginx)
 
     if [[ -f "$env_file" ]]; then
+        # Phase 14-03..06 will migrate the `grep ^X= | cut -d=` reads below
+        # to _env_get / _env_get_raw helpers. Plan 14-01 = wrap-only.
+
         # Vector store
         local vector_store
         vector_store="$(grep '^VECTOR_STORE=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "weaviate")"
@@ -132,6 +167,10 @@ get_service_list() {
 
     echo "${services[@]}"
 }
+
+# Backward-compat alias — preserved for 65+ existing tests/consumers (Pitfall 5).
+# resolve_active_services is now the canonical entry point.
+get_service_list() { resolve_active_services; }
 
 # ============================================================================
 # CONTAINER CHECK
