@@ -34,6 +34,23 @@ log_error()   { echo -e "$(_log_ts)${RED}✗ $*${NC}" >&2; }
 log_success() { echo -e "$(_log_ts)${GREEN}✓ $*${NC}" >&2; }
 
 # ============================================================================
+# AGMIND_TEST_SEED PRODUCTION GUARD
+# ============================================================================
+# Phase 13 TEST-04 mitigation against an environment leak: AGMIND_TEST_SEED
+# enables deterministic secret generation for the golden test harness and must
+# never be active in a real install. Test suites set AGMIND_ALLOW_TEST_SEED=true
+# to opt in. Production sourcing of common.sh with TEST_SEED set but ALLOW unset
+# aborts loudly so secrets cannot become predictable by accident.
+if [[ -n "${AGMIND_TEST_SEED:-}" && "${AGMIND_ALLOW_TEST_SEED:-false}" != "true" ]]; then
+    echo "FATAL: AGMIND_TEST_SEED is set in this environment." >&2
+    echo "       This variable enables deterministic secret generation for golden tests" >&2
+    echo "       and must NEVER be active in a real install." >&2
+    echo "       If you intentionally want to run tests, set AGMIND_ALLOW_TEST_SEED=true." >&2
+    echo "       If this leaked from your dev shell, run: unset AGMIND_TEST_SEED" >&2
+    exit 1
+fi
+
+# ============================================================================
 # VALIDATION
 # ============================================================================
 # Each validator returns 0 on success, 1 on failure.
@@ -192,6 +209,58 @@ PY
         out+="$block"
     done
     printf '%s' "${out:0:length}"
+}
+
+# Name-based deterministic RNG (TEST-04 / D-07).
+# Under AGMIND_TEST_SEED: keyed by f"{seed}:{slug}:{length}" via python3 random.Random.
+# Without seed: delegates to generate_random (CSPRNG via secrets.choice) — zero
+# security regression vs production behavior.
+# Usage: generate_random_named <slug> [length]   (slug MUST match ^[A-Za-z][A-Za-z0-9_]*$)
+generate_random_named() {
+    local slug="${1:-}"
+    local length="${2:-32}"
+
+    if [[ -z "$slug" || ! "$slug" =~ ^[A-Za-z][A-Za-z0-9_]*$ ]]; then
+        log_error "generate_random_named: invalid slug: '${slug}' (must match ^[A-Za-z][A-Za-z0-9_]*\$)"
+        return 1
+    fi
+    if [[ ! "$length" =~ ^[1-9][0-9]*$ ]]; then
+        log_error "generate_random_named: invalid length: '${length}'"
+        return 1
+    fi
+
+    if [[ -n "${AGMIND_TEST_SEED:-}" ]]; then
+        python3 - "$AGMIND_TEST_SEED" "$slug" "$length" <<'PY'
+import random, string, sys
+seed, slug, n = sys.argv[1], sys.argv[2], int(sys.argv[3])
+r = random.Random(f"{seed}:{slug}:{n}")
+print(''.join(r.choice(string.ascii_letters + string.digits) for _ in range(n)), end='')
+PY
+        return $?
+    fi
+
+    # Unseeded path — production CSPRNG (zero regression vs prior callers).
+    generate_random "$length"
+}
+
+# Deterministic clock helper (D-22). Under AGMIND_TEST_SEED → fixed value,
+# else delegates to real `date -u`. Use everywhere template-rendering would
+# embed a timestamp.
+_now_utc() {
+    if [[ -n "${AGMIND_TEST_SEED:-}" ]]; then
+        printf '%s' '2026-01-01T00:00:00Z'
+    else
+        date -u +'%Y-%m-%dT%H:%M:%SZ'
+    fi
+}
+
+# Deterministic hostname helper (D-22). Symmetric to _now_utc.
+_host_name() {
+    if [[ -n "${AGMIND_TEST_SEED:-}" ]]; then
+        printf '%s' 'agmind-golden-host'
+    else
+        hostname
+    fi
 }
 
 # ============================================================================
