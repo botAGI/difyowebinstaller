@@ -546,11 +546,20 @@ _copy_runtime_files() {
             fi
         done
     fi
-    # lib/ → scripts/ copy: regular-file pairs only (byte-identical-copy type).
-    # health.sh and detect.sh are SYMLINKED (see docs/lib-scripts-pairs.md);
-    # they survive the glob copy above via cp -P (NOT a separate cp here, that
-    # would overwrite the symlink with a dereferenced regular-file copy).
-    # tests/compose/test_lib_scripts_parity.sh enforces this contract.
+    # lib/ → scripts/ copy: regular-file pairs (byte-identical-copy type).
+    # NOTE 2026-05-18 (Phase 14 live-deploy fix): health.sh and detect.sh ARE
+    # symlinked in the repo (DUP-01 — see docs/lib-scripts-pairs.md), but at
+    # install target /opt/agmind has no lib/ directory, so the symlinks would
+    # be DANGLING (target ../lib/X.sh doesn't exist). Plan 14-07 'cp -P
+    # preserves symlinks' globbed scripts/*.sh correctly preserved the symlinks
+    # but install.sh never populated /opt/agmind/lib/, so `agmind` CLI failed
+    # with "AGMind not installed" on fresh installs. Fix: explicit cp for
+    # health.sh + detect.sh — overrides the dangling symlinks with regular-file
+    # content from lib/. Symlink DRY contract is enforced at repo level only
+    # (tests/compose/test_lib_scripts_parity.sh checks repo state, not install
+    # target). At install time we materialize the content into a regular file.
+    cp "${INSTALLER_DIR}/lib/health.sh"   "${INSTALL_DIR}/scripts/health.sh"   2>/dev/null || true
+    cp "${INSTALLER_DIR}/lib/detect.sh"   "${INSTALL_DIR}/scripts/detect.sh"   2>/dev/null || true
     cp "${INSTALLER_DIR}/lib/i18n.sh"     "${INSTALL_DIR}/scripts/i18n.sh"     2>/dev/null || true
     cp "${INSTALLER_DIR}/lib/creds.sh"      "${INSTALL_DIR}/scripts/creds.sh"      2>/dev/null || true
     cp "${INSTALLER_DIR}/lib/security.sh"  "${INSTALL_DIR}/scripts/security.sh"  2>/dev/null || true
