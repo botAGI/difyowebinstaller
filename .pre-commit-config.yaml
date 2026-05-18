@@ -110,3 +110,16 @@ repos:
         stages: [manual]
         types: [shell]
         files: '^(lib/|scripts/|install\.sh|tests/golden/run\.sh)'
+
+      # DOCS-03: regenerate docs/adr/INDEX.md table between sentinel markers
+      # when any ADR markdown file is staged. The hook runs the generator in
+      # --pre-commit mode: if INDEX.md changes, the hook auto-stages it and
+      # exits 1 with a re-commit message so the operator reviews the diff
+      # before it lands. INDEX.md edits do NOT re-trigger the hook
+      # (files regex matches only docs/adr/NNNN-*.md), avoiding recursion.
+      - id: adr-index
+        name: Regenerate docs/adr/INDEX.md when ADR files change
+        entry: bash -c 'python3 scripts/generate-adr-index.py && if ! git diff --quiet docs/adr/INDEX.md; then git add docs/adr/INDEX.md; echo "INDEX.md regenerated, please review and re-commit."; exit 1; fi'
+        language: system
+        files: '^docs/adr/[0-9]{4}-.*\.md$'
+        pass_filenames: false
