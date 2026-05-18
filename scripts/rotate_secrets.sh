@@ -110,6 +110,11 @@ rotate_secrets() {
         sed "s|^requirepass .*|requirepass ${new_redis_pass}|" "$redis_conf" > "$redis_tmp" \
             && mv "$redis_tmp" "$redis_conf" \
             || rm -f "$redis_tmp"
+        # redis container runs as user redis (uid 999) — config must be world-readable.
+        # mv inherits the temp file's restrictive umask (root creates 0600 under default
+        # systemd shell), which leaves redis with "Permission denied" on /etc/redis/redis.conf
+        # and a CrashLoopBackoff. Match the initial generation mode set in lib/config.sh.
+        chmod 0644 "$redis_conf"
     fi
 
     # Restart affected services
