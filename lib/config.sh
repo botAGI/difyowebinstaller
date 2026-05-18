@@ -1919,8 +1919,12 @@ _cfgval_env_required_keys() {
             "Run install.sh to generate the config"
         return 1
     fi
-    # Verified against _generate_env_file in lib/config.sh (RESEARCH §3):
-    # DB_PASSWORD (not POSTGRES_PASSWORD), BIND_ADDR (not SERVER_IP) are the real .env keys.
+    # Verified against _generate_env_file in lib/config.sh: DB_PASSWORD (not
+    # POSTGRES_PASSWORD) is the real .env key. The repo has no bare `BIND_ADDR`
+    # — every consumer uses a service-prefixed variant (MILVUS_BIND_ADDR /
+    # GRAFANA_BIND_ADDR / PORTAINER_BIND_ADDR / N8N_BIND_ADDR / DOCLING_BIND_ADDR /
+    # RAGFLOW_BIND_ADDR / MINIO_BIND_ADDR) with a 127.0.0.1 default at the
+    # compose `ports:` callsite, so a missing BIND_ADDR= line is not a real gap.
     local REQUIRED_ENV_KEYS=(
         SECRET_KEY
         DB_PASSWORD
@@ -1929,7 +1933,6 @@ _cfgval_env_required_keys() {
         VECTOR_STORE
         STORAGE_TYPE
         FILES_URL
-        BIND_ADDR
         DIFY_VERSION
     )
     local missing=()
@@ -2014,11 +2017,27 @@ manifest_name_tag = {name: tag for name, tag in manifest_tags.items()}
 # Check: for each manifest image, find which versions.env key has matching tag format
 # Strategy: check if any *_VERSION value != corresponding manifest tag
 # Map: strip service name suffixes to guess the *_VERSION key
+#
+# Explicit overrides for images whose env-key cannot be derived by the naive
+# first-token heuristic (e.g. dify-sandbox uses SANDBOX_VERSION, not DIFY_VERSION).
+# Without this map all three dify-* images collapse to DIFY_VERSION and produce
+# bogus mismatches (versions.env=1.14.1 vs manifest=0.2.15 / 0.6.0-local).
+EXPLICIT_KEY_MAP = {
+    'dify-api':           'DIFY_VERSION',
+    'dify-web':           'DIFY_VERSION',
+    'dify-sandbox':       'SANDBOX_VERSION',
+    'dify-plugin-daemon': 'PLUGIN_DAEMON_VERSION',
+    'open-webui':         'OPENWEBUI_VERSION',
+}
+
 for img_name, img_tag in manifest_name_tag.items():
     # Derive candidate env key names from image name
-    # e.g. dify-api → DIFY_VERSION, weaviate → WEAVIATE_VERSION, redis → REDIS_VERSION
-    base = img_name.upper().replace('-', '_').split('_')[0]
-    candidate_key = f"{base}_VERSION"
+    # e.g. dify-api → DIFY_VERSION (via map), weaviate → WEAVIATE_VERSION (heuristic),
+    #      redis → REDIS_VERSION (heuristic).
+    candidate_key = EXPLICIT_KEY_MAP.get(
+        img_name,
+        f"{img_name.upper().replace('-', '_').split('_')[0]}_VERSION",
+    )
     if candidate_key in venv:
         env_val = venv[candidate_key]
         if env_val != img_tag:
