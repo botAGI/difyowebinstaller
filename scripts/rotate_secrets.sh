@@ -117,11 +117,17 @@ rotate_secrets() {
         chmod 0644 "$redis_conf"
     fi
 
-    # Restart affected services
+    # Recreate (not restart) affected services. `docker compose restart` keeps the
+    # existing container's environment — it does NOT re-read .env, so api/worker/plugin_daemon
+    # keep the old REDIS_PASSWORD and produce
+    #   redis.exceptions.AuthenticationError: invalid username-password pair
+    # immediately after a green "Rotation complete" message. `up -d` (with the implicit
+    # config-change detection or `--force-recreate`) materialises new containers that read
+    # the rotated .env, so the new password actually takes effect.
     echo ""
-    echo -e "${CYAN}Restarting services...${NC}"
+    echo -e "${CYAN}Recreating services with new env...${NC}"
     cd "${INSTALL_DIR}/docker"
-    docker compose restart api worker redis grafana sandbox plugin_daemon 2>/dev/null || true
+    docker compose up -d --force-recreate api worker redis grafana sandbox plugin_daemon 2>/dev/null || true
 
     ROTATION_STARTED=false
 
