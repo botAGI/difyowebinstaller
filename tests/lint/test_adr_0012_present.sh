@@ -9,7 +9,8 @@
 #      schema_version, mikefarah, PyYAML, air-gap, _registry.indexed.sh, aliases,
 #      8-named-profile sweep)
 #   5. Cross-references to prior ADRs (ADR-0009, ADR-0011)
-#   6. docs/adr/README.md has the [0012](0012-service-registry-codegen.md) row
+#   6. docs/adr/INDEX.md has the [0012](0012-service-registry-codegen.md) row
+#      (canonical catalogue moved from docs/adr/README.md to docs/adr/INDEX.md in Phase 15)
 #
 # Exit: 0 = pass, 1 = fail.
 
@@ -21,7 +22,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 echo "## test_adr_0012_present"
 
 ADR="${REPO_ROOT}/docs/adr/0012-service-registry-codegen.md"
-INDEX="${REPO_ROOT}/docs/adr/README.md"
+INDEX="${REPO_ROOT}/docs/adr/INDEX.md"
 
 pass=0; fail=0
 _ok()   { echo "  ok: $*"; pass=$((pass+1)); }

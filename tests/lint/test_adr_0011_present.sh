@@ -6,7 +6,8 @@
 #   2. Required MADR-lite sections present (Context / Decision / Consequences / References)
 #   3. Status: Accepted
 #   4. Q-01 + Q-10 + "Schema Marker Contract" + "File Mode Contract" + "Q-Locking Contract" present
-#   5. docs/adr/README.md has the [0011](0011-state-store-architecture.md) row
+#   5. docs/adr/INDEX.md has the [0011](0011-state-store-architecture.md) row
+#      (canonical catalogue moved from docs/adr/README.md to docs/adr/INDEX.md in Phase 15)
 #
 # Exit: 0 = pass, 1 = fail.
 
@@ -18,7 +19,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 echo "## test_adr_0011_present"
 
 ADR="${REPO_ROOT}/docs/adr/0011-state-store-architecture.md"
-INDEX="${REPO_ROOT}/docs/adr/README.md"
+INDEX="${REPO_ROOT}/docs/adr/INDEX.md"
 
 pass=0; fail=0
 _ok()   { echo "  ok: $*"; pass=$((pass+1)); }
