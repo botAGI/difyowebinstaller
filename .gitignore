@@ -61,3 +61,4 @@ agmind-handoff-fixed.zip
 # Phase 13 golden test harness — temporary diff + tmp dirs
 tests/golden/.last-update.diff
 tests/golden/.tmp-*/
+.gsd/
