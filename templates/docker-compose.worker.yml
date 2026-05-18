@@ -64,6 +64,9 @@ services:
       --trust-remote-code
     volumes:
       - agmind_vllm_cache:/root/.cache/huggingface
+      # DFlash speculative decoding config (mounted as file because docker compose
+      # shlex-strips inline JSON double-quotes — see lib/wizard.sh comments).
+      - ./vllm-config/dflash.json:/etc/vllm/dflash.json:ro
     ulimits:
       memlock:
         soft: -1

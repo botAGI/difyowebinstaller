@@ -595,6 +595,15 @@ _copy_runtime_files() {
         mkdir -p "${INSTALL_DIR}/templates/services"
         cp "${INSTALLER_DIR}/templates/services/registry.yaml" "${INSTALL_DIR}/templates/services/registry.yaml" 2>/dev/null || true
     fi
+    # vllm-config — DFlash speculative decoding config JSON. Bind-mounted by
+    # docker-compose{,.worker}.yml at ./vllm-config/dflash.json:/etc/vllm/dflash.json:ro
+    # so wizard.sh can pass `--speculative-config /etc/vllm/dflash.json` without
+    # hitting docker compose shlex-strip of inline JSON double-quotes
+    # (commit 8292a55 documented the original drop).
+    if [[ -d "${INSTALLER_DIR}/templates/vllm-config" ]]; then
+        mkdir -p "${INSTALL_DIR}/docker/vllm-config"
+        cp "${INSTALLER_DIR}/templates/vllm-config/"*.json "${INSTALL_DIR}/docker/vllm-config/" 2>/dev/null || true
+    fi
     chmod +x "${INSTALL_DIR}/scripts/"*.sh 2>/dev/null || true
     # Phase 12 normalization: _registry.indexed.sh is a sourceable data file, NOT an executable.
     # Override the broad chmod +x above — repo mode is 100644, runtime must match

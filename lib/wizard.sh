@@ -446,7 +446,14 @@ _wizard_llm_profile() {
             # FP8 model: NO --quantization — vLLM auto-detects from model config.
             # Explicit --quantization compressed-tensors here causes pydantic
             # ValidationError because the HF config.json declares fp8 already.
-            VLLM_EXTRA_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3 --attention-backend flash_attn --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching --trust-remote-code"
+            #
+            # --speculative-config points at a file (not inline JSON) because docker compose's
+            # shlex-style word-splitting strips the inner double-quotes from {"method":"dflash"}
+            # after env substitution, producing invalid JSON {method:dflash} that vLLM rejects
+            # (commit 8292a55 documented the original drop). Path lands via install.sh
+            # _copy_runtime_files → /opt/agmind/docker/vllm-config/dflash.json and is mounted
+            # by docker-compose{,.worker}.yml at /etc/vllm/dflash.json:ro.
+            VLLM_EXTRA_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3 --attention-backend flash_attn --speculative-config /etc/vllm/dflash.json --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching --trust-remote-code"
             if [[ "${LLM_ON_PEER:-false}" == "true" ]]; then
                 VLLM_GPU_MEM_UTIL="0.75"
                 export VLLM_GPU_MEM_UTIL
@@ -471,7 +478,8 @@ _wizard_llm_profile() {
             VLLM_CUDA_SUFFIX=""
             VLLM_CMD_PREFIX=""
             # NOTE: NO --enable-auto-tool-choice / --tool-call-parser — BROKEN on heretic checkpoint.
-            VLLM_EXTRA_ARGS="--quantization compressed-tensors --reasoning-parser qwen3 --attention-backend flash_attn --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching --trust-remote-code"
+            # --speculative-config: file-mounted (see profile 2 comment for shlex rationale).
+            VLLM_EXTRA_ARGS="--quantization compressed-tensors --reasoning-parser qwen3 --attention-backend flash_attn --speculative-config /etc/vllm/dflash.json --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching --trust-remote-code"
             if [[ "${LLM_ON_PEER:-false}" == "true" ]]; then
                 VLLM_GPU_MEM_UTIL="0.75"
                 export VLLM_GPU_MEM_UTIL
@@ -584,10 +592,9 @@ _apply_blackwell_cu130() {
                     VLLM_MODEL="Qwen/Qwen3.6-35B-A3B-FP8"
                     VLLM_CUDA_SUFFIX=""
                     VLLM_CMD_PREFIX=""
-                    # FP8 model: NO --quantization — vLLM auto-detects from model config.
-            # Explicit --quantization compressed-tensors here causes pydantic
-            # ValidationError because the HF config.json declares fp8 already.
-            VLLM_EXTRA_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3 --attention-backend flash_attn --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching --trust-remote-code"
+                    # FP8 model: NO --quantization (HF config.json declares fp8 → pydantic err).
+                    # --speculative-config: file-mounted (see _wizard_llm_profile profile 2).
+                    VLLM_EXTRA_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3 --attention-backend flash_attn --speculative-config /etc/vllm/dflash.json --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching --trust-remote-code"
                     VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-131072}"
                     if [[ "${LLM_ON_PEER:-false}" == "true" ]]; then
                         VLLM_GPU_MEM_UTIL="0.75"; export VLLM_GPU_MEM_UTIL
@@ -605,7 +612,8 @@ _apply_blackwell_cu130() {
                     VLLM_CUDA_SUFFIX=""
                     VLLM_CMD_PREFIX=""
                     # NOTE: NO --enable-auto-tool-choice / --tool-call-parser — BROKEN on heretic.
-                    VLLM_EXTRA_ARGS="--quantization compressed-tensors --reasoning-parser qwen3 --attention-backend flash_attn --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching --trust-remote-code"
+                    # --speculative-config: file-mounted (see _wizard_llm_profile profile 2).
+                    VLLM_EXTRA_ARGS="--quantization compressed-tensors --reasoning-parser qwen3 --attention-backend flash_attn --speculative-config /etc/vllm/dflash.json --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching --trust-remote-code"
                     VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-131072}"
                     if [[ "${LLM_ON_PEER:-false}" == "true" ]]; then
                         VLLM_GPU_MEM_UTIL="0.75"; export VLLM_GPU_MEM_UTIL

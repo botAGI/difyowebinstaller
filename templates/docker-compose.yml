@@ -354,6 +354,9 @@ services:
     command: ${VLLM_CMD_PREFIX:-} --model ${VLLM_MODEL:-QuantTrio/Qwen3.5-27B-AWQ} --host 0.0.0.0 --port 8000 --gpu-memory-utilization ${VLLM_GPU_MEM_UTIL:-0.60} --max-model-len ${VLLM_MAX_MODEL_LEN:-32768} ${VLLM_EXTRA_ARGS:+${VLLM_EXTRA_ARGS}} --trust-remote-code
     volumes:
       - agmind_vllm_cache:/root/.cache/huggingface
+      # DFlash speculative decoding config (mounted as file because docker compose
+      # shlex-strips inline JSON double-quotes — see lib/wizard.sh comments).
+      - ./vllm-config/dflash.json:/etc/vllm/dflash.json:ro
     ipc: host
     ulimits:
       memlock:
