@@ -8,7 +8,8 @@ SHELL := /bin/bash
         manifest-check image-check release-check \
         registry-codegen registry-verify \
         golden-test golden-update golden-update-all \
-        landmines-check landmines-sync
+        landmines-check landmines-sync \
+        adr-index adr-index-check
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | \
@@ -67,3 +68,9 @@ landmines-check: ## Run landmine enforcer against tests/golden/expected/
 
 landmines-sync: ## Regenerate tests/lint/LANDMINES.tsv from LANDMINES.md
 	bash scripts/landmines-sync.sh
+
+adr-index: ## Regenerate docs/adr/INDEX.md table between sentinel markers
+	python3 scripts/generate-adr-index.py
+
+adr-index-check: ## CI gate — fail if docs/adr/INDEX.md is out of sync with ADR frontmatter
+	python3 scripts/generate-adr-index.py --check
