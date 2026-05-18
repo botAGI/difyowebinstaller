@@ -884,6 +884,38 @@ sudo NON_INTERACTIVE=true \
 `ENABLE_DBGPT`, `ENABLE_CRAWL4AI`, `ENABLE_RAGFLOW`, `ENABLE_AUTHELIA`,
 `ENABLE_DIFY_PREMIUM`, `ENABLE_MINIO`.
 
+### Управление состоянием и обновления
+
+AGmind v3.2.0 вводит версионированное хранилище состояния
+`/var/lib/agmind/state/` — схема-версионирование, атомарная запись,
+`flock`-блокировки на уровне ключа и авто-бэкап перед деструктивными
+операциями. CLI `agmind upgrade` — операторский интерфейс.
+
+```bash
+# Read-only — текущая схема, ожидающие миграции, diff против versions.env
+sudo agmind upgrade --check
+
+# Применить ожидающие миграции атомарно (создаёт tar-бэкап в state.bak.<timestamp>/)
+sudo agmind upgrade --apply
+
+# Откат к авто-бэкапу (указать целевую schema_version)
+sudo agmind upgrade --rollback 0
+```
+
+Версии схемы — монотонные целые. Миграции лежат в
+`lib/migrations/NNN-<name>.sh` и применяются по номеру по возрастанию.
+Фреймворк миграций **идемпотентен** (безопасно перезапускать) и
+**не разрушает** legacy-состояние — старые `.preserved` файлы и
+`${INSTALL_DIR}/docker/.env` остаются на месте на один релиз-цикл.
+См. [ADR-0011](docs/adr/0011-state-store-architecture.md).
+
+> [!IMPORTANT]
+> Перезапуск `install.sh` на существующем хосте больше не
+> регенерирует секреты (закрывает регрессию v3.1.x BACKUP-01).
+> Существующие секреты сохраняются через state store; новые
+> генерируются только для новых ключей (добавленных в `versions.env`
+> между релизами).
+
 ---
 
 ## 🛠 Эксплуатация
