@@ -164,6 +164,15 @@ sudo NON_INTERACTIVE=true \
 | **nginx** | `nginx:1.30.0-alpine` | Reverse proxy (variable-form `proxy_pass`) |
 | **plugin_daemon** | `langgenius/dify-plugin-daemon:0.5.3-local` | Dify plugin runtime |
 
+### Service Registry (v3.2.0+)
+
+- **Source of truth:** `templates/services/registry.yaml` — declarative catalog
+  (image, profiles, group, healthcheck spec, mem_limit per service).
+- **Codegen artifact:** `lib/_registry.indexed.sh` is **generated** from
+  registry.yaml via `make registry-codegen`. **Do not hand-edit** — the
+  `registry-verify` CI gate fails on drift. See
+  [ADR-0012](docs/adr/0012-service-registry-codegen.md).
+
 ### RAGFlow Integration
 
 - **RAGFlow v0.24.1-spark** — deep document parsing + retrieval, image
@@ -434,6 +443,37 @@ agmind upgrade --diff                # Compare pinned versions vs running
 agmind update [--check|--auto]       # Update stack from main branch
 ```
 
+### State management & upgrades
+
+AGmind v3.2.0 introduces a versioned state store at `/var/lib/agmind/state/` —
+schema-versioned, atomically-writable, with `flock` per-file locking and
+auto-backup before destructive operations. The `agmind upgrade` CLI is the
+operator interface.
+
+```bash
+# Read-only — report current schema, pending migrations, config diff
+sudo agmind upgrade --check
+
+# Apply pending migrations atomically (creates tar-backup at state.bak.<timestamp>/)
+sudo agmind upgrade --apply
+
+# Restore from auto-backup (specify target schema_version)
+sudo agmind upgrade --rollback 0
+```
+
+Schema versions are monotonic integers. Migrations live under `lib/migrations/NNN-<name>.sh`
+and are applied in numeric order. The migration framework is **idempotent**
+(safe to re-run) and **non-destructive** of legacy state — old `.preserved`
+files and legacy `${INSTALL_DIR}/docker/.env` remain in place for one full
+release cycle after migration. See [ADR-0011](docs/adr/0011-state-store-architecture.md)
+for the substrate design.
+
+> [!IMPORTANT]
+> Re-running `install.sh` on an existing host no longer regenerates secrets
+> (closes the v3.1.x BACKUP-01 regression). Existing secrets are preserved via
+> the state store; only new keys (added in `versions.env` between releases)
+> are generated.
+
 ### GPU & Models
 
 ```bash
@@ -502,6 +542,21 @@ sudo agmind uninstall [--keep-models]  # Remove stack
 ├── install-report.json              # Machine-readable install summary
 └── install.log                      # Full install transcript
 ```
+
+And outside `/opt/agmind/`:
+
+```
+/var/lib/agmind/
+└── state/                           # Versioned state store (v3.2.0+)
+    ├── schema_version               # Monotonic integer (chmod 0600 root:root)
+    ├── secrets.env                  # Migrated secrets (chmod 0600 root:root)
+    ├── .locks/                      # flock per-key locks
+    └── state.bak.<timestamp>/       # Auto-backups (3 generations retained)
+```
+
+`/var/lib/agmind/state/` is `0700 root:root` and tarballed by `agmind backup
+create` alongside `/opt/agmind/`. The state store survives `agmind uninstall`
+unless `--purge-state` is passed.
 
 ---
 
@@ -603,7 +658,10 @@ Docling (5-page arxiv PDF, warm): **6.04s**, 0.32s/page, ~1.6 GiB GPU memory.
 | [docs/vector-db-decision-matrix.md](docs/vector-db-decision-matrix.md) | Weaviate vs Qdrant vs Milvus — selection rationale |
 | [docs/dify-vs-ragflow.md](docs/dify-vs-ragflow.md) | Dify and RAGFlow integration patterns |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Topic-by-topic fixes (`agmind troubleshoot <topic>`) |
-| [docs/adr/](docs/adr/) | Architecture Decision Records (ADR-0001 … ADR-0009) |
+| [docs/adr/](docs/adr/) | Architecture Decision Records (ADR-0001 … ADR-0013) — see [INDEX.md](docs/adr/INDEX.md) for catalogue |
+| [tests/lint/LANDMINES.md](tests/lint/LANDMINES.md) | Banned-pattern registry (codified project invariants) — enforced by `make landmines-check` (v3.2.0+) |
+| [tests/golden/](tests/golden/) | 5 byte-exact config-rendering scenarios (`minimal_lan`, `full_lan`, `rag_milvus`, `ragflow`, `cluster_peer`) — `make golden-test` (v3.2.0+) |
+| [templates/services/registry.yaml](templates/services/registry.yaml) | Single-source service catalog driving codegen + parity gates — see [ADR-0012](docs/adr/0012-service-registry-codegen.md) (v3.2.0+) |
 
 Quick navigation via CLI:
 ```bash
