@@ -36,14 +36,21 @@ log_success() { echo -e "${GREEN}OK $*${NC}"; }
 log_warn()    { echo -e "${YELLOW}!! $*${NC}"; }
 log_error()   { echo -e "${RED}!! $*${NC}"; }
 
-# Service mappings — single source of truth
+# Service mappings — single source of truth.
+# Try installed runtime path first (${INSTALL_DIR}/scripts/service-map.sh — populated
+# by install.sh::_copy_runtime_files), then fall back to dev tree (../lib/service-map.sh).
+# Same dual-path pattern as scripts/agmind.sh sourcing — see docs/adr/0012 for the
+# "lib/X.sh which scripts/* sources MUST be in _copy_runtime_files" rule this honors.
 _UPDATE_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=../lib/service-map.sh
-source "${_UPDATE_SCRIPT_DIR}/../lib/service-map.sh"
+source "${_UPDATE_SCRIPT_DIR}/service-map.sh" 2>/dev/null \
+    || source "${_UPDATE_SCRIPT_DIR}/../lib/service-map.sh"
 
 # Source compose lib for validate_images_exist() (and helpers)
 # shellcheck source=../lib/compose.sh
-source "${_UPDATE_SCRIPT_DIR}/../lib/compose.sh" 2>/dev/null || true
+source "${_UPDATE_SCRIPT_DIR}/compose.sh" 2>/dev/null \
+    || source "${_UPDATE_SCRIPT_DIR}/../lib/compose.sh" 2>/dev/null \
+    || true
 
 # Exclusive lock — prevent parallel operations
 # Skip lock in dry-run: /var/lock requires root; dry-run mutates nothing.
