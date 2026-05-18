@@ -617,6 +617,20 @@ agmind troubleshoot memory     # OOM / unified memory → §10
 
 ---
 
+## 🔮 Go Migration (roadmap — no Go code in v3.2.0)
+
+AGmind v3.2.0 reserves the `cmd/agmind/` and `internal/` directory namespaces for
+a future Go port (v4.0+). **No `.go` files, no `go.mod`, and no Go tooling ship in
+v3.2.0** — the placeholders are roadmap-only.
+
+- Staged port plan and per-stage acceptance criteria: [docs/ROADMAP-GO.md](docs/ROADMAP-GO.md)
+- Migration intent + equivalence-proof preconditions: [docs/adr/0010-go-migration-staged-port.md](docs/adr/0010-go-migration-staged-port.md)
+- Single-binary layout (Q-07): [docs/adr/0013-go-single-binary-internal-packages.md](docs/adr/0013-go-single-binary-internal-packages.md)
+
+Future Go release artifacts are **aarch64-only** (parent decision: [ADR-0001](docs/adr/0001-arm64-only.md)).
+
+---
+
 ## 🤝 Contributing
 
 ### Development setup
@@ -876,6 +890,20 @@ sudo agmind rotate-secrets
 | Общий footprint        | ~95 GiB                   |
 
 Docling (5 страниц arxiv PDF, warm): **6.04s**, 0.32s/page.
+
+---
+
+## 🔮 Миграция на Go (роадмап — в v3.2.0 Go кода нет)
+
+AGmind v3.2.0 резервирует директории `cmd/agmind/` и `internal/` под будущий
+порт на Go (v4.0+). **В v3.2.0 не поставляется ни одного `.go` файла, ни
+`go.mod`, ни Go-инструментария** — это только заглушки роадмапа.
+
+- Поэтапный план порта и критерии приёмки: [docs/ROADMAP-GO.md](docs/ROADMAP-GO.md)
+- Намерение миграции + предусловия equivalence-proof: [docs/adr/0010-go-migration-staged-port.md](docs/adr/0010-go-migration-staged-port.md)
+- Решение по layout (single-binary, Q-07): [docs/adr/0013-go-single-binary-internal-packages.md](docs/adr/0013-go-single-binary-internal-packages.md)
+
+Будущие релизные артефакты Go — **только aarch64** (родительское решение: [ADR-0001](docs/adr/0001-arm64-only.md)).
 
 ---
 
