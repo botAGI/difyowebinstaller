@@ -595,14 +595,19 @@ _copy_runtime_files() {
         mkdir -p "${INSTALL_DIR}/templates/services"
         cp "${INSTALLER_DIR}/templates/services/registry.yaml" "${INSTALL_DIR}/templates/services/registry.yaml" 2>/dev/null || true
     fi
-    # vllm-config — DFlash speculative decoding config JSON. Bind-mounted by
-    # docker-compose{,.worker}.yml at ./vllm-config/dflash.json:/etc/vllm/dflash.json:ro
-    # so wizard.sh can pass `--speculative-config /etc/vllm/dflash.json` without
-    # hitting docker compose shlex-strip of inline JSON double-quotes
-    # (commit 8292a55 documented the original drop).
+    # vllm-config — bind-mounted by docker-compose{,.worker}.yml at
+    #   ./vllm-config/entrypoint.sh → /usr/local/bin/agmind-vllm-entrypoint.sh:ro
+    #   ./vllm-config/dflash.json  → kept for wizard.sh _wizard_load_dflash_json
+    #                                 (single source of truth on disk; wrapper
+    #                                  reads VLLM_SPECULATIVE_CONFIG env, not file)
+    # The wrapper builds argv as a bash array so JSON args (--speculative-config,
+    # --rope-scaling) survive compose folded-scalar shlex-split.
+    # See LANDMINES.md: "vLLM CLI: --speculative-config is JSON, not path".
     if [[ -d "${INSTALLER_DIR}/templates/vllm-config" ]]; then
         mkdir -p "${INSTALL_DIR}/docker/vllm-config"
-        cp "${INSTALLER_DIR}/templates/vllm-config/"*.json "${INSTALL_DIR}/docker/vllm-config/" 2>/dev/null || true
+        cp "${INSTALLER_DIR}/templates/vllm-config/"*.json     "${INSTALL_DIR}/docker/vllm-config/" 2>/dev/null || true
+        cp "${INSTALLER_DIR}/templates/vllm-config/entrypoint.sh" "${INSTALL_DIR}/docker/vllm-config/entrypoint.sh" 2>/dev/null || true
+        chmod 0755 "${INSTALL_DIR}/docker/vllm-config/entrypoint.sh" 2>/dev/null || true
     fi
     chmod +x "${INSTALL_DIR}/scripts/"*.sh 2>/dev/null || true
     # Phase 12 normalization: _registry.indexed.sh is a sourceable data file, NOT an executable.

@@ -447,13 +447,15 @@ _wizard_llm_profile() {
             # Explicit --quantization compressed-tensors here causes pydantic
             # ValidationError because the HF config.json declares fp8 already.
             #
-            # --speculative-config points at a file (not inline JSON) because docker compose's
-            # shlex-style word-splitting strips the inner double-quotes from {"method":"dflash"}
-            # after env substitution, producing invalid JSON {method:dflash} that vLLM rejects
-            # (commit 8292a55 documented the original drop). Path lands via install.sh
-            # _copy_runtime_files → /opt/agmind/docker/vllm-config/dflash.json and is mounted
-            # by docker-compose{,.worker}.yml at /etc/vllm/dflash.json:ro.
-            VLLM_EXTRA_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3 --attention-backend flash_attn --speculative-config /etc/vllm/dflash.json --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching --trust-remote-code"
+            # JSON-typed vLLM args (--speculative-config, --rope-scaling) MUST
+            # travel via dedicated env vars consumed by the entrypoint wrapper
+            # (templates/vllm-config/entrypoint.sh). They cannot ride inside
+            # VLLM_EXTRA_ARGS as inline JSON — docker compose's folded `command:`
+            # scalar shlex-splits the substituted string and shreds quoted JSON.
+            # See LANDMINES.md: "vLLM CLI: --speculative-config is JSON, not path".
+            VLLM_EXTRA_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3 --attention-backend flash_attn --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching"
+            VLLM_SPECULATIVE_CONFIG=$(_wizard_load_dflash_json)
+            export VLLM_SPECULATIVE_CONFIG
             if [[ "${LLM_ON_PEER:-false}" == "true" ]]; then
                 VLLM_GPU_MEM_UTIL="0.75"
                 export VLLM_GPU_MEM_UTIL
@@ -478,8 +480,11 @@ _wizard_llm_profile() {
             VLLM_CUDA_SUFFIX=""
             VLLM_CMD_PREFIX=""
             # NOTE: NO --enable-auto-tool-choice / --tool-call-parser — BROKEN on heretic checkpoint.
-            # --speculative-config: file-mounted (see profile 2 comment for shlex rationale).
-            VLLM_EXTRA_ARGS="--quantization compressed-tensors --reasoning-parser qwen3 --attention-backend flash_attn --speculative-config /etc/vllm/dflash.json --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching --trust-remote-code"
+            # JSON-typed args (--speculative-config) travel via dedicated env vars
+            # consumed by templates/vllm-config/entrypoint.sh — see profile 2 comment.
+            VLLM_EXTRA_ARGS="--quantization compressed-tensors --reasoning-parser qwen3 --attention-backend flash_attn --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching"
+            VLLM_SPECULATIVE_CONFIG=$(_wizard_load_dflash_json)
+            export VLLM_SPECULATIVE_CONFIG
             if [[ "${LLM_ON_PEER:-false}" == "true" ]]; then
                 VLLM_GPU_MEM_UTIL="0.75"
                 export VLLM_GPU_MEM_UTIL
@@ -559,14 +564,40 @@ _wizard_llm_ctx_qwen36() {
     esac
 }
 
-# Append YaRN rope scaling override to VLLM_EXTRA_ARGS for 1M context.
-# NOTE 2026-05-15: NO single quotes around the JSON — same trap as the DFlash
-# --speculative-config arg (6d12b09). The JSON has no whitespace so argparse
-# splits cleanly on token boundary; surrounding single quotes would survive
-# into the .env line and break bash sourcing (the .env entry is single-quoted
-# by config.sh:584, so internal `'` chars would terminate the outer quoting).
+# Append YaRN rope scaling override for 1M context.
+# JSON-typed --rope-scaling is the same trap as --speculative-config — vLLM's
+# argparse runs json.loads on the value, and inline JSON inside a folded
+# compose `command:` scalar gets shlex-shredded. Travel via dedicated env var
+# (VLLM_ROPE_SCALING_CONFIG) read by templates/vllm-config/entrypoint.sh and
+# appended to argv as one bash-array element.
+# shellcheck disable=SC2089,SC2090
+# The value is JSON passed verbatim to vLLM's --rope-scaling argparse
+# consumer. It is NEVER word-split by us — the entrypoint wrapper reads
+# it with quoted "${VLLM_ROPE_SCALING_CONFIG}" and feeds it as one
+# bash-array element. Shellcheck's array suggestion does not apply here:
+# the value must remain a single string (one JSON document).
 _wizard_llm_ctx_append_yarn() {
-    VLLM_EXTRA_ARGS="${VLLM_EXTRA_ARGS} --rope-scaling {\"rope_type\":\"yarn\",\"factor\":4.0,\"original_max_position_embeddings\":262144}"
+    VLLM_ROPE_SCALING_CONFIG='{"rope_type":"yarn","factor":4.0,"original_max_position_embeddings":262144}'
+    export VLLM_ROPE_SCALING_CONFIG
+}
+
+# Load DFlash speculative-decoding config JSON as a single-line string from
+# templates/vllm-config/dflash.json (the source of truth). Falls back to a
+# baked-in default if the file is missing — keeps the wizard idempotent even
+# if templates/ is incomplete.
+#
+# Output: compact JSON suitable for VLLM_SPECULATIVE_CONFIG env var
+# (no whitespace, single line).
+_wizard_load_dflash_json() {
+    local dflash_path="${INSTALLER_DIR:-${BASE_DIR:-.}}/templates/vllm-config/dflash.json"
+    if [[ -f "${dflash_path}" ]]; then
+        # Compact the JSON to a single line — strips whitespace and newlines
+        # so the value fits cleanly inside .env (config.sh single-quotes it).
+        python3 -c "import json,sys; print(json.dumps(json.load(open(sys.argv[1])),separators=(',',':')))" "${dflash_path}" 2>/dev/null
+    else
+        # Hardcoded fallback (sync with templates/vllm-config/dflash.json).
+        printf '%s' '{"method":"dflash","model":"z-lab/Qwen3.6-35B-A3B-DFlash","num_speculative_tokens":15}'
+    fi
 }
 
 # Check if GPU is Blackwell architecture (compute capability >= 12.0)
@@ -593,8 +624,11 @@ _apply_blackwell_cu130() {
                     VLLM_CUDA_SUFFIX=""
                     VLLM_CMD_PREFIX=""
                     # FP8 model: NO --quantization (HF config.json declares fp8 → pydantic err).
-                    # --speculative-config: file-mounted (see _wizard_llm_profile profile 2).
-                    VLLM_EXTRA_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3 --attention-backend flash_attn --speculative-config /etc/vllm/dflash.json --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching --trust-remote-code"
+                    # JSON-typed --speculative-config travels via VLLM_SPECULATIVE_CONFIG env
+                    # consumed by templates/vllm-config/entrypoint.sh (see _wizard_llm_profile profile 2).
+                    VLLM_EXTRA_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3 --attention-backend flash_attn --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching"
+                    VLLM_SPECULATIVE_CONFIG=$(_wizard_load_dflash_json)
+                    export VLLM_SPECULATIVE_CONFIG
                     VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-131072}"
                     if [[ "${LLM_ON_PEER:-false}" == "true" ]]; then
                         VLLM_GPU_MEM_UTIL="0.75"; export VLLM_GPU_MEM_UTIL
@@ -612,8 +646,11 @@ _apply_blackwell_cu130() {
                     VLLM_CUDA_SUFFIX=""
                     VLLM_CMD_PREFIX=""
                     # NOTE: NO --enable-auto-tool-choice / --tool-call-parser — BROKEN on heretic.
-                    # --speculative-config: file-mounted (see _wizard_llm_profile profile 2).
-                    VLLM_EXTRA_ARGS="--quantization compressed-tensors --reasoning-parser qwen3 --attention-backend flash_attn --speculative-config /etc/vllm/dflash.json --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching --trust-remote-code"
+                    # JSON-typed --speculative-config travels via VLLM_SPECULATIVE_CONFIG env
+                    # consumed by templates/vllm-config/entrypoint.sh.
+                    VLLM_EXTRA_ARGS="--quantization compressed-tensors --reasoning-parser qwen3 --attention-backend flash_attn --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching"
+                    VLLM_SPECULATIVE_CONFIG=$(_wizard_load_dflash_json)
+                    export VLLM_SPECULATIVE_CONFIG
                     VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-131072}"
                     if [[ "${LLM_ON_PEER:-false}" == "true" ]]; then
                         VLLM_GPU_MEM_UTIL="0.75"; export VLLM_GPU_MEM_UTIL

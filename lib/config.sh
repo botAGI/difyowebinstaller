@@ -677,13 +677,19 @@ _append_provider_vars() {
         # DGX Spark / vLLM embed/rerank vars (written regardless of LLM provider)
         if [[ -n "${VLLM_IMAGE:-}" ]]; then echo "VLLM_IMAGE=${VLLM_IMAGE}"; fi
         if [[ -n "${VLLM_CMD_PREFIX:-}" ]]; then echo "VLLM_CMD_PREFIX=${VLLM_CMD_PREFIX}"; fi
-        # Single-quote the value so embedded `"` from Qwen3.6 DFlash JSON
-        # (--speculative-config {"method":"dflash",...}) survives bash sourcing
+        # Single-quote the value so embedded `"` (JSON) survives bash sourcing
         # the .env. Double quotes would terminate at the first inner `"` and
-        # bash would parse the JSON keys as variable names (bug-report 2026-05-15:
+        # bash would parse JSON keys as variable names (bug-report 2026-05-15:
         # `unexpected character "\"" in variable name "method\":\"dflash\""`).
-        # Single-quote-safe: wizard.sh's VLLM_EXTRA_ARGS never contains `'`.
+        # Single-quote-safe: wizard.sh's vLLM-related vars never contain `'`.
         if [[ -n "${VLLM_EXTRA_ARGS:-}" ]]; then echo "VLLM_EXTRA_ARGS='${VLLM_EXTRA_ARGS}'"; fi
+        # JSON-typed vLLM args (--speculative-config, --rope-scaling) travel
+        # via dedicated env vars. The wrapper templates/vllm-config/entrypoint.sh
+        # reads these and assembles argv as a bash array — JSON survives compose
+        # shlex unscathed. Moved out of VLLM_EXTRA_ARGS on 2026-05-18 (see
+        # CLAUDE.md §8 entry "vLLM CLI: --speculative-config is JSON, not path").
+        if [[ -n "${VLLM_SPECULATIVE_CONFIG:-}" ]]; then echo "VLLM_SPECULATIVE_CONFIG='${VLLM_SPECULATIVE_CONFIG}'"; fi
+        if [[ -n "${VLLM_ROPE_SCALING_CONFIG:-}" ]]; then echo "VLLM_ROPE_SCALING_CONFIG='${VLLM_ROPE_SCALING_CONFIG}'"; fi
         if [[ "${EMBED_PROVIDER:-}" == "vllm-embed" ]]; then echo "EMBED_PROVIDER=vllm-embed"; fi
         if [[ -n "${VLLM_EMBED_MODEL:-}" && "${EMBED_PROVIDER:-}" == "vllm-embed" ]]; then echo "VLLM_EMBED_MODEL=${VLLM_EMBED_MODEL}"; fi
         if [[ "${RERANKER_PROVIDER:-tei}" == "vllm-rerank" ]]; then echo "RERANKER_PROVIDER=vllm-rerank"; fi
