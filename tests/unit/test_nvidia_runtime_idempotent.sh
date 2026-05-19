@@ -123,6 +123,18 @@ if [[ -n "${func_start:-}" && -n "${func_end:-}" ]]; then
         echo "FAIL (B): install_nvidia_toolkit() has no log_error message for nvidia runtime failure — silent failure regression risk" >&2
         fail=1
     fi
+
+    # --- (B2) Functional probe via `docker run --gpus all nvidia-smi` ---
+    # Regression 2026-05-19 second-pass: `docker info | grep nvidia` returned
+    # TRUE while every GPU container hit NVML init fail. daemon.json carried
+    # the runtime entry but the running daemon process never reloaded it.
+    # Fix: trigger a throwaway `docker run --gpus all ... nvidia-smi` probe
+    # before declaring success — that's the runtime we actually depend on.
+    if ! grep -qE 'docker run.*--gpus all.*nvidia-smi' <<<"$body"; then
+        echo "FAIL (B2): install_nvidia_toolkit() never runs a functional GPU probe — 'docker info | grep nvidia' is necessary but NOT sufficient (daemon may not have reloaded daemon.json)" >&2
+        echo "          Required: 'docker run --rm --gpus all --runtime=nvidia <image> nvidia-smi'" >&2
+        fail=1
+    fi
 fi
 
 # --- (C) agmind doctor uses precise `Runtimes:` match, not loose grep ------

@@ -453,7 +453,7 @@ _wizard_llm_profile() {
             # VLLM_EXTRA_ARGS as inline JSON — docker compose's folded `command:`
             # scalar shlex-splits the substituted string and shreds quoted JSON.
             # See LANDMINES.md: "vLLM CLI: --speculative-config is JSON, not path".
-            VLLM_EXTRA_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3 --attention-backend flash_attn --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching"
+            VLLM_EXTRA_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3 --attention-backend flash_attn --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching --enforce-eager"
             VLLM_SPECULATIVE_CONFIG=$(_wizard_load_dflash_json)
             export VLLM_SPECULATIVE_CONFIG
             if [[ "${LLM_ON_PEER:-false}" == "true" ]]; then
@@ -482,7 +482,7 @@ _wizard_llm_profile() {
             # NOTE: NO --enable-auto-tool-choice / --tool-call-parser — BROKEN on heretic checkpoint.
             # JSON-typed args (--speculative-config) travel via dedicated env vars
             # consumed by templates/vllm-config/entrypoint.sh — see profile 2 comment.
-            VLLM_EXTRA_ARGS="--quantization compressed-tensors --reasoning-parser qwen3 --attention-backend flash_attn --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching"
+            VLLM_EXTRA_ARGS="--quantization compressed-tensors --reasoning-parser qwen3 --attention-backend flash_attn --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching --enforce-eager"
             VLLM_SPECULATIVE_CONFIG=$(_wizard_load_dflash_json)
             export VLLM_SPECULATIVE_CONFIG
             if [[ "${LLM_ON_PEER:-false}" == "true" ]]; then
@@ -626,7 +626,7 @@ _apply_blackwell_cu130() {
                     # FP8 model: NO --quantization (HF config.json declares fp8 → pydantic err).
                     # JSON-typed --speculative-config travels via VLLM_SPECULATIVE_CONFIG env
                     # consumed by templates/vllm-config/entrypoint.sh (see _wizard_llm_profile profile 2).
-                    VLLM_EXTRA_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3 --attention-backend flash_attn --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching"
+                    VLLM_EXTRA_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3 --attention-backend flash_attn --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching --enforce-eager"
                     VLLM_SPECULATIVE_CONFIG=$(_wizard_load_dflash_json)
                     export VLLM_SPECULATIVE_CONFIG
                     VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-131072}"
@@ -648,7 +648,7 @@ _apply_blackwell_cu130() {
                     # NOTE: NO --enable-auto-tool-choice / --tool-call-parser — BROKEN on heretic.
                     # JSON-typed --speculative-config travels via VLLM_SPECULATIVE_CONFIG env
                     # consumed by templates/vllm-config/entrypoint.sh.
-                    VLLM_EXTRA_ARGS="--quantization compressed-tensors --reasoning-parser qwen3 --attention-backend flash_attn --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching"
+                    VLLM_EXTRA_ARGS="--quantization compressed-tensors --reasoning-parser qwen3 --attention-backend flash_attn --max-num-seqs 128 --max-num-batched-tokens 65536 --enable-chunked-prefill --enable-prefix-caching --enforce-eager"
                     VLLM_SPECULATIVE_CONFIG=$(_wizard_load_dflash_json)
                     export VLLM_SPECULATIVE_CONFIG
                     VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-131072}"

@@ -210,8 +210,31 @@ install_nvidia_toolkit() {
     # while host nvidia-smi keeps working (regression 2026-05-19, install.log
     # showed docling FAIL — see CLAUDE.md §8 entry on Docker daemon nvidia
     # runtime).
+    # Functional probe: spin up a throwaway container that runs nvidia-smi.
+    # `docker info | grep nvidia` is necessary but NOT sufficient — daemon.json
+    # can carry the runtime entry while the running daemon process never reloaded
+    # it (post-upgrade, partial restart, manual edit without restart). Probe
+    # catches the live state.
+    #
+    # Regression 2026-05-19 second-pass: hotfix #2 reported "nvidia runtime
+    # registered" via `docker info` check but every GPU container still hit
+    # `Failed to initialize NVML: Unknown Error`. Root cause was that
+    # daemon.json had been edited but Docker was running with the previous
+    # in-memory config. `docker run --gpus all` triggers the runtime probe
+    # we actually depend on; if it fails, daemon needs a hard restart.
+    local probe_image="${NVIDIA_RUNTIME_PROBE_IMAGE:-nvidia/cuda:12.6.3-base-ubuntu24.04}"
+    local nvidia_runtime_ok=false
     if docker info 2>/dev/null | grep -qE '^[[:space:]]*Runtimes:.*\bnvidia\b'; then
-        log_info "Docker daemon already has nvidia runtime — skipping configure/restart"
+        # Daemon config has it — verify functionally
+        if docker run --rm --gpus all --runtime=nvidia "$probe_image" nvidia-smi -L >/dev/null 2>&1; then
+            nvidia_runtime_ok=true
+        else
+            log_warn "Docker daemon config has nvidia runtime but functional probe failed — forcing restart"
+        fi
+    fi
+
+    if [[ "$nvidia_runtime_ok" == "true" ]]; then
+        log_info "Docker daemon nvidia runtime verified functionally — skipping configure/restart"
     else
         log_info "Registering nvidia runtime in Docker daemon..."
         if ! nvidia-ctk runtime configure --runtime=docker 2>&1; then
@@ -224,13 +247,18 @@ install_nvidia_toolkit() {
         while ! docker info &>/dev/null && [[ $attempts -lt 30 ]]; do
             sleep 1; attempts=$((attempts+1))
         done
-        # Verify runtime actually landed
+        # Verify runtime actually landed AND is functional (not just listed)
         if ! docker info 2>/dev/null | grep -qE '^[[:space:]]*Runtimes:.*\bnvidia\b'; then
             log_error "Docker daemon failed to register nvidia runtime after restart — GPU containers will fall back to CPU"
             log_error "  Manual fix: sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker"
             return 1
         fi
-        log_success "Docker daemon nvidia runtime registered"
+        if ! docker run --rm --gpus all --runtime=nvidia "$probe_image" nvidia-smi -L >/dev/null 2>&1; then
+            log_error "Docker daemon nvidia runtime listed but functional probe failed — GPU containers will fall back to CPU"
+            log_error "  Diagnose: sudo docker run --rm --gpus all --runtime=nvidia ${probe_image} nvidia-smi"
+            return 1
+        fi
+        log_success "Docker daemon nvidia runtime registered and verified"
     fi
 
     log_success "NVIDIA Container Toolkit ready"
