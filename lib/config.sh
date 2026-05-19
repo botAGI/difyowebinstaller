@@ -413,11 +413,28 @@ _generate_secrets() {
     _S3_ACCESS_KEY="$(_state_get_or_generate S3_ACCESS_KEY 20)"
     _S3_SECRET_KEY="$(_state_get_or_generate S3_SECRET_KEY 40)"
 
-    # RAGFlow secrets (BACKLOG #999.7) — generated even если ENABLE_RAGFLOW=false,
-    # placeholders в .env остаются stub значениями но не пустыми (избегаем "пустой пароль" errors).
-    _RAGFLOW_MYSQL_PASSWORD="$(generate_random_named RAGFLOW_MYSQL_PASSWORD 32)"
-    _RAGFLOW_ES_PASSWORD="$(generate_random_named RAGFLOW_ES_PASSWORD 32)"
-    _RAGFLOW_MINIO_PASSWORD="$(generate_random_named RAGFLOW_MINIO_PASSWORD 32)"
+    # RAGFlow secrets — persist via state-store (same pattern as MinIO/S3 line 412).
+    # CRITICAL: MySQL/ES/MinIO named volumes preserve initialized state across
+    # /opt/agmind wipe (Docker stores them in /var/lib/docker/volumes/). The first
+    # `docker compose up` of agmind-ragflow-mysql consumes MYSQL_ROOT_PASSWORD env
+    # ONLY at init-time; subsequent recreates with a different env value DO NOT
+    # rotate the root password in the existing data dir. If install.sh generates
+    # a fresh secret on every run but the volume keeps its first-init password,
+    # RAGFlow gets `Access denied for user 'root'@<ip> (using password: YES)` on
+    # every connection and signup is permanently broken.
+    #
+    # Fix: read existing value from state-store first; only generate when truly
+    # absent (true first-install OR explicit state wipe). This matches the
+    # MinIO/S3 contract — the named volume's initialized password and the env
+    # variable stay in lock-step across re-installs.
+    #
+    # Regression: 2026-05-19 fresh-install showed `Access denied` after wipe
+    # of /opt/agmind that preserved docker_agmind_ragflow_mysql_data. Hotfix
+    # was `docker volume rm`; the architectural fix is here.
+    # See CLAUDE.md §8 entry "Volume secret rotation".
+    _RAGFLOW_MYSQL_PASSWORD="$(_state_get_or_generate RAGFLOW_MYSQL_PASSWORD 32)"
+    _RAGFLOW_ES_PASSWORD="$(_state_get_or_generate RAGFLOW_ES_PASSWORD 32)"
+    _RAGFLOW_MINIO_PASSWORD="$(_state_get_or_generate RAGFLOW_MINIO_PASSWORD 32)"
 
     # Portainer Agent secret — shared между master Portainer и peer agent.
     # Persistent в /var/lib/agmind/state чтобы переживать uninstall --keep-models

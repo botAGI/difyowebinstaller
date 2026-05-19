@@ -61,5 +61,35 @@ fi
     done <<< "$data"
 } > "$TMP_FILE"
 
-# Atomic rename — node-exporter never reads partial file
-mv "$TMP_FILE" "$PROM_FILE"
+# Content-replace, NOT mv-rename — preserves the inode of $PROM_FILE.
+#
+# Why this matters: peer node-exporter bind-mounts the textfile directory
+# from the host. When this script `mv`'d the tmp file over the final one,
+# the destination inode changed every cycle. Docker's bind-mount tracking
+# on the container side keeps the original inode mapping cached and never
+# observes the new file — node_textfile_scrape_error stayed at 1 forever,
+# Grafana peer GPU panels stayed blank, and the only fix was
+# `docker restart agmind-node-exporter` (which re-attached the bind).
+#
+# The trade-off: writing in-place is not strictly atomic — a concurrent
+# scrape can read a half-written file. But:
+#  (1) the file is <1 KB (6 metrics × ~6 GPUs max) → typically one write()
+#      syscall, so partial-read windows are nanoseconds wide;
+#  (2) node-exporter retries every 15s — a single corrupted scrape blips
+#      `node_textfile_scrape_error 1` for one tick, then recovers;
+#  (3) gauges (not counters) — even fully missed samples don't break math
+#      since the next sample overrides.
+#
+# Net result: bind-mount stays valid forever; node-exporter sees every
+# update on first scrape; no per-restart maintenance needed.
+# Regression caught 2026-05-19 — see CLAUDE.md §8 "Docker bind-mount
+# rename invalidation".
+if [[ -f "$PROM_FILE" ]]; then
+    # Preserve existing inode — overwrite contents in place.
+    cat "$TMP_FILE" > "$PROM_FILE"
+    rm -f "$TMP_FILE"
+else
+    # First run — file doesn't exist yet. mv creates it with a fresh inode.
+    # Subsequent runs hit the branch above and preserve the inode.
+    mv "$TMP_FILE" "$PROM_FILE"
+fi
