@@ -338,6 +338,15 @@ VLLM_MODEL=${VLLM_MODEL:-${VLLM_SPARK_MODEL:-google/gemma-4-26B-A4B-it}}
 VLLM_SPARK_MODEL=${VLLM_SPARK_MODEL:-google/gemma-4-26B-A4B-it}
 VLLM_CMD_PREFIX=${VLLM_CMD_PREFIX:-}
 VLLM_EXTRA_ARGS='${VLLM_EXTRA_ARGS:---kv-cache-dtype fp8 --enable-prefix-caching --enforce-eager}'
+# JSON-typed vLLM args travel via dedicated env vars (consumed by
+# templates/vllm-config/entrypoint.sh, NOT by VLLM_EXTRA_ARGS). They MUST be
+# forwarded to the peer .env or DFlash/YaRN silently disappear from peer vLLM.
+# Regression caught 2026-05-19 fresh-install: master had the value, peer .env
+# rendered without these lines → speculative_config=None in vLLM logs even
+# though wizard set it. See CLAUDE.md §8 "vLLM CLI: --speculative-config is
+# JSON, not path".
+VLLM_SPECULATIVE_CONFIG='${VLLM_SPECULATIVE_CONFIG:-}'
+VLLM_ROPE_SCALING_CONFIG='${VLLM_ROPE_SCALING_CONFIG:-}'
 VLLM_CUDA_SUFFIX=${VLLM_CUDA_SUFFIX:-}
 VLLM_MAX_MODEL_LEN=${VLLM_MAX_MODEL_LEN:-65536}
 # Peer = dedicated under vLLM (no docling/embed/rerank sharing GPU).

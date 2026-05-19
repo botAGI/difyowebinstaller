@@ -273,6 +273,41 @@ else
     fail=$((fail+1))
 fi
 
+# ------------------------------------------------------------------
+# Part 4: lib/peer.sh::_render_worker_env must forward the new env vars
+# Regression caught 2026-05-19 fresh-install: master .env had
+# VLLM_SPECULATIVE_CONFIG set correctly, but `_render_worker_env` did NOT
+# emit it, so peer .env arrived without the variable → vLLM on peer
+# started without speculative decoding (speculative_config=None in logs).
+# Whitelist must be kept in sync with the entrypoint wrapper.
+# ------------------------------------------------------------------
+PEER_LIB="${REPO_ROOT}/lib/peer.sh"
+if [[ -f "$PEER_LIB" ]]; then
+    # Extract _render_worker_env function body
+    render_start=$(awk '/^_render_worker_env\(\)/ { print NR; exit }' "$PEER_LIB")
+    if [[ -z "$render_start" ]]; then
+        echo "  SKIP: lib/peer.sh::_render_worker_env not found"
+    else
+        render_end=$(awk -v s="$render_start" 'NR > s && /^}$/ { print NR; exit }' "$PEER_LIB")
+        if [[ -z "$render_end" ]]; then
+            echo "  FAIL: lib/peer.sh::_render_worker_env body not bounded — cannot scan"
+            fail=$((fail+1))
+        else
+            render_body=$(sed -n "${render_start},${render_end}p" "$PEER_LIB")
+            for forwarded in VLLM_SPECULATIVE_CONFIG VLLM_ROPE_SCALING_CONFIG; do
+                if ! grep -qF "$forwarded" <<<"$render_body"; then
+                    echo "  FAIL: lib/peer.sh::_render_worker_env does not forward ${forwarded} to peer .env"
+                    echo "         → Master will set it, peer will not see it, JSON args silently dropped."
+                    fail=$((fail+1))
+                else
+                    echo "  PASS: lib/peer.sh::_render_worker_env forwards ${forwarded}"
+                    pass=$((pass+1))
+                fi
+            done
+        fi
+    fi
+fi
+
 echo ""
 echo "=== Summary: ${pass} passed, ${fail} failed ==="
 [[ $fail -eq 0 ]]
