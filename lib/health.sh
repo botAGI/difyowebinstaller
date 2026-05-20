@@ -13,6 +13,42 @@ command -v log_success >/dev/null 2>&1 || log_success() { echo -e "  ✓ $*"; }
 command -v log_warn    >/dev/null 2>&1 || log_warn()    { echo -e "  ⚠ $*"; }
 command -v log_error   >/dev/null 2>&1 || log_error()   { echo -e "  ✗ $*"; }
 
+# Fallback _env_get when sourced without common.sh (mirrors log_info pattern).
+# Phase 14-03 introduced this guard inside _resolve_active_services_uncached;
+# Plan 14-04 lifts it to file scope so verify_services / send_alert /
+# check_vector_health / check_ragflow_gpu_contention can all rely on it.
+# Production callers source common.sh via install.sh / agmind.sh entrypoints.
+command -v _env_get >/dev/null 2>&1 || _env_get() {
+    grep "^${1}=" "$2" 2>/dev/null | cut -d'=' -f2-
+}
+
+# Fallback _env_get_raw — byte-exact awk parser mirror of lib/common.sh:370-391.
+# Used by Plan 14-06 secret-grade reads (ALERT_WEBHOOK_URL may embed bearer
+# token; ALERT_TELEGRAM_TOKEN is a bot API key). Returns rc=1 on missing file
+# OR missing key (distinct from _env_get which always returns rc=0).
+command -v _env_get_raw >/dev/null 2>&1 || _env_get_raw() {
+    local key="$1" file="$2"
+    [[ -r "$file" ]] || return 1
+    awk -v k="$key" '
+        BEGIN { FS = "="; found = 0 }
+        /^[[:space:]]*#/ { next }
+        /^[[:space:]]*$/ { next }
+        {
+            line = $0
+            sub(/^[[:space:]]+/, "", line)
+            eq = index(line, "=")
+            if (eq == 0) next
+            name = substr(line, 1, eq - 1)
+            if (name != k) next
+            val = substr(line, eq + 1)
+            print val
+            found = 1
+            exit
+        }
+        END { exit (found ? 0 : 1) }
+    ' "$file"
+}
+
 # Fallback colors
 RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
 CYAN="${CYAN:-\033[0;36m}"; BOLD="${BOLD:-\033[1m}"; NC="${NC:-\033[0m}"
@@ -26,15 +62,55 @@ source "${_HEALTH_SCRIPT_DIR}/service-map.sh"
 # SERVICE LIST (dynamic based on .env)
 # ============================================================================
 
-get_service_list() {
-    local compose_dir="${INSTALL_DIR}/docker"
-    local env_file="${compose_dir}/.env"
+# resolve_active_services — single source of truth for the active service list
+# under current ${INSTALL_DIR}/docker/.env state. Memoized per session via
+# mtime-keyed cache (PITFALLS-4 explicit pattern, Plan 14-01 / RESOLVER-01).
+#
+# Cache vars (_AGMIND_SVC_CACHE_KEY/_VAL) live in lib/service-map.sh.
+# NO docker shellout, NO yq — registry data comes pre-indexed via Phase 12
+# _registry.indexed.sh (already sourced by lib/service-map.sh transitively).
+#
+# Output format: single line, space-separated service names (byte-identical
+# to pre-Plan-14-01 get_service_list output — 65+ existing tests depend on
+# this exact shape, Pitfall 5).
+resolve_active_services() {
+    local env_file="${INSTALL_DIR}/docker/.env"
+    local mtime
+    mtime="$(stat -c %Y "$env_file" 2>/dev/null || echo 0)"
+    local cache_key="${env_file}:${mtime}"
+
+    if [[ "${_AGMIND_SVC_CACHE_KEY:-}" == "$cache_key" \
+       && -n "${_AGMIND_SVC_CACHE_VAL:-}" ]]; then
+        printf '%s' "$_AGMIND_SVC_CACHE_VAL"
+        return 0
+    fi
+
+    local result
+    result="$(_resolve_active_services_uncached "$env_file")"
+    _AGMIND_SVC_CACHE_KEY="$cache_key"
+    _AGMIND_SVC_CACHE_VAL="$result"
+    printf '%s' "$result"
+}
+
+# _resolve_active_services_uncached — fresh compute path. Reads env file
+# through legacy grep|cut probes (Plans 14-03..06 will migrate these to
+# _env_get / _env_get_raw helpers). Plan 14-01 = wrap-only (byte-identical).
+# Plan 14-03 = ENV-03b canary: VECTOR_STORE / LLM_PROVIDER / EMBED_PROVIDER
+# reads migrated to _env_get (cosmetic-only blast radius per D-09).
+_resolve_active_services_uncached() {
+    local env_file="$1"
     local services=(db redis sandbox ssrf_proxy api worker web plugin_daemon nginx)
 
+    # Plan 14-04: _env_get fallback now lives at file scope (lib/health.sh:21-25).
+
     if [[ -f "$env_file" ]]; then
+        # Plan 14-03 (canary) + 14-04 (boolean/enum bulk) migrated these reads
+        # from `grep ^X= | cut -d=` to `_env_get` (Phase 10 helper).
+
         # Vector store
         local vector_store
-        vector_store="$(grep '^VECTOR_STORE=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "weaviate")"
+        vector_store="$(_env_get VECTOR_STORE "$env_file")"
+        [[ -z "$vector_store" ]] && vector_store="weaviate"
         case "$vector_store" in
             qdrant) services+=(qdrant) ;;
             milvus) services+=(milvus-etcd milvus) ;;
@@ -43,23 +119,26 @@ get_service_list() {
 
         # LLM/Embedding providers
         local llm_provider embed_provider
-        llm_provider="$(grep '^LLM_PROVIDER=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "")"
-        embed_provider="$(grep '^EMBED_PROVIDER=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "")"
+        llm_provider="$(_env_get LLM_PROVIDER "$env_file")"
+        embed_provider="$(_env_get EMBED_PROVIDER "$env_file")"
         if [[ "$llm_provider" == "ollama" || "$embed_provider" == "ollama" ]]; then
             services+=(ollama)
         fi
         # LLM_ON_PEER=true → vllm runs on peer, skip local service check.
         # Set by cluster_mode_save (lib/cluster_mode.sh), persisted to .env by config.sh.
         local _llm_on_peer
-        _llm_on_peer="$(grep '^LLM_ON_PEER=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+        _llm_on_peer="$(_env_get LLM_ON_PEER "$env_file")"
+        [[ -z "$_llm_on_peer" ]] && _llm_on_peer="false"
         if [[ "$llm_provider" == "vllm" && "${_llm_on_peer:-false}" != "true" ]]; then services+=(vllm); fi
         if [[ "$embed_provider" == "tei" ]]; then services+=(tei); fi
         if [[ "$embed_provider" == "vllm-embed" ]]; then services+=(vllm-embed); fi
 
         # Reranker
         local enable_reranker reranker_provider
-        enable_reranker="$(grep '^ENABLE_RERANKER=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
-        reranker_provider="$(grep '^RERANKER_PROVIDER=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "tei")"
+        enable_reranker="$(_env_get ENABLE_RERANKER "$env_file")"
+        [[ -z "$enable_reranker" ]] && enable_reranker="false"
+        reranker_provider="$(_env_get RERANKER_PROVIDER "$env_file")"
+        [[ -z "$reranker_provider" ]] && reranker_provider="tei"
         if [[ "$enable_reranker" == "true" ]]; then
             if [[ "$reranker_provider" == "vllm-rerank" ]]; then
                 services+=(vllm-rerank)
@@ -70,29 +149,36 @@ get_service_list() {
 
         # Monitoring
         local monitoring_mode
-        monitoring_mode="$(grep '^MONITORING_MODE=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "none")"
+        monitoring_mode="$(_env_get MONITORING_MODE "$env_file")"
+        [[ -z "$monitoring_mode" ]] && monitoring_mode="none"
         if [[ "$monitoring_mode" == "local" ]]; then
             services+=(prometheus alertmanager cadvisor node-exporter grafana portainer loki alloy)
         fi
 
         # ETL
         local etl_type
-        etl_type="$(grep '^ETL_TYPE=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "dify")"
+        etl_type="$(_env_get ETL_TYPE "$env_file")"
+        [[ -z "$etl_type" ]] && etl_type="dify"
         if [[ "${etl_type,,}" == "unstructured" || "$etl_type" == "unstructured_api" ]]; then
             services+=(docling)
         fi
 
         # LiteLLM
         local enable_litellm
-        enable_litellm="$(grep '^ENABLE_LITELLM=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "true")"
+        enable_litellm="$(_env_get ENABLE_LITELLM "$env_file")"
+        [[ -z "$enable_litellm" ]] && enable_litellm="true"
         if [[ "$enable_litellm" == "true" ]]; then services+=(litellm); fi
 
         # Optional services
         local enable_searxng enable_notebook enable_dbgpt enable_crawl4ai
-        enable_searxng="$(grep '^ENABLE_SEARXNG=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
-        enable_notebook="$(grep '^ENABLE_NOTEBOOK=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
-        enable_dbgpt="$(grep '^ENABLE_DBGPT=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
-        enable_crawl4ai="$(grep '^ENABLE_CRAWL4AI=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+        enable_searxng="$(_env_get ENABLE_SEARXNG "$env_file")"
+        [[ -z "$enable_searxng" ]] && enable_searxng="false"
+        enable_notebook="$(_env_get ENABLE_NOTEBOOK "$env_file")"
+        [[ -z "$enable_notebook" ]] && enable_notebook="false"
+        enable_dbgpt="$(_env_get ENABLE_DBGPT "$env_file")"
+        [[ -z "$enable_dbgpt" ]] && enable_dbgpt="false"
+        enable_crawl4ai="$(_env_get ENABLE_CRAWL4AI "$env_file")"
+        [[ -z "$enable_crawl4ai" ]] && enable_crawl4ai="false"
         if [[ "$enable_searxng" == "true" ]]; then services+=(searxng); fi
         if [[ "$enable_notebook" == "true" ]]; then services+=(surrealdb open-notebook); fi
         if [[ "$enable_dbgpt" == "true" ]]; then services+=(dbgpt); fi
@@ -100,19 +186,22 @@ get_service_list() {
 
         # n8n (workflow automation, optional)
         local enable_n8n
-        enable_n8n="$(grep '^ENABLE_N8N=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+        enable_n8n="$(_env_get ENABLE_N8N "$env_file")"
+        [[ -z "$enable_n8n" ]] && enable_n8n="false"
         if [[ "$enable_n8n" == "true" ]]; then services+=(n8n); fi
 
         # Open WebUI
         local enable_openwebui
-        enable_openwebui="$(grep '^ENABLE_OPENWEBUI=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+        enable_openwebui="$(_env_get ENABLE_OPENWEBUI "$env_file")"
+        [[ -z "$enable_openwebui" ]] && enable_openwebui="false"
         if [[ "$enable_openwebui" == "true" ]]; then services+=(open-webui); fi
 
         # RAGFlow (BACKLOG #999.7) — три контейнера. Service name → container name mapping:
         # ragflow → agmind-ragflow, ragflow_mysql → agmind-ragflow-mysql, ragflow_es01 → agmind-ragflow-es.
         # Mapping handled by check_container() через s/_/-/.
         local enable_ragflow
-        enable_ragflow="$(grep '^ENABLE_RAGFLOW=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+        enable_ragflow="$(_env_get ENABLE_RAGFLOW "$env_file")"
+        [[ -z "$enable_ragflow" ]] && enable_ragflow="false"
         if [[ "$enable_ragflow" == "true" ]]; then services+=(ragflow_mysql ragflow_es01 ragflow); fi
 
         # HEALTH-02A: MinIO — explicit toggle, OR implied by RAGFlow / Milvus.
@@ -120,7 +209,8 @@ get_service_list() {
         # would never report MinIO in get_service_list, hiding a key dependency
         # from health checks even though compose auto-includes it.
         local enable_minio
-        enable_minio="$(grep '^ENABLE_MINIO=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+        enable_minio="$(_env_get ENABLE_MINIO "$env_file")"
+        [[ -z "$enable_minio" ]] && enable_minio="false"
         if [[ "$enable_minio" == "true" \
            || "$enable_ragflow" == "true" \
            || "$vector_store" == "milvus" ]]; then
@@ -132,6 +222,10 @@ get_service_list() {
 
     echo "${services[@]}"
 }
+
+# Backward-compat alias — preserved for 65+ existing tests/consumers (Pitfall 5).
+# resolve_active_services is now the canonical entry point.
+get_service_list() { resolve_active_services; }
 
 # ============================================================================
 # CONTAINER CHECK
@@ -480,7 +574,8 @@ verify_services() {
     # Open WebUI (optional)
     if [[ -f "${compose_dir}/.env" ]]; then
         local _owui
-        _owui="$(grep '^ENABLE_OPENWEBUI=' "${compose_dir}/.env" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+        _owui="$(_env_get ENABLE_OPENWEBUI "${compose_dir}/.env")"
+        [[ -z "$_owui" ]] && _owui="false"
         if [[ "$_owui" == "true" ]]; then
             svc_checks+=("Open WebUI|http://${domain}/chat||openwebui")
         fi
@@ -489,13 +584,15 @@ verify_services() {
     # Profile-conditional services — internal ports, use docker exec
     if [[ -f "$env_file" ]]; then
         local llm_prov embed_prov vector_store
-        llm_prov="$(grep '^LLM_PROVIDER=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "")"
-        embed_prov="$(grep '^EMBED_PROVIDER=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "")"
-        vector_store="$(grep '^VECTOR_STORE=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "weaviate")"
+        llm_prov="$(_env_get LLM_PROVIDER "$env_file")"
+        embed_prov="$(_env_get EMBED_PROVIDER "$env_file")"
+        vector_store="$(_env_get VECTOR_STORE "$env_file")"
+        [[ -z "$vector_store" ]] && vector_store="weaviate"
 
         # LLM_ON_PEER=true → vllm на peer, проверяется отдельно в _doctor_peer.
         local _llm_on_peer
-        _llm_on_peer="$(grep '^LLM_ON_PEER=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+        _llm_on_peer="$(_env_get LLM_ON_PEER "$env_file")"
+        [[ -z "$_llm_on_peer" ]] && _llm_on_peer="false"
         if [[ "$llm_prov" == "vllm" && "${_llm_on_peer:-false}" != "true" ]]; then svc_checks+=("vLLM|http://localhost:8000/v1/models|agmind-vllm|vllm"); fi
         if [[ "$llm_prov" == "ollama" || "$embed_prov" == "ollama" ]]; then svc_checks+=("Ollama|http://localhost:11434/api/tags|agmind-ollama|ollama"); fi
         if [[ "$embed_prov" == "tei" ]]; then svc_checks+=("TEI|http://localhost:80/info|agmind-tei|tei"); fi
@@ -505,7 +602,8 @@ verify_services() {
 
         # n8n (workflow automation, optional)
         local _enable_n8n
-        _enable_n8n="$(grep '^ENABLE_N8N=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+        _enable_n8n="$(_env_get ENABLE_N8N "$env_file")"
+        [[ -z "$_enable_n8n" ]] && _enable_n8n="false"
         if [[ "$_enable_n8n" == "true" ]]; then svc_checks+=("n8n|http://localhost:5678/healthz|agmind-n8n|n8n"); fi
     fi
 
@@ -634,12 +732,15 @@ send_alert() {
     [[ -f "$env_file" ]] || return 0
 
     local alert_mode
-    alert_mode="$(grep '^ALERT_MODE=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "none")"
+    alert_mode="$(_env_get ALERT_MODE "$env_file")"
+    [[ -z "$alert_mode" ]] && alert_mode="none"
 
     case "$alert_mode" in
         webhook)
+            # Plan 14-06: _env_get_raw — webhook URLs may embed bearer tokens
+            # (Slack/Teams/Discord shape). Source-based parser would expand `$`.
             local webhook_url
-            webhook_url="$(grep '^ALERT_WEBHOOK_URL=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "")"
+            webhook_url="$(_env_get_raw ALERT_WEBHOOK_URL "$env_file" 2>/dev/null || true)"
             if [[ -n "$webhook_url" ]]; then
                 local escaped_message
                 escaped_message="$(echo "$message" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\t/\\t/g')"
@@ -650,9 +751,12 @@ send_alert() {
             fi
             ;;
         telegram)
+            # Plan 14-06: _env_get_raw for TOKEN (bot API key — secret-grade).
+            # CHAT_ID stays on _env_get (digits-only routing identifier per
+            # Plan 14-05 D-2).
             local tg_token tg_chat_id
-            tg_token="$(grep '^ALERT_TELEGRAM_TOKEN=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "")"
-            tg_chat_id="$(grep '^ALERT_TELEGRAM_CHAT_ID=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "")"
+            tg_token="$(_env_get_raw ALERT_TELEGRAM_TOKEN "$env_file" 2>/dev/null || true)"
+            tg_chat_id="$(_env_get ALERT_TELEGRAM_CHAT_ID "$env_file")"
             if [[ -n "$tg_token" && -n "$tg_chat_id" ]]; then
                 # Escape HTML special chars for Telegram parse_mode=HTML.
                 # & must be escaped FIRST to avoid double-escaping.
@@ -738,7 +842,10 @@ check_vector_health() {
     echo -e "${BOLD}Vector Store:${NC}"
 
     local vs="weaviate"
-    if [[ -f "$env_file" ]]; then vs="$(grep '^VECTOR_STORE=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "weaviate")"; fi
+    if [[ -f "$env_file" ]]; then
+        vs="$(_env_get VECTOR_STORE "$env_file")"
+        [[ -z "$vs" ]] && vs="weaviate"
+    fi
 
     case "$vs" in
         weaviate)
@@ -866,11 +973,14 @@ check_ragflow_gpu_contention() {
     [[ -f "$env_file" ]] || return 0
 
     local ragflow_dev llm_on_peer enable_ragflow
-    enable_ragflow="$(grep '^ENABLE_RAGFLOW=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+    enable_ragflow="$(_env_get ENABLE_RAGFLOW "$env_file")"
+    [[ -z "$enable_ragflow" ]] && enable_ragflow="false"
     [[ "$enable_ragflow" == "true" ]] || return 0
 
-    ragflow_dev="$(grep '^RAGFLOW_DEVICE=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "cpu")"
-    llm_on_peer="$(grep '^LLM_ON_PEER=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+    ragflow_dev="$(_env_get RAGFLOW_DEVICE "$env_file")"
+    [[ -z "$ragflow_dev" ]] && ragflow_dev="cpu"
+    llm_on_peer="$(_env_get LLM_ON_PEER "$env_file")"
+    [[ -z "$llm_on_peer" ]] && llm_on_peer="false"
 
     if [[ "$ragflow_dev" == "cuda" || "$ragflow_dev" == "gpu" ]]; then
         if [[ "$llm_on_peer" != "true" ]]; then

@@ -7,7 +7,7 @@
 set -euo pipefail
 trap 'echo "ERROR at line $LINENO: $BASH_COMMAND" >&2' ERR
 
-VERSION="${VERSION:-3.1.2}"   # keep in sync with RELEASE / README / templates/release-manifest.json
+VERSION="${VERSION:-3.2.0}"   # keep in sync with RELEASE / README / templates/release-manifest.json
 TOTAL_PHASES=0   # sentinel — overwritten by phases_count() after sourcing lib/phases.sh (so _cleanup_on_failure's $TOTAL_PHASES is always defined, even if a source fails)
 INSTALLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
@@ -52,6 +52,10 @@ source "${INSTALLER_DIR}/lib/airgapped.sh"
 source "${INSTALLER_DIR}/lib/bundle.sh"
 # shellcheck source=lib/phases.sh
 source "${INSTALLER_DIR}/lib/phases.sh"
+# shellcheck source=lib/state.sh
+source "${INSTALLER_DIR}/lib/state.sh"
+# shellcheck source=lib/migrations.sh
+source "${INSTALLER_DIR}/lib/migrations.sh"
 
 # Fallback shim: if lib/airgapped.sh failed to source for any reason,
 # define a minimal airgapped_guard so the callers below don't error out.
@@ -375,7 +379,29 @@ _ensure_es_sysctl() {
 
 phase_wizard()      { run_wizard; }
 phase_docker()      { setup_docker; }
-phase_config()      { ensure_bind_mount_files; export INSTALL_DIR; generate_config "$DEPLOY_PROFILE" "$TEMPLATE_DIR"; enable_gpu_compose; setup_security; if [[ "$ENABLE_AUTHELIA" == "true" ]]; then configure_authelia "$TEMPLATE_DIR"; fi; _copy_runtime_files; }
+phase_config() {
+    ensure_bind_mount_files
+    export INSTALL_DIR
+    generate_config "$DEPLOY_PROFILE" "$TEMPLATE_DIR"
+    enable_gpu_compose
+    setup_security
+    if [[ "$ENABLE_AUTHELIA" == "true" ]]; then
+        configure_authelia "$TEMPLATE_DIR"
+    fi
+    _copy_runtime_files
+    # Phase 11 — state-store substrate bootstrap. Substrate ships DORMANT in v3.2.0:
+    # state-store is populated but no live consumer reads from it yet (Phase 14 migrates
+    # consumers). Failures here are non-fatal — they degrade `agmind upgrade --check` but
+    # do not block install.
+    if state_init_dir; then
+        if ! MIGRATIONS_DIR="${INSTALL_DIR}/scripts/migrations" migrations_apply --yes; then
+            log_warn "state-store: migrations_apply failed — agmind upgrade --check may report blocked"
+            log_warn "  Run 'agmind upgrade --check' post-install to diagnose"
+        fi
+    else
+        log_warn "state-store: state_init_dir failed — Phase 11 substrate unavailable"
+    fi
+}
 phase_pull()        {
     # WHY: when airgapped, images are already loaded locally via bundle_install.
     # Calling compose_pull would reach public registries — blocked by airgapped_guard.
@@ -504,7 +530,13 @@ _copy_runtime_files() {
     # Glob-copy — no whitelist. Whitelist protukaet every time a new script is
     # added; classes of regression include docling-bench.sh, loadtest/ etc.
     if [[ "$INSTALLER_DIR" != "$INSTALL_DIR" ]]; then
-        cp "${INSTALLER_DIR}/scripts/"*.sh "${INSTALL_DIR}/scripts/" 2>/dev/null || true
+        # cp -P: preserve source symlinks (scripts/health.sh, scripts/detect.sh
+        # are symlinks → ../lib/X.sh per docs/lib-scripts-pairs.md DUP-02 inventory).
+        # Plain `cp` would DEREFERENCE the symlink and write a regular file at the
+        # destination, breaking the single-source-of-truth contract on every install.
+        # See tests/compose/test_lib_scripts_parity.sh + tests/unit/test_copy_runtime_files.sh
+        # for the regression gates.
+        cp -P "${INSTALLER_DIR}/scripts/"*.sh "${INSTALL_DIR}/scripts/" 2>/dev/null || true
         # Subdirectories — explicit list (directories are less common additions)
         local script_subdirs=(loadtest demo)
         for d in "${script_subdirs[@]}"; do
@@ -514,9 +546,18 @@ _copy_runtime_files() {
             fi
         done
     fi
-    # lib/ → scripts/ copy: different subdirs, always safe even in self-install
-    cp "${INSTALLER_DIR}/lib/health.sh"    "${INSTALL_DIR}/scripts/health.sh"    2>/dev/null || true
-    cp "${INSTALLER_DIR}/lib/detect.sh"   "${INSTALL_DIR}/scripts/detect.sh"   2>/dev/null || true
+    # Populate ${INSTALL_DIR}/lib/ so the symlinks scripts/{health,detect}.sh →
+    # ../lib/X.sh resolve at install target. Without this, cp -P above creates
+    # DANGLING symlinks (lib/ doesn't exist) → `agmind` CLI fails on every
+    # invocation. DUP-01 contract preserved: single source of truth (lib/),
+    # scripts/ contains symlinks pointing to it. Discovered 2026-05-18 during
+    # Phase 14 Plan 14-09 live-deploy UAT. tests/unit/test_copy_runtime_files.sh
+    # check_symlink_preservation() asserts no cp lib/X.sh scripts/X.sh — this
+    # block targets ${INSTALL_DIR}/lib/X.sh (different destination), so the
+    # regex check stays clean.
+    mkdir -p "${INSTALL_DIR}/lib"
+    cp "${INSTALLER_DIR}/lib/health.sh"   "${INSTALL_DIR}/lib/health.sh"   2>/dev/null || true
+    cp "${INSTALLER_DIR}/lib/detect.sh"   "${INSTALL_DIR}/lib/detect.sh"   2>/dev/null || true
     cp "${INSTALLER_DIR}/lib/i18n.sh"     "${INSTALL_DIR}/scripts/i18n.sh"     2>/dev/null || true
     cp "${INSTALLER_DIR}/lib/creds.sh"      "${INSTALL_DIR}/scripts/creds.sh"      2>/dev/null || true
     cp "${INSTALLER_DIR}/lib/security.sh"  "${INSTALL_DIR}/scripts/security.sh"  2>/dev/null || true
@@ -530,7 +571,49 @@ _copy_runtime_files() {
     # restore.sh → restore-lib.sh: scripts/restore.sh is the thin exec entrypoint (glob-copied
     # above); agmind.sh sources this lib for restore_verify/restore_list/_resolve_backup_dir.
     cp "${INSTALLER_DIR}/lib/restore.sh"   "${INSTALL_DIR}/scripts/restore-lib.sh" 2>/dev/null || true
+    # Phase 11 — state-store substrate (STATE-01..STATE-10). `agmind upgrade` CLI sources these
+    # as ${SCRIPTS_DIR}/state.sh + scripts/migrations.sh; test_copy_runtime_files.sh enforces
+    # this wiring. Migration scripts live in a subdirectory — cp -r preserves the layout.
+    cp "${INSTALLER_DIR}/lib/state.sh"      "${INSTALL_DIR}/scripts/state.sh"      2>/dev/null || true
+    cp "${INSTALLER_DIR}/lib/migrations.sh" "${INSTALL_DIR}/scripts/migrations.sh" 2>/dev/null || true
+    if [[ -d "${INSTALLER_DIR}/lib/migrations" ]]; then
+        mkdir -p "${INSTALL_DIR}/scripts/migrations"
+        cp -r "${INSTALLER_DIR}/lib/migrations/." "${INSTALL_DIR}/scripts/migrations/"
+        chmod +x "${INSTALL_DIR}/scripts/migrations/"*.sh 2>/dev/null || true
+    fi
+    # Phase 12 — Service Registry (REG-01..REG-09, docs/adr/0012-service-registry-codegen.md).
+    # Runtime needs:
+    #   lib/registry.sh             → scripts/registry.sh             (YAML API; sourced by Phase 14 RESOLVER)
+    #   lib/_registry.indexed.sh    → scripts/_registry.indexed.sh    (indexed bash arrays sourced by service-map.sh)
+    #   templates/services/registry.yaml → templates/services/registry.yaml (data file read by registry.sh)
+    # The codegen script (scripts/codegen/) is dev/CI-only — NOT copied to runtime.
+    cp "${INSTALLER_DIR}/lib/registry.sh"           "${INSTALL_DIR}/scripts/registry.sh"           2>/dev/null || true
+    cp "${INSTALLER_DIR}/lib/_registry.indexed.sh"  "${INSTALL_DIR}/scripts/_registry.indexed.sh"  2>/dev/null || true
+    # registry.yaml stays under templates/ runtime path so lib/registry.sh's default
+    # REGISTRY_FILE relative resolution finds it. Pattern mirrors templates/init-dify-plugin-db.sql.
+    if [[ -d "${INSTALLER_DIR}/templates/services" ]]; then
+        mkdir -p "${INSTALL_DIR}/templates/services"
+        cp "${INSTALLER_DIR}/templates/services/registry.yaml" "${INSTALL_DIR}/templates/services/registry.yaml" 2>/dev/null || true
+    fi
+    # vllm-config — bind-mounted by docker-compose{,.worker}.yml at
+    #   ./vllm-config/entrypoint.sh → /usr/local/bin/agmind-vllm-entrypoint.sh:ro
+    #   ./vllm-config/dflash.json  → kept for wizard.sh _wizard_load_dflash_json
+    #                                 (single source of truth on disk; wrapper
+    #                                  reads VLLM_SPECULATIVE_CONFIG env, not file)
+    # The wrapper builds argv as a bash array so JSON args (--speculative-config,
+    # --rope-scaling) survive compose folded-scalar shlex-split.
+    # See LANDMINES.md: "vLLM CLI: --speculative-config is JSON, not path".
+    if [[ -d "${INSTALLER_DIR}/templates/vllm-config" ]]; then
+        mkdir -p "${INSTALL_DIR}/docker/vllm-config"
+        cp "${INSTALLER_DIR}/templates/vllm-config/"*.json     "${INSTALL_DIR}/docker/vllm-config/" 2>/dev/null || true
+        cp "${INSTALLER_DIR}/templates/vllm-config/entrypoint.sh" "${INSTALL_DIR}/docker/vllm-config/entrypoint.sh" 2>/dev/null || true
+        chmod 0755 "${INSTALL_DIR}/docker/vllm-config/entrypoint.sh" 2>/dev/null || true
+    fi
     chmod +x "${INSTALL_DIR}/scripts/"*.sh 2>/dev/null || true
+    # Phase 12 normalization: _registry.indexed.sh is a sourceable data file, NOT an executable.
+    # Override the broad chmod +x above — repo mode is 100644, runtime must match
+    # (see docs/adr/0012-service-registry-codegen.md — Air-gap compatibility section).
+    chmod 0644 "${INSTALL_DIR}/scripts/_registry.indexed.sh" 2>/dev/null || true
 }
 
 # Cleans stale Redis state left by prior force-recreate of api/worker.
@@ -539,8 +622,12 @@ _copy_runtime_files() {
 # on wrong channels → new tasks hang. See docs/adr/0007-force-recreate-trap.
 # Safe to run anytime: DEL by pattern, no FLUSHDB (Redis ACL blocks it anyway).
 _clean_stale_celery_state() {
+    # Plan 14-06: _env_get_raw for secret.
+    # Plan 14-08 STATE-11: state-store has precedence; .env is defence-in-depth
+    # fallback for pre-Phase-11 installs.
     local pw
-    pw="$(grep '^REDIS_PASSWORD=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2-)"
+    pw="$(state_get_secret REDIS_PASSWORD 2>/dev/null || true)"
+    [[ -z "$pw" ]] && pw="$(_env_get_raw REDIS_PASSWORD "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
     [[ -z "$pw" ]] && return 0
     docker ps --filter 'name=agmind-redis' --filter 'status=running' --format '{{.Names}}' \
         | grep -q agmind-redis || return 0
@@ -591,8 +678,10 @@ _init_dify_admin() {
     if [[ -f "${INSTALL_DIR}/.dify_initialized" ]]; then log_info "Dify already initialized"; return 0; fi
 
     local env_file="${INSTALL_DIR}/docker/.env"
+    # Plan 14-06: _env_get_raw — INIT_PASSWORD is base64 alphabet, defensive
+    # against any `$`-bearing custom override.
     local init_password
-    init_password="$(grep '^INIT_PASSWORD=' "$env_file" 2>/dev/null | cut -d'=' -f2-)"
+    init_password="$(_env_get_raw INIT_PASSWORD "$env_file" 2>/dev/null || true)"
     if [[ -z "$init_password" ]]; then return 0; fi
 
     # Admin password MUST satisfy Dify's validator (libs/password.py):
@@ -731,8 +820,9 @@ _sync_grafana_admin_password() {
     docker ps --filter 'name=agmind-grafana' --filter 'status=running' --format '{{.Names}}' \
         | grep -q agmind-grafana || return 0
 
+    # Plan 14-06: _env_get_raw for secret.
     local pw
-    pw="$(grep '^GRAFANA_ADMIN_PASSWORD=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2-)"
+    pw="$(_env_get_raw GRAFANA_ADMIN_PASSWORD "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
     [[ -z "$pw" ]] && return 0
 
     # Wait for /api/health — grafana.db must be migrated & unlocked
@@ -764,14 +854,18 @@ _init_ragflow_minio_user() {
     }
 
     log_info "Provisioning MinIO bucket+user for RAGFlow..."
+    # Plan 14-06: passwords via _env_get_raw (byte-exact); usernames + mc tag
+    # keep _env_get (Plan 14-04/14-05).
+    # Plan 14-08 STATE-11: MINIO_ROOT_PASSWORD via state-store-first fallback.
     local user pass mc_version ragflow_user ragflow_pass
-    user="$(grep '^MINIO_ROOT_USER=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
-    pass="$(grep '^MINIO_ROOT_PASSWORD=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
-    ragflow_user="$(grep '^RAGFLOW_MINIO_USER=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
+    user="$(_env_get MINIO_ROOT_USER "${INSTALL_DIR}/docker/.env")"
+    pass="$(state_get_secret MINIO_ROOT_PASSWORD 2>/dev/null || true)"
+    [[ -z "$pass" ]] && pass="$(_env_get_raw MINIO_ROOT_PASSWORD "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
+    ragflow_user="$(_env_get RAGFLOW_MINIO_USER "${INSTALL_DIR}/docker/.env")"
     ragflow_user="${ragflow_user:-ragflow}"
-    ragflow_pass="$(grep '^RAGFLOW_MINIO_PASSWORD=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
-    mc_version="$(grep '^MC_VERSION=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
-    mc_version="${mc_version:-RELEASE.2025-08-13T08-35-41Z}"
+    ragflow_pass="$(_env_get_raw RAGFLOW_MINIO_PASSWORD "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
+    mc_version="$(_env_get MC_VERSION "${INSTALL_DIR}/docker/.env")"
+    [[ -z "$mc_version" ]] && mc_version="RELEASE.2025-08-13T08-35-41Z"
 
     if [[ -z "$ragflow_pass" ]]; then
         log_warn "RAGFLOW_MINIO_PASSWORD empty — skip RAGFlow MinIO setup"
@@ -803,13 +897,16 @@ _init_ragflow_minio_user() {
 _init_minio_bucket() {
     [[ "${ENABLE_MINIO:-false}" == "true" ]] || return 0
     log_info "Creating MinIO bucket..."
+    # Plan 14-06: MINIO_ROOT_PASSWORD via _env_get_raw (byte-exact secret).
+    # Plan 14-08 STATE-11: MINIO_ROOT_PASSWORD + S3 keys via state-store-first.
     local user pass bucket mc_version
-    user="$(grep '^MINIO_ROOT_USER=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
-    pass="$(grep '^MINIO_ROOT_PASSWORD=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
-    bucket="$(grep '^S3_BUCKET_NAME=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
+    user="$(_env_get MINIO_ROOT_USER "${INSTALL_DIR}/docker/.env")"
+    pass="$(state_get_secret MINIO_ROOT_PASSWORD 2>/dev/null || true)"
+    [[ -z "$pass" ]] && pass="$(_env_get_raw MINIO_ROOT_PASSWORD "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
+    bucket="$(_env_get S3_BUCKET_NAME "${INSTALL_DIR}/docker/.env")"
     bucket="${bucket:-dify-storage}"
-    mc_version="$(grep '^MC_VERSION=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
-    mc_version="${mc_version:-RELEASE.2025-08-13T08-35-41Z}"
+    mc_version="$(_env_get MC_VERSION "${INSTALL_DIR}/docker/.env")"
+    [[ -z "$mc_version" ]] && mc_version="RELEASE.2025-08-13T08-35-41Z"
     export MC_VERSION="$mc_version"
 
     # Wait for MinIO container to be running (healthcheck may take longer)
@@ -834,9 +931,13 @@ _init_minio_bucket() {
     # v3.0 hotfix (2026-04-19): Dify writes to MinIO via S3_ACCESS_KEY/S3_SECRET_KEY,
     # which are DIFFERENT from MINIO_ROOT_USER/_PASSWORD. Without a service account
     # bound to those keys, Dify init fails with "InvalidAccessKeyId" on PutObject.
+    # Plan 14-06: S3 access/secret keys via _env_get_raw (byte-exact).
+    # Plan 14-08 STATE-11: state-store-first fallback for both S3 keys.
     local s3_ak s3_sk
-    s3_ak="$(grep '^S3_ACCESS_KEY=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
-    s3_sk="$(grep '^S3_SECRET_KEY=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
+    s3_ak="$(state_get_secret S3_ACCESS_KEY 2>/dev/null || true)"
+    [[ -z "$s3_ak" ]] && s3_ak="$(_env_get_raw S3_ACCESS_KEY "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
+    s3_sk="$(state_get_secret S3_SECRET_KEY 2>/dev/null || true)"
+    [[ -z "$s3_sk" ]] && s3_sk="$(_env_get_raw S3_SECRET_KEY "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
     if [[ -n "$s3_ak" && -n "$s3_sk" && "$s3_ak" != "$user" ]]; then
         docker run --rm --network "$net" \
             -e "MC_HOST_local=http://${user}:${pass}@agmind-minio:9000" \
@@ -1015,9 +1116,12 @@ _save_credentials() {
             echo "  Dify Tool:     HTTP Request → POST http://agmind-docling:8765/v1/convert"
         fi
         if [[ "${ENABLE_MINIO:-false}" == "true" ]]; then
+            # Plan 14-06: MINIO_ROOT_PASSWORD via _env_get_raw (byte-exact secret).
+            # Plan 14-08 STATE-11: state-store-first fallback.
             local _minio_user _minio_pass
-            _minio_user="$(grep '^MINIO_ROOT_USER=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
-            _minio_pass="$(grep '^MINIO_ROOT_PASSWORD=' "${INSTALL_DIR}/docker/.env" | cut -d'=' -f2-)"
+            _minio_user="$(_env_get MINIO_ROOT_USER "${INSTALL_DIR}/docker/.env")"
+            _minio_pass="$(state_get_secret MINIO_ROOT_PASSWORD 2>/dev/null || true)"
+            [[ -z "$_minio_pass" ]] && _minio_pass="$(_env_get_raw MINIO_ROOT_PASSWORD "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
             echo ""
             echo "=== MinIO (S3 Object Storage) ==="
             echo "  Console: http://${ip}:9001"
@@ -1322,6 +1426,20 @@ _verify_post_install_smoke() {
 
     # PEER-06: if cluster.json mode=master, peer vLLM MUST respond /v1/models.
     _smoke_peer_vllm_check || strict_fail=$((strict_fail + 1))
+
+    # Phase 11 — state-store schema MUST be >=1 after fresh install (migration 001 ran).
+    local schema_ver=0
+    if command -v state_schema_version >/dev/null 2>&1; then
+        schema_ver="$(state_schema_version 2>/dev/null || echo 0)"
+    fi
+    if [[ "$schema_ver" -lt 1 ]]; then
+        log_error "FATAL smoke: state-store schema=${schema_ver}, expected >=1"
+        log_error "  Run 'agmind upgrade --check' to diagnose"
+        log_error "  If pending: 'sudo agmind upgrade --apply --yes'"
+        strict_fail=$((strict_fail + 1))
+    else
+        log_success "post-install smoke: state-store schema=${schema_ver}"
+    fi
 
     # --- Result ---
 

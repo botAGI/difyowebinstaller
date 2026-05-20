@@ -156,53 +156,112 @@ install_nvidia_toolkit() {
         return 0
     fi
 
-    log_info "Installing NVIDIA Container Toolkit..."
+    log_info "Setting up NVIDIA Container Toolkit..."
 
-    # Check if already installed
+    # Step 1: ensure package installed (idempotent — skip apt/yum on re-runs)
+    local pkg_already=false
     if dpkg -l nvidia-container-toolkit &>/dev/null 2>&1 || \
        rpm -q nvidia-container-toolkit &>/dev/null 2>&1; then
-        log_success "NVIDIA Container Toolkit already installed"
-        return 0
+        pkg_already=true
+        log_info "NVIDIA Container Toolkit package already installed"
     fi
 
-    # In airgapped mode toolkit must already be installed; skip all public network ops.
-    if airgapped_guard "apt/yum install nvidia-container-toolkit"; then
-        log_warn "airgapped: NVIDIA Container Toolkit installation skipped — must be pre-installed"
-        return 0
-    fi
-
-    case "${DETECTED_OS:-unknown}" in
-        ubuntu|debian)
-            curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
-                gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
-
-            curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-                sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
-                tee /etc/apt/sources.list.d/nvidia-container-toolkit.list >/dev/null
-
-            apt-get update -qq
-            apt-get install -y -qq nvidia-container-toolkit
-            ;;
-        centos|rhel|rocky|almalinux|fedora)
-            curl -s -L https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo | \
-                tee /etc/yum.repos.d/nvidia-container-toolkit.repo >/dev/null
-            if command -v dnf &>/dev/null; then
-                dnf install -y nvidia-container-toolkit
-            else
-                yum install -y nvidia-container-toolkit
-            fi
-            ;;
-        *)
-            log_warn "Install nvidia-container-toolkit manually for ${DETECTED_OS:-unknown}"
+    if [[ "$pkg_already" == "false" ]]; then
+        # In airgapped mode toolkit must already be installed; skip all public network ops.
+        if airgapped_guard "apt/yum install nvidia-container-toolkit"; then
+            log_warn "airgapped: NVIDIA Container Toolkit installation skipped — must be pre-installed"
             return 0
-            ;;
-    esac
+        fi
 
-    # Configure Docker runtime
-    nvidia-ctk runtime configure --runtime=docker
-    systemctl restart docker
+        case "${DETECTED_OS:-unknown}" in
+            ubuntu|debian)
+                curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
+                    gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
 
-    log_success "NVIDIA Container Toolkit installed"
+                curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+                    sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+                    tee /etc/apt/sources.list.d/nvidia-container-toolkit.list >/dev/null
+
+                apt-get update -qq
+                apt-get install -y -qq nvidia-container-toolkit
+                ;;
+            centos|rhel|rocky|almalinux|fedora)
+                curl -s -L https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo | \
+                    tee /etc/yum.repos.d/nvidia-container-toolkit.repo >/dev/null
+                if command -v dnf &>/dev/null; then
+                    dnf install -y nvidia-container-toolkit
+                else
+                    yum install -y nvidia-container-toolkit
+                fi
+                ;;
+            *)
+                log_warn "Install nvidia-container-toolkit manually for ${DETECTED_OS:-unknown}"
+                return 0
+                ;;
+        esac
+        log_info "NVIDIA Container Toolkit package installed"
+    fi
+
+    # Step 2: ensure Docker daemon has `nvidia` runtime registered.
+    # CRITICAL: this MUST run even when the package was already installed,
+    # because daemon.json can lose the runtime entry on package upgrades,
+    # docker reinstalls, or manual config edits. Without this, every GPU
+    # container fails with "NVML init: Unknown Error" / torch.cuda=False
+    # while host nvidia-smi keeps working (regression 2026-05-19, install.log
+    # showed docling FAIL — see CLAUDE.md §8 entry on Docker daemon nvidia
+    # runtime).
+    # Functional probe: spin up a throwaway container that runs nvidia-smi.
+    # `docker info | grep nvidia` is necessary but NOT sufficient — daemon.json
+    # can carry the runtime entry while the running daemon process never reloaded
+    # it (post-upgrade, partial restart, manual edit without restart). Probe
+    # catches the live state.
+    #
+    # Regression 2026-05-19 second-pass: hotfix #2 reported "nvidia runtime
+    # registered" via `docker info` check but every GPU container still hit
+    # `Failed to initialize NVML: Unknown Error`. Root cause was that
+    # daemon.json had been edited but Docker was running with the previous
+    # in-memory config. `docker run --gpus all` triggers the runtime probe
+    # we actually depend on; if it fails, daemon needs a hard restart.
+    local probe_image="${NVIDIA_RUNTIME_PROBE_IMAGE:-nvidia/cuda:12.6.3-base-ubuntu24.04}"
+    local nvidia_runtime_ok=false
+    if docker info 2>/dev/null | grep -qE '^[[:space:]]*Runtimes:.*\bnvidia\b'; then
+        # Daemon config has it — verify functionally
+        if docker run --rm --gpus all --runtime=nvidia "$probe_image" nvidia-smi -L >/dev/null 2>&1; then
+            nvidia_runtime_ok=true
+        else
+            log_warn "Docker daemon config has nvidia runtime but functional probe failed — forcing restart"
+        fi
+    fi
+
+    if [[ "$nvidia_runtime_ok" == "true" ]]; then
+        log_info "Docker daemon nvidia runtime verified functionally — skipping configure/restart"
+    else
+        log_info "Registering nvidia runtime in Docker daemon..."
+        if ! nvidia-ctk runtime configure --runtime=docker 2>&1; then
+            log_error "nvidia-ctk runtime configure failed — GPU containers will fall back to CPU"
+            return 1
+        fi
+        systemctl restart docker
+        # Daemon socket takes 2-5s to come back; poll up to 30s
+        local attempts=0
+        while ! docker info &>/dev/null && [[ $attempts -lt 30 ]]; do
+            sleep 1; attempts=$((attempts+1))
+        done
+        # Verify runtime actually landed AND is functional (not just listed)
+        if ! docker info 2>/dev/null | grep -qE '^[[:space:]]*Runtimes:.*\bnvidia\b'; then
+            log_error "Docker daemon failed to register nvidia runtime after restart — GPU containers will fall back to CPU"
+            log_error "  Manual fix: sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker"
+            return 1
+        fi
+        if ! docker run --rm --gpus all --runtime=nvidia "$probe_image" nvidia-smi -L >/dev/null 2>&1; then
+            log_error "Docker daemon nvidia runtime listed but functional probe failed — GPU containers will fall back to CPU"
+            log_error "  Diagnose: sudo docker run --rm --gpus all --runtime=nvidia ${probe_image} nvidia-smi"
+            return 1
+        fi
+        log_success "Docker daemon nvidia runtime registered and verified"
+    fi
+
+    log_success "NVIDIA Container Toolkit ready"
 }
 
 # ============================================================================

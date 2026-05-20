@@ -164,6 +164,15 @@ sudo NON_INTERACTIVE=true \
 | **nginx** | `nginx:1.30.0-alpine` | Reverse proxy (variable-form `proxy_pass`) |
 | **plugin_daemon** | `langgenius/dify-plugin-daemon:0.5.3-local` | Dify plugin runtime |
 
+### Service Registry (v3.2.0+)
+
+- **Source of truth:** `templates/services/registry.yaml` — declarative catalog
+  (image, profiles, group, healthcheck spec, mem_limit per service).
+- **Codegen artifact:** `lib/_registry.indexed.sh` is **generated** from
+  registry.yaml via `make registry-codegen`. **Do not hand-edit** — the
+  `registry-verify` CI gate fails on drift. See
+  [ADR-0012](docs/adr/0012-service-registry-codegen.md).
+
 ### RAGFlow Integration
 
 - **RAGFlow v0.24.1-spark** — deep document parsing + retrieval, image
@@ -434,6 +443,37 @@ agmind upgrade --diff                # Compare pinned versions vs running
 agmind update [--check|--auto]       # Update stack from main branch
 ```
 
+### State management & upgrades
+
+AGmind v3.2.0 introduces a versioned state store at `/var/lib/agmind/state/` —
+schema-versioned, atomically-writable, with `flock` per-file locking and
+auto-backup before destructive operations. The `agmind upgrade` CLI is the
+operator interface.
+
+```bash
+# Read-only — report current schema, pending migrations, config diff
+sudo agmind upgrade --check
+
+# Apply pending migrations atomically (creates tar-backup at state.bak.<timestamp>/)
+sudo agmind upgrade --apply
+
+# Restore from auto-backup (specify target schema_version)
+sudo agmind upgrade --rollback 0
+```
+
+Schema versions are monotonic integers. Migrations live under `lib/migrations/NNN-<name>.sh`
+and are applied in numeric order. The migration framework is **idempotent**
+(safe to re-run) and **non-destructive** of legacy state — old `.preserved`
+files and legacy `${INSTALL_DIR}/docker/.env` remain in place for one full
+release cycle after migration. See [ADR-0011](docs/adr/0011-state-store-architecture.md)
+for the substrate design.
+
+> [!IMPORTANT]
+> Re-running `install.sh` on an existing host no longer regenerates secrets
+> (closes the v3.1.x BACKUP-01 regression). Existing secrets are preserved via
+> the state store; only new keys (added in `versions.env` between releases)
+> are generated.
+
 ### GPU & Models
 
 ```bash
@@ -502,6 +542,21 @@ sudo agmind uninstall [--keep-models]  # Remove stack
 ├── install-report.json              # Machine-readable install summary
 └── install.log                      # Full install transcript
 ```
+
+And outside `/opt/agmind/`:
+
+```
+/var/lib/agmind/
+└── state/                           # Versioned state store (v3.2.0+)
+    ├── schema_version               # Monotonic integer (chmod 0600 root:root)
+    ├── secrets.env                  # Migrated secrets (chmod 0600 root:root)
+    ├── .locks/                      # flock per-key locks
+    └── state.bak.<timestamp>/       # Auto-backups (3 generations retained)
+```
+
+`/var/lib/agmind/state/` is `0700 root:root` and tarballed by `agmind backup
+create` alongside `/opt/agmind/`. The state store survives `agmind uninstall`
+unless `--purge-state` is passed.
 
 ---
 
@@ -603,7 +658,10 @@ Docling (5-page arxiv PDF, warm): **6.04s**, 0.32s/page, ~1.6 GiB GPU memory.
 | [docs/vector-db-decision-matrix.md](docs/vector-db-decision-matrix.md) | Weaviate vs Qdrant vs Milvus — selection rationale |
 | [docs/dify-vs-ragflow.md](docs/dify-vs-ragflow.md) | Dify and RAGFlow integration patterns |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Topic-by-topic fixes (`agmind troubleshoot <topic>`) |
-| [docs/adr/](docs/adr/) | Architecture Decision Records (ADR-0001 … ADR-0009) |
+| [docs/adr/](docs/adr/) | Architecture Decision Records (ADR-0001 … ADR-0013) — see [INDEX.md](docs/adr/INDEX.md) for catalogue |
+| [tests/lint/LANDMINES.md](tests/lint/LANDMINES.md) | Banned-pattern registry (codified project invariants) — enforced by `make landmines-check` (v3.2.0+) |
+| [tests/golden/](tests/golden/) | 5 byte-exact config-rendering scenarios (`minimal_lan`, `full_lan`, `rag_milvus`, `ragflow`, `cluster_peer`) — `make golden-test` (v3.2.0+) |
+| [templates/services/registry.yaml](templates/services/registry.yaml) | Single-source service catalog driving codegen + parity gates — see [ADR-0012](docs/adr/0012-service-registry-codegen.md) (v3.2.0+) |
 
 Quick navigation via CLI:
 ```bash
@@ -617,7 +675,60 @@ agmind troubleshoot memory     # OOM / unified memory → §10
 
 ---
 
+## 🔮 Go Migration (roadmap — no Go code in v3.2.0)
+
+AGmind v3.2.0 reserves the `cmd/agmind/` and `internal/` directory namespaces for
+a future Go port (v4.0+). **No `.go` files, no `go.mod`, and no Go tooling ship in
+v3.2.0** — the placeholders are roadmap-only.
+
+- Staged port plan and per-stage acceptance criteria: [docs/ROADMAP-GO.md](docs/ROADMAP-GO.md)
+- Migration intent + equivalence-proof preconditions: [docs/adr/0010-go-migration-staged-port.md](docs/adr/0010-go-migration-staged-port.md)
+- Single-binary layout (Q-07): [docs/adr/0013-go-single-binary-internal-packages.md](docs/adr/0013-go-single-binary-internal-packages.md)
+
+Future Go release artifacts are **aarch64-only** (parent decision: [ADR-0001](docs/adr/0001-arm64-only.md)).
+
+---
+
 ## 🤝 Contributing
+
+### Development setup
+
+One-time, on a contributor machine — install pre-commit hooks as a local guard
+that runs the same checks `.github/workflows/test.yml` enforces on push:
+
+```bash
+pip install pre-commit
+pre-commit install --hook-type pre-commit --hook-type commit-msg
+```
+
+What runs (16 hooks after Phase 13):
+
+- **pre-commit stage (~3-8s warm cache):** 14 existing — `shellcheck`,
+  `yamllint`, `gitleaks`, `markdownlint`, `trailing-whitespace`, `check-yaml`,
+  `check-added-large-files`, `check-merge-conflict`, plus the standard
+  hygiene set; + 1 new — `golden-update-guard` triggers on `commit-msg`.
+- **commit-msg stage:** `golden-update-guard` rejects any commit whose staged
+  diff touches `tests/golden/expected/**` unless the message has a trailer
+  `golden-accept-reason: <≥10 graphic chars>` explaining the snapshot bump.
+  See [`tests/golden/UPDATE.md`](tests/golden/UPDATE.md) for the runbook.
+- **manual stage (opt-in):** `ascii-only-bash` flags non-ASCII bytes in
+  `lib/*.sh`, `scripts/*.sh`, `install.sh`, `tests/golden/run.sh`. Currently
+  gated to manual invocation because the codebase legitimately uses RU
+  comments (project policy) and UI glyphs in logger output; flip to
+  `pre-commit` stage after a dedicated cleanup pass. Run on demand:
+  `pre-commit run --hook-stage manual ascii-only-bash`.
+
+Local regression suite (no CI required):
+
+```bash
+bash tests/run_all.sh                         # All categories — ~30s
+bash tests/golden/run.sh --all                # 5 golden scenarios
+make golden-test                              # alias for the above
+make landmines-check                          # rendered-config landmine sweep
+make help                                     # all Makefile targets
+```
+
+### Contribution rules
 
 - Work on `main` only — no feature branches, no merge commits. PRs are cut
   from `main` on demand.
@@ -773,6 +884,38 @@ sudo NON_INTERACTIVE=true \
 `ENABLE_DBGPT`, `ENABLE_CRAWL4AI`, `ENABLE_RAGFLOW`, `ENABLE_AUTHELIA`,
 `ENABLE_DIFY_PREMIUM`, `ENABLE_MINIO`.
 
+### Управление состоянием и обновления
+
+AGmind v3.2.0 вводит версионированное хранилище состояния
+`/var/lib/agmind/state/` — схема-версионирование, атомарная запись,
+`flock`-блокировки на уровне ключа и авто-бэкап перед деструктивными
+операциями. CLI `agmind upgrade` — операторский интерфейс.
+
+```bash
+# Read-only — текущая схема, ожидающие миграции, diff против versions.env
+sudo agmind upgrade --check
+
+# Применить ожидающие миграции атомарно (создаёт tar-бэкап в state.bak.<timestamp>/)
+sudo agmind upgrade --apply
+
+# Откат к авто-бэкапу (указать целевую schema_version)
+sudo agmind upgrade --rollback 0
+```
+
+Версии схемы — монотонные целые. Миграции лежат в
+`lib/migrations/NNN-<name>.sh` и применяются по номеру по возрастанию.
+Фреймворк миграций **идемпотентен** (безопасно перезапускать) и
+**не разрушает** legacy-состояние — старые `.preserved` файлы и
+`${INSTALL_DIR}/docker/.env` остаются на месте на один релиз-цикл.
+См. [ADR-0011](docs/adr/0011-state-store-architecture.md).
+
+> [!IMPORTANT]
+> Перезапуск `install.sh` на существующем хосте больше не
+> регенерирует секреты (закрывает регрессию v3.1.x BACKUP-01).
+> Существующие секреты сохраняются через state store; новые
+> генерируются только для новых ключей (добавленных в `versions.env`
+> между релизами).
+
 ---
 
 ## 🛠 Эксплуатация
@@ -837,6 +980,20 @@ sudo agmind rotate-secrets
 | Общий footprint        | ~95 GiB                   |
 
 Docling (5 страниц arxiv PDF, warm): **6.04s**, 0.32s/page.
+
+---
+
+## 🔮 Миграция на Go (роадмап — в v3.2.0 Go кода нет)
+
+AGmind v3.2.0 резервирует директории `cmd/agmind/` и `internal/` под будущий
+порт на Go (v4.0+). **В v3.2.0 не поставляется ни одного `.go` файла, ни
+`go.mod`, ни Go-инструментария** — это только заглушки роадмапа.
+
+- Поэтапный план порта и критерии приёмки: [docs/ROADMAP-GO.md](docs/ROADMAP-GO.md)
+- Намерение миграции + предусловия equivalence-proof: [docs/adr/0010-go-migration-staged-port.md](docs/adr/0010-go-migration-staged-port.md)
+- Решение по layout (single-binary, Q-07): [docs/adr/0013-go-single-binary-internal-packages.md](docs/adr/0013-go-single-binary-internal-packages.md)
+
+Будущие релизные артефакты Go — **только aarch64** (родительское решение: [ADR-0001](docs/adr/0001-arm64-only.md)).
 
 ---
 

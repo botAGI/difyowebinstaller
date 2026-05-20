@@ -23,6 +23,13 @@ command -v log_success >/dev/null 2>&1 || log_success() { echo -e "  ✓ $*"; }
 command -v log_warn    >/dev/null 2>&1 || log_warn()    { echo -e "  ⚠ $*"; }
 command -v log_error   >/dev/null 2>&1 || log_error()   { echo -e "  ✗ $*"; }
 
+# Fallback _env_get when sourced without common.sh (mirrors lib/health.sh:21-25
+# defensive shim). Plan 14-04 ENV-03c batch 1 standardizes this pattern across
+# standalone-safe modules.
+command -v _env_get >/dev/null 2>&1 || _env_get() {
+    grep "^${1}=" "$2" 2>/dev/null | cut -d'=' -f2-
+}
+
 # Fallback colors when sourced without common.sh
 RED="${RED:-\033[0;31m}"
 GREEN="${GREEN:-\033[0;32m}"
@@ -907,7 +914,7 @@ restore_apply() {
     if [[ -z "$svc" ]]; then
         local _profiles=""
         [[ -f "${compose_dir}/.env" ]] && \
-            _profiles="$(grep '^COMPOSE_PROFILES=' "${compose_dir}/.env" 2>/dev/null | cut -d= -f2- || true)"
+            _profiles="$(_env_get COMPOSE_PROFILES "${compose_dir}/.env")"
         if [[ -n "$_profiles" ]]; then
             ( cd "$compose_dir" && COMPOSE_PROFILES="$_profiles" docker compose up -d )
         else

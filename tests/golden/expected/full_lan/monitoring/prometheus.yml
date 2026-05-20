@@ -1,0 +1,88 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+rule_files:
+  - /etc/prometheus/alert_rules.yml
+  - /etc/prometheus/peer-offline.yml
+
+scrape_configs:
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'alertmanager'
+    static_configs:
+      - targets: ['alertmanager:9093']
+
+  # Phase 38: per-service exporters (redis/pg/nginx)
+  - job_name: 'redis-exporter'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+
+  - job_name: 'postgres-exporter'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+  - job_name: 'nginx-exporter'
+    static_configs:
+      - targets: ['nginx-exporter:9113']
+
+  # Phase 37/P2: vLLM + Weaviate + Docling (runtime-only, already applied)
+  - job_name: 'vllm'
+    static_configs:
+      # __LLM_LOCAL_BEGIN__ — commented out by _configure_peer_monitoring when AGMIND_MODE=master
+      - targets: ['agmind-vllm:8000']
+        labels: {service: 'llm'}
+      # __LLM_LOCAL_END__
+      - targets: ['agmind-vllm-embed:8000']
+        labels: {service: 'embed'}
+      - targets: ['agmind-vllm-rerank:8000']
+        labels: {service: 'rerank'}
+
+  - job_name: 'weaviate'
+    static_configs:
+      - targets: ['agmind-weaviate:2112']
+
+  - job_name: 'docling'
+    static_configs:
+      - targets: ['agmind-docling:8765']
+
+  # BACKLOG #999.7 — RAGFlow stack. RAGFlow API сам не имеет /metrics endpoint,
+  # поэтому скрейпим только Elasticsearch через sidecar exporter
+  # (prometheuscommunity/elasticsearch-exporter, см. compose `ragflow_es_exporter`).
+  # MySQL — повесим job когда добавим mysqld_exporter (BACKLOG).
+  # Target up/down автоматом следует за ENABLE_RAGFLOW (контейнер не запущен → down).
+  - job_name: 'ragflow-es'
+    # Exporter сам auth'ится к ES (env ES_USERNAME/ES_PASSWORD),
+    # Prometheus → exporter без auth.
+    static_configs:
+      - targets: ['agmind-ragflow-es-exporter:9114']
+        labels: {service: 'ragflow-es', stack: 'ragflow'}
+
+  # Phase 2 (Plan 02-05): peer node-exporter + vllm on worker Spark.
+  # PEER_IP is substituted by lib/config.sh::_configure_peer_monitoring when AGMIND_MODE=master.
+  # If AGMIND_MODE != master, these jobs are commented out at install time.
+  # __PEER_SCRAPE_BEGIN__
+  # - job_name: 'peer-node-exporter'
+  #   static_configs:
+  #     - targets: ['__PEER_IP__:9100']
+  #       labels: {instance: 'spark-worker', role: 'peer', node: 'spark-69a2'}
+  # - job_name: 'peer-vllm'
+  #   static_configs:
+  #     - targets: ['__PEER_IP__:8000']
+  #       labels: {service: 'peer-llm', instance: 'spark-worker', role: 'peer'}
+  # __PEER_SCRAPE_END__

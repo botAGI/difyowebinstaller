@@ -158,6 +158,11 @@ _run_wizard_cell() {
         echo "VLLM_MODEL=${VLLM_MODEL:-}"
         echo "VLLM_IMAGE=${VLLM_IMAGE:-}"
         echo "VLLM_EXTRA_ARGS=${VLLM_EXTRA_ARGS:-}"
+        # 2026-05-18: JSON-typed args travel via dedicated env vars consumed
+        # by templates/vllm-config/entrypoint.sh (was inline in VLLM_EXTRA_ARGS
+        # before — caused vLLM argparse to reject path values).
+        echo "VLLM_SPECULATIVE_CONFIG=${VLLM_SPECULATIVE_CONFIG:-}"
+        echo "VLLM_ROPE_SCALING_CONFIG=${VLLM_ROPE_SCALING_CONFIG:-}"
         echo "AGMIND_LLM_PROFILE=${AGMIND_LLM_PROFILE:-}"
     ) 2>/dev/null
 }
@@ -241,8 +246,13 @@ _assert_eq "REGRESSION GUARD bug-2: custom_qwen36fp8 VLLM_MODEL not overridden b
     "Qwen/Qwen3.6-35B-A3B-FP8" "$(_get VLLM_MODEL "$out")"
 _assert_eq "custom_qwen36fp8: C3 VLLM_IMAGE=AEON v1.2" \
     "ghcr.io/aeon-7/vllm-spark-omni-q36:v1.2" "$(_get VLLM_IMAGE "$out")"
-_assert_contains "custom_qwen36fp8: C4 VLLM_EXTRA_ARGS contains dflash" \
-    "dflash" "$(_get VLLM_EXTRA_ARGS "$out")"
+# DFlash speculative config moved from VLLM_EXTRA_ARGS to VLLM_SPECULATIVE_CONFIG
+# env var on 2026-05-18 (entrypoint wrapper architecture). Assert it lands in
+# the new location and not in EXTRA_ARGS.
+_assert_contains "custom_qwen36fp8: C4 VLLM_SPECULATIVE_CONFIG contains dflash" \
+    "dflash" "$(_get VLLM_SPECULATIVE_CONFIG "$out")"
+_assert_not_contains "custom_qwen36fp8: C4 VLLM_EXTRA_ARGS no longer carries --speculative-config" \
+    "speculative-config" "$(_get VLLM_EXTRA_ARGS "$out")"
 _assert_contains "custom_qwen36fp8: C4 VLLM_EXTRA_ARGS contains qwen3_coder" \
     "qwen3_coder" "$(_get VLLM_EXTRA_ARGS "$out")"
 
@@ -256,8 +266,10 @@ _assert_eq "REGRESSION GUARD bug-2: custom_qwen36heretic VLLM_MODEL not overridd
     "AEON-7/Qwen3.6-35B-A3B-heretic-NVFP4" "$(_get VLLM_MODEL "$out")"
 _assert_eq "custom_qwen36heretic: C3 VLLM_IMAGE=AEON v1.2" \
     "ghcr.io/aeon-7/vllm-spark-omni-q36:v1.2" "$(_get VLLM_IMAGE "$out")"
-_assert_contains "custom_qwen36heretic: C4 VLLM_EXTRA_ARGS contains dflash" \
-    "dflash" "$(_get VLLM_EXTRA_ARGS "$out")"
+_assert_contains "custom_qwen36heretic: C4 VLLM_SPECULATIVE_CONFIG contains dflash" \
+    "dflash" "$(_get VLLM_SPECULATIVE_CONFIG "$out")"
+_assert_not_contains "custom_qwen36heretic: C4 VLLM_EXTRA_ARGS no longer carries --speculative-config" \
+    "speculative-config" "$(_get VLLM_EXTRA_ARGS "$out")"
 _assert_not_contains "custom_qwen36heretic: C4 VLLM_EXTRA_ARGS no qwen3_coder (heretic lacks tool-calling)" \
     "qwen3_coder" "$(_get VLLM_EXTRA_ARGS "$out")"
 

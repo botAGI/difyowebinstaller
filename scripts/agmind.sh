@@ -105,6 +105,26 @@ cmd_doctor() {
 }
 
 # ============================================================================
+# UPGRADE (Phase 11 — state-store CLI)
+# ============================================================================
+
+cmd_upgrade() {
+    # Thin wrapper. Logic lives in lib/state.sh::upgrade_run (Phase 11 STATE-06..08).
+    # Runtime copies: scripts/state.sh + scripts/migrations.sh (populated by
+    # _copy_runtime_files in install.sh — wired in Plan 11-05). Fallback to repo lib/
+    # paths for dev mode (mirrors cmd_doctor pattern).
+    # shellcheck source=/dev/null
+    source "${SCRIPTS_DIR}/state.sh" 2>/dev/null \
+        || source "${AGMIND_DIR}/lib/state.sh" 2>/dev/null \
+        || { echo -e "${RED}state module missing — reinstall AGmind${NC}" >&2; return 1; }
+    # shellcheck source=/dev/null
+    source "${SCRIPTS_DIR}/migrations.sh" 2>/dev/null \
+        || source "${AGMIND_DIR}/lib/migrations.sh" 2>/dev/null \
+        || { echo -e "${RED}migrations module missing — reinstall AGmind${NC}" >&2; return 1; }
+    upgrade_run "$@"
+}
+
+# ============================================================================
 # TROUBLESHOOT
 # ============================================================================
 # Prints a section of docs/troubleshooting.md to stdout (no pager).
@@ -1010,6 +1030,13 @@ cmd_plugins() {
             if [[ -r "$ENV_FILE" ]]; then
                 current="$(_read_env MARKETPLACE_ENABLED "true")"
             else
+                # Plan 14-06 justified-divergence: privileged read of mode-600
+                # .env. `_env_get_raw` is a shell function — cannot be invoked
+                # through `sudo -n` (functions are not exported). Inline
+                # grep|cut here is the only path that picks up NOPASSWD when
+                # the file is unreadable as the current user. Non-secret value
+                # (boolean enum) so byte-exact preservation is not required.
+                # lint: legacy-env-parse-allowed (justified-divergence)
                 current="$(sudo -n grep '^MARKETPLACE_ENABLED=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- || echo 'unknown')"
                 [[ -z "$current" ]] && current="unknown"
             fi
@@ -1340,15 +1367,16 @@ cmd_init_dify() {
         return 0
     fi
 
+    # Plan 14-06: _env_get_raw for secret read.
     local init_password
-    init_password="$(grep '^INIT_PASSWORD=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2-)"
+    init_password="$(_env_get_raw INIT_PASSWORD "$ENV_FILE" 2>/dev/null || true)"
     if [[ -z "$init_password" ]]; then
         echo -e "${RED}INIT_PASSWORD not found in .env${NC}" >&2
         return 1
     fi
 
     local admin_password
-    admin_password="$(echo "$init_password" | base64 -d 2>/dev/null || echo "$init_password")"
+    admin_password="$(printf '%s' "$init_password" | base64 -d 2>/dev/null || printf '%s' "$init_password")"
 
     # Check API health
     echo "Checking Dify API health..."
@@ -1516,9 +1544,11 @@ cmd_ragflow() {
         query)
             local q="${1:-}"
             [[ -z "$q" ]] && { echo "Usage: agmind ragflow query <text>" >&2; exit 1; }
+            # Plan 14-06: _env_get_raw — RAGFLOW_API_KEY is secret-grade;
+            # RAGFLOW_DATASET_ID is identifier (atomic auth-block grouping).
             local key dset
-            key="$(grep '^RAGFLOW_API_KEY=' "${ENV_FILE}" 2>/dev/null | cut -d'=' -f2-)"
-            dset="$(grep '^RAGFLOW_DATASET_ID=' "${ENV_FILE}" 2>/dev/null | cut -d'=' -f2-)"
+            key="$(_env_get_raw RAGFLOW_API_KEY "${ENV_FILE}" 2>/dev/null || true)"
+            dset="$(_env_get_raw RAGFLOW_DATASET_ID "${ENV_FILE}" 2>/dev/null || true)"
             if [[ -z "$key" || -z "$dset" ]]; then
                 echo "RAGFLOW_API_KEY и RAGFLOW_DATASET_ID должны быть в ${ENV_FILE}." >&2
                 echo "Создай через RAGFlow UI → Profile → API → API Keys, прописать в .env." >&2
@@ -1533,9 +1563,11 @@ cmd_ragflow() {
             ;;
         keys)
             # Diagnostic: show whether key+dataset prописаны (без значений секретов).
+            # Plan 14-06: _env_get_raw for byte-exact preservation; only the
+            # SET/UNSET boolean is printed — values never logged (anti-leak).
             local key dset
-            key="$(grep '^RAGFLOW_API_KEY=' "${ENV_FILE}" 2>/dev/null | cut -d'=' -f2-)"
-            dset="$(grep '^RAGFLOW_DATASET_ID=' "${ENV_FILE}" 2>/dev/null | cut -d'=' -f2-)"
+            key="$(_env_get_raw RAGFLOW_API_KEY "${ENV_FILE}" 2>/dev/null || true)"
+            dset="$(_env_get_raw RAGFLOW_DATASET_ID "${ENV_FILE}" 2>/dev/null || true)"
             echo "RAGFLOW_API_KEY:    $([[ -n "$key" ]] && echo SET || echo UNSET)"
             echo "RAGFLOW_DATASET_ID: $([[ -n "$dset" ]] && echo SET || echo UNSET)"
             ;;
@@ -1549,8 +1581,9 @@ cmd_ragflow() {
             exec "${SCRIPTS_DIR}/backup.sh" --component ragflow "$@"
             ;;
         es-health)
+            # Plan 14-06: _env_get_raw for secret read.
             local pw
-            pw="$(grep '^RAGFLOW_ES_PASSWORD=' "${ENV_FILE}" 2>/dev/null | cut -d'=' -f2-)"
+            pw="$(_env_get_raw RAGFLOW_ES_PASSWORD "${ENV_FILE}" 2>/dev/null || true)"
             [[ -z "$pw" ]] && { echo "RAGFLOW_ES_PASSWORD missing" >&2; exit 1; }
             docker exec agmind-ragflow-es curl -fsS -u "elastic:${pw}" \
                 "http://localhost:9200/_cluster/health?pretty" 2>/dev/null \
@@ -1671,8 +1704,9 @@ Commands:
     validate [--json]      Check installed .env (placeholders, required keys), versions<->manifest sync,
                            compose schema validity, no :latest/mutating tags
     diff [--release]       Preview version changes 'agmind update' would make (no root; no changes made)
-                           Note: 'agmind upgrade --diff' shows pinned-in-.env vs actually-running-container
+                           Note: 'agmind upgrade-diff' shows pinned-in-.env vs actually-running-container
                            drift (a different axis from 'config diff' which shows current-pinned vs target-release)
+                           ('agmind upgrade' itself is Phase 11 state-store schema migration CLI)
   update [options]       Update AGMind stack (root)
     --check                Check for new bundle release (GitHub Releases)
     --dry-run              Preview what update would do (no root; no changes made) — same as 'config diff'
@@ -1684,7 +1718,11 @@ Commands:
     --auto                 Skip all confirmation prompts
     --scripts-only         Update scripts/configs only (skip docker pull)
     --release              Pull from legacy 'release' branch (default = 'main' since 2026-04)
-  upgrade [--diff]   Compare pinned versions.env vs live containers (read-only)
+  upgrade [--check|--apply|--rollback <N>] [--yes]   State-store schema migrations (Phase 11)
+    (no args / --check)    Read-only schema status; exit 0=up-to-date · 1=pending · 2=blocked
+    --apply [--target N]   Apply pending migrations atomically (tar-backup → bump schema)
+    --rollback <schema>    Restore state-dir from pre-migration tarball (always prompts unless --yes)
+  upgrade-diff       Compare pinned versions.env vs live containers (read-only)
   plugins <sub>      Dify plugin daemon marketplace toggle (root for online/offline)
     online               Enable marketplace.dify.ai (default — рекомендуется)
     offline              Disable marketplace (только локальные .difypkg)
@@ -1727,6 +1765,7 @@ case "${1:-help}" in
     status)         shift; cmd_status "$@" ;;
     doctor)         shift; cmd_doctor "$@" ;;
     health)         shift; cmd_doctor "$@" ;;   # deprecated alias: agmind health [--peer] [--json]
+    upgrade)        shift; cmd_upgrade "$@" ;;
     stop)           cmd_stop ;;
     start)          cmd_start ;;
     restart)        cmd_restart ;;
@@ -1776,14 +1815,7 @@ case "${1:-help}" in
         fi
         exec "${SCRIPTS_DIR}/update.sh" "$@"
         ;;
-    upgrade)        shift
-                    case "${1:-}" in
-                        --diff|diff|""|--help|-h) cmd_upgrade_diff ;;
-                        *) echo "Usage: agmind upgrade [--diff]" >&2
-                           echo "  --diff   Show pinned vs live drift (read-only, default)" >&2
-                           echo "Apply: rerun install.sh OR edit /opt/agmind/docker/.env + docker compose up -d" >&2
-                           exit 1 ;;
-                    esac ;;
+    upgrade-diff)   shift; cmd_upgrade_diff ;;
     config)
         shift
         case "${1:-}" in

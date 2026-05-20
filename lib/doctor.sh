@@ -592,16 +592,24 @@ doctor_check_gpu() {
             "Docker daemon не доступен — NVIDIA runtime check пропущен"
         return 0
     fi
+    # PRECISION FIX 2026-05-19: previous `grep -qi nvidia` against full `docker info`
+    # gave false-positives (host GPU description matched even when Runtimes:
+    # line lacked nvidia). Match the `Runtimes:` line specifically — it lists
+    # registered container runtimes and is the actual signal Docker uses when
+    # launching GPU containers. False-OK here masked the regression where
+    # `install_nvidia_toolkit` skipped `nvidia-ctk runtime configure` on
+    # re-installs, leaving every GPU container with NVML init failures.
+    # See CLAUDE.md §8 entry "Docker daemon nvidia runtime".
     set +e
-    docker info 2>/dev/null | grep -qi "nvidia"
+    docker info 2>/dev/null | grep -qE '^[[:space:]]*Runtimes:.*\bnvidia\b'
     local _nr_rc=$?
     set -e
     if [[ $_nr_rc -eq 0 ]]; then
-        _registry_add "nvidia_runtime" "gpu" "OK" "NVIDIA Container Toolkit: настроен"
+        _registry_add "nvidia_runtime" "gpu" "OK" "NVIDIA Container Toolkit runtime registered"
     else
-        _registry_add "nvidia_runtime" "gpu" "WARN" \
-            "NVIDIA runtime не зарегистрирован в docker info" \
-            "Настройте nvidia-container-toolkit: nvidia-ctk runtime configure --runtime=docker"
+        _registry_add "nvidia_runtime" "gpu" "FAIL" \
+            "NVIDIA runtime отсутствует в Docker daemon — все GPU контейнеры будут CPU-fallback (NVML init fail)" \
+            "Run: sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker"
     fi
 
     # GPU-in-container visibility for vllm and docling

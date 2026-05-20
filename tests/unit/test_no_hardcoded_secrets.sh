@@ -31,7 +31,9 @@ cd "$REPO_ROOT" || { echo "SKIP: cannot cd to repo root"; exit 77; }
 
 # --- Check 1: .env / credentials / keys tracked in git ---
 # tests/fixtures/ intentionally tracks fake-value credential files for unit tests — exclude.
-tracked_secrets="$(git ls-files 2>/dev/null | grep -E '(^|/)\.env$|(^|/)\.env\.|credentials\.txt$|\.pem$|^.*_rsa$|id_ed25519$|\.p12$|\.pfx$' | grep -v '^tests/fixtures/' || true)"
+# tests/golden/expected/ stores deterministic .env.rendered snapshots; pseudo-secrets derive
+# from AGMIND_TEST_SEED (not production credentials) — exclude.
+tracked_secrets="$(git ls-files 2>/dev/null | grep -E '(^|/)\.env$|(^|/)\.env\.|credentials\.txt$|\.pem$|^.*_rsa$|id_ed25519$|\.p12$|\.pfx$' | grep -v '^tests/fixtures/' | grep -v '^tests/golden/expected/' || true)"
 if [[ -z "$tracked_secrets" ]]; then
     echo "  PASS: no .env/credentials/private-key files tracked in git"
     pass=$((pass+1))

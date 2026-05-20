@@ -52,4 +52,13 @@ logs/
 !tests/fixtures/creds/credentials.txt
 !tests/fixtures/creds/.admin_password
 !tests/fixtures/security_audit/credentials.txt
+# Allow tests/golden/inputs/*.env scenario fixtures (overrides line 11 `.env` glob)
+!tests/golden/inputs/*.env
+# Allow tests/golden/expected/*/.env.rendered snapshot artifacts
+!tests/golden/expected/*/.env.rendered
 agmind-handoff-fixed.zip
+
+# Phase 13 golden test harness — temporary diff + tmp dirs
+tests/golden/.last-update.diff
+tests/golden/.tmp-*/
+.gsd/

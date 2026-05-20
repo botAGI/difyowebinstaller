@@ -1,0 +1,180 @@
+groups:
+  - name: agmind_container_alerts
+    rules:
+      # Container down for >2 minutes
+      - alert: ContainerDown
+        expr: time() - container_last_seen{name=~"agmind-.*"} > 120
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.name }} is down"
+          description: "Container {{ $labels.name }} has been down for more than 2 minutes."
+
+      # Container restart loop (>3 restarts in 15 min)
+      - alert: ContainerRestartLoop
+        expr: changes(container_start_time_seconds{name=~"agmind-.*"}[15m]) > 3
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.name }} is in restart loop"
+          description: "Container {{ $labels.name }} has restarted {{ $value }} times in the last 15 minutes."
+
+      # High CPU usage (>90% for 5 min)
+      - alert: HighCpuUsage
+        expr: rate(container_cpu_usage_seconds_total{name=~"agmind-.*"}[5m]) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage on {{ $labels.name }}"
+          description: "Container {{ $labels.name }} CPU usage is {{ $value | humanize }}%."
+
+      # High memory usage (>85%)
+      - alert: HighMemoryUsage
+        # Use working_set_bytes (excludes page cache) — usage_bytes caused false positives
+        # at 99% when actual RSS was 25% of limit (page cache inflated the figure).
+        expr: (container_memory_working_set_bytes{name=~"agmind-.*"} / container_spec_memory_limit_bytes{name=~"agmind-.*"}) * 100 > 90 and container_spec_memory_limit_bytes{name=~"agmind-.*"} > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage on {{ $labels.name }}"
+          description: "Container {{ $labels.name }} memory usage is {{ $value | humanize }}%."
+
+  - name: agmind_host_alerts
+    rules:
+      # Disk space low (<15%)
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 15
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low disk space"
+          description: "Root filesystem has only {{ $value | humanize }}% free space."
+
+      # Disk space critical (<5%)
+      - alert: DiskSpaceCritical
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 5
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical disk space"
+          description: "Root filesystem has only {{ $value | humanize }}% free space. Immediate action required."
+
+  # Phase 36: host memory / swap / OOM alerts. DGX Spark unified memory hides
+  # vLLM CUDA allocation from container cgroup stats — host-level guard needed.
+  - name: agmind_host_memory_alerts
+    rules:
+      - alert: HostMemoryLow
+        # Absolute threshold (4 GiB) вместо процентного 10%.
+        # Причина: на GB10 unified memory vLLM по дизайну держит 80-110 GiB как
+        # VRAM (steady state), процентный порог даёт false-positive на peer Spark
+        # с активной gemma-4-26B. Real OOM imminent ловим когда <4 GiB available.
+        expr: node_memory_MemAvailable_bytes < 4 * 1024 * 1024 * 1024
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Host RAM below 4 GiB free"
+          description: "Host {{ $labels.instance }} has only {{ $value | humanize1024 }}B RAM available. OOM imminent — даже на DGX Spark unified memory это критично."
+
+      - alert: HostSwapHigh
+        expr: ((node_memory_SwapTotal_bytes - node_memory_SwapFree_bytes) / node_memory_SwapTotal_bytes) * 100 > 90 and node_memory_SwapTotal_bytes > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host swap usage >90%"
+          description: "Host swap at {{ $value | humanize }}%. Thrashing risk; consider shrinking service mem_limits."
+
+      - alert: ContainerOOMKilled
+        expr: increase(container_oom_events_total{name=~"agmind-.*"}[10m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.name }} was OOM-killed"
+          description: "Container {{ $labels.name }} hit its memory limit and was killed by kernel OOM killer."
+
+  - name: agmind_service_alerts
+    rules:
+      # NOTE: Requires an application exporter exposing http_request_duration_seconds_bucket (not yet configured)
+      # - alert: SlowApiResponse
+      #   expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{service="agmind-api"}[5m])) > 5
+      #   for: 10m
+      #   labels:
+      #     severity: warning
+      #   annotations:
+      #     summary: "Slow API response times"
+      #     description: "95th percentile API response time is {{ $value }}s."
+
+      # Phase 38: redis-exporter wired in compose, scraped as job 'redis-exporter'.
+      # Uses rejected_connections_total (v1.69.0 metric name).
+      - alert: RedisConnectionError
+        expr: increase(redis_rejected_connections_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis rejected connections"
+          description: "Redis rejected {{ $value }} connection(s) in the last 5 min — maxclients hit or auth fail."
+
+      # Phase 38: postgres-exporter wired in compose, scraped as job 'postgres-exporter'.
+      # pg_stat_activity_count gives current connection count per datname/state;
+      # pg_settings_max_connections gives configured max. 80% = early warning.
+      - alert: PostgresConnectionSaturation
+        expr: sum(pg_stat_activity_count) / on() pg_settings_max_connections * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PostgreSQL connection saturation"
+          description: "PostgreSQL connections at {{ $value | humanize }}% of max_connections."
+
+      # Phase 38: nginx-exporter wired in compose, scraped as job 'nginx-exporter'.
+      - alert: NginxHighConnections
+        expr: nginx_connections_active > 500
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Nginx active connections > 500"
+          description: "Active nginx connections at {{ $value }} — traffic spike or worker exhaustion."
+
+  # BACKLOG #999.7 — RAGFlow-specific alerts. ContainerDown/HighMemoryUsage уже покрывают
+  # базовый health через container_* metrics; это RAGFlow-specific сигналы.
+  # RAGFlow API сам не имеет /metrics endpoint — health через container_* (Docker) +
+  # ES exporter (heap, queries, cluster health). Если ES exporter down — это сигнал
+  # что либо exporter упал, либо ES упал (exporter не может auth'иться).
+  - name: agmind_ragflow_alerts
+    rules:
+      - alert: RAGFlowESDown
+        expr: up{job="ragflow-es"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RAGFlow Elasticsearch metrics unreachable"
+          description: "Prometheus не может scrape ragflow-es-exporter:9114. Либо exporter упал, либо ES upstream упал — agmind ragflow es-health."
+
+      - alert: RAGFlowESYellow
+        expr: elasticsearch_cluster_health_status{color="yellow"} == 1
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RAGFlow ES cluster yellow >30m"
+          description: "ES cluster в yellow — обычно reallocation или один shard unassigned. Single-node setup → green не достижим без primary replica fix. Если >1 час — agmind ragflow es-health."
+
+      - alert: RAGFlowESRed
+        expr: elasticsearch_cluster_health_status{color="red"} == 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RAGFlow ES cluster RED — data loss risk"
+          description: "ES cluster RED. Primary shards unassigned. Поднять немедленно: agmind ragflow es-health, проверить disk watermark + journal."

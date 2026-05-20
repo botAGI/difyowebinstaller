@@ -137,17 +137,25 @@ _copy_ragflow_templates() {
     # pipe → весь generate_config умирает (BUG-V3-FIX 2026-04-26 phase 4 abort).
     local _v_redis_pw _v_ragflow_mysql_pw _v_ragflow_es_pw _v_ragflow_minio_user _v_ragflow_minio_pw
     local _v_vllm_model _v_vllm_embed _v_vllm_rerank
-    _v_redis_pw="$( { grep '^REDIS_PASSWORD=' "$env_file" || true; } | cut -d= -f2-)"
-    _v_ragflow_mysql_pw="$( { grep '^RAGFLOW_MYSQL_PASSWORD=' "$env_file" || true; } | cut -d= -f2-)"
-    _v_ragflow_es_pw="$( { grep '^RAGFLOW_ES_PASSWORD=' "$env_file" || true; } | cut -d= -f2-)"
-    _v_ragflow_minio_user="$( { grep '^RAGFLOW_MINIO_USER=' "$env_file" || true; } | cut -d= -f2-)"
+    # Plan 14-06: secret reads via _env_get_raw (byte-exact awk). Secrets may
+    # contain `$` (random_named base64-alphabet output can include $-adjacent
+    # chars in expansion contexts); source-based reader would corrupt them.
+    # Trailing `|| true` preserves legacy semantic: missing key → empty stdout.
+    # Plan 14-08 STATE-11: REDIS_PASSWORD via state-store-first fallback (D-11).
+    # RAGFLOW_* slugs stay on _env_get_raw — they use the .preserved-file pattern,
+    # not state-store namespace (D-12).
+    _v_redis_pw="$(state_get_secret REDIS_PASSWORD 2>/dev/null || true)"
+    [[ -z "$_v_redis_pw" ]] && _v_redis_pw="$(_env_get_raw REDIS_PASSWORD "$env_file" 2>/dev/null || true)"
+    _v_ragflow_mysql_pw="$(_env_get_raw RAGFLOW_MYSQL_PASSWORD "$env_file" 2>/dev/null || true)"
+    _v_ragflow_es_pw="$(_env_get_raw RAGFLOW_ES_PASSWORD "$env_file" 2>/dev/null || true)"
+    _v_ragflow_minio_user="$(_env_get RAGFLOW_MINIO_USER "$env_file")"
     _v_ragflow_minio_user="${_v_ragflow_minio_user:-ragflow}"
-    _v_ragflow_minio_pw="$( { grep '^RAGFLOW_MINIO_PASSWORD=' "$env_file" || true; } | cut -d= -f2-)"
-    _v_vllm_model="$( { grep '^VLLM_SPARK_MODEL=' "$env_file" || true; } | cut -d= -f2-)"
+    _v_ragflow_minio_pw="$(_env_get_raw RAGFLOW_MINIO_PASSWORD "$env_file" 2>/dev/null || true)"
+    _v_vllm_model="$(_env_get VLLM_SPARK_MODEL "$env_file")"
     _v_vllm_model="${_v_vllm_model:-google/gemma-4-26B-A4B-it}"
-    _v_vllm_embed="$( { grep '^VLLM_EMBED_MODEL=' "$env_file" || true; } | cut -d= -f2-)"
+    _v_vllm_embed="$(_env_get VLLM_EMBED_MODEL "$env_file")"
     _v_vllm_embed="${_v_vllm_embed:-deepvk/USER-bge-m3}"
-    _v_vllm_rerank="$( { grep '^VLLM_RERANK_MODEL=' "$env_file" || true; } | cut -d= -f2-)"
+    _v_vllm_rerank="$(_env_get VLLM_RERANK_MODEL "$env_file")"
     _v_vllm_rerank="${_v_vllm_rerank:-BAAI/bge-reranker-v2-m3}"
 
     sed \
@@ -202,6 +210,46 @@ _RAGFLOW_MINIO_PASSWORD=""
 _PORTAINER_AGENT_SECRET=""
 _N8N_ENCRYPTION_KEY=""
 
+# _state_get_or_generate SLUG LENGTH
+# Plan 14-08 STATE-11 helper. Reads the secret from the Phase 11 state store
+# (${STATE_DIR}/secrets.env via state_get_secret). If absent, generates a fresh
+# value via Phase 13 name-based RNG (generate_random_named SLUG LENGTH) AND
+# persists it to the state store so subsequent invocations return the same
+# bytes. This closes BACKUP-01: re-running install.sh never rotates a secret.
+#
+# Test isolation: golden harness + integration tests set AGMIND_STATE_DIR
+# (lib/config.sh convention). We propagate it to STATE_DIR (lib/state.sh
+# convention — verified ADR-0011) for the duration of the state call. The
+# state module is sourced once at install.sh top-level (line 56), but stand-
+# alone callers (e.g. golden harness sourcing only lib/common.sh + lib/config.sh)
+# may not have it — soft-detect via `command -v` and fall back to pure RNG so
+# golden byte-identical contract (D-13) holds for those callers too.
+_state_get_or_generate() {
+    local slug="$1" length="$2" val
+    if command -v state_get_secret >/dev/null 2>&1; then
+        # Pin STATE_DIR to AGMIND_STATE_DIR for this call without leaking the
+        # mutation back to the caller (subshell scope).
+        val="$(STATE_DIR="${AGMIND_STATE_DIR:-${STATE_DIR:-/var/lib/agmind/state}}" \
+               state_get_secret "$slug" 2>/dev/null || true)"
+        if [[ -n "$val" ]]; then
+            printf '%s' "$val"
+            return 0
+        fi
+    fi
+    # Not in state (or state module not loaded) — generate deterministic-under-
+    # seed bytes via Phase 13 RNG.
+    val="$(generate_random_named "$slug" "$length")"
+    # Best-effort persistence. Soft-fail if state-set rejects (e.g. state dir
+    # not writable in some test scaffolds, or state module not loaded at all)
+    # — the generator value still flows to the caller, golden tests still
+    # see byte-identical output for the rendered .env.
+    if command -v state_set_secret >/dev/null 2>&1; then
+        STATE_DIR="${AGMIND_STATE_DIR:-${STATE_DIR:-/var/lib/agmind/state}}" \
+            state_set_secret "$slug" "$val" >/dev/null 2>&1 || true
+    fi
+    printf '%s' "$val"
+}
+
 # _restore_secrets_from_backup — restore volume-bound secrets when PG data exists (IREL-03)
 # Returns 0 if any secrets were restored, 1 if nothing restored.
 # Must be called AFTER fresh secrets are generated so they serve as a safe fallback.
@@ -224,22 +272,52 @@ _restore_secrets_from_backup() {
 
     local restored=false
 
+    # Plan 14-06: byte-exact secret restore via _env_get_raw. BACKUP-01 territory:
+    # any parser drift on a saved password would silently regenerate secrets on
+    # reinstall. Trailing `|| true` keeps legacy missing-key semantic (empty
+    # stdout → `[[ -n "$saved_X" ]]` falls through).
+    #
+    # Plan 14-08 STATE-11: state-store value (Phase 11 secrets.env) takes
+    # precedence over the .env backup for the three slugs that flow through
+    # state. _generate_secrets has already run before this function (see fatal
+    # check at function tail), so by now the state already holds the canonical
+    # values via _state_get_or_generate. The .env backup remains as a
+    # defence-in-depth fallback for the case where state is empty/corrupt but
+    # a legacy .env.backup survived from a pre-Phase-11 install.
     local saved_db_pass
-    saved_db_pass="$(grep '^DB_PASSWORD=' "$latest_backup" | cut -d'=' -f2-)"
+    if command -v state_get_secret >/dev/null 2>&1; then
+        saved_db_pass="$(STATE_DIR="${AGMIND_STATE_DIR:-${STATE_DIR:-/var/lib/agmind/state}}" \
+                         state_get_secret DB_PASSWORD 2>/dev/null || true)"
+    fi
+    if [[ -z "${saved_db_pass:-}" ]]; then
+        saved_db_pass="$(_env_get_raw DB_PASSWORD "$latest_backup" 2>/dev/null || true)"
+    fi
     if [[ -n "$saved_db_pass" ]]; then
         _DB_PASSWORD="$saved_db_pass"
         restored=true
     fi
 
     local saved_redis_pass
-    saved_redis_pass="$(grep '^REDIS_PASSWORD=' "$latest_backup" | cut -d'=' -f2-)"
+    if command -v state_get_secret >/dev/null 2>&1; then
+        saved_redis_pass="$(STATE_DIR="${AGMIND_STATE_DIR:-${STATE_DIR:-/var/lib/agmind/state}}" \
+                            state_get_secret REDIS_PASSWORD 2>/dev/null || true)"
+    fi
+    if [[ -z "${saved_redis_pass:-}" ]]; then
+        saved_redis_pass="$(_env_get_raw REDIS_PASSWORD "$latest_backup" 2>/dev/null || true)"
+    fi
     if [[ -n "$saved_redis_pass" ]]; then
         _REDIS_PASSWORD="$saved_redis_pass"
         restored=true
     fi
 
     local saved_secret_key
-    saved_secret_key="$(grep '^SECRET_KEY=' "$latest_backup" | cut -d'=' -f2-)"
+    if command -v state_get_secret >/dev/null 2>&1; then
+        saved_secret_key="$(STATE_DIR="${AGMIND_STATE_DIR:-${STATE_DIR:-/var/lib/agmind/state}}" \
+                            state_get_secret SECRET_KEY 2>/dev/null || true)"
+    fi
+    if [[ -z "${saved_secret_key:-}" ]]; then
+        saved_secret_key="$(_env_get_raw SECRET_KEY "$latest_backup" 2>/dev/null || true)"
+    fi
     if [[ -n "$saved_secret_key" ]]; then
         _SECRET_KEY="$saved_secret_key"
         restored=true
@@ -252,20 +330,25 @@ _restore_secrets_from_backup() {
 }
 
 _generate_secrets() {
-    _SECRET_KEY="$(generate_random 64)"
-    _DB_PASSWORD="$(generate_random 32)"
-    _REDIS_PASSWORD="$(generate_random 32)"
-    _SANDBOX_API_KEY="dify-sandbox-$(generate_random 16)"
-    _PLUGIN_DAEMON_KEY="$(generate_random 48)"
-    _PLUGIN_INNER_API_KEY="$(generate_random 48)"
-    _WEAVIATE_API_KEY="$(generate_random 32)"
-    _QDRANT_API_KEY="$(generate_random 32)"
-    _GRAFANA_ADMIN_PASSWORD="$(generate_random 16)"
-    _AUTHELIA_JWT_SECRET="$(generate_random 64)"
-    _AUTHELIA_SESSION_SECRET="$(generate_random 64)"
-    _AUTHELIA_STORAGE_KEY="$(generate_random 64)"
-    _LITELLM_MASTER_KEY="sk-$(generate_random 32)"
-    _SEARXNG_SECRET_KEY="$(generate_random 32)"
+    # Plan 14-08 STATE-11: 11 secret slugs read via state-store-first helper
+    # (_state_get_or_generate). Closes BACKUP-01 — re-install never rotates
+    # secrets. Other slugs below (GRAFANA/AUTHELIA/LITELLM/SEARXNG/NOTEBOOK +
+    # SurrealDB/N8N/Portainer/RAGFlow which use their own .preserved-file
+    # pattern) stay on direct generate_random_named per CONTEXT D-12.
+    _SECRET_KEY="$(_state_get_or_generate SECRET_KEY 64)"
+    _DB_PASSWORD="$(_state_get_or_generate DB_PASSWORD 32)"
+    _REDIS_PASSWORD="$(_state_get_or_generate REDIS_PASSWORD 32)"
+    _SANDBOX_API_KEY="dify-sandbox-$(_state_get_or_generate SANDBOX_API_KEY 16)"
+    _PLUGIN_DAEMON_KEY="$(_state_get_or_generate PLUGIN_DAEMON_KEY 48)"
+    _PLUGIN_INNER_API_KEY="$(_state_get_or_generate PLUGIN_INNER_API_KEY 48)"
+    _WEAVIATE_API_KEY="$(_state_get_or_generate WEAVIATE_API_KEY 32)"
+    _QDRANT_API_KEY="$(_state_get_or_generate QDRANT_API_KEY 32)"
+    _GRAFANA_ADMIN_PASSWORD="$(generate_random_named GRAFANA_ADMIN_PASSWORD 16)"
+    _AUTHELIA_JWT_SECRET="$(generate_random_named AUTHELIA_JWT_SECRET 64)"
+    _AUTHELIA_SESSION_SECRET="$(generate_random_named AUTHELIA_SESSION_SECRET 64)"
+    _AUTHELIA_STORAGE_KEY="$(generate_random_named AUTHELIA_STORAGE_KEY 64)"
+    _LITELLM_MASTER_KEY="sk-$(generate_random_named LITELLM_MASTER_KEY 32)"
+    _SEARXNG_SECRET_KEY="$(generate_random_named SEARXNG_SECRET_KEY 32)"
 
     # SurrealDB password must persist across re-installs (BACKLOG #999.1):
     # SurrealDB CLI args `--user root --pass X` пишут ROOT creds в rocksdb
@@ -277,7 +360,10 @@ _generate_secrets() {
     # пароль больше не нужен).
     local _sdb_secrets_dir="${INSTALL_DIR}/.secrets"
     local _sdb_pw_file="${_sdb_secrets_dir}/surrealdb_password"
-    local _sdb_pw_preserved="/var/lib/agmind/state/surrealdb_password.preserved"
+    # AGMIND_STATE_DIR — env override для test isolation (golden harness).
+    # Defaults to canonical production path; production callers unaffected.
+    local _agmind_state_dir="${AGMIND_STATE_DIR:-/var/lib/agmind/state}"
+    local _sdb_pw_preserved="${_agmind_state_dir}/surrealdb_password.preserved"
     mkdir -p "$_sdb_secrets_dir" 2>/dev/null || true
     chmod 700 "$_sdb_secrets_dir" 2>/dev/null || true
     # Restore from uninstall --keep-models stash if INSTALL_DIR was wiped
@@ -292,13 +378,13 @@ _generate_secrets() {
         _SURREALDB_PASSWORD="$(cat "$_sdb_pw_file")"
         log_info "SurrealDB password loaded from ${_sdb_pw_file} (preserved across re-install)"
     else
-        _SURREALDB_PASSWORD="$(generate_random 24)"
+        _SURREALDB_PASSWORD="$(generate_random_named SURREALDB_PASSWORD 24)"
         printf '%s' "$_SURREALDB_PASSWORD" > "$_sdb_pw_file"
         chmod 600 "$_sdb_pw_file"
         log_info "SurrealDB password generated and persisted: ${_sdb_pw_file}"
     fi
 
-    _NOTEBOOK_ENCRYPTION_KEY="$(generate_random 32)"
+    _NOTEBOOK_ENCRYPTION_KEY="$(generate_random_named NOTEBOOK_ENCRYPTION_KEY 32)"
 
     # n8n encryption key — protects credentials stored in the n8n DB.
     # Persisted at /var/lib/agmind/state/n8n_encryption_key.preserved (mirrors
@@ -308,12 +394,13 @@ _generate_secrets() {
     # survives /opt/agmind wipe; it stores the same key in
     # /home/node/.n8n/config — a mismatch on next start = fatal "Mismatching
     # encryption keys" boot error.
-    local _n8n_key_preserved="/var/lib/agmind/state/n8n_encryption_key.preserved"
+    # Same AGMIND_STATE_DIR override applies (test isolation).
+    local _n8n_key_preserved="${_agmind_state_dir}/n8n_encryption_key.preserved"
     if [[ -s "$_n8n_key_preserved" ]]; then
         _N8N_ENCRYPTION_KEY="$(cat "$_n8n_key_preserved")"
         log_info "n8n encryption key loaded from ${_n8n_key_preserved} (preserved across re-install)"
     else
-        _N8N_ENCRYPTION_KEY="$(generate_random 32)"
+        _N8N_ENCRYPTION_KEY="$(generate_random_named N8N_ENCRYPTION_KEY 32)"
         mkdir -p "$(dirname "$_n8n_key_preserved")" 2>/dev/null || true
         { printf '%s' "$_N8N_ENCRYPTION_KEY" > "$_n8n_key_preserved"; } 2>/dev/null || true
         chmod 600 "$_n8n_key_preserved" 2>/dev/null || true
@@ -321,15 +408,33 @@ _generate_secrets() {
     fi
 
     _MINIO_ROOT_USER="agmind-admin"
-    _MINIO_ROOT_PASSWORD="$(generate_random 32)"
-    _S3_ACCESS_KEY="$(generate_random 20)"
-    _S3_SECRET_KEY="$(generate_random 40)"
+    # Plan 14-08 STATE-11: MinIO + S3 secret slugs read via state-store helper.
+    _MINIO_ROOT_PASSWORD="$(_state_get_or_generate MINIO_ROOT_PASSWORD 32)"
+    _S3_ACCESS_KEY="$(_state_get_or_generate S3_ACCESS_KEY 20)"
+    _S3_SECRET_KEY="$(_state_get_or_generate S3_SECRET_KEY 40)"
 
-    # RAGFlow secrets (BACKLOG #999.7) — generated even если ENABLE_RAGFLOW=false,
-    # placeholders в .env остаются stub значениями но не пустыми (избегаем "пустой пароль" errors).
-    _RAGFLOW_MYSQL_PASSWORD="$(generate_random 32)"
-    _RAGFLOW_ES_PASSWORD="$(generate_random 32)"
-    _RAGFLOW_MINIO_PASSWORD="$(generate_random 32)"
+    # RAGFlow secrets — persist via state-store (same pattern as MinIO/S3 line 412).
+    # CRITICAL: MySQL/ES/MinIO named volumes preserve initialized state across
+    # /opt/agmind wipe (Docker stores them in /var/lib/docker/volumes/). The first
+    # `docker compose up` of agmind-ragflow-mysql consumes MYSQL_ROOT_PASSWORD env
+    # ONLY at init-time; subsequent recreates with a different env value DO NOT
+    # rotate the root password in the existing data dir. If install.sh generates
+    # a fresh secret on every run but the volume keeps its first-init password,
+    # RAGFlow gets `Access denied for user 'root'@<ip> (using password: YES)` on
+    # every connection and signup is permanently broken.
+    #
+    # Fix: read existing value from state-store first; only generate when truly
+    # absent (true first-install OR explicit state wipe). This matches the
+    # MinIO/S3 contract — the named volume's initialized password and the env
+    # variable stay in lock-step across re-installs.
+    #
+    # Regression: 2026-05-19 fresh-install showed `Access denied` after wipe
+    # of /opt/agmind that preserved docker_agmind_ragflow_mysql_data. Hotfix
+    # was `docker volume rm`; the architectural fix is here.
+    # See CLAUDE.md §8 entry "Volume secret rotation".
+    _RAGFLOW_MYSQL_PASSWORD="$(_state_get_or_generate RAGFLOW_MYSQL_PASSWORD 32)"
+    _RAGFLOW_ES_PASSWORD="$(_state_get_or_generate RAGFLOW_ES_PASSWORD 32)"
+    _RAGFLOW_MINIO_PASSWORD="$(_state_get_or_generate RAGFLOW_MINIO_PASSWORD 32)"
 
     # Portainer Agent secret — shared между master Portainer и peer agent.
     # Persistent в /var/lib/agmind/state чтобы переживать uninstall --keep-models
@@ -347,13 +452,13 @@ _generate_secrets() {
     if [[ -s "$_portainer_secret_file" ]]; then
         _PORTAINER_AGENT_SECRET="$(cat "$_portainer_secret_file")"
     else
-        _PORTAINER_AGENT_SECRET="$(generate_random 32)"
+        _PORTAINER_AGENT_SECRET="$(generate_random_named PORTAINER_AGENT_SECRET 32)"
         printf '%s' "$_PORTAINER_AGENT_SECRET" > "$_portainer_secret_file"
         chmod 600 "$_portainer_secret_file"
         log_info "Portainer agent secret generated and persisted: ${_portainer_secret_file}"
     fi
 
-    _ADMIN_PASSWORD_PLAIN="$(generate_random 16)"
+    _ADMIN_PASSWORD_PLAIN="$(generate_random_named ADMIN_PASSWORD_PLAIN 16)"
     _ADMIN_PASSWORD_B64="$(echo -n "$_ADMIN_PASSWORD_PLAIN" | base64)"
 
     # Override volume-bound secrets from backup if PG data exists (IREL-03)
@@ -589,13 +694,19 @@ _append_provider_vars() {
         # DGX Spark / vLLM embed/rerank vars (written regardless of LLM provider)
         if [[ -n "${VLLM_IMAGE:-}" ]]; then echo "VLLM_IMAGE=${VLLM_IMAGE}"; fi
         if [[ -n "${VLLM_CMD_PREFIX:-}" ]]; then echo "VLLM_CMD_PREFIX=${VLLM_CMD_PREFIX}"; fi
-        # Single-quote the value so embedded `"` from Qwen3.6 DFlash JSON
-        # (--speculative-config {"method":"dflash",...}) survives bash sourcing
+        # Single-quote the value so embedded `"` (JSON) survives bash sourcing
         # the .env. Double quotes would terminate at the first inner `"` and
-        # bash would parse the JSON keys as variable names (bug-report 2026-05-15:
+        # bash would parse JSON keys as variable names (bug-report 2026-05-15:
         # `unexpected character "\"" in variable name "method\":\"dflash\""`).
-        # Single-quote-safe: wizard.sh's VLLM_EXTRA_ARGS never contains `'`.
+        # Single-quote-safe: wizard.sh's vLLM-related vars never contain `'`.
         if [[ -n "${VLLM_EXTRA_ARGS:-}" ]]; then echo "VLLM_EXTRA_ARGS='${VLLM_EXTRA_ARGS}'"; fi
+        # JSON-typed vLLM args (--speculative-config, --rope-scaling) travel
+        # via dedicated env vars. The wrapper templates/vllm-config/entrypoint.sh
+        # reads these and assembles argv as a bash array — JSON survives compose
+        # shlex unscathed. Moved out of VLLM_EXTRA_ARGS on 2026-05-18 (see
+        # CLAUDE.md §8 entry "vLLM CLI: --speculative-config is JSON, not path").
+        if [[ -n "${VLLM_SPECULATIVE_CONFIG:-}" ]]; then echo "VLLM_SPECULATIVE_CONFIG='${VLLM_SPECULATIVE_CONFIG}'"; fi
+        if [[ -n "${VLLM_ROPE_SCALING_CONFIG:-}" ]]; then echo "VLLM_ROPE_SCALING_CONFIG='${VLLM_ROPE_SCALING_CONFIG}'"; fi
         if [[ "${EMBED_PROVIDER:-}" == "vllm-embed" ]]; then echo "EMBED_PROVIDER=vllm-embed"; fi
         if [[ -n "${VLLM_EMBED_MODEL:-}" && "${EMBED_PROVIDER:-}" == "vllm-embed" ]]; then echo "VLLM_EMBED_MODEL=${VLLM_EMBED_MODEL}"; fi
         if [[ "${RERANKER_PROVIDER:-tei}" == "vllm-rerank" ]]; then echo "RERANKER_PROVIDER=vllm-rerank"; fi
@@ -1037,8 +1148,13 @@ generate_redis_config() {
     local redis_conf="${INSTALL_DIR}/docker/volumes/redis/redis.conf"
     safe_write_file "$redis_conf"
 
+    # Plan 14-06: _env_get_raw for secret. `|| true` instead of `|| echo ""` —
+    # _env_get_raw returns rc=1 on missing key with empty stdout, which matches
+    # the legacy `|| echo ""` behavior of producing empty stdout.
+    # Plan 14-08 STATE-11: state-store-first fallback chain.
     local redis_pass
-    redis_pass="$(grep '^REDIS_PASSWORD=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "")"
+    redis_pass="$(state_get_secret REDIS_PASSWORD 2>/dev/null || true)"
+    [[ -z "$redis_pass" ]] && redis_pass="$(_env_get_raw REDIS_PASSWORD "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
     if [[ -z "$redis_pass" ]]; then
         log_error "FATAL: REDIS_PASSWORD empty in .env"
         return 1
@@ -1100,8 +1216,20 @@ python_path: ""
 enable_network: false
 SANDBOXEOF
 
+    # Plan 14-06: _env_get_raw for secret. Two-statement default fallback per
+    # Plan 14-04/14-05 precedent — preserves byte-identical legacy output for
+    # both missing-key and key=empty cases.
+    # Plan 14-08 STATE-11: SANDBOX_API_KEY stored in state as bare random suffix;
+    # the rendered .env wraps it as "dify-sandbox-<suffix>". Read .env first
+    # (already wrapped), fall back to state (re-wrap), then fall back to default.
     local sandbox_key
-    sandbox_key="$(grep '^SANDBOX_API_KEY=' "${INSTALL_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2- || echo "dify-sandbox")"
+    sandbox_key="$(_env_get_raw SANDBOX_API_KEY "${INSTALL_DIR}/docker/.env" 2>/dev/null || true)"
+    if [[ -z "$sandbox_key" ]]; then
+        local _sandbox_suffix
+        _sandbox_suffix="$(state_get_secret SANDBOX_API_KEY 2>/dev/null || true)"
+        [[ -n "$_sandbox_suffix" ]] && sandbox_key="dify-sandbox-${_sandbox_suffix}"
+    fi
+    [[ -z "$sandbox_key" ]] && sandbox_key="dify-sandbox"
     _atomic_sed "$sandbox_conf" "s|__will_be_replaced__|${sandbox_key}|g"
 }
 
@@ -1814,8 +1942,12 @@ _cfgval_env_required_keys() {
             "Run install.sh to generate the config"
         return 1
     fi
-    # Verified against _generate_env_file in lib/config.sh (RESEARCH §3):
-    # DB_PASSWORD (not POSTGRES_PASSWORD), BIND_ADDR (not SERVER_IP) are the real .env keys.
+    # Verified against _generate_env_file in lib/config.sh: DB_PASSWORD (not
+    # POSTGRES_PASSWORD) is the real .env key. The repo has no bare `BIND_ADDR`
+    # — every consumer uses a service-prefixed variant (MILVUS_BIND_ADDR /
+    # GRAFANA_BIND_ADDR / PORTAINER_BIND_ADDR / N8N_BIND_ADDR / DOCLING_BIND_ADDR /
+    # RAGFLOW_BIND_ADDR / MINIO_BIND_ADDR) with a 127.0.0.1 default at the
+    # compose `ports:` callsite, so a missing BIND_ADDR= line is not a real gap.
     local REQUIRED_ENV_KEYS=(
         SECRET_KEY
         DB_PASSWORD
@@ -1824,7 +1956,6 @@ _cfgval_env_required_keys() {
         VECTOR_STORE
         STORAGE_TYPE
         FILES_URL
-        BIND_ADDR
         DIFY_VERSION
     )
     local missing=()
@@ -1909,11 +2040,27 @@ manifest_name_tag = {name: tag for name, tag in manifest_tags.items()}
 # Check: for each manifest image, find which versions.env key has matching tag format
 # Strategy: check if any *_VERSION value != corresponding manifest tag
 # Map: strip service name suffixes to guess the *_VERSION key
+#
+# Explicit overrides for images whose env-key cannot be derived by the naive
+# first-token heuristic (e.g. dify-sandbox uses SANDBOX_VERSION, not DIFY_VERSION).
+# Without this map all three dify-* images collapse to DIFY_VERSION and produce
+# bogus mismatches (versions.env=1.14.1 vs manifest=0.2.15 / 0.6.0-local).
+EXPLICIT_KEY_MAP = {
+    'dify-api':           'DIFY_VERSION',
+    'dify-web':           'DIFY_VERSION',
+    'dify-sandbox':       'SANDBOX_VERSION',
+    'dify-plugin-daemon': 'PLUGIN_DAEMON_VERSION',
+    'open-webui':         'OPENWEBUI_VERSION',
+}
+
 for img_name, img_tag in manifest_name_tag.items():
     # Derive candidate env key names from image name
-    # e.g. dify-api → DIFY_VERSION, weaviate → WEAVIATE_VERSION, redis → REDIS_VERSION
-    base = img_name.upper().replace('-', '_').split('_')[0]
-    candidate_key = f"{base}_VERSION"
+    # e.g. dify-api → DIFY_VERSION (via map), weaviate → WEAVIATE_VERSION (heuristic),
+    #      redis → REDIS_VERSION (heuristic).
+    candidate_key = EXPLICIT_KEY_MAP.get(
+        img_name,
+        f"{img_name.upper().replace('-', '_').split('_')[0]}_VERSION",
+    )
     if candidate_key in venv:
         env_val = venv[candidate_key]
         if env_val != img_tag:

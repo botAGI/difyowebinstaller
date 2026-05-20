@@ -9,6 +9,39 @@ set -euo pipefail
 INSTALL_DIR="${INSTALL_DIR:-/opt/agmind}"
 IMAGE_VALIDATION_TIMEOUT="${IMAGE_VALIDATION_TIMEOUT:-20}"
 
+# Fallback _env_get when sourced without common.sh (mirrors lib/health.sh:21-25
+# defensive shim). Production callers source common.sh via install.sh chain
+# (install.sh:27 → common.sh, install.sh:40 → compose.sh).
+command -v _env_get >/dev/null 2>&1 || _env_get() {
+    grep "^${1}=" "$2" 2>/dev/null | cut -d'=' -f2-
+}
+
+# Fallback _env_get_raw — byte-exact awk parser mirror of lib/common.sh:370-391.
+# Used by Plan 14-06 secret-grade reads (DB_PASSWORD). Returns rc=1 on missing
+# file OR missing key (distinct from _env_get which always returns rc=0).
+command -v _env_get_raw >/dev/null 2>&1 || _env_get_raw() {
+    local key="$1" file="$2"
+    [[ -r "$file" ]] || return 1
+    awk -v k="$key" '
+        BEGIN { FS = "="; found = 0 }
+        /^[[:space:]]*#/ { next }
+        /^[[:space:]]*$/ { next }
+        {
+            line = $0
+            sub(/^[[:space:]]+/, "", line)
+            eq = index(line, "=")
+            if (eq == 0) next
+            name = substr(line, 1, eq - 1)
+            if (name != k) next
+            val = substr(line, eq + 1)
+            print val
+            found = 1
+            exit
+        }
+        END { exit (found ? 0 : 1) }
+    ' "$file"
+}
+
 # ============================================================================
 # BUILD PROFILES
 # ============================================================================
@@ -762,10 +795,16 @@ sync_db_password() {
     local env_file="${INSTALL_DIR}/docker/.env"
     local db_pass db_user
 
-    db_pass="$(grep '^DB_PASSWORD=' "$env_file" 2>/dev/null | cut -d'=' -f2-)"
+    # Plan 14-06: _env_get_raw (byte-exact awk) — DB_PASSWORD may contain `$`
+    # which would be source-expanded by _env_get. Trailing `|| true` preserves
+    # legacy semantic where missing key → empty stdout (no rc=1 propagation
+    # under set -e). Existing validators on next lines handle empty case.
+    # Plan 14-08 STATE-11: state-store-first; .env defence-in-depth fallback.
+    db_pass="$(state_get_secret DB_PASSWORD 2>/dev/null || true)"
+    [[ -z "$db_pass" ]] && db_pass="$(_env_get_raw DB_PASSWORD "$env_file" 2>/dev/null || true)"
     if [[ -z "$db_pass" ]]; then return 0; fi
 
-    db_user="$(grep '^DB_USERNAME=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "postgres")"
+    db_user="$(_env_get DB_USERNAME "$env_file")"
     db_user="${db_user:-postgres}"
 
     # Validate inputs (prevent SQL injection)
@@ -807,9 +846,9 @@ create_plugin_db() {
     local env_file="${INSTALL_DIR}/docker/.env"
     local db_user plugin_db
 
-    db_user="$(grep '^DB_USERNAME=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "postgres")"
+    db_user="$(_env_get DB_USERNAME "$env_file")"
     db_user="${db_user:-postgres}"
-    plugin_db="$(grep '^PLUGIN_DB_DATABASE=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "dify_plugin")"
+    plugin_db="$(_env_get PLUGIN_DB_DATABASE "$env_file")"
     plugin_db="${plugin_db:-dify_plugin}"
 
     # Validate (prevent SQL injection)
@@ -825,10 +864,12 @@ create_plugin_db() {
     # All databases that must exist (init scripts only run on fresh volumes)
     local -a required_dbs=("$plugin_db")
     local enable_litellm
-    enable_litellm="$(grep '^ENABLE_LITELLM=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "true")"
+    enable_litellm="$(_env_get ENABLE_LITELLM "$env_file")"
+    [[ -z "$enable_litellm" ]] && enable_litellm="true"
     if [[ "$enable_litellm" == "true" ]]; then required_dbs+=("litellm"); fi
     local enable_n8n
-    enable_n8n="$(grep '^ENABLE_N8N=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "false")"
+    enable_n8n="$(_env_get ENABLE_N8N "$env_file")"
+    [[ -z "$enable_n8n" ]] && enable_n8n="false"
     if [[ "$enable_n8n" == "true" ]]; then required_dbs+=("n8n"); fi
 
     local attempts=0

@@ -1,0 +1,5 @@
+{
+  "method": "dflash",
+  "model": "z-lab/Qwen3.6-35B-A3B-DFlash",
+  "num_speculative_tokens": 15
+}

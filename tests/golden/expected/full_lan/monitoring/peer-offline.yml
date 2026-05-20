@@ -1,0 +1,54 @@
+# AGmind peer offline alerts (Plan 02-05, PEER-05).
+# Fires when worker Spark's node-exporter or vLLM becomes unreachable.
+# Scrape interval 15s → for: 30s = 2 consecutive failed scrapes.
+#
+# References:
+#   RESEARCH.md §10 — alert rules design
+#   ROADMAP Phase 2 success criterion 5 — "fires на 2 consecutive failures за 30 sec"
+
+groups:
+  - name: agmind_peer_alerts
+    interval: 30s
+    rules:
+      # -- Peer node-exporter unreachable --
+      - alert: PeerNodeOffline
+        expr: up{job="peer-node-exporter"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          component: peer
+        annotations:
+          summary: "AGmind peer node {{ $labels.instance }} offline"
+          description: |
+            Node-exporter on peer ({{ $labels.instance }}) has been unreachable
+            for more than 30 seconds (2 consecutive failed scrapes).
+            Check QSFP link, peer power state, or restart node-exporter on peer.
+          runbook: "ssh agmind-peer docker ps ; ssh agmind-peer systemctl status docker"
+
+      # -- Peer vLLM unreachable --
+      - alert: PeerVllmOffline
+        expr: up{job="peer-vllm"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          component: peer-llm
+        annotations:
+          summary: "AGmind peer vLLM on {{ $labels.instance }} offline"
+          description: |
+            vLLM service on worker is down — LLM requests from Dify/OpenWebUI
+            will fail. Check peer container health.
+          runbook: "ssh agmind-peer docker logs agmind-vllm --tail 50"
+
+      # -- Peer vLLM flapping (restart loop) --
+      - alert: PeerVllmFlapping
+        expr: changes(up{job="peer-vllm"}[5m]) > 4
+        for: 2m
+        labels:
+          severity: warning
+          component: peer-llm
+        annotations:
+          summary: "AGmind peer vLLM flapping (> 4 state changes in 5 min)"
+          description: |
+            Peer vLLM has flipped between up/down more than 4 times in 5 minutes.
+            Possible OOM, CUDA crash, or container restart loop.
+          runbook: "ssh agmind-peer docker logs agmind-vllm --tail 200 | grep -i 'error\\|oom\\|cuda'"

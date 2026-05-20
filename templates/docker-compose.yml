@@ -351,9 +351,23 @@ services:
       - CUDA_VISIBLE_DEVICES=${VLLM_CUDA_DEVICE:-0}
       # §8: NVML/libcuda требуют этот env. Без него torch.cuda.is_available=False.
       - NVIDIA_DRIVER_CAPABILITIES=${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
-    command: ${VLLM_CMD_PREFIX:-} --model ${VLLM_MODEL:-QuantTrio/Qwen3.5-27B-AWQ} --host 0.0.0.0 --port 8000 --gpu-memory-utilization ${VLLM_GPU_MEM_UTIL:-0.60} --max-model-len ${VLLM_MAX_MODEL_LEN:-32768} ${VLLM_EXTRA_ARGS:+${VLLM_EXTRA_ARGS}} --trust-remote-code
+      # vLLM args — entrypoint wrapper reads these and builds argv as a bash array,
+      # so JSON values (e.g. VLLM_SPECULATIVE_CONFIG) survive intact through compose
+      # YAML rendering. See templates/vllm-config/entrypoint.sh + LANDMINES.md
+      # "vLLM CLI: --speculative-config is JSON, not path".
+      - VLLM_MODEL=${VLLM_MODEL:-QuantTrio/Qwen3.5-27B-AWQ}
+      - VLLM_GPU_MEM_UTIL=${VLLM_GPU_MEM_UTIL:-0.60}
+      - VLLM_MAX_MODEL_LEN=${VLLM_MAX_MODEL_LEN:-32768}
+      - VLLM_CMD_PREFIX=${VLLM_CMD_PREFIX:-}
+      - VLLM_EXTRA_ARGS=${VLLM_EXTRA_ARGS:-}
+      - VLLM_SPECULATIVE_CONFIG=${VLLM_SPECULATIVE_CONFIG:-}
+      - VLLM_ROPE_SCALING_CONFIG=${VLLM_ROPE_SCALING_CONFIG:-}
+    entrypoint: ["/usr/local/bin/agmind-vllm-entrypoint.sh"]
+    command: []
     volumes:
       - agmind_vllm_cache:/root/.cache/huggingface
+      # vLLM argv wrapper — preserves JSON args through compose shlex.
+      - ./vllm-config/entrypoint.sh:/usr/local/bin/agmind-vllm-entrypoint.sh:ro
     ipc: host
     ulimits:
       memlock:

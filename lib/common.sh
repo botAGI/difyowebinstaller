@@ -34,6 +34,23 @@ log_error()   { echo -e "$(_log_ts)${RED}✗ $*${NC}" >&2; }
 log_success() { echo -e "$(_log_ts)${GREEN}✓ $*${NC}" >&2; }
 
 # ============================================================================
+# AGMIND_TEST_SEED PRODUCTION GUARD
+# ============================================================================
+# Phase 13 TEST-04 mitigation against an environment leak: AGMIND_TEST_SEED
+# enables deterministic secret generation for the golden test harness and must
+# never be active in a real install. Test suites set AGMIND_ALLOW_TEST_SEED=true
+# to opt in. Production sourcing of common.sh with TEST_SEED set but ALLOW unset
+# aborts loudly so secrets cannot become predictable by accident.
+if [[ -n "${AGMIND_TEST_SEED:-}" && "${AGMIND_ALLOW_TEST_SEED:-false}" != "true" ]]; then
+    echo "FATAL: AGMIND_TEST_SEED is set in this environment." >&2
+    echo "       This variable enables deterministic secret generation for golden tests" >&2
+    echo "       and must NEVER be active in a real install." >&2
+    echo "       If you intentionally want to run tests, set AGMIND_ALLOW_TEST_SEED=true." >&2
+    echo "       If this leaked from your dev shell, run: unset AGMIND_TEST_SEED" >&2
+    exit 1
+fi
+
+# ============================================================================
 # VALIDATION
 # ============================================================================
 # Each validator returns 0 on success, 1 on failure.
@@ -194,6 +211,58 @@ PY
     printf '%s' "${out:0:length}"
 }
 
+# Name-based deterministic RNG (TEST-04 / D-07).
+# Under AGMIND_TEST_SEED: keyed by f"{seed}:{slug}:{length}" via python3 random.Random.
+# Without seed: delegates to generate_random (CSPRNG via secrets.choice) — zero
+# security regression vs production behavior.
+# Usage: generate_random_named <slug> [length]   (slug MUST match ^[A-Za-z][A-Za-z0-9_]*$)
+generate_random_named() {
+    local slug="${1:-}"
+    local length="${2:-32}"
+
+    if [[ -z "$slug" || ! "$slug" =~ ^[A-Za-z][A-Za-z0-9_]*$ ]]; then
+        log_error "generate_random_named: invalid slug: '${slug}' (must match ^[A-Za-z][A-Za-z0-9_]*\$)"
+        return 1
+    fi
+    if [[ ! "$length" =~ ^[1-9][0-9]*$ ]]; then
+        log_error "generate_random_named: invalid length: '${length}'"
+        return 1
+    fi
+
+    if [[ -n "${AGMIND_TEST_SEED:-}" ]]; then
+        python3 - "$AGMIND_TEST_SEED" "$slug" "$length" <<'PY'
+import random, string, sys
+seed, slug, n = sys.argv[1], sys.argv[2], int(sys.argv[3])
+r = random.Random(f"{seed}:{slug}:{n}")
+print(''.join(r.choice(string.ascii_letters + string.digits) for _ in range(n)), end='')
+PY
+        return $?
+    fi
+
+    # Unseeded path — production CSPRNG (zero regression vs prior callers).
+    generate_random "$length"
+}
+
+# Deterministic clock helper (D-22). Under AGMIND_TEST_SEED → fixed value,
+# else delegates to real `date -u`. Use everywhere template-rendering would
+# embed a timestamp.
+_now_utc() {
+    if [[ -n "${AGMIND_TEST_SEED:-}" ]]; then
+        printf '%s' '2026-01-01T00:00:00Z'
+    else
+        date -u +'%Y-%m-%dT%H:%M:%SZ'
+    fi
+}
+
+# Deterministic hostname helper (D-22). Symmetric to _now_utc.
+_host_name() {
+    if [[ -n "${AGMIND_TEST_SEED:-}" ]]; then
+        printf '%s' 'agmind-golden-host'
+    else
+        hostname
+    fi
+}
+
 # ============================================================================
 # ATOMIC FILE OPERATIONS
 # ============================================================================
@@ -240,6 +309,85 @@ safe_write_file() {
     fi
     if [[ -d "$filepath" ]]; then rm -rf "${filepath:?}"; fi
     mkdir -p "$(dirname "$filepath")"
+}
+
+# ============================================================================
+# ENV FILE PARSING
+# ============================================================================
+# Two helpers replace ad-hoc one-liners that read a single env-file key via
+# `grep` piped to `cut`, which silently truncate multiline values and cannot
+# distinguish "missing key" from "key=empty". Choose by value type:
+#
+#   _env_get      — source-based; strips quotes, joins multiline, drops
+#                   trailing `# comment` after whitespace. USE FOR:
+#                   booleans, numeric ranges, slugs, single-token strings.
+#                   DO NOT USE FOR SECRETS containing `$` — bash expands
+#                   `$foo` → "" silently. Use _env_get_raw instead.
+#
+#   _env_get_raw  — awk; byte-exact within the matched line. Preserves
+#                   quotes, $, inline #, trailing whitespace. USE FOR:
+#                   passwords, tokens, keys — anything where shell
+#                   interpretation would corrupt the value.
+#                   Trailing LF from `awk print` is consumed by the
+#                   standard `var="$(_env_get_raw ...)"` pattern.
+#
+# Both return 1 if file unreadable. _env_get returns 0 with empty stdout
+# for missing key; _env_get_raw returns 1 for missing key (distinguishable
+# from key=empty which is 0 + empty stdout).
+#
+# Phase 10 lands these DORMANT — zero callsite migration in v3.2.0.
+# Phase 14 (ENV-03b canary + ENV-03c bulk) migrates the 123 legacy
+# `grep|cut` callsites in batches: booleans → numerics → secrets.
+# ============================================================================
+
+# _env_get KEY ENV_FILE
+# Read a value from a KEY=VALUE env file using bash source semantics.
+# Handles quoted strings, multiline values, trailing comments correctly.
+# Returns 1 if file unreadable. Otherwise 0 — empty stdout means
+# "key not found OR key is empty" (use _env_get_raw to distinguish).
+# Caller MUST use _env_get_raw for SECRETS containing `$` (bash expands
+# `$bar` → "").  Runs source inside subshell with `set +u; set +e` so a
+# malformed env file won't crash the caller.
+_env_get() {
+    local key="$1" file="$2"
+    [[ -r "$file" ]] || return 1
+    (
+        set +u
+        set +e
+        # shellcheck disable=SC1090
+        source "$file" >/dev/null 2>&1 || true
+        printf '%s' "${!key:-}"
+    )
+}
+
+# _env_get_raw KEY ENV_FILE
+# Byte-exact read of a KEY=VALUE line — preserves quotes, $-signs, trailing
+# whitespace, inline `#`. Use for SECRETS (passwords, tokens, keys) where
+# shell interpretation would corrupt the value. First-match-wins.
+# awk adds trailing newline via `print` — stripped by usual
+# `var="$(_env_get_raw ...)"` command-substitution.
+# Returns 1 if file unreadable OR key not found.
+_env_get_raw() {
+    local key="$1" file="$2"
+    [[ -r "$file" ]] || return 1
+    awk -v k="$key" '
+        BEGIN { FS = "="; found = 0 }
+        /^[[:space:]]*#/ { next }
+        /^[[:space:]]*$/ { next }
+        {
+            line = $0
+            sub(/^[[:space:]]+/, "", line)
+            eq = index(line, "=")
+            if (eq == 0) next
+            name = substr(line, 1, eq - 1)
+            if (name != k) next
+            val = substr(line, eq + 1)
+            print val
+            found = 1
+            exit
+        }
+        END { exit (found ? 0 : 1) }
+    ' "$file"
 }
 
 # ============================================================================
@@ -310,7 +458,8 @@ preflight_bind_mount_check() {
         "monitoring/alloy-config.river"
     )
     local enable_litellm
-    enable_litellm="$(grep '^ENABLE_LITELLM=' "${docker_dir}/.env" 2>/dev/null | cut -d'=' -f2- || echo "true")"
+    enable_litellm="$(_env_get ENABLE_LITELLM "${docker_dir}/.env")"
+    [[ -z "$enable_litellm" ]] && enable_litellm="true"
     if [[ "$enable_litellm" == "true" ]]; then all_bind_files+=("litellm-config.yaml"); fi
     for f in "${all_bind_files[@]}"; do
         local full="${docker_dir}/${f}"

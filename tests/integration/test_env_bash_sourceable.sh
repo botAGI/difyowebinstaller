@@ -195,6 +195,24 @@ _run_cell() {
         )"
         echo "A6_VLLM_EXTRA_ARGS=${env_extra_args}"
 
+        # ── A7/A8: JSON-typed args moved out of VLLM_EXTRA_ARGS into
+        # dedicated env vars on 2026-05-18. Consumed by
+        # templates/vllm-config/entrypoint.sh. See CLAUDE.md §8 entry
+        # "vLLM CLI: --speculative-config is JSON, not path".
+        local env_spec_cfg=""
+        env_spec_cfg="$(
+            # shellcheck disable=SC1090
+            ( source "${PER_TMP}/docker/.env" 2>/dev/null; echo "${VLLM_SPECULATIVE_CONFIG:-}" )
+        )"
+        echo "A7_VLLM_SPECULATIVE_CONFIG=${env_spec_cfg}"
+
+        local env_rope_cfg=""
+        env_rope_cfg="$(
+            # shellcheck disable=SC1090
+            ( source "${PER_TMP}/docker/.env" 2>/dev/null; echo "${VLLM_ROPE_SCALING_CONFIG:-}" )
+        )"
+        echo "A8_VLLM_ROPE_SCALING_CONFIG=${env_rope_cfg}"
+
     ) 2>/dev/null
 }
 
@@ -244,8 +262,8 @@ _assert_eq "cell3_rag_qwen36fp8_131072: A3 sourceable under set -u" "0" "$(_get 
 _assert_eq "cell3_rag_qwen36fp8_131072: A4 4 secrets non-empty"     "4" "$(_get A4_SECRETS_COUNT "$out")"
 _assert_eq "cell3_rag_qwen36fp8_131072: A5 VLLM_MODEL=Qwen3.6-35B-A3B-FP8" \
     "Qwen/Qwen3.6-35B-A3B-FP8" "$(_get A5_VLLM_MODEL "$out")"
-_assert_contains "cell3_rag_qwen36fp8_131072: A6 EXTRA_ARGS contains dflash" \
-    "dflash" "$(_get A6_VLLM_EXTRA_ARGS "$out")"
+_assert_contains "cell3_rag_qwen36fp8_131072: A7 VLLM_SPECULATIVE_CONFIG contains dflash" \
+    "dflash" "$(_get A7_VLLM_SPECULATIVE_CONFIG "$out")"
 
 # Cell 4: full + qwen36-fp8 + 262144 — 256K context
 echo ""
@@ -257,8 +275,8 @@ _assert_eq "cell4_full_qwen36fp8_262144: A3 sourceable under set -u" "0" "$(_get
 _assert_eq "cell4_full_qwen36fp8_262144: A4 4 secrets non-empty"     "4" "$(_get A4_SECRETS_COUNT "$out")"
 _assert_eq "cell4_full_qwen36fp8_262144: A5 VLLM_MODEL=Qwen3.6-35B-A3B-FP8" \
     "Qwen/Qwen3.6-35B-A3B-FP8" "$(_get A5_VLLM_MODEL "$out")"
-_assert_contains "cell4_full_qwen36fp8_262144: A6 EXTRA_ARGS contains dflash" \
-    "dflash" "$(_get A6_VLLM_EXTRA_ARGS "$out")"
+_assert_contains "cell4_full_qwen36fp8_262144: A7 VLLM_SPECULATIVE_CONFIG contains dflash" \
+    "dflash" "$(_get A7_VLLM_SPECULATIVE_CONFIG "$out")"
 
 # Cell 5: custom + qwen36-fp8 + 1010000 — 1M YaRN: DFlash JSON + rope-scaling (bugs 4+11)
 echo ""
@@ -270,12 +288,12 @@ _assert_eq "cell5_custom_qwen36fp8_1010000: A3 sourceable under set -u" "0" "$(_
 _assert_eq "cell5_custom_qwen36fp8_1010000: A4 4 secrets non-empty"     "4" "$(_get A4_SECRETS_COUNT "$out")"
 _assert_eq "cell5_custom_qwen36fp8_1010000: A5 VLLM_MODEL=Qwen3.6-35B-A3B-FP8" \
     "Qwen/Qwen3.6-35B-A3B-FP8" "$(_get A5_VLLM_MODEL "$out")"
-_assert_contains "cell5_custom_qwen36fp8_1010000: A6 EXTRA_ARGS contains dflash" \
-    "dflash" "$(_get A6_VLLM_EXTRA_ARGS "$out")"
-_assert_contains "cell5_custom_qwen36fp8_1010000: A6 EXTRA_ARGS contains rope-scaling (YaRN)" \
-    "rope-scaling" "$(_get A6_VLLM_EXTRA_ARGS "$out")"
-_assert_contains "cell5_custom_qwen36fp8_1010000: A6 EXTRA_ARGS contains yarn rope_type" \
-    "yarn" "$(_get A6_VLLM_EXTRA_ARGS "$out")"
+_assert_contains "cell5_custom_qwen36fp8_1010000: A7 VLLM_SPECULATIVE_CONFIG contains dflash" \
+    "dflash" "$(_get A7_VLLM_SPECULATIVE_CONFIG "$out")"
+_assert_contains "cell5_custom_qwen36fp8_1010000: A8 VLLM_ROPE_SCALING_CONFIG contains yarn rope_type" \
+    "yarn" "$(_get A8_VLLM_ROPE_SCALING_CONFIG "$out")"
+_assert_contains "cell5_custom_qwen36fp8_1010000: A8 VLLM_ROPE_SCALING_CONFIG contains original_max_position_embeddings" \
+    "original_max_position_embeddings" "$(_get A8_VLLM_ROPE_SCALING_CONFIG "$out")"
 
 # Cell 6: rag + qwen36-heretic + 131072 — heretic profile
 echo ""
@@ -287,8 +305,8 @@ _assert_eq "cell6_rag_qwen36heretic_131072: A3 sourceable under set -u" "0" "$(_
 _assert_eq "cell6_rag_qwen36heretic_131072: A4 4 secrets non-empty"     "4" "$(_get A4_SECRETS_COUNT "$out")"
 _assert_eq "cell6_rag_qwen36heretic_131072: A5 VLLM_MODEL=heretic-NVFP4" \
     "AEON-7/Qwen3.6-35B-A3B-heretic-NVFP4" "$(_get A5_VLLM_MODEL "$out")"
-_assert_contains "cell6_rag_qwen36heretic_131072: A6 EXTRA_ARGS contains dflash" \
-    "dflash" "$(_get A6_VLLM_EXTRA_ARGS "$out")"
+_assert_contains "cell6_rag_qwen36heretic_131072: A7 VLLM_SPECULATIVE_CONFIG contains dflash" \
+    "dflash" "$(_get A7_VLLM_SPECULATIVE_CONFIG "$out")"
 
 echo ""
 echo "=== Summary: ${PASS} passed, ${FAIL} failed ==="

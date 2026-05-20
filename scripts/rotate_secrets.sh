@@ -110,13 +110,35 @@ rotate_secrets() {
         sed "s|^requirepass .*|requirepass ${new_redis_pass}|" "$redis_conf" > "$redis_tmp" \
             && mv "$redis_tmp" "$redis_conf" \
             || rm -f "$redis_tmp"
+        # redis container runs as user redis (uid 999) — config must be world-readable.
+        # mv inherits the temp file's restrictive umask (root creates 0600 under default
+        # systemd shell), which leaves redis with "Permission denied" on /etc/redis/redis.conf
+        # and a CrashLoopBackoff. Match the initial generation mode set in lib/config.sh.
+        chmod 0644 "$redis_conf"
     fi
 
-    # Restart affected services
+    # Restart only redis (and small stateless leaves grafana/sandbox) — these are safe to
+    # restart because they re-read config on every boot. We deliberately do NOT touch
+    # api/worker/plugin_daemon here: docker compose restart keeps the existing container's
+    # env (so they would still hold the old REDIS_PASSWORD), AND recreate of those services
+    # mid-indexing breaks Redis celery state (stale generate_task_belong:* + pub/sub bound to
+    # the old celery@hostname — see docs/adr conventions / project ops notes). The rotation
+    # caller is expected to coordinate api/worker/plugin_daemon restart during a maintenance
+    # window after queues drain. We surface that requirement explicitly below.
     echo ""
-    echo -e "${CYAN}Restarting services...${NC}"
+    echo -e "${CYAN}Restarting redis + stateless leaves (api/worker/plugin_daemon NOT auto-restarted)...${NC}"
     cd "${INSTALL_DIR}/docker"
-    docker compose restart api worker redis grafana sandbox plugin_daemon 2>/dev/null || true
+    docker compose restart redis grafana sandbox 2>/dev/null || true
+
+    # Loud red warning so the operator does not miss it.
+    echo ""
+    echo -e "${RED}ACTION REQUIRED — api / worker / plugin_daemon still hold the OLD"
+    echo -e "REDIS_PASSWORD in-memory and will throw AuthenticationError until restarted.${NC}"
+    echo -e "${YELLOW}During the next maintenance window (queues drained):${NC}"
+    echo -e "  ${CYAN}cd ${INSTALL_DIR}/docker && docker compose stop  api worker plugin_daemon${NC}"
+    echo -e "  ${CYAN}cd ${INSTALL_DIR}/docker && docker compose rm -f api worker plugin_daemon${NC}"
+    echo -e "  ${CYAN}cd ${INSTALL_DIR}/docker && docker compose up -d api worker plugin_daemon${NC}"
+    echo -e "${YELLOW}Verify after:${NC} agmind doctor"
 
     ROTATION_STARTED=false
 

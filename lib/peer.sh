@@ -247,6 +247,35 @@ peer_deploy() {
         return 1
     }
 
+    # 5b. Copy vllm-config/ (entrypoint wrapper + dflash.json) to peer.
+    # MUST land BEFORE `docker compose up` — otherwise the bind-mount source
+    # path does not exist and docker silently creates an EMPTY DIRECTORY on
+    # target (default behavior for missing bind-mount source). This produced
+    # the 2026-05-18 regression where /etc/vllm/dflash.json appeared as a
+    # directory inside the container, breaking both the legacy file-mount
+    # attempt and the new entrypoint wrapper.
+    local template_vllm_config="${TEMPLATE_DIR:-${INSTALLER_DIR}/templates}/vllm-config"
+    if [[ -d "${template_vllm_config}" ]]; then
+        # shellcheck disable=SC2086
+        ssh $ssh_opts "${peer_user}@${peer_ip}" "mkdir -p ${peer_dir}/vllm-config" >/dev/null 2>&1
+        # shellcheck disable=SC2086
+        if ! scp $ssh_opts -r "${template_vllm_config}/." \
+                "${peer_user}@${peer_ip}:${peer_dir}/vllm-config/" >/dev/null 2>&1; then
+            log_error "scp vllm-config/ to peer failed"
+            cluster_status_update "failed" 2>/dev/null || true
+            return 1
+        fi
+        # Ensure entrypoint.sh is executable on peer (scp inherits source mode,
+        # but core.fileMode=false in our repo means the master copy may be 0644
+        # in the index even if 0755 on disk — defensive chmod).
+        # shellcheck disable=SC2086
+        ssh $ssh_opts "${peer_user}@${peer_ip}" \
+            "chmod 0755 ${peer_dir}/vllm-config/entrypoint.sh 2>/dev/null || true" \
+            >/dev/null 2>&1
+    else
+        log_warn "Template ${template_vllm_config} not found — peer vLLM may fail to start"
+    fi
+
     # 6. Install gpu-metrics.sh on peer + cron + textfile dir.
     # Feeds peer node-exporter textfile collector (enabled via compose volume +
     # --collector.textfile.directory=/textfile) so agmind_gpu_* HW metrics become
@@ -309,6 +338,15 @@ VLLM_MODEL=${VLLM_MODEL:-${VLLM_SPARK_MODEL:-google/gemma-4-26B-A4B-it}}
 VLLM_SPARK_MODEL=${VLLM_SPARK_MODEL:-google/gemma-4-26B-A4B-it}
 VLLM_CMD_PREFIX=${VLLM_CMD_PREFIX:-}
 VLLM_EXTRA_ARGS='${VLLM_EXTRA_ARGS:---kv-cache-dtype fp8 --enable-prefix-caching --enforce-eager}'
+# JSON-typed vLLM args travel via dedicated env vars (consumed by
+# templates/vllm-config/entrypoint.sh, NOT by VLLM_EXTRA_ARGS). They MUST be
+# forwarded to the peer .env or DFlash/YaRN silently disappear from peer vLLM.
+# Regression caught 2026-05-19 fresh-install: master had the value, peer .env
+# rendered without these lines → speculative_config=None in vLLM logs even
+# though wizard set it. See CLAUDE.md §8 "vLLM CLI: --speculative-config is
+# JSON, not path".
+VLLM_SPECULATIVE_CONFIG='${VLLM_SPECULATIVE_CONFIG:-}'
+VLLM_ROPE_SCALING_CONFIG='${VLLM_ROPE_SCALING_CONFIG:-}'
 VLLM_CUDA_SUFFIX=${VLLM_CUDA_SUFFIX:-}
 VLLM_MAX_MODEL_LEN=${VLLM_MAX_MODEL_LEN:-65536}
 # Peer = dedicated under vLLM (no docling/embed/rerank sharing GPU).

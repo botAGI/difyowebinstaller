@@ -1,0 +1,339 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {
+      "title": "AGMind GPU — master",
+      "type": "link",
+      "url": "/d/agmind-gpu",
+      "icon": "external link",
+      "targetBlank": false
+    },
+    {
+      "title": "Worker Node overview",
+      "type": "link",
+      "url": "/d/agmind-peer-worker",
+      "icon": "external link",
+      "targetBlank": false
+    }
+  ],
+  "panels": [
+    {
+      "title": "Статус peer worker",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "up{job=\"peer-node-exporter\"}", "legendFormat": "peer-node-exporter", "refId": "A" },
+        { "expr": "up{job=\"peer-vllm\"}", "legendFormat": "peer-vllm", "refId": "B" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ]
+          }
+        }
+      },
+      "options": { "textMode": "value_and_name", "colorMode": "background" }
+    },
+    {
+      "title": "GPU Temperature",
+      "type": "gauge",
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 4 },
+      "description": "Требует peer textfile collector (gpu-metrics.sh на peer). Пока панель пустая.",
+      "targets": [
+        {
+          "expr": "agmind_gpu_temperature_celsius{job=\"peer-node-exporter\"}",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "min": 0,
+          "max": 100,
+          "noValue": "нет данных (peer textfile TODO)",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 65 },
+              { "color": "orange", "value": 75 },
+              { "color": "red", "value": 85 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "GPU Utilization",
+      "type": "gauge",
+      "gridPos": { "h": 8, "w": 6, "x": 6, "y": 4 },
+      "description": "Требует peer textfile collector.",
+      "targets": [
+        {
+          "expr": "agmind_gpu_utilization_percent{job=\"peer-node-exporter\"}",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "noValue": "нет данных (peer textfile TODO)",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 80 },
+              { "color": "red", "value": 95 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "GPU Power Draw",
+      "type": "gauge",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 4 },
+      "description": "Требует peer textfile collector.",
+      "targets": [
+        {
+          "expr": "agmind_gpu_power_watts{job=\"peer-node-exporter\"}",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "min": 0,
+          "max": 140,
+          "noValue": "нет данных (peer textfile TODO)",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 80 },
+              { "color": "orange", "value": 100 },
+              { "color": "red", "value": 120 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "GPU Clock",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 4 },
+      "description": "Требует peer textfile collector.",
+      "targets": [
+        {
+          "expr": "agmind_gpu_clock_mhz{job=\"peer-node-exporter\"}",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "rotmhz",
+          "noValue": "нет данных",
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "orange", "value": 1000 },
+              { "color": "yellow", "value": 1400 },
+              { "color": "green", "value": 2000 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "vLLM KV cache usage (GPU memory proxy)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "description": "Доля занятого KV-кэша vLLM на peer GPU. Прокси к реальной GPU memory до включения textfile collector.",
+      "targets": [
+        {
+          "expr": "vllm:kv_cache_usage_perc{job=\"peer-vllm\"}",
+          "legendFormat": "KV cache %",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "gradientMode": "scheme",
+            "thresholdsStyle": { "mode": "area" }
+          },
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 0.7 },
+              { "color": "orange", "value": 0.85 },
+              { "color": "red", "value": 0.95 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "vLLM requests running / waiting",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "targets": [
+        { "expr": "vllm:num_requests_running{job=\"peer-vllm\"}", "legendFormat": "running", "refId": "A" },
+        { "expr": "vllm:num_requests_waiting{job=\"peer-vllm\"}", "legendFormat": "waiting", "refId": "B" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "lineWidth": 2, "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "title": "Temperature History",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "description": "Требует peer textfile collector.",
+      "targets": [
+        {
+          "expr": "agmind_gpu_temperature_celsius{job=\"peer-node-exporter\"}",
+          "legendFormat": "GPU Temp",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "noValue": "нет данных",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "gradientMode": "scheme",
+            "thresholdsStyle": { "mode": "area" }
+          },
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 65 },
+              { "color": "orange", "value": 75 },
+              { "color": "red", "value": 85 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Power & Utilization History",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "description": "Требует peer textfile collector.",
+      "targets": [
+        {
+          "expr": "agmind_gpu_power_watts{job=\"peer-node-exporter\"}",
+          "legendFormat": "Power (W)",
+          "refId": "A"
+        },
+        {
+          "expr": "agmind_gpu_utilization_percent{job=\"peer-node-exporter\"}",
+          "legendFormat": "Utilization (%)",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "нет данных",
+          "custom": { "lineWidth": 2, "fillOpacity": 10 }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Power (W)" },
+            "properties": [{ "id": "unit", "value": "watt" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Utilization (%)" },
+            "properties": [{ "id": "unit", "value": "percent" }]
+          }
+        ]
+      }
+    },
+    {
+      "title": "vLLM throughput (tokens/s)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+      "targets": [
+        {
+          "expr": "rate(vllm:generation_tokens_total{job=\"peer-vllm\"}[1m])",
+          "legendFormat": "generation tok/s",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(vllm:prompt_tokens_total{job=\"peer-vllm\"}[1m])",
+          "legendFormat": "prompt tok/s",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "lineWidth": 2, "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "title": "System Memory (peer host)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+      "description": "Unified memory на DGX Spark — RAM косвенно отражает занятую GPU VRAM.",
+      "targets": [
+        {
+          "expr": "node_memory_MemTotal_bytes{job=\"peer-node-exporter\"} - node_memory_MemAvailable_bytes{job=\"peer-node-exporter\"}",
+          "legendFormat": "Used",
+          "refId": "A"
+        },
+        {
+          "expr": "node_memory_MemAvailable_bytes{job=\"peer-node-exporter\"}",
+          "legendFormat": "Available",
+          "refId": "B"
+        },
+        {
+          "expr": "node_memory_SwapTotal_bytes{job=\"peer-node-exporter\"} - node_memory_SwapFree_bytes{job=\"peer-node-exporter\"}",
+          "legendFormat": "Swap Used",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "stacking": { "mode": "none" }
+          }
+        }
+      }
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "tags": ["agmind", "gpu", "nvidia", "peer", "worker"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "AGMind GPU — worker (peer Spark)",
+  "uid": "agmind-gpu-worker"
+}
